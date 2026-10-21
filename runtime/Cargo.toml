@@ -1,0 +1,8 @@
+[package]
+name = "runtime"
+version = "0.1.0"
+description = "Plugin runtime: embeds Wasmtime and loads plugin components"
+edition = "2024"
+publish = false
+
+[dependencies]

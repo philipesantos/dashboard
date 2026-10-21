@@ -1,0 +1,7 @@
+{
+  "name": "dashboard-workspace",
+  "private": true,
+  "scripts": {
+    "tauri": "pnpm --filter ./app tauri"
+  }
+}

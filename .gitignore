@@ -1,0 +1,18 @@
+# Rust (Cargo workspace)
+/target/
+
+# Node
+node_modules
+*.log
+*.tsbuildinfo
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
