@@ -1,23 +1,9 @@
 name: CI
 
-# Changes that only touch documentation or specs build and test nothing, so they skip CI.
-# New advisories do not need a change here; audit.yml checks for them every week.
 on:
   push:
     branches: [master]
-    paths-ignore:
-      - "**.md"
-      - "specs/**"
-      - "docs/**"
-      - ".specify/**"
-      - "LICENSE"
   pull_request:
-    paths-ignore:
-      - "**.md"
-      - "specs/**"
-      - "docs/**"
-      - ".specify/**"
-      - "LICENSE"
   workflow_dispatch:
 
 permissions:
@@ -32,8 +18,52 @@ env:
 
 # Third-party actions are pinned to a commit SHA; the comment holds the matching tag.
 jobs:
+  # Changes that only touch documentation or specs build and test nothing, so the jobs below
+  # skip them. The workflow still runs, because a skipped job counts as passing for the
+  # required "CI result" check, while a workflow that never starts leaves it pending forever.
+  # New advisories do not need a change here; audit.yml checks for them every week.
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          case "$EVENT" in
+            pull_request) range="$BASE_SHA...$HEAD_SHA" ;;
+            push) git cat-file -e "$BEFORE^{commit}" 2>/dev/null && range="$BEFORE..$GITHUB_SHA" || range="" ;;
+            *) range="" ;;
+          esac
+          if [ -z "$range" ]; then
+            echo "Nothing to compare against; running every job."
+            code=true
+          else
+            changed=$(git diff --name-only --no-renames "$range")
+            printf '%s\n' "$changed"
+            # Documentation only: Markdown anywhere, specs/, docs/, .specify/ and LICENSE
+            if grep -qvE '\.md$|^(specs|docs|\.specify)/|^LICENSE$' <<< "$changed"; then
+              code=true
+            else
+              code=false
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build and test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -75,6 +105,8 @@ jobs:
 
   audit:
     name: cargo audit
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,6 +125,8 @@ jobs:
 
   deny:
     name: cargo deny
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,3 +142,22 @@ jobs:
           tool: cargo-deny
 
       - run: cargo deny check
+
+  # The only check the master ruleset requires, so jobs can be added or renamed without
+  # touching the ruleset. It fails when any job failed or was cancelled.
+  result:
+    name: CI result
+    needs: [changes, build, audit, deny]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success | skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
