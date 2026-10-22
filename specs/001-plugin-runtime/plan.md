@@ -129,7 +129,8 @@ docs/decisions/
 └── 0001-plugin-process-isolation.md   # FR-016
 
 .cargo/config.toml              # `xtask` alias
-.github/workflows/ci.yml        # + wasm targets, plugin build, hostile suite, bench, checks for plugins/
+.github/workflows/ci.yml        # + wasm targets, plugin build, hostile suite, checks for plugins/
+.github/workflows/bench.yml     # Run by hand: bench and compile cost on the 3 systems (US4)
 ```
 
 **Structure Decision**: the runtime stays in the existing `runtime/` crate and the contract in

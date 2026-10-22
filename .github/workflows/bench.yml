@@ -1,0 +1,67 @@
+name: Bench
+
+# Measures the plugin runtime on all three systems, with the release profile (User Story 4).
+# Run by hand: shared CI runners are too noisy for benchmarks to gate every change, and the
+# release build with LTO would add minutes to every CI run. The results go to the summary of
+# each job; specs/001-plugin-runtime/performance.md records them.
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Render calls to measure
+        default: "1000"
+
+permissions:
+  contents: read
+
+# Third-party actions are pinned to a commit SHA; the comment holds the matching tag.
+jobs:
+  bench:
+    name: Bench (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown, wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - run: cargo xtask plugins --locked
+
+      - name: Load and render hello-widget
+        env:
+          ITERATIONS: ${{ inputs.iterations }}
+        run: |
+          cargo run -p runtime --release --locked -- \
+            bench target/plugins/hello-widget.wasm --iterations "$ITERATIONS" | tee bench.txt
+
+      # Compiling runs outside every per-call limit (docs/threat-model.md)
+      - name: Load packages near the size cap
+        run: |
+          for shape in many huge; do
+            cargo run -p runtime --release --locked --example compile_cost -- "$shape" | tee -a compile.txt
+          done
+
+      - name: Summary
+        env:
+          OS: ${{ matrix.os }}
+        run: |
+          {
+            echo "### $OS at ${GITHUB_SHA::7}, $(nproc) cores"
+            echo '```text'
+            cat bench.txt compile.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
