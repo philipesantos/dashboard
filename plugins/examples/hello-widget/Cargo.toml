@@ -9,4 +9,5 @@ publish.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
+serde_json.workspace = true
 wit-bindgen.workspace = true
