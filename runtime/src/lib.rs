@@ -5,6 +5,7 @@ mod error;
 mod host;
 mod imports;
 mod limits;
+mod text;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

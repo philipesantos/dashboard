@@ -3,6 +3,8 @@
 
 use std::fmt;
 
+use crate::text;
+
 /// The rule behind a [`RuntimeError`]. The names are part of the CLI contract
 /// (`specs/001-plugin-runtime/contracts/cli.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +57,9 @@ impl fmt::Display for ErrorKind {
 
 /// Why a plugin was refused, stopped or failed, displayed as `<kind>: <detail>`.
 ///
-/// Only the runtime builds these, so every detail goes through the same constructors.
+/// Only the runtime builds these, and only through the constructors below, which escape every
+/// detail: plugin messages, compile errors, trap descriptions and import names can all quote
+/// the plugin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeError {
     kind: ErrorKind,
@@ -63,17 +67,24 @@ pub struct RuntimeError {
     refused_imports: Vec<String>,
 }
 
+/// Longest detail kept, and longest import name, before the ` [truncated]` marker.
+const MAX_DETAIL_BYTES: usize = 1024;
+
 impl RuntimeError {
-    pub(crate) fn new(kind: ErrorKind, detail: impl Into<String>) -> Self {
+    pub(crate) fn new(kind: ErrorKind, detail: impl AsRef<str>) -> Self {
         Self {
             kind,
-            detail: detail.into(),
+            detail: text::untrusted(detail.as_ref(), MAX_DETAIL_BYTES),
             refused_imports: Vec::new(),
         }
     }
 
     /// A `capability-refused` error that lists every import the host does not offer.
     pub(crate) fn capability_refused(imports: Vec<String>) -> Self {
+        let imports: Vec<String> = imports
+            .iter()
+            .map(|import| text::untrusted(import, MAX_DETAIL_BYTES))
+            .collect();
         Self {
             kind: ErrorKind::CapabilityRefused,
             detail: imports.join(", "),
@@ -132,6 +143,22 @@ mod tests {
     fn displays_kind_then_detail() {
         let error = RuntimeError::new(ErrorKind::PluginError, "no name given");
         assert_eq!(error.to_string(), "plugin-error: no name given");
+    }
+
+    #[test]
+    fn escapes_and_caps_every_detail() {
+        let error = RuntimeError::new(ErrorKind::PluginError, "\nerror: forged");
+        assert_eq!(error.detail(), r"\nerror: forged");
+
+        let error = RuntimeError::new(ErrorKind::PluginError, "x".repeat(4096));
+        assert_eq!(
+            error.detail().len(),
+            MAX_DETAIL_BYTES + " [truncated]".len()
+        );
+
+        let error = RuntimeError::capability_refused(vec!["url=<a\nb>".to_owned()]);
+        assert_eq!(error.refused_imports(), [r"url=<a\nb>"]);
+        assert_eq!(error.detail(), r"url=<a\nb>");
     }
 
     #[test]
