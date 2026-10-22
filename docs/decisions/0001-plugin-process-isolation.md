@@ -1,7 +1,6 @@
 # 0001. Plugins run in the host process during Phase 1
 
-- **Status**: Proposed. The maintainer confirms it, or changes it, before the Phase 1 gate is
-  declared (SC-006).
+- **Status**: Accepted. The maintainer confirmed it on 2026-10-22 (SC-006).
 - **Date**: 2026-10-22
 - **Feature**: [001, plugin runtime](../../specs/001-plugin-runtime/spec.md) (FR-016)
 
