@@ -11,6 +11,9 @@ members = [
     "hostile/deep-recursion",
     "hostile/read-file",
     "hostile/open-socket",
+    "hostile/malformed-output",
+    "hostile/oversized-output",
+    "hostile/log-flood",
 ]
 
 [workspace.package]
