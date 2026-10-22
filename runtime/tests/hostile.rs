@@ -75,7 +75,14 @@ fn assert_host_still_works(runtime: &Runtime) {
 
 #[test]
 fn infinite_loop_runs_out_of_cpu_budget_and_keeps_its_log() {
-    let runtime = runtime();
+    // The default fuel, with a time limit only a broken budget could reach: on a slow or busy
+    // machine, the default 1 s could otherwise run out first. Fuel stops at the same point on
+    // every system (R2).
+    let runtime = Runtime::new(Limits {
+        time_limit: Duration::from_secs(20),
+        ..Limits::default()
+    })
+    .unwrap();
     let report = render(&load(&runtime, "infinite-loop"), "{}");
 
     assert_eq!(render_error(&report).kind(), ErrorKind::CpuBudgetExceeded);
