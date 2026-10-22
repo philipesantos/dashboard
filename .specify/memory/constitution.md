@@ -15,11 +15,13 @@ author direct access to the user's machine.
 
 A plugin MUST start with no capabilities. Every capability MUST be a host function that the
 plugin declares in its manifest and the user approves, and the host MUST link only the
-imports that were granted. An update that requests a new capability MUST require a new
-approval.
+imports that were granted. A capability the manifest marks as optional and the user has not
+granted MAY be linked only to a host stand-in that gives no capability and answers every call
+with "not granted". An update that requests a new capability MUST require a new approval.
 
 Rationale: least privilege; a capability that was never granted cannot be abused, and an
-update cannot escalate silently.
+update cannot escalate silently. Optional capabilities let a plugin run without them; the
+stand-in exists only because the Component Model has no optional imports.
 
 ### III. Network Only Through the Host Proxy
 
@@ -120,4 +122,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 1.1.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-22
+**Version**: 1.2.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-22
