@@ -325,6 +325,11 @@ exact problem.
 - Disabling a plugin (it stops loading, and its grants and data are kept) and uninstalling it
   (everything is removed) arrive with installation in Phase 3. In this phase, removing a
   plugin's approval is how the maintainer stops it.
+- The warning for dangerous combinations of permissions arrives with the host dialogs in
+  Phase 3. It runs on every grant change, not only at installation: approving a plugin,
+  approving an update and turning an optional permission on, each judged on the permissions the
+  plugin will hold afterwards, so a plugin cannot ask for little and gain the rest one
+  permission at a time.
 - The manifest and the plugin travel together as one package; the plan decides how they are
   bound.
 - This feature defines how permissions work; each later feature defines its own permissions

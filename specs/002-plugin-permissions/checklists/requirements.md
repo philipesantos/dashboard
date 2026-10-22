@@ -46,6 +46,8 @@
     the capability is linked to a stand-in that answers "not granted" (FR-013, FR-014, FR-018,
     FR-019, User Story 4), which constitution v1.2.0 allows in Principle II.
   - Disabling and uninstalling arrive with installation in Phase 3 (assumptions).
+  - The Phase 3 warning for dangerous combinations runs on every grant change, judged on the
+    permissions the plugin will hold afterwards (assumptions).
 - "Command-line tool", "JSON" and "schema" name the interfaces the user works with, as in
   feature 001, not the implementation; the plan decides how the manifest is bound to the plugin
   and where grants are stored.
