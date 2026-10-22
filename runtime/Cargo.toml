@@ -6,6 +6,24 @@ edition = "2024"
 publish = false
 
 [dependencies]
+serde_json = "1"
+# Only what the runtime needs: the Cranelift compiler and the Component Model. Default
+# features such as GC, threads, async and stack switching are left out of the build.
+wasmtime = { version = "50", default-features = false, features = [
+    "component-model",
+    "cranelift",
+    "runtime",
+    "std",
+] }
 
 [dev-dependencies]
-wasmtime = "50"
+# The same features as above plus `wat`, for components written as text in tests and
+# examples. Cargo merges dev-dependency features into test builds, so anything added here
+# would also change the Wasmtime that the tests exercise.
+wasmtime = { version = "50", default-features = false, features = [
+    "component-model",
+    "cranelift",
+    "runtime",
+    "std",
+    "wat",
+] }
