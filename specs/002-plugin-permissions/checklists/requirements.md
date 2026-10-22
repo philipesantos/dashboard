@@ -48,6 +48,9 @@
   - Disabling and uninstalling arrive with installation in Phase 3 (assumptions).
   - The Phase 3 warning for dangerous combinations runs on every grant change, judged on the
     permissions the plugin will hold afterwards (assumptions).
+  - A grant change takes effect from the plugin's next call, not its next load, so a plugin
+    that stays loaded in the app loses access at once; a call already running finishes within
+    its time limit (FR-014, SC-005).
 - "Command-line tool", "JSON" and "schema" name the interfaces the user works with, as in
   feature 001, not the implementation; the plan decides how the manifest is bound to the plugin
   and where grants are stored.

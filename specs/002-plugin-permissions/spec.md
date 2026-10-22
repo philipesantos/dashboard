@@ -98,7 +98,7 @@ plugin turns hostile (threat model: "Update adds a permission without approval")
 
 **Independent Test**: approve a plugin, load a new version with the same permissions (it
 runs), load one with an extra required permission (refused, naming it), approve it (runs),
-remove the plugin's approval (refused at the next load).
+remove the plugin's approval (refused at the next call).
 
 **Acceptance Scenarios**:
 
@@ -115,7 +115,7 @@ remove the plugin's approval (refused at the next load).
    permissions, **Then** the tool refuses and says that required permissions change only with
    a new version or by removing the plugin's approval.
 6. **Given** an approved plugin, **When** the maintainer removes its approval, **Then** it is
-   refused at its next load, naming the permissions that are not granted, and it needs the
+   refused at its next call, naming the permissions that are not granted, and it needs the
    whole approval again to run.
 
 ---
@@ -134,7 +134,7 @@ interfaces on it.
 
 **Independent Test**: approve a plugin's required permissions and leave an optional one off:
 the plugin runs, and its use of that capability answers "not granted" and has no effect; turn
-it on, and from the next load the capability works; turn it off, and from the next load it
+it on, and from the next call the capability works; turn it off, and from the next call it
 answers "not granted" again.
 
 **Acceptance Scenarios**:
@@ -143,9 +143,10 @@ answers "not granted" again.
    capability, **Then** it keeps running, every use answers "not granted", and nothing reaches
    the capability.
 2. **Given** that plugin, **When** the maintainer turns the optional permission on, **Then**
-   the capability works from the plugin's next load.
+   the capability works from the plugin's next call.
 3. **Given** an optional permission that is on, **When** the maintainer turns it off, **Then**
-   every use answers "not granted" from the plugin's next load.
+   every use answers "not granted" from the plugin's next call, even if the plugin stayed
+   loaded.
 4. **Given** an approved plugin, **When** a new version adds an optional permission, **Then**
    it runs without any new approval, with that permission off.
 5. **Given** an optional permission that is off, **When** a new version marks it required,
@@ -255,7 +256,9 @@ exact problem.
   optional, and what is granted; to turn each optional permission on or off; and to remove the
   plugin's approval as a whole. Required permissions MUST NOT be taken back one by one: they
   change only with a new version, approved again, or by removing the plugin's approval. Every
-  change MUST take effect from the plugin's next load.
+  change MUST take effect from the plugin's next call, even while the plugin stays loaded: the
+  host MUST NOT keep using what it prepared under the old grants. A call already running when
+  access is taken away MAY finish, within its time limit.
 - **FR-015**: Every refusal MUST name, in one message, the permission or the manifest problem
   and the rule that applied: no manifest, not declared, not granted, new permission needs
   approval, manifest does not match the plugin, invalid manifest, unknown permission, required
@@ -311,7 +314,7 @@ exact problem.
   requires a new permission is refused every time until it is approved; one that adds an
   optional permission runs with it off.
 - **SC-005**: Removing a plugin's approval, or turning an optional permission on or off, takes
-  effect from the plugin's next load, every time.
+  effect from the plugin's next call, every time, even if the plugin stayed loaded.
 - **SC-006**: The example plugin's manifest validates against the published schema in CI.
 - **SC-007**: Checking the manifest and the grants adds less than 10 ms to loading a plugin on
   every CI system.
