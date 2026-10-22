@@ -1,7 +1,9 @@
 # Specification Quality Checklist: Plugin Permissions
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
+
 **Created**: 2026-10-22
+
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
