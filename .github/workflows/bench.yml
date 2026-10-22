@@ -34,8 +34,10 @@ jobs:
       run:
         shell: bash
     steps:
+      # The pull request's own commit, not the merge commit GitHub builds for it
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -64,9 +66,11 @@ jobs:
       - name: Summary
         env:
           OS: ${{ matrix.os }}
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
           {
-            echo "### $OS at ${GITHUB_SHA::7}, $(nproc) cores"
+            echo "### $OS at ${COMMIT::7}, $cores cores"
             echo '```text'
             cat bench.txt compile.txt
             echo '```'
