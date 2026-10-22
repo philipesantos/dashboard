@@ -15,9 +15,11 @@ Loads the plugin, calls `render` once and prints the result.
 `--config` defaults to `{}`. The configuration must be valid JSON, otherwise it is a usage
 error.
 
-## `runtime bench <plugin> [--iterations <n>] [--config <json>]`
+## `runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>]`
 
-Measures performance for User Story 4. `--iterations` defaults to 1000.
+Measures performance for User Story 4. `--iterations` defaults to 1000 and must be above 0.
+Plugin logs are not printed. A render that fails stops the bench with its error and exit
+status 1.
 
 stdout, one value per line:
 

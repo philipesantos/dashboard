@@ -88,6 +88,44 @@ fn plugin_text_cannot_add_lines_or_control_the_terminal() {
 }
 
 #[test]
+fn bench_prints_the_load_time_and_render_percentiles() {
+    let plugin = fixture_path("hello-widget");
+    let output = runtime(&["bench", path_str(&plugin), "--iterations", "20"]);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let stdout = stdout(&output);
+    let keys: Vec<&str> = stdout
+        .lines()
+        .map(|line| {
+            let (key, value) = line.split_once(": ").expect("each line is `key: value`");
+            value
+                .parse::<f64>()
+                .unwrap_or_else(|_| panic!("{key} is not a number: {value}"));
+            key
+        })
+        .collect();
+    assert_eq!(
+        keys,
+        ["load_ms", "render_p50_us", "render_p95_us", "render_max_us"]
+    );
+}
+
+#[test]
+fn bench_needs_at_least_one_iteration() {
+    let plugin = fixture_path("hello-widget");
+    let output = runtime(&["bench", path_str(&plugin), "--iterations", "0"]);
+    assert_eq!(output.status.code(), Some(2), "stderr: {}", stderr(&output));
+}
+
+#[test]
+fn a_failing_render_stops_the_bench() {
+    let plugin = fixture_path("malformed-output");
+    let output = runtime(&["bench", path_str(&plugin), "--iterations", "3"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).starts_with("error: invalid-output: "));
+}
+
+#[test]
 fn an_unknown_command_is_a_usage_error() {
     let output = runtime(&["explode"]);
     assert_eq!(output.status.code(), Some(2), "stderr: {}", stderr(&output));
