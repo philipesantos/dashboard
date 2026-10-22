@@ -13,6 +13,7 @@ use wasmtime::component::{Component, HasSelf, Linker};
 use wasmtime::{Config, Engine, Store, Trap};
 
 use host::HostState;
+use limits::MemoryLimitExceeded;
 
 pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
@@ -166,7 +167,8 @@ impl Plugin {
     /// Calls the plugin's `render` with a JSON configuration, in a fresh instance that is
     /// dropped when the call ends, so nothing survives from one call to the next (FR-008).
     pub fn render(&self, config: &str) -> RenderReport {
-        let mut store = Store::new(self.pre.engine(), HostState::default());
+        let mut store = Store::new(self.pre.engine(), HostState::new(&self.limits));
+        store.limiter(|state| &mut state.limiter);
         let result = self
             .start_limits(&mut store)
             .and_then(|()| self.call(&mut store, config));
@@ -215,6 +217,9 @@ impl Plugin {
 
     /// Names the limit that stopped the call, or the trap that crashed it.
     fn call_error(&self, error: wasmtime::Error) -> RuntimeError {
+        if let Some(exceeded) = error.downcast_ref::<MemoryLimitExceeded>() {
+            return RuntimeError::new(ErrorKind::MemoryLimitExceeded, exceeded.to_string());
+        }
         match error.downcast_ref::<Trap>() {
             Some(Trap::OutOfFuel) => RuntimeError::new(
                 ErrorKind::CpuBudgetExceeded,

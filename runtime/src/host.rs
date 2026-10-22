@@ -2,13 +2,24 @@
 //! only host function of contract v0.
 
 use crate::dashboard::widget::log::{Host, Level};
+use crate::limits::{Limits, MemoryLimiter};
 use crate::{LogLevel, LogMessage};
 
 /// State of one render call, dropped with its store when the call ends.
-#[derive(Default)]
 pub(crate) struct HostState {
     /// Messages the plugin wrote, in order. Caps come in T037.
     pub(crate) logs: Vec<LogMessage>,
+    /// The memory cap of this call, installed with `Store::limiter`.
+    pub(crate) limiter: MemoryLimiter,
+}
+
+impl HostState {
+    pub(crate) fn new(limits: &Limits) -> Self {
+        Self {
+            logs: Vec::new(),
+            limiter: MemoryLimiter::new(limits.max_memory_bytes),
+        }
+    }
 }
 
 impl Host for HostState {
