@@ -17,6 +17,8 @@ wasmtime = { version = "50", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+# Turns WebAssembly text into the binary packages that tests pass to Runtime::load
+wat = "1"
 # The same features as above plus `wat`, for components written as text in tests and
 # examples. Cargo merges dev-dependency features into test builds, so anything added here
 # would also change the Wasmtime that the tests exercise.
