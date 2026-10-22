@@ -118,7 +118,9 @@ suite grows with every phase and never shrinks.
 
 ## Open questions
 
-- Does the plugin runtime run in a separate OS process? Decision due in Phase 1.
+- Does the plugin runtime run in a separate OS process? Not during Phase 1:
+  [decision 0001](decisions/0001-plugin-process-isolation.md) explains why and when to revisit
+  it, in Phase 3's plan at the latest.
 - How is widget render data turned into UI in the webview, and which Content Security Policy
   does the app ship? The template default (`"csp": null` in `app/src-tauri/tauri.conf.json`)
   must become restrictive by Phase 3.
