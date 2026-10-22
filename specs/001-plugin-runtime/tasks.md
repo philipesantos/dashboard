@@ -100,9 +100,9 @@ Each is a crate under `plugins/hostile/<name>/` with `crate-type = ["cdylib"]`, 
 `wit-bindgen` dependency and `wit_bindgen::generate!({ path: "../../../wit", world: "widget" })`,
 added to `members` in `plugins/Cargo.toml`.
 
-- [ ] T020 [P] [US2] `plugins/hostile/infinite-loop/`: `render` writes one `info` log `looping`, then loops forever (`loop { std::hint::black_box(()); }`)
-- [ ] T021 [P] [US2] `plugins/hostile/huge-alloc/`: `render` allocates 1 GiB (`std::hint::black_box(vec![1u8; 1 << 30])`) and returns its length
-- [ ] T022 [P] [US2] `plugins/hostile/deep-recursion/`: `render` recurses without bound, each frame holding `std::hint::black_box([n; 64])` so the compiler cannot turn it into a loop
+- [X] T020 [P] [US2] `plugins/hostile/infinite-loop/`: `render` writes one `info` log `looping`, then loops forever (`loop { std::hint::black_box(()); }`)
+- [X] T021 [P] [US2] `plugins/hostile/huge-alloc/`: `render` allocates 1 GiB (`std::hint::black_box(vec![1u8; 1 << 30])`) and returns its length
+- [X] T022 [P] [US2] `plugins/hostile/deep-recursion/`: `render` recurses without bound, each frame holding `std::hint::black_box([n; 64])` so the compiler cannot turn it into a loop
 - [ ] T023 [P] [US2] `plugins/hostile/read-file/` (its `Cargo.toml` declares `[package.metadata.dashboard] target = "wasm32-wasip2"`): `render` returns `std::fs::read_to_string("/etc/passwd")`
 - [ ] T024 [P] [US2] `plugins/hostile/open-socket/` (its `Cargo.toml` declares `[package.metadata.dashboard] target = "wasm32-wasip2"`): `render` calls `std::net::TcpStream::connect("203.0.113.1:443")` (TEST-NET-3, never routable)
 - [ ] T025 [P] [US2] `plugins/hostile/malformed-output/`: `render` returns `Ok("{not json")`
