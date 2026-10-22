@@ -17,7 +17,7 @@ Host-defined resource limits (FR-005, FR-006). A plugin can neither read nor cha
 | `max_log_messages` | integer | 100 | Per render call; the rest are dropped and counted |
 | `max_log_message_bytes` | integer | 1 KiB | Longer messages are truncated |
 
-Defaults are provisional until User Story 4 confirms them (see `research.md`, R9).
+User Story 4 confirmed these defaults on all three systems ([performance.md](performance.md)).
 
 ## Plugin
 

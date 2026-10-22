@@ -31,11 +31,12 @@ ubuntu-24.04, macos-latest and windows-latest
 
 **Project Type**: Rust library with a CLI binary, inside the existing Cargo workspace
 
-**Performance Goals**: provisional, from the Linux spike: load under 50 ms and
-instantiate + render under 1 ms for the example plugin. Final targets come from User Story 4.
+**Performance Goals**: set by User Story 4 in [performance.md](performance.md), on every CI
+system: load a plugin up to 100 KB under 100 ms; render, instantiation included, under 200 µs
+at p50 and 1 ms at p95; load a package near the 10 MiB cap under 2 s and 1 GiB.
 
 **Constraints**: only `dashboard:widget/log@0.1.0` may be imported; per-call limits as in
-[research.md](research.md#r9-default-limits-provisional-until-user-story-4); no WASI linked;
+[research.md](research.md#r9-default-limits); no WASI linked;
 runtime code gets line-by-line human review (Principle IX)
 
 **Scale/Scope**: one contract (one export, one import), one example plugin, eleven hostile

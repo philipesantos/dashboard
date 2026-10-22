@@ -10,8 +10,8 @@ const MIB: usize = 1024 * KIB;
 
 /// Limits applied to every plugin by the host.
 ///
-/// The defaults are provisional until User Story 4 measures the runtime on all three systems
-/// (`specs/001-plugin-runtime/research.md`, R9).
+/// User Story 4 measured the runtime on all three systems and confirmed these defaults
+/// (`specs/001-plugin-runtime/performance.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Limits {
     /// Larger packages are refused as `invalid-package`.

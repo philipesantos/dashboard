@@ -21,7 +21,8 @@ standard library then imports WASI; build for `wasm32-unknown-unknown`.
 ## Limits
 
 The host sets these for every `render` call; a plugin can neither read nor change them. The
-values are provisional until they are measured on all three systems.
+values were measured on all three systems
+([performance.md](../../../specs/001-plugin-runtime/performance.md)).
 
 | Limit | Default | When exceeded |
 | --- | --- | --- |
