@@ -181,7 +181,7 @@ decision record exists with its rationale
 - [X] T051 Confirm `runtime/examples/hello_world.rs` still builds and runs with `cargo run -p runtime --example hello_world`
 - [X] T052 Run the CI checks locally from the repository root, as in `.github/workflows/ci.yml`: `pnpm --filter ./app build`, `cargo xtask plugins --locked`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and the `plugins/` clippy step, `cargo test --workspace --locked`, `cargo audit` and `cargo deny check` for both workspaces
 - [X] T053 Walk through `specs/001-plugin-runtime/quickstart.md` steps 1–6 and confirm every expected outcome
-- [ ] T054 Before merging, confirm that every commit touching `runtime/src/`, `runtime/tests/`, `wit/widget.wit` or `plugins/hostile/` was reviewed line by line (Principle IX), and record it in the pull request
+- [X] T054 Before merging, confirm that every commit touching `runtime/src/`, `runtime/tests/`, `wit/widget.wit` or `plugins/hostile/` was reviewed line by line (Principle IX), and record it in the pull request
 
 ---
 
