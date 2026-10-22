@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-21
 
-**Status**: Draft
+**Status**: Ready (analyzed 2026-10-22)
 
 **Input**: User description: "Plugin runtime (Phase 1 of the development plan: sandbox proof of
 concept, no graphical interface yet). Goal: prove, before any UI exists, that a hostile plugin
@@ -203,7 +203,7 @@ with its rationale.
 ### Measurable Outcomes
 
 - **SC-001**: 100% of the hostile-plugin cases (at least four) are blocked on all three
-  operating systems, on every change that is not documentation-only. This is the phase gate.
+  operating systems. This is the phase gate.
 - **SC-002**: A runaway plugin is stopped no later than one second after its time limit, and a
   well-behaved plugin run right afterwards returns its normal result.
 - **SC-003**: The example plugin returns the expected widget content on all three operating

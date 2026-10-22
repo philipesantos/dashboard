@@ -90,6 +90,12 @@ suite grows with every phase and never shrinks.
 | Infinite loop freezes the machine | T1 | A3 | B1 | Fuel or epoch interruption, call timeout | Phase 1 |
 | Huge memory allocation freezes the machine | T1 | A3 | B1 | Memory limiter | Phase 1 |
 | Opens a file or socket without permission | T1 | A1, A3 | B1 | I, II | Phase 1 |
+| Reads memory outside its own sandbox | T1 | A1, A2 | B1 | WebAssembly memory bounds (I) | Phase 1 |
+| Keeps state between calls or reaches another plugin's state | T1 | A1 | B1 | Fresh instance per call | Phase 1 |
+| Recurses until the stack runs out | T1 | A3 | B1 | WebAssembly stack limit; the call fails, the host keeps running | Phase 1 |
+| Returns malformed or oversized widget content | T1 | A3 | B1 | JSON check and output size cap | Phase 1 |
+| Floods the host with log messages | T1 | A3 | B1 | Per-call log caps | Phase 1 |
+| Log or error text imitates the host's own output | T1 | A4 | B1 | Plugin text escaped before display | Phase 1 |
 | Requests a domain outside the allowlist | T1, T3 | A1 | B2 | III | Phase 2 |
 | Reads another plugin's storage | T1 | A1 | B1 | One database per plugin, II | Phase 2 |
 | Obtains an OAuth token or AI key | T1 | A2 | B3 | IV | Phase 2 |

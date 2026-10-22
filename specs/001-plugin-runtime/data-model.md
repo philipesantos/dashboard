@@ -59,13 +59,14 @@ A JSON value of at most `max_output_bytes`, parsed by the host before it is retu
 | Field | Rule |
 | --- | --- |
 | `level` | `debug`, `info`, `warn` or `error` |
-| `message` | Escaped first: `char::escape_default` applied to every character for which `char::is_control` is true and to the bidirectional controls U+061C, U+200E, U+200F, U+202A–U+202E and U+2066–U+2069. Then at most `max_log_message_bytes`; longer text is cut and marked as truncated |
+| `message` | Escaped first: `char::escape_default` applied to every character for which `char::is_control` is true and to the bidirectional controls U+061C, U+200E, U+200F, U+202A–U+202E and U+2066–U+2069. Then longer text is cut to `max_log_message_bytes` on a character boundary and followed by a ` [truncated]` marker, which the limit does not count |
 
 ## Runtime error
 
-One kind per rule (SC-004). The kinds and their detail are listed in
-[contracts/cli.md](contracts/cli.md#error-kinds). Every detail goes through the same escaping
-as a log message and is cut to 1 KiB; in `capability-refused`, each import name is escaped.
+One kind per rule (SC-004). What each kind means to the maintainer is in
+[contracts/cli.md](contracts/cli.md#error-kinds); this table only says where the runtime
+detects it. Every detail is escaped and cut like a log message, with a 1 KiB limit; in
+`capability-refused`, each import name is escaped.
 
 | Kind | Source |
 | --- | --- |
@@ -85,7 +86,7 @@ as a log message and is cut to 1 KiB; in `capability-refused`, each import name 
 | Field | Meaning |
 | --- | --- |
 | plugin crate | Source under `plugins/hostile/<name>/` |
-| target | `wasm32-unknown-unknown`, or `wasm32-wasip2` for file and socket access |
+| target | `wasm32-unknown-unknown`, or `wasm32-wasip2` for file and socket access, declared in the crate's `[package.metadata.dashboard]` |
 | expected outcome | The error kind that proves it was blocked, plus a well-behaved render right after |
 
 | Case | Expected kind |
