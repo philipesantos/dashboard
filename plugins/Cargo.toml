@@ -9,6 +9,8 @@ members = [
     "hostile/infinite-loop",
     "hostile/huge-alloc",
     "hostile/deep-recursion",
+    "hostile/read-file",
+    "hostile/open-socket",
 ]
 
 [workspace.package]

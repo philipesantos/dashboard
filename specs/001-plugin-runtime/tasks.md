@@ -103,8 +103,8 @@ added to `members` in `plugins/Cargo.toml`.
 - [X] T020 [P] [US2] `plugins/hostile/infinite-loop/`: `render` writes one `info` log `looping`, then loops forever (`loop { std::hint::black_box(()); }`)
 - [X] T021 [P] [US2] `plugins/hostile/huge-alloc/`: `render` allocates 1 GiB (`std::hint::black_box(vec![1u8; 1 << 30])`) and returns its length
 - [X] T022 [P] [US2] `plugins/hostile/deep-recursion/`: `render` recurses without bound, each frame holding `std::hint::black_box([n; 64])` so the compiler cannot turn it into a loop
-- [ ] T023 [P] [US2] `plugins/hostile/read-file/` (its `Cargo.toml` declares `[package.metadata.dashboard] target = "wasm32-wasip2"`): `render` returns `std::fs::read_to_string("/etc/passwd")`
-- [ ] T024 [P] [US2] `plugins/hostile/open-socket/` (its `Cargo.toml` declares `[package.metadata.dashboard] target = "wasm32-wasip2"`): `render` calls `std::net::TcpStream::connect("203.0.113.1:443")` (TEST-NET-3, never routable)
+- [X] T023 [P] [US2] `plugins/hostile/read-file/` (its `Cargo.toml` declares `[package.metadata.dashboard] target = "wasm32-wasip2"`): `render` returns `std::fs::read_to_string("/etc/passwd")`
+- [X] T024 [P] [US2] `plugins/hostile/open-socket/` (its `Cargo.toml` declares `[package.metadata.dashboard] target = "wasm32-wasip2"`): `render` calls `std::net::TcpStream::connect("203.0.113.1:443")` (TEST-NET-3, never routable)
 - [ ] T025 [P] [US2] `plugins/hostile/malformed-output/`: `render` returns `Ok("{not json")`
 - [ ] T026 [P] [US2] `plugins/hostile/oversized-output/`: `render` returns a valid JSON string of 128 KiB, above the 64 KiB cap
 - [ ] T027 [P] [US2] `plugins/hostile/log-flood/`: `render` writes 1,000 `info` messages, the first of them 4 KiB long (so it is kept, not dropped), then returns `{"ok":true}`
