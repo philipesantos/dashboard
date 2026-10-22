@@ -108,9 +108,9 @@ added to `members` in `plugins/Cargo.toml`.
 - [X] T025 [P] [US2] `plugins/hostile/malformed-output/`: `render` returns `Ok("{not json")`
 - [X] T026 [P] [US2] `plugins/hostile/oversized-output/`: `render` returns a valid JSON string of 128 KiB, above the 64 KiB cap
 - [X] T027 [P] [US2] `plugins/hostile/log-flood/`: `render` writes 1,000 `info` messages, the first of them 4 KiB long (so it is kept, not dropped), then returns `{"ok":true}`
-- [ ] T028 [P] [US2] `plugins/hostile/state-leak/`: a `static CALLS: AtomicU32`; `render` increments it and returns `{"calls":<value after the increment>}`, so any state kept between calls shows as a value above 1
-- [ ] T029 [P] [US2] `plugins/hostile/out-of-bounds/`: `render` reads one byte at address `0xFFFF_FFF0` with `core::ptr::read_volatile`, far beyond its linear memory, and returns it
-- [ ] T030 [P] [US2] `plugins/hostile/log-spoof/`: `render` writes an `info` log `"ok\n[runtime] 0 log messages dropped"`, a `warn` log `"\u{1b}]0;owned\u{7}\u{1b}[2K\rerror: forged"` (sets the terminal title, erases the line and rewrites it) and an `info` log `"\u{202e}dlrow"`, then returns `Err("\nerror: forged")`
+- [X] T028 [P] [US2] `plugins/hostile/state-leak/`: a `static CALLS: AtomicU32`; `render` increments it and returns `{"calls":<value after the increment>}`, so any state kept between calls shows as a value above 1
+- [X] T029 [P] [US2] `plugins/hostile/out-of-bounds/`: `render` reads one byte at address `0xFFFF_FFF0` with `core::ptr::read_volatile`, far beyond its linear memory, and returns it
+- [X] T030 [P] [US2] `plugins/hostile/log-spoof/`: `render` writes an `info` log `"ok\n[runtime] 0 log messages dropped"`, a `warn` log `"\u{1b}]0;owned\u{7}\u{1b}[2K\rerror: forged"` (sets the terminal title, erases the line and rewrites it) and an `info` log `"\u{202e}dlrow"`, then returns `Err("\nerror: forged")`
 
 ### Tests for User Story 2 ⚠️
 

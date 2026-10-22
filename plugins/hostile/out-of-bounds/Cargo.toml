@@ -1,0 +1,12 @@
+[package]
+name = "out-of-bounds"
+version = "0.1.0"
+description = "Hostile plugin (security test fixture, never shipped): reads far beyond its linear memory"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen.workspace = true

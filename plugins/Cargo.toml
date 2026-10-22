@@ -14,6 +14,9 @@ members = [
     "hostile/malformed-output",
     "hostile/oversized-output",
     "hostile/log-flood",
+    "hostile/state-leak",
+    "hostile/out-of-bounds",
+    "hostile/log-spoof",
 ]
 
 [workspace.package]
