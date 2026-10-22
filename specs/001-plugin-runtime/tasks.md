@@ -143,7 +143,7 @@ changing the configuration changes the widget content
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T039 [US3] Add tests to `runtime/tests/contract.rs`: config `{"name":"Ada"}` renders `{"title":"Hello","text":"Hello, Ada!"}`, config `{"name":"Grace"}` renders `Hello, Grace!`, and config `{}` still renders `Hello, world!`
+- [X] T039 [US3] Add tests to `runtime/tests/contract.rs`: config `{"name":"Ada"}` renders `{"title":"Hello","text":"Hello, Ada!"}`, config `{"name":"Grace"}` renders `Hello, Grace!`, and config `{}` still renders `Hello, world!`
 
 ### Implementation for User Story 3
 

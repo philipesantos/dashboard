@@ -42,6 +42,41 @@ fn hello_widget_renders_its_greeting_and_one_log() {
 }
 
 #[test]
+fn hello_widget_greets_the_configured_name() {
+    let runtime = runtime();
+    let plugin = runtime
+        .load(&fixture("hello-widget"))
+        .expect("hello-widget loads");
+
+    for (config, text) in [
+        (r#"{"name":"Ada"}"#, "Hello, Ada!"),
+        (r#"{"name":"Grace"}"#, "Hello, Grace!"),
+        ("{}", "Hello, world!"),
+    ] {
+        assert_eq!(
+            plugin.render(config).result.expect("hello-widget renders"),
+            json!({"title": "Hello", "text": text}),
+            "config {config}"
+        );
+    }
+}
+
+#[test]
+fn hello_widget_explains_a_configuration_it_cannot_use() {
+    let runtime = runtime();
+    let plugin = runtime
+        .load(&fixture("hello-widget"))
+        .expect("hello-widget loads");
+
+    for config in ["{bad", r#"{"name":5}"#] {
+        let report = plugin.render(config);
+        let error = report.result.expect_err("the configuration is refused");
+        assert_eq!(error.kind(), ErrorKind::PluginError, "config {config}");
+        assert!(!error.detail().is_empty());
+    }
+}
+
+#[test]
 fn empty_bytes_are_not_a_package() {
     assert_eq!(load_error(&runtime(), b"").0, ErrorKind::InvalidPackage);
 }
