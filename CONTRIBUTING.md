@@ -84,6 +84,8 @@ You do not need Spec Kit to read or edit a spec: specs are plain Markdown.
   the rule is broken. The security test suite only grows: do not delete or weaken its tests.
 - Changes to the security core (plugin runtime, permission engine, network proxy, secrets
   vault) get line-by-line human review before merge, including code written with AI help.
+  They always go through a pull request, even when a maintainer could push to `master`
+  directly, and the pull request records who reviewed them.
 - New Rust dependencies must come from crates.io and use a license allowed in
   [`deny.toml`](deny.toml); `cargo deny check` enforces both.
 
@@ -92,6 +94,8 @@ You do not need Spec Kit to read or edit a spec: specs are plain Markdown.
 - Keep each pull request focused on one change, and explain what it does and why.
 - Link the issue or spec it implements.
 - CI must be green on all three systems before merge.
+- Pull requests merge with a merge commit, so `master` keeps the commits as they were reviewed.
+  After a review, push fixes as new commits instead of rewriting reviewed ones.
 - Use a short summary line for commits, optionally with a type prefix such as `feat:`,
   `fix:`, `docs:` or `ci:`.
 
