@@ -6,6 +6,8 @@ mod host;
 mod imports;
 mod limits;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -72,12 +74,14 @@ pub struct Runtime {
     /// Holds only the `log` capability; nothing else can ever be linked into a plugin.
     linker: Linker<HostState>,
     limits: Limits,
+    clock: Arc<EpochClock>,
 }
 
 /// A loaded plugin, compiled once and instantiated afresh for every render call.
 pub struct Plugin {
     pre: WidgetPre<HostState>,
     limits: Limits,
+    clock: Arc<EpochClock>,
 }
 
 impl Runtime {
@@ -114,7 +118,8 @@ impl Runtime {
         // The CPU budget, deterministic on every system, and the wall-clock time limit (R2)
         config.consume_fuel(true).epoch_interruption(true);
         let engine = Engine::new(&config)?;
-        start_epoch_ticker(&engine)?;
+        let clock = Arc::new(EpochClock::new());
+        start_epoch_ticker(&engine, Arc::clone(&clock))?;
 
         let mut linker = Linker::new(&engine);
         Widget::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
@@ -123,6 +128,7 @@ impl Runtime {
             engine,
             linker,
             limits,
+            clock,
         })
     }
 
@@ -159,6 +165,7 @@ impl Runtime {
         Ok(Plugin {
             pre,
             limits: self.limits.clone(),
+            clock: Arc::clone(&self.clock),
         })
     }
 }
@@ -185,14 +192,16 @@ impl Plugin {
         store
             .set_fuel(self.limits.fuel)
             .map_err(|error| self.call_error(error))?;
-        // One tick more than the limit needs: the current tick has already partly passed, and
-        // a call must always get its full time.
+        // A call must always get its full time. So one tick more than the limit needs, because
+        // the current tick has already partly passed, plus the ticks a late ticker still owes:
+        // it adds them all at once when it wakes, and they must not come out of this call.
         let ticks = self
             .limits
             .time_limit
             .as_nanos()
             .div_ceil(EPOCH_TICK.as_nanos())
-            + 1;
+            + 1
+            + u128::from(self.clock.behind());
         store.set_epoch_deadline(u64::try_from(ticks).unwrap_or(u64::MAX));
         Ok(())
     }
@@ -255,26 +264,53 @@ impl Plugin {
 /// How often the epoch advances, the precision of the time limit.
 const EPOCH_TICK: Duration = Duration::from_millis(10);
 
-/// Advances the engine's epoch once per [`EPOCH_TICK`] of real time, on its own thread, for as
-/// long as the engine exists.
-fn start_epoch_ticker(engine: &Engine) -> std::io::Result<()> {
+/// The engine's epoch as a clock: it should advance once per [`EPOCH_TICK`] of real time since
+/// `start`, and `ticks` counts the advances the ticker has made.
+struct EpochClock {
+    start: Instant,
+    ticks: AtomicU64,
+}
+
+impl EpochClock {
+    fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            ticks: AtomicU64::new(0),
+        }
+    }
+
+    /// Advances real time calls for by now.
+    fn due(&self) -> u64 {
+        let due = self.start.elapsed().as_nanos() / EPOCH_TICK.as_nanos();
+        u64::try_from(due).unwrap_or(u64::MAX)
+    }
+
+    /// Advances the ticker owes right now, after waking up late.
+    fn behind(&self) -> u64 {
+        self.due()
+            .saturating_sub(self.ticks.load(Ordering::Acquire))
+    }
+}
+
+/// Advances the engine's epoch on its own thread, following `clock`, for as long as the engine
+/// exists.
+fn start_epoch_ticker(engine: &Engine, clock: Arc<EpochClock>) -> std::io::Result<()> {
     let engine = engine.weak();
     thread::Builder::new()
         .name("runtime-epoch".to_owned())
         .spawn(move || {
-            let start = Instant::now();
-            let mut ticks: u128 = 0;
             loop {
                 thread::sleep(EPOCH_TICK);
                 let Some(engine) = engine.upgrade() else {
                     return;
                 };
-                // Counted from the clock, not from the sleeps, so a late wake-up catches up
-                // instead of stretching every time limit.
-                let due = start.elapsed().as_nanos() / EPOCH_TICK.as_nanos();
-                while ticks < due {
+                // Follows the clock, not the sleeps, so a late wake-up catches up instead of
+                // stretching every time limit. The epoch moves before the count, so the count
+                // never runs ahead of it.
+                let due = clock.due();
+                while clock.ticks.load(Ordering::Relaxed) < due {
                     engine.increment_epoch();
-                    ticks += 1;
+                    clock.ticks.fetch_add(1, Ordering::Release);
                 }
             }
         })?;
