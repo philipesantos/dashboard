@@ -1,0 +1,118 @@
+# Threat model v0
+
+Status: draft, 2026-10-21. It describes the planned architecture; most components do not exist
+yet. Revisit it at every phase gate and whenever a new component crosses a trust boundary.
+
+The rules referenced as I–IX are the principles of the
+[project constitution](../.specify/memory/constitution.md).
+
+## System overview
+
+```mermaid
+flowchart TB
+    subgraph machine["User's machine"]
+        user([User])
+        subgraph sandbox["Wasm sandbox: untrusted"]
+            plugin["Third-party plugin"]
+            generated["AI-generated module"]
+        end
+        subgraph host["Host: trusted"]
+            ui["Host UI (React in the Tauri webview)"]
+            dialogs["Host dialogs: install, permissions, accounts, AI actions"]
+            perm["Permission engine"]
+            vault["Secrets vault"]
+            db[("Per-plugin SQLite")]
+            proxy["Network proxy (domain allowlist)"]
+            ailayer["AI layer (taint tracking)"]
+            installer["Installer and updater (signature checks)"]
+        end
+        keychain[("OS keychain")]
+    end
+
+    ext["External services (GitHub, calendar, web)"]
+    llm["AI providers (cloud or local)"]
+    dist["Plugin store and app updates"]
+
+    user --> ui
+    user --> dialogs
+    plugin -- "WIT host functions" --> perm
+    generated -- "WIT host functions" --> perm
+    perm --> db
+    perm --> proxy
+    perm --> ailayer
+    vault -. "injects secrets" .-> proxy
+    vault --- keychain
+    proxy --> ext
+    ailayer --> llm
+    installer -- "fetches signed packages" --> dist
+```
+
+Plugins never talk to the network, the keychain or the user directly: every effect goes
+through a host function that the permission engine has granted.
+
+## Assets
+
+| ID | Asset | Examples | Where it lives |
+| --- | --- | --- | --- |
+| A1 | User data | Tasks, notes, e-mails, calendar events, repository data | Per-plugin SQLite; external services |
+| A2 | Credentials | OAuth tokens, AI provider keys, passwords | OS keychain, through the host vault |
+| A3 | The machine | Files, CPU, memory, network identity | Operating system |
+| A4 | The user's trust decisions | Permission grants, installs, connected accounts, confirmed AI actions | Host dialogs |
+| A5 | Code integrity | App updates, plugin packages | Plugin store, updater |
+
+## Attackers
+
+| ID | Attacker | What they control | What they want |
+| --- | --- | --- | --- |
+| T1 | Malicious plugin author | Code that runs in the sandbox, and its updates | Steal data or credentials, exfiltrate, phish the user, abuse the machine |
+| T2 | Hostile external content | Text in e-mails, web pages, files and API responses that plugins or AI read | Inject instructions; exfiltrate through what gets rendered |
+| T3 | Manipulated AI | Model output steered by T2; code of AI-generated modules | Trigger actions, request more permissions than needed, produce a malicious module |
+| T4 | Supply chain | A compromised store package, app update or dependency | Run code with more trust than it earned |
+
+## Trust boundaries
+
+| ID | Boundary | What crosses it | Controls |
+| --- | --- | --- | --- |
+| B1 | Plugin ↔ host (Wasm sandbox, WIT interface) | Host function calls, widget render data | WebAssembly only (I); no capabilities until granted, only granted imports linked (II); CPU, memory and time limits |
+| B2 | Host ↔ network | Plugin HTTP requests | Host proxy with per-domain allowlist (III); HTTPS only; size and rate limits; request log |
+| B3 | Host ↔ secrets | Tokens and keys | Never handed to plugins; the host injects them into requests (IV) |
+| B4 | Plugin UI ↔ user | Widget content | Declarative UI inside the host frame, no password fields, no windows or dialogs (V); personal visual secret on every host dialog |
+| B5 | AI ↔ host | Prompts out, model output in | Output treated as untrusted: safe rendering, taint tracking, human confirmation of actions (VI); trust decisions only in host dialogs (VII) |
+| B6 | Distribution ↔ host | Plugin packages, app updates | ed25519 signatures, hash check on install, revocation list, signed updater |
+
+## Threats and planned tests
+
+Each row is a hostile plugin or hostile content that must fail in CI (principle VIII). The
+suite grows with every phase and never shrinks.
+
+| Threat | Attacker | Asset | Boundary | Mitigation | Test from |
+| --- | --- | --- | --- | --- | --- |
+| Infinite loop freezes the machine | T1 | A3 | B1 | Fuel or epoch interruption, call timeout | Phase 1 |
+| Huge memory allocation freezes the machine | T1 | A3 | B1 | Memory limiter | Phase 1 |
+| Opens a file or socket without permission | T1 | A1, A3 | B1 | I, II | Phase 1 |
+| Requests a domain outside the allowlist | T1, T3 | A1 | B2 | III | Phase 2 |
+| Reads another plugin's storage | T1 | A1 | B1 | One database per plugin, II | Phase 2 |
+| Obtains an OAuth token or AI key | T1 | A2 | B3 | IV | Phase 2 |
+| Update adds a permission without approval | T1, T4 | A4 | B1 | Re-approval on new permissions (II) | Phase 2 |
+| Password field or drawing over the frame (fake login) | T1 | A2 | B4 | V | Phase 3 |
+| Widget opens a window or dialog (phishing) | T1 | A2, A4 | B4 | V, VII | Phase 3 |
+| Hidden instruction in content read by AI (prompt injection) | T2, T3 | A1, A4 | B5 | VI, taint tracking | Phase 4 |
+| Remote image with data in its URL in AI output | T2, T3 | A1 | B5 | Safe rendering without remote resources | Phase 4 |
+| Generated module requests a domain the user did not mention | T3 | A1 | B1, B2 | Permissions derived from the user's request | Phase 5 |
+| Package with an invalid or revoked signature | T4 | A5 | B6 | Signature, hash and revocation checks | Phase 6 |
+
+## Assumptions and out of scope
+
+- Trusted: the operating system, the OS keychain, and the sandboxing of Wasmtime and the
+  webview. Their vulnerabilities are handled by pinned versions, `cargo audit` and fast
+  updates, not by this design.
+- Out of scope: malware already running on the machine, an attacker with administrator or
+  physical access, and the AI provider reading the prompts the user chose to send it.
+
+## Open questions
+
+- Does the plugin runtime run in a separate OS process? Decision due in Phase 1.
+- How is widget render data turned into UI in the webview, and which Content Security Policy
+  does the app ship? The template default (`"csp": null` in `app/src-tauri/tauri.conf.json`)
+  must become restrictive by Phase 3.
+- How does taint propagate across plugin calls, storage and later executions? Phase 4.
