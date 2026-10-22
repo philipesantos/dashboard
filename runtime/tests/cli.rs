@@ -71,6 +71,23 @@ fn an_invalid_configuration_is_a_usage_error() {
 }
 
 #[test]
+fn plugin_text_cannot_add_lines_or_control_the_terminal() {
+    let plugin = fixture_path("log-spoof");
+    let output = runtime(&["run", path_str(&plugin)]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = stderr(&output);
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(lines.len(), 4, "stderr: {stderr}");
+    assert!(lines[..3].iter().all(|line| line.starts_with("[plugin] ")));
+    assert!(lines[3].starts_with("error: plugin-error: "));
+    assert!(
+        !stderr.contains('\u{1b}'),
+        "stderr holds an escape character"
+    );
+}
+
+#[test]
 fn an_unknown_command_is_a_usage_error() {
     let output = runtime(&["explode"]);
     assert_eq!(output.status.code(), Some(2), "stderr: {}", stderr(&output));
