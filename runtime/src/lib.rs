@@ -3,6 +3,7 @@
 
 mod error;
 mod host;
+mod imports;
 mod limits;
 
 use wasmtime::component::{Component, HasSelf, Linker};
@@ -139,6 +140,8 @@ impl Runtime {
         // from_binary never accepts the text format, whatever Wasmtime features are enabled.
         let component = Component::from_binary(&self.engine, bytes)
             .map_err(|error| RuntimeError::new(ErrorKind::InvalidPackage, format!("{error:#}")))?;
+        // Before linking, so every refused import is named, not just the first the linker misses.
+        imports::check(&self.engine, &component)?;
 
         let mismatch = |error: wasmtime::Error| {
             RuntimeError::new(ErrorKind::ContractMismatch, format!("{error:#}"))

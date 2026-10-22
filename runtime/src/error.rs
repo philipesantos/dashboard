@@ -73,10 +73,6 @@ impl RuntimeError {
     }
 
     /// A `capability-refused` error that lists every import the host does not offer.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the import allowlist uses it from T032 on")
-    )]
     pub(crate) fn capability_refused(imports: Vec<String>) -> Self {
         Self {
             kind: ErrorKind::CapabilityRefused,
