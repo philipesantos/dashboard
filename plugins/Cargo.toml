@@ -4,7 +4,7 @@
 [workspace]
 resolver = "3"
 # Listed one by one: a glob such as "examples/*" would also match examples/README.md.
-members = []
+members = ["examples/hello-widget"]
 
 [workspace.package]
 edition = "2024"
