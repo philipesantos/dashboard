@@ -1,0 +1,12 @@
+[package]
+name = "malformed-output"
+version = "0.1.0"
+description = "Hostile plugin (security test fixture, never shipped): returns content that is not JSON"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen.workspace = true

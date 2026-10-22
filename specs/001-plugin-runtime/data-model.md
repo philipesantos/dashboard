@@ -11,13 +11,13 @@ Host-defined resource limits (FR-005, FR-006). A plugin can neither read nor cha
 | --- | --- | --- | --- |
 | `max_package_bytes` | integer | 10 MiB | Larger packages are refused as `invalid-package` |
 | `fuel` | integer | 500,000,000 | CPU budget per render call |
-| `time_limit` | duration | 1 s | Wall-clock limit per render call, enforced in 10 ms ticks |
-| `max_memory_bytes` | integer | 32 MiB | Total linear memory per render call |
+| `time_limit` | duration | 1 s | Wall-clock limit per render call, enforced in 10 ms ticks counted from real elapsed time |
+| `max_memory_bytes` | integer | 32 MiB | Sum of all linear memories per render call |
 | `max_output_bytes` | integer | 64 KiB | Checked before parsing the widget content |
 | `max_log_messages` | integer | 100 | Per render call; the rest are dropped and counted |
 | `max_log_message_bytes` | integer | 1 KiB | Longer messages are truncated |
 
-Defaults are provisional until User Story 4 confirms them (see `research.md`, R9).
+User Story 4 confirmed these defaults on all three systems ([performance.md](performance.md)).
 
 ## Plugin
 
@@ -59,17 +59,19 @@ A JSON value of at most `max_output_bytes`, parsed by the host before it is retu
 | Field | Rule |
 | --- | --- |
 | `level` | `debug`, `info`, `warn` or `error` |
-| `message` | At most `max_log_message_bytes`; longer text is cut and marked as truncated |
+| `message` | Escaped first: `char::escape_default` applied to every character for which `char::is_control` is true and to the bidirectional controls U+061C, U+200E, U+200F, U+202A–U+202E and U+2066–U+2069. Then longer text is cut to `max_log_message_bytes` on a character boundary and followed by a ` [truncated]` marker, which the limit does not count |
 
 ## Runtime error
 
-One kind per rule (SC-004). The kinds and their detail are listed in
-[contracts/cli.md](contracts/cli.md#error-kinds).
+One kind per rule (SC-004). What each kind means to the maintainer is in
+[contracts/cli.md](contracts/cli.md#error-kinds); this table only says where the runtime
+detects it. Every detail is escaped and cut like a log message, with a 1 KiB limit; in
+`capability-refused`, each import name is escaped.
 
 | Kind | Source |
 | --- | --- |
 | `invalid-package` | Load: size, magic number or compile failure |
-| `contract-mismatch` | Load: missing or wrongly typed `renderer` export |
+| `contract-mismatch` | Load: missing or wrongly typed `renderer` export, or an import from another version of `dashboard:widget` |
 | `capability-refused` | Load: imports outside the allowlist, all listed |
 | `cpu-budget-exceeded` | Call: `Trap::OutOfFuel` |
 | `time-limit-exceeded` | Call: `Trap::Interrupt` from the epoch deadline |
@@ -84,7 +86,7 @@ One kind per rule (SC-004). The kinds and their detail are listed in
 | Field | Meaning |
 | --- | --- |
 | plugin crate | Source under `plugins/hostile/<name>/` |
-| target | `wasm32-unknown-unknown`, or `wasm32-wasip2` for file and socket access |
+| target | `wasm32-unknown-unknown`, or `wasm32-wasip2` for file and socket access, declared in the crate's `[package.metadata.dashboard]` |
 | expected outcome | The error kind that proves it was blocked, plus a well-behaved render right after |
 
 | Case | Expected kind |
@@ -97,6 +99,9 @@ One kind per rule (SC-004). The kinds and their detail are listed in
 | `malformed-output` | `invalid-output` |
 | `oversized-output` | `output-too-large` |
 | `log-flood` | Success, with `dropped_logs` > 0 and truncated messages |
+| `state-leak` | Success with `{"calls":1}` on every call, even alternating two loads (FR-008) |
+| `out-of-bounds` | `plugin-crashed` |
+| `log-spoof` | `plugin-error`, with every log message and the detail escaped (FR-011) |
 
 ## Performance record
 

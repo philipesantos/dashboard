@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["app/src-tauri", "runtime"]
+members = ["app/src-tauri", "runtime", "xtask"]
+# Guest crates build for WebAssembly in their own workspace (cargo xtask plugins)
+exclude = ["plugins"]
 
 # Profiles only take effect in the workspace root manifest.
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

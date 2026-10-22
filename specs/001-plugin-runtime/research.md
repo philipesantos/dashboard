@@ -122,7 +122,8 @@ p50/p95/max of instantiate + render over N iterations, in a release build. CI ru
 example plugin on all three systems and prints the results; the maintainer records them and
 the targets in `specs/001-plugin-runtime/performance.md`.
 
-**Spike baseline (Linux)**: load 16–18 ms for a 37 KB plugin (78 ms for a 189 KB one);
+**Spike baseline (Linux)**, kept for history; [performance.md](performance.md) has the
+measurements on all three systems: load 16–18 ms for a 37 KB plugin (78 ms for a 189 KB one);
 instantiate 25–90 µs; render 23–35 µs.
 
 **Alternatives considered**: `criterion` benchmarks (more dependencies, statistical detail not
@@ -140,7 +141,7 @@ escape in Wasmtime or Cranelift; it is mitigated by pinned versions, `cargo audi
 updates. Revisit before third-party plugins can be installed (Phase 3 alpha), or immediately if
 a Wasmtime sandbox-escape advisory appears.
 
-## R9. Default limits (provisional until User Story 4)
+## R9. Default limits
 
 | Limit | Default | Basis |
 | --- | --- | --- |
@@ -150,6 +151,9 @@ a Wasmtime sandbox-escape advisory appears.
 | Memory | 32 MiB per call | A hello plugin needs about 1 MiB |
 | Widget content | 64 KiB | Far above any widget's JSON |
 | Log messages | 100 per call, 1 KiB each (truncated) | FR-010 |
+
+User Story 4 measured the runtime on all three systems and confirmed every default
+([performance.md](performance.md)).
 
 Limits are fields of a host-side `Limits` value; nothing in the plugin can read or change them
 (FR-006).

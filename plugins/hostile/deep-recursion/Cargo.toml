@@ -1,0 +1,12 @@
+[package]
+name = "deep-recursion"
+version = "0.1.0"
+description = "Hostile plugin (security test fixture, never shipped): recurses without bound"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen.workspace = true

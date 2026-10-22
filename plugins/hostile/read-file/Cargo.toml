@@ -1,0 +1,16 @@
+[package]
+name = "read-file"
+version = "0.1.0"
+description = "Hostile plugin (security test fixture, never shipped): reads /etc/passwd with std::fs"
+edition.workspace = true
+publish.workspace = true
+
+# Built with the standard library for WASI, which is what an author ignoring the contract ships
+[package.metadata.dashboard]
+target = "wasm32-wasip2"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen.workspace = true

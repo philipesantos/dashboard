@@ -90,10 +90,17 @@ suite grows with every phase and never shrinks.
 | Infinite loop freezes the machine | T1 | A3 | B1 | Fuel or epoch interruption, call timeout | Phase 1 |
 | Huge memory allocation freezes the machine | T1 | A3 | B1 | Memory limiter | Phase 1 |
 | Opens a file or socket without permission | T1 | A1, A3 | B1 | I, II | Phase 1 |
+| Reads memory outside its own sandbox | T1 | A1, A2 | B1 | WebAssembly memory bounds (I) | Phase 1 |
+| Keeps state between calls or reaches another plugin's state | T1 | A1 | B1 | Fresh instance per call | Phase 1 |
+| Recurses until the stack runs out | T1 | A3 | B1 | WebAssembly stack limit; the call fails, the host keeps running | Phase 1 |
+| Returns malformed or oversized widget content | T1 | A3 | B1 | JSON check and output size cap | Phase 1 |
+| Floods the host with log messages | T1 | A3 | B1 | Per-call log caps | Phase 1 |
+| Log or error text imitates the host's own output | T1 | A4 | B1 | Plugin text escaped before display | Phase 1 |
 | Requests a domain outside the allowlist | T1, T3 | A1 | B2 | III | Phase 2 |
 | Reads another plugin's storage | T1 | A1 | B1 | One database per plugin, II | Phase 2 |
 | Obtains an OAuth token or AI key | T1 | A2 | B3 | IV | Phase 2 |
 | Update adds a permission without approval | T1, T4 | A4 | B1 | Re-approval on new permissions (II) | Phase 2 |
+| Package crafted to be slow or memory-hungry to compile, which no per-call limit covers; compiling uses every core | T1, T4 | A3 | B1, B6 | Today only the 10 MiB package cap: a package near it took up to 0.8 s and about 590 MB to load on CI ([performance.md](../specs/001-plugin-runtime/performance.md)); planned: compile at install, in a separate process with OS limits | Phase 3 |
 | Password field or drawing over the frame (fake login) | T1 | A2 | B4 | V | Phase 3 |
 | Widget opens a window or dialog (phishing) | T1 | A2, A4 | B4 | V, VII | Phase 3 |
 | Hidden instruction in content read by AI (prompt injection) | T2, T3 | A1, A4 | B5 | VI, taint tracking | Phase 4 |
@@ -111,7 +118,9 @@ suite grows with every phase and never shrinks.
 
 ## Open questions
 
-- Does the plugin runtime run in a separate OS process? Decision due in Phase 1.
+- Does the plugin runtime run in a separate OS process? Not during Phase 1:
+  [decision 0001](decisions/0001-plugin-process-isolation.md) explains why and when to revisit
+  it, in Phase 3's plan at the latest.
 - How is widget render data turned into UI in the webview, and which Content Security Policy
   does the app ship? The template default (`"csp": null` in `app/src-tauri/tauri.conf.json`)
   must become restrictive by Phase 3.

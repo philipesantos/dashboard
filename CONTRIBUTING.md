@@ -18,7 +18,8 @@ after it.
 
 You need:
 
-- Rust (stable), installed with [rustup](https://rustup.rs/)
+- Rust (stable), installed with [rustup](https://rustup.rs/), with the WebAssembly targets
+  plugins build for: `rustup target add wasm32-unknown-unknown wasm32-wasip2`
 - Node.js 24 or newer
 - [pnpm](https://pnpm.io/installation) 12 (the exact version is pinned in `package.json`)
 - The [Tauri system prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
@@ -44,13 +45,25 @@ CI runs these on Linux, macOS and Windows; run them locally before opening a pul
 
 ```bash
 pnpm --filter ./app build                                      # UI type-check and build
+cargo xtask plugins --locked                                   # the plugins the tests load
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+cargo clippy --manifest-path plugins/Cargo.toml --target wasm32-unknown-unknown \
+  --target-dir target/plugins-build --locked -- -D warnings    # the plugins themselves
+cargo test --workspace --locked                                # includes the hostile suite
 cargo audit                                                    # known vulnerabilities
+cargo audit --file plugins/Cargo.lock
 cargo deny check                                               # licenses, sources, advisories
+cargo deny --manifest-path plugins/Cargo.toml check
 ```
 
-Install the last two tools with `cargo install --locked cargo-audit cargo-deny`.
+Install `cargo audit` and `cargo deny` with `cargo install --locked cargo-audit cargo-deny`.
+`cargo test` fails, never skips, when a plugin it loads was not built: run
+`cargo xtask plugins` first.
+
+Performance is measured by hand, on the three systems: a maintainer adds the `bench` label to
+the pull request, which runs [`bench.yml`](.github/workflows/bench.yml). Compare its results
+with the targets in
+[`specs/001-plugin-runtime/performance.md`](specs/001-plugin-runtime/performance.md).
 
 ## How features are built
 

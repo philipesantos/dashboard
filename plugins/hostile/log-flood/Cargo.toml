@@ -1,0 +1,12 @@
+[package]
+name = "log-flood"
+version = "0.1.0"
+description = "Hostile plugin (security test fixture, never shipped): writes 1,000 log messages, the first one 4 KiB long"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen.workspace = true

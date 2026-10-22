@@ -7,18 +7,23 @@ Provisional name. An open-source desktop dashboard where third-party and AI-gene
 | Path | Contents |
 | --- | --- |
 | `app/` | Desktop app: Tauri 2 host (Rust) and React UI |
-| `runtime/` | Rust crate that embeds Wasmtime and loads plugin components |
+| `runtime/` | Rust crate that embeds Wasmtime and runs plugin components, with a command-line test tool |
 | `wit/` | WIT contracts between the host and plugins |
-| `plugins/examples/` | Example plugins |
+| `plugins/examples/` | Example plugins, starting with [hello-widget](plugins/examples/hello-widget/README.md) |
+| `plugins/hostile/` | Hostile plugins: the security test suite's fixtures, never shipped |
+| `xtask/` | Repository tasks, such as `cargo xtask plugins` |
 | `specs/` | Feature specs (GitHub Spec Kit) |
-| `docs/` | Project documents, such as the [threat model](docs/threat-model.md) |
+| `docs/` | Project documents, such as the [threat model](docs/threat-model.md) and [decisions](docs/decisions/) |
 
 ## Development
 
 ```bash
+rustup target add wasm32-unknown-unknown wasm32-wasip2  # plugins build for WebAssembly
 pnpm install
 pnpm tauri dev          # run the app
 pnpm tauri build        # build installers
+cargo xtask plugins     # build every plugin into target/plugins/
+cargo run -p runtime -- run target/plugins/hello-widget.wasm  # run a plugin
 cargo check --workspace # check every Rust crate
 ```
 

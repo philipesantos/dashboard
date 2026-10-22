@@ -1,0 +1,3 @@
+[alias]
+# Repository tasks, written in Rust so they run the same way on every system (xtask/)
+xtask = "run --package xtask --"

@@ -1,5 +1,6 @@
-# Rust (Cargo workspace)
+# Rust (Cargo workspaces; plugins/ is its own)
 /target/
+/plugins/target/
 
 # Node
 node_modules

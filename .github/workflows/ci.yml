@@ -17,6 +17,8 @@ env:
   CARGO_TERM_COLOR: always
 
 # Third-party actions are pinned to a commit SHA; the comment holds the matching tag.
+# Every job has a timeout well above its usual time, so a stalled network call fails the job
+# instead of holding it for GitHub's default of 6 hours.
 jobs:
   # Changes that only touch documentation or specs build and test nothing, so the jobs below
   # skip them. The workflow still runs, because a skipped job counts as passing for the
@@ -27,6 +29,7 @@ jobs:
   changes:
     name: Detect code changes
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
@@ -71,16 +74,22 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # The Ubuntu mirror sometimes stalls a download for good. apt retries slow requests on
+      # its own, and the step fails after 5 minutes instead of hanging the job (it takes under
+      # a minute when the mirror responds).
       - name: Install Tauri system dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+          apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          sudo apt-get $apt_options update
+          sudo apt-get $apt_options install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -93,6 +102,8 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+          # Plugins build for WebAssembly; wasip2 only for the hostile fixtures that import WASI
+          targets: wasm32-unknown-unknown, wasm32-wasip2
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
@@ -101,7 +112,13 @@ jobs:
       # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time
       - run: pnpm --filter ./app build
 
+      # Builds every plugin into target/plugins/, the fixtures the runtime tests load
+      - run: cargo xtask plugins --locked
+
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # The plugins/ workspace, in the target dir the xtask uses, so the cache covers it
+      - run: cargo clippy --manifest-path plugins/Cargo.toml --target wasm32-unknown-unknown --target-dir target/plugins-build --locked -- -D warnings
 
       - run: cargo test --workspace --locked
 
@@ -110,6 +127,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -125,11 +143,14 @@ jobs:
 
       - run: cargo audit
 
+      - run: cargo audit --file plugins/Cargo.lock
+
   deny:
     name: cargo deny
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -145,6 +166,8 @@ jobs:
 
       - run: cargo deny check
 
+      - run: cargo deny --manifest-path plugins/Cargo.toml check
+
   # The only check the master ruleset requires, so jobs can be added or renamed without
   # touching the ruleset. It fails when any job failed or was cancelled.
   result:
@@ -152,6 +175,7 @@ jobs:
     needs: [changes, build, audit, deny]
     if: always()
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - env:
           RESULTS: ${{ join(needs.*.result, ' ') }}

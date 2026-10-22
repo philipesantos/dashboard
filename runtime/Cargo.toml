@@ -6,6 +6,29 @@ edition = "2024"
 publish = false
 
 [dependencies]
+serde_json = "1"
+# Only what the runtime needs: the Cranelift compiler, the Component Model and parallel
+# compilation, which loads a plugin about 5 times faster (hello-widget: ~100 ms → ~20 ms).
+# Default features such as GC, threads, async and stack switching are left out of the build.
+wasmtime = { version = "50", default-features = false, features = [
+    "component-model",
+    "cranelift",
+    "parallel-compilation",
+    "runtime",
+    "std",
+] }
 
 [dev-dependencies]
-wasmtime = "50"
+# Turns WebAssembly text into the binary packages that tests pass to Runtime::load
+wat = "1"
+# The same features as above plus `wat`, for components written as text in tests and
+# examples. Cargo merges dev-dependency features into test builds, so anything added here
+# would also change the Wasmtime that the tests exercise.
+wasmtime = { version = "50", default-features = false, features = [
+    "component-model",
+    "cranelift",
+    "parallel-compilation",
+    "runtime",
+    "std",
+    "wat",
+] }
