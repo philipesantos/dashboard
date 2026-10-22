@@ -148,8 +148,8 @@ changing the configuration changes the widget content
 ### Implementation for User Story 3
 
 - [X] T040 [US3] Make `plugins/examples/hello-widget/src/lib.rs` read the optional `name` field of the configuration with `serde_json` (workspace dependency) and greet it, defaulting to `world`; return `err` with a clear message when the configuration is not valid JSON
-- [ ] T041 [P] [US3] Write `plugins/examples/hello-widget/README.md` for authors: what contract v0 offers (only `log`), how `render` receives configuration and returns JSON, the size and log limits, how to build it (`cargo xtask plugins`, or `cargo build --target wasm32-unknown-unknown` plus `wit-component`), and how to run it with `runtime run`
-- [ ] T042 [P] [US3] Update `plugins/examples/README.md`: Rust plugins are built with cargo and wit-bindgen on `wasm32-unknown-unknown` (constitution v1.1.0); TypeScript examples arrive in Phase 2; link `hello-widget/README.md`
+- [X] T041 [P] [US3] Write `plugins/examples/hello-widget/README.md` for authors: what contract v0 offers (only `log`), how `render` receives configuration and returns JSON, the size and log limits, how to build it (`cargo xtask plugins`, or `cargo build --target wasm32-unknown-unknown` plus `wit-component`), and how to run it with `runtime run`
+- [X] T042 [P] [US3] Update `plugins/examples/README.md`: Rust plugins are built with cargo and wit-bindgen on `wasm32-unknown-unknown` (constitution v1.1.0); TypeScript examples arrive in Phase 2; link `hello-widget/README.md`
 
 **Checkpoint**: User Stories 1–3 work independently
 
