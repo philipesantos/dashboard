@@ -211,6 +211,17 @@ impl Plugin {
             .call_render(&mut *store, config)
             .map_err(|error| self.call_error(error))?
             .map_err(|message| RuntimeError::new(ErrorKind::PluginError, message))?;
+        // Before parsing, so oversized content costs no parsing work
+        if content.len() > self.limits.max_output_bytes {
+            return Err(RuntimeError::new(
+                ErrorKind::OutputTooLarge,
+                format!(
+                    "the content is {} bytes, over the cap of {}",
+                    content.len(),
+                    self.limits.max_output_bytes
+                ),
+            ));
+        }
         serde_json::from_str(&content)
             .map_err(|error| RuntimeError::new(ErrorKind::InvalidOutput, error.to_string()))
     }
