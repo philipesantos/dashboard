@@ -101,7 +101,10 @@ Changing any of these decisions requires an amendment (see Governance).
 - Every feature goes through Spec Kit (specify → plan → tasks → implement), and every plan
   MUST pass the Constitution Check.
 - CI MUST build and test on Windows, macOS and Linux, run `cargo clippy`, `cargo audit` and
-  `cargo deny`, and run the security test suite on every change.
+  `cargo deny`, and run the security test suite on every change except one that touches only
+  documentation: Markdown files, `specs/`, `docs/`, `.specify/` and `LICENSE`. A Markdown file
+  that the build uses as code, such as a README included as crate documentation (its examples
+  run as tests), is not documentation for this rule.
 
 ## Governance
 
@@ -117,4 +120,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
+**Version**: 1.1.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-22

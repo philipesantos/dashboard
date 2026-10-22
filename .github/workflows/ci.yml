@@ -22,6 +22,8 @@ jobs:
   # skip them. The workflow still runs, because a skipped job counts as passing for the
   # required "CI result" check, while a workflow that never starts leaves it pending forever.
   # New advisories do not need a change here; audit.yml checks for them every week.
+  # The constitution (v1.1.1, Development Workflow) allows this skip; keep the documentation
+  # paths below in sync with the ones it lists.
   changes:
     name: Detect code changes
     runs-on: ubuntu-24.04
