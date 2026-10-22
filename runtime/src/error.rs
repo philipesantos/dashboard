@@ -63,10 +63,6 @@ pub struct RuntimeError {
     refused_imports: Vec<String>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the runtime builds its first errors in User Story 1")
-)]
 impl RuntimeError {
     pub(crate) fn new(kind: ErrorKind, detail: impl Into<String>) -> Self {
         Self {
@@ -77,6 +73,10 @@ impl RuntimeError {
     }
 
     /// A `capability-refused` error that lists every import the host does not offer.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the import allowlist uses it from T032 on")
+    )]
     pub(crate) fn capability_refused(imports: Vec<String>) -> Self {
         Self {
             kind: ErrorKind::CapabilityRefused,

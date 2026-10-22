@@ -74,8 +74,13 @@ fn a_component_without_the_renderer_export_does_not_match_the_contract() {
 
 #[test]
 fn a_component_built_for_another_contract_version_does_not_match() {
-    let component =
-        wat::parse_str(r#"(component (import "dashboard:widget/log@0.2.0" (instance)))"#).unwrap();
+    // A plugin built for 0.2.0 imports that version's log interface, with its functions.
+    let component = wat::parse_str(
+        r#"(component
+             (import "dashboard:widget/log@0.2.0" (instance
+               (export "write" (func (param "message" string))))))"#,
+    )
+    .unwrap();
     let (kind, detail) = load_error(&runtime(), &component);
     assert_eq!(kind, ErrorKind::ContractMismatch);
     assert!(
