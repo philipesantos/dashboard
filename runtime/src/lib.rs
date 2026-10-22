@@ -1,3 +1,8 @@
-//! Plugin runtime: embeds Wasmtime and loads plugin components.
-//!
-//! Empty until Phase 1 (sandbox proof of concept).
+//! Plugin runtime: loads plugins packaged as WebAssembly components and runs them in a sandbox,
+//! under limits set by the host.
+
+mod error;
+mod limits;
+
+pub use error::{ErrorKind, RuntimeError};
+pub use limits::Limits;
