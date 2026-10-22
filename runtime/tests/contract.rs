@@ -21,7 +21,9 @@ fn load_error(runtime: &Runtime, bytes: &[u8]) -> (ErrorKind, String) {
 #[test]
 fn hello_widget_renders_its_greeting_and_one_log() {
     let runtime = runtime();
-    let plugin = runtime.load(&fixture("hello-widget")).expect("hello-widget loads");
+    let plugin = runtime
+        .load(&fixture("hello-widget"))
+        .expect("hello-widget loads");
 
     let report = plugin.render("{}");
 
@@ -46,7 +48,10 @@ fn empty_bytes_are_not_a_package() {
 
 #[test]
 fn arbitrary_bytes_are_not_a_package() {
-    assert_eq!(load_error(&runtime(), b"not wasm").0, ErrorKind::InvalidPackage);
+    assert_eq!(
+        load_error(&runtime(), b"not wasm").0,
+        ErrorKind::InvalidPackage
+    );
 }
 
 #[test]
@@ -69,7 +74,10 @@ fn a_package_over_the_size_limit_is_refused_before_anything_else() {
 #[test]
 fn a_component_without_the_renderer_export_does_not_match_the_contract() {
     let component = wat::parse_str("(component)").unwrap();
-    assert_eq!(load_error(&runtime(), &component).0, ErrorKind::ContractMismatch);
+    assert_eq!(
+        load_error(&runtime(), &component).0,
+        ErrorKind::ContractMismatch
+    );
 }
 
 #[test]
@@ -92,5 +100,8 @@ fn a_component_built_for_another_contract_version_does_not_match() {
 #[test]
 fn a_component_using_a_turned_off_proposal_is_refused() {
     let component = wat::parse_str("(component (core module (memory i64 1)))").unwrap();
-    assert_eq!(load_error(&runtime(), &component).0, ErrorKind::InvalidPackage);
+    assert_eq!(
+        load_error(&runtime(), &component).0,
+        ErrorKind::InvalidPackage
+    );
 }

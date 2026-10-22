@@ -16,7 +16,10 @@ pub fn fixture_path(name: &str) -> PathBuf {
         .collect::<PathBuf>()
         .join(format!("{name}.wasm"));
     if !path.is_file() {
-        panic!("missing fixture {}: run cargo xtask plugins", path.display());
+        panic!(
+            "missing fixture {}: run cargo xtask plugins",
+            path.display()
+        );
     }
     path
 }
