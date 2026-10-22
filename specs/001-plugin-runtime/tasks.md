@@ -175,9 +175,9 @@ decision record exists with its rationale
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T048 [P] Update the Development section of `README.md`: `rustup target add wasm32-unknown-unknown wasm32-wasip2`, `cargo xtask plugins`, and `cargo run -p runtime -- run <plugin>`
-- [ ] T049 [P] Update `CONTRIBUTING.md`: the WebAssembly targets in the prerequisites, `cargo xtask plugins` before `cargo test`, and `cargo audit` / `cargo deny` for the `plugins/` workspace in the checks
-- [ ] T050 [P] Write `plugins/hostile/README.md`: these crates are security test fixtures, never shipped; list each case with its expected error kind, linking `specs/001-plugin-runtime/data-model.md`
+- [X] T048 [P] Update the Development section of `README.md`: `rustup target add wasm32-unknown-unknown wasm32-wasip2`, `cargo xtask plugins`, and `cargo run -p runtime -- run <plugin>`
+- [X] T049 [P] Update `CONTRIBUTING.md`: the WebAssembly targets in the prerequisites, `cargo xtask plugins` before `cargo test`, and `cargo audit` / `cargo deny` for the `plugins/` workspace in the checks
+- [X] T050 [P] Write `plugins/hostile/README.md`: these crates are security test fixtures, never shipped; list each case with its expected error kind, linking `specs/001-plugin-runtime/data-model.md`
 - [ ] T051 Confirm `runtime/examples/hello_world.rs` still builds and runs with `cargo run -p runtime --example hello_world`
 - [ ] T052 Run the CI checks locally from the repository root, as in `.github/workflows/ci.yml`: `pnpm --filter ./app build`, `cargo xtask plugins --locked`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and the `plugins/` clippy step, `cargo test --workspace --locked`, `cargo audit` and `cargo deny check` for both workspaces
 - [ ] T053 Walk through `specs/001-plugin-runtime/quickstart.md` steps 1–6 and confirm every expected outcome
