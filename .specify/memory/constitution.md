@@ -82,7 +82,8 @@ Rationale: these components enforce every other principle; a bug there breaks th
 | UI | TypeScript + React | Familiar to many contributors; runs in the Tauri webview |
 | Plugin runtime | Wasmtime + Component Model (WIT), WASI 0.3 | Mature sandbox, typed multi-language contract |
 | JS/TS plugins | jco / componentize-js | Most accessible language for authors and for AI generation |
-| Rust, Go, Python plugins | cargo-component, TinyGo, componentize-py | Advanced authors |
+| Rust plugins | cargo + wit-bindgen on `wasm32-unknown-unknown`, componentized with wit-component | Actively maintained; components import only what their WIT world declares |
+| Go, Python plugins | TinyGo, componentize-py | Advanced authors |
 | Secrets | `keyring` crate (OS keychain) | Tokens stay out of the app's files |
 | Local data | SQLite, one database per plugin | Simple isolation |
 | Specifications | GitHub Spec Kit | Independent of the AI agent |
@@ -116,4 +117,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
+**Version**: 1.1.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
