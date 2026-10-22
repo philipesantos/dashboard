@@ -123,9 +123,9 @@ impl Runtime {
         if bytes.len() > self.limits.max_package_bytes {
             return Err(RuntimeError::new(
                 ErrorKind::InvalidPackage,
+                // Not the exact size: callers may stop reading right after the limit.
                 format!(
-                    "the package is {} bytes, over the limit of {}",
-                    bytes.len(),
+                    "the package is larger than the limit of {} bytes",
                     self.limits.max_package_bytes
                 ),
             ));
