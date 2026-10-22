@@ -184,7 +184,7 @@ impl Plugin {
         RenderReport {
             result,
             logs: state.logs,
-            dropped_logs: 0,
+            dropped_logs: state.dropped_logs,
         }
     }
 
