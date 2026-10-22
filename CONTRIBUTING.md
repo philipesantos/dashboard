@@ -59,6 +59,25 @@ New features start as a spec in [`specs/`](specs/) and go through
 `/speckit-tasks`, `/speckit-implement`. Every plan must pass the Constitution Check. Bug fixes
 and small changes do not need a spec.
 
+The repository holds what every contributor shares: the specs, the constitution, and Spec Kit's
+templates and scripts in `.specify/`. The commands for your coding agent are not committed, so
+the project does not depend on any one agent. Generate them with the pinned Spec Kit version,
+which needs [uv](https://docs.astral.sh/uv/):
+
+```bash
+# Spec Kit v1.2.2
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@74be0a63e93c7087c5b06556b7561810d8f78a45
+specify integration install claude --script sh   # or copilot, gemini, cursor-agent, codex…
+```
+
+`specify integration list` shows every supported agent. The repository ships the bash scripts
+(`--script sh`); on Windows, run your agent with Git Bash or WSL. Keep the generated files out
+of your commits (for Claude Code: `.claude/`, `.specify/integration.json`,
+`.specify/integrations/claude.manifest.json` and `.specify/init-options.json`) by adding them
+to your global gitignore or to `.git/info/exclude`.
+
+You do not need Spec Kit to read or edit a spec: specs are plain Markdown.
+
 ## Security rules for every change
 
 - A change that adds or touches a security rule comes with an automated test that fails when
