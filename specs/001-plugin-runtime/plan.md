@@ -78,8 +78,7 @@ specs/001-plugin-runtime/
 ├── data-model.md        # Phase 1: host types, error kinds, hostile cases
 ├── quickstart.md        # Phase 1: validation guide
 ├── contracts/
-│   ├── widget.wit       # Plugin contract v0
-│   └── cli.md           # CLI commands, output and exit codes
+│   └── cli.md           # CLI commands, output and exit codes (the plugin contract is wit/widget.wit)
 ├── performance.md       # Created during implementation (User Story 4)
 └── tasks.md             # Phase 2 output (/speckit-tasks)
 ```
@@ -88,7 +87,7 @@ specs/001-plugin-runtime/
 
 ```text
 wit/
-└── widget.wit                  # Copy of contracts/widget.wit; single source for host and plugins
+└── widget.wit                  # Plugin contract v0; the only copy, used by host and plugins
 
 runtime/                        # Security core (Principle IX)
 ├── Cargo.toml                  # wasmtime 50, serde_json

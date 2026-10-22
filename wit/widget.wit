@@ -1,7 +1,6 @@
 /// Plugin contract v0, the only interface between the host and a widget plugin.
 ///
-/// Implementation copies this file to `wit/widget.wit`; the host and every plugin build from
-/// that copy. Any change here is a new contract version.
+/// The host and every plugin build from this file. Any change here is a new contract version.
 package dashboard:widget@0.1.0;
 
 /// The only capability the host offers in v0.
