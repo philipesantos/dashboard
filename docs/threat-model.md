@@ -101,6 +101,7 @@ suite grows with every phase and never shrinks.
 | Obtains an OAuth token or AI key | T1 | A2 | B3 | IV | Phase 2 |
 | Update adds a permission without approval | T1, T4 | A4 | B1 | Re-approval on new permissions (II) | Phase 2 |
 | Package crafted to be slow or memory-hungry to compile, which no per-call limit covers; compiling uses every core | T1, T4 | A3 | B1, B6 | Today only the 10 MiB package cap: a package near it took up to 0.8 s and about 590 MB to load on CI ([performance.md](../specs/001-plugin-runtime/performance.md)); planned: compile at install, in a separate process with OS limits | Phase 3 |
+| Package reuses a renamed or deleted repository's name (repo-jacking) to inherit an installed plugin's grants | T4 | A1, A4 | B6 | Install only from repositories; keep the repository's permanent identifier at install, and accept updates only from it; signatures (Phase 6) | Phase 3 |
 | Password field or drawing over the frame (fake login) | T1 | A2 | B4 | V | Phase 3 |
 | Widget opens a window or dialog (phishing) | T1 | A2, A4 | B4 | V, VII | Phase 3 |
 | Hidden instruction in content read by AI (prompt injection) | T2, T3 | A1, A4 | B5 | VI, taint tracking | Phase 4 |
@@ -125,8 +126,12 @@ suite grows with every phase and never shrinks.
   does the app ship? The template default (`"csp": null` in `app/src-tauri/tauri.conf.json`)
   must become restrictive by Phase 3.
 - How does taint propagate across plugin calls, storage and later executions? Phase 4.
-- Where are third-party plugins installed from, and how is the installed version pinned? They
-  will live in their authors' repositories, probably on GitHub, never in this one. Installing
-  should point to an exact release (tag plus file hash), download the published component and
-  verify its signature, never follow a branch or build from source on the user's machine.
-  Phase 3 (install from a local file) and Phase 6 (plugin store).
+- Where are third-party plugins installed from, and how is the installed version pinned?
+  Decided on 2026-10-22 (feature 002): only from their authors' repositories, never from a
+  file and never from this repository. One plugin per repository, whose id is the repository
+  (`github.com/<owner>/<repository>`). Installing points to an exact release (tag plus file
+  hash), downloads the published component, keeps the repository's permanent identifier and,
+  from Phase 6, verifies the signature; it never follows a branch or builds from source on the
+  user's machine. Plugins that come from no repository (development builds, examples, test
+  fixtures and, in Phase 5, modules generated on the user's machine) use local ids
+  (`local/<name>`). Installation arrives in Phase 3; the store in Phase 6.
