@@ -1,0 +1,10 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+description = "Repository tasks: `cargo xtask plugins` builds the plugin components"
+edition = "2024"
+publish = false
+
+[dependencies]
+serde_json = "1"
+wit-component = "0.262"
