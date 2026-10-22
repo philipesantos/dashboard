@@ -93,6 +93,8 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+          # Plugins build for WebAssembly; wasip2 only for the hostile fixtures that import WASI
+          targets: wasm32-unknown-unknown, wasm32-wasip2
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
@@ -101,7 +103,13 @@ jobs:
       # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time
       - run: pnpm --filter ./app build
 
+      # Builds every plugin into target/plugins/, the fixtures the runtime tests load
+      - run: cargo xtask plugins --locked
+
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # The plugins/ workspace, in the target dir the xtask uses, so the cache covers it
+      - run: cargo clippy --manifest-path plugins/Cargo.toml --target wasm32-unknown-unknown --target-dir target/plugins-build --locked -- -D warnings
 
       - run: cargo test --workspace --locked
 
@@ -125,6 +133,8 @@ jobs:
 
       - run: cargo audit
 
+      - run: cargo audit --file plugins/Cargo.lock
+
   deny:
     name: cargo deny
     needs: changes
@@ -144,6 +154,8 @@ jobs:
           tool: cargo-deny
 
       - run: cargo deny check
+
+      - run: cargo deny --manifest-path plugins/Cargo.toml check
 
   # The only check the master ruleset requires, so jobs can be added or renamed without
   # touching the ruleset. It fails when any job failed or was cancelled.

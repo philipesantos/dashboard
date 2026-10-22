@@ -29,3 +29,5 @@ jobs:
           tool: cargo-audit
 
       - run: cargo audit
+
+      - run: cargo audit --file plugins/Cargo.lock
