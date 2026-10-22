@@ -6,6 +6,9 @@ mod host;
 mod imports;
 mod limits;
 
+use std::thread;
+use std::time::{Duration, Instant};
+
 use wasmtime::component::{Component, HasSelf, Linker};
 use wasmtime::{Config, Engine, Store, Trap};
 
@@ -73,6 +76,7 @@ pub struct Runtime {
 /// A loaded plugin, compiled once and instantiated afresh for every render call.
 pub struct Plugin {
     pre: WidgetPre<HostState>,
+    limits: Limits,
 }
 
 impl Runtime {
@@ -106,7 +110,10 @@ impl Runtime {
             .wasm_component_model_implements(false)
             .wasm_component_model_canonical_names(false)
             .wasm_component_model_accessors(false);
+        // The CPU budget, deterministic on every system, and the wall-clock time limit (R2)
+        config.consume_fuel(true).epoch_interruption(true);
         let engine = Engine::new(&config)?;
+        start_epoch_ticker(&engine)?;
 
         let mut linker = Linker::new(&engine);
         Widget::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
@@ -148,7 +155,10 @@ impl Runtime {
         };
         let pre = self.linker.instantiate_pre(&component).map_err(mismatch)?;
         let pre = WidgetPre::new(pre).map_err(mismatch)?;
-        Ok(Plugin { pre })
+        Ok(Plugin {
+            pre,
+            limits: self.limits.clone(),
+        })
     }
 }
 
@@ -157,7 +167,9 @@ impl Plugin {
     /// dropped when the call ends, so nothing survives from one call to the next (FR-008).
     pub fn render(&self, config: &str) -> RenderReport {
         let mut store = Store::new(self.pre.engine(), HostState::default());
-        let result = self.call(&mut store, config);
+        let result = self
+            .start_limits(&mut store)
+            .and_then(|()| self.call(&mut store, config));
         let state = store.into_data();
         RenderReport {
             result,
@@ -166,27 +178,89 @@ impl Plugin {
         }
     }
 
+    /// Gives the call its CPU budget and its time limit, counted from now.
+    fn start_limits(&self, store: &mut Store<HostState>) -> Result<(), RuntimeError> {
+        store
+            .set_fuel(self.limits.fuel)
+            .map_err(|error| self.call_error(error))?;
+        // One tick more than the limit needs: the current tick has already partly passed, and
+        // a call must always get its full time.
+        let ticks = self
+            .limits
+            .time_limit
+            .as_nanos()
+            .div_ceil(EPOCH_TICK.as_nanos())
+            + 1;
+        store.set_epoch_deadline(u64::try_from(ticks).unwrap_or(u64::MAX));
+        Ok(())
+    }
+
     fn call(
         &self,
         store: &mut Store<HostState>,
         config: &str,
     ) -> Result<serde_json::Value, RuntimeError> {
-        let instance = self.pre.instantiate(&mut *store).map_err(crashed)?;
+        let instance = self
+            .pre
+            .instantiate(&mut *store)
+            .map_err(|error| self.call_error(error))?;
         let content = instance
             .dashboard_widget_renderer()
             .call_render(&mut *store, config)
-            .map_err(crashed)?
+            .map_err(|error| self.call_error(error))?
             .map_err(|message| RuntimeError::new(ErrorKind::PluginError, message))?;
         serde_json::from_str(&content)
             .map_err(|error| RuntimeError::new(ErrorKind::InvalidOutput, error.to_string()))
     }
+
+    /// Names the limit that stopped the call, or the trap that crashed it.
+    fn call_error(&self, error: wasmtime::Error) -> RuntimeError {
+        match error.downcast_ref::<Trap>() {
+            Some(Trap::OutOfFuel) => RuntimeError::new(
+                ErrorKind::CpuBudgetExceeded,
+                format!(
+                    "used the whole CPU budget of {} fuel units",
+                    self.limits.fuel
+                ),
+            ),
+            Some(Trap::Interrupt) => RuntimeError::new(
+                ErrorKind::TimeLimitExceeded,
+                format!(
+                    "still running at the time limit of {:?}",
+                    self.limits.time_limit
+                ),
+            ),
+            Some(trap) => RuntimeError::new(ErrorKind::PluginCrashed, trap.to_string()),
+            None => RuntimeError::new(ErrorKind::PluginCrashed, format!("{error:#}")),
+        }
+    }
 }
 
-/// A failure inside the plugin that no limit explains, named by its trap when there is one.
-fn crashed(error: wasmtime::Error) -> RuntimeError {
-    let detail = match error.downcast_ref::<Trap>() {
-        Some(trap) => trap.to_string(),
-        None => format!("{error:#}"),
-    };
-    RuntimeError::new(ErrorKind::PluginCrashed, detail)
+/// How often the epoch advances, the precision of the time limit.
+const EPOCH_TICK: Duration = Duration::from_millis(10);
+
+/// Advances the engine's epoch once per [`EPOCH_TICK`] of real time, on its own thread, for as
+/// long as the engine exists.
+fn start_epoch_ticker(engine: &Engine) -> std::io::Result<()> {
+    let engine = engine.weak();
+    thread::Builder::new()
+        .name("runtime-epoch".to_owned())
+        .spawn(move || {
+            let start = Instant::now();
+            let mut ticks: u128 = 0;
+            loop {
+                thread::sleep(EPOCH_TICK);
+                let Some(engine) = engine.upgrade() else {
+                    return;
+                };
+                // Counted from the clock, not from the sleeps, so a late wake-up catches up
+                // instead of stretching every time limit.
+                let due = start.elapsed().as_nanos() / EPOCH_TICK.as_nanos();
+                while ticks < due {
+                    engine.increment_epoch();
+                    ticks += 1;
+                }
+            }
+        })?;
+    Ok(())
 }
