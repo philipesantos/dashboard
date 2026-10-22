@@ -1,6 +1,6 @@
 # Feature Specification: Plugin Runtime
 
-**Feature Branch**: none (no branch created; the feature lives in `specs/001-plugin-runtime`)
+**Feature Branch**: `001-plugin-runtime`
 
 **Created**: 2026-10-21
 

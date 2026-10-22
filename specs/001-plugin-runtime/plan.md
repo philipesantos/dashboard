@@ -1,7 +1,7 @@
 # Implementation Plan: Plugin Runtime
 
-**Branch**: none (`001-plugin-runtime` is the feature name; work happens on `master`) |
-**Date**: 2026-10-21 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-plugin-runtime`, merged into `master` through one pull request, reviewed
+commit by commit | **Date**: 2026-10-21 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/001-plugin-runtime/spec.md`
 

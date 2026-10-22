@@ -174,7 +174,7 @@ decision record exists with its rationale
 - [ ] T046 Confirm `runtime/examples/hello_world.rs` still builds and runs with `cargo run -p runtime --example hello_world`
 - [ ] T047 Run the CI checks locally from the repository root, as in `.github/workflows/ci.yml`: `pnpm --filter ./app build`, `cargo xtask plugins --locked`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo audit` and `cargo deny check` for both workspaces
 - [ ] T048 Walk through `specs/001-plugin-runtime/quickstart.md` steps 1–6 and confirm every expected outcome
-- [ ] T049 Request line-by-line human review of every change in `runtime/src/`, `runtime/tests/` and `wit/widget.wit` before merge (Principle IX), and record the reviewer in the pull request
+- [ ] T049 Before merging, confirm that every commit touching `runtime/src/`, `runtime/tests/`, `wit/widget.wit` or `plugins/hostile/` was reviewed line by line (Principle IX), and record it in the pull request
 
 ---
 
@@ -248,6 +248,12 @@ Task: "plugins/hostile/log-flood/: 1,000 log messages"
 ## Notes
 
 - [P] tasks touch different files and depend on no incomplete task
-- Commit after each task or logical group
-- Everything under `runtime/` and `wit/` is security core: line-by-line human review (T049)
+- All work happens on the `001-plugin-runtime` branch, in one pull request opened as a draft at
+  the start. Never commit this feature directly to `master`
+- One commit per task or small group of tasks. The maintainer reviews each commit line by line
+  (Principle IX); a fix after review is a new commit, never a rewrite of a reviewed one
+- Tests written before their implementation fail on the branch; the pull request merges only
+  with CI green, using a merge commit, so `master` keeps the reviewed commits
+- Everything under `runtime/` and `wit/` is security core, and `plugins/hostile/` holds the
+  security tests: line-by-line human review (T049)
 - Never commit built `.wasm` files; CI builds every plugin from source
