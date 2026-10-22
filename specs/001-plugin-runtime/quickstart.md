@@ -61,8 +61,10 @@ cargo run -p runtime --release -- bench target/plugins/hello-widget.wasm
 ```
 
 Expected: `load_ms`, `render_p50_us`, `render_p95_us` and `render_max_us`, following
-[contracts/cli.md](contracts/cli.md). Record the CI results for all three systems in
-`performance.md`.
+[contracts/cli.md](contracts/cli.md). For all three systems, add the `bench` label to the pull
+request: `.github/workflows/bench.yml` runs the same command, plus the cost of loading packages
+near the size cap (`runtime/examples/compile_cost.rs`), and its results go to
+[performance.md](performance.md).
 
 ## 6. Check the records
 
