@@ -6,3 +6,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
+
+[dev-dependencies]
+wasmtime = "50"
