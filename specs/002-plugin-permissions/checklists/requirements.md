@@ -40,6 +40,12 @@
     repository (`<host>/<owner>/<repository>`), and the installation (Phase 3) keeps the
     repository's permanent identifier against a reused name. Plugins that come from no
     repository use `local/<name>` (FR-002, FR-017, edge cases, assumptions).
+  - Required permissions are approved all together and never taken back one by one; they
+    change only with a new version, approved again, or by removing the plugin's approval.
+    Optional permissions start off and are turned on or off in the host's controls; while off,
+    the capability is linked to a stand-in that answers "not granted" (FR-013, FR-014, FR-018,
+    FR-019, User Story 4), which constitution v1.2.0 allows in Principle II.
+  - Disabling and uninstalling arrive with installation in Phase 3 (assumptions).
 - "Command-line tool", "JSON" and "schema" name the interfaces the user works with, as in
   feature 001, not the implementation; the plan decides how the manifest is bound to the plugin
   and where grants are stored.
