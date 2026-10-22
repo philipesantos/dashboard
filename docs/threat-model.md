@@ -116,3 +116,8 @@ suite grows with every phase and never shrinks.
   does the app ship? The template default (`"csp": null` in `app/src-tauri/tauri.conf.json`)
   must become restrictive by Phase 3.
 - How does taint propagate across plugin calls, storage and later executions? Phase 4.
+- Where are third-party plugins installed from, and how is the installed version pinned? They
+  will live in their authors' repositories, probably on GitHub, never in this one. Installing
+  should point to an exact release (tag plus file hash), download the published component and
+  verify its signature, never follow a branch or build from source on the user's machine.
+  Phase 3 (install from a local file) and Phase 6 (plugin store).
