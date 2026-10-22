@@ -1,0 +1,31 @@
+/// Plugin contract v0, the only interface between the host and a widget plugin.
+///
+/// Implementation copies this file to `wit/widget.wit`; the host and every plugin build from
+/// that copy. Any change here is a new contract version.
+package dashboard:widget@0.1.0;
+
+/// The only capability the host offers in v0.
+interface log {
+  enum level {
+    debug,
+    info,
+    warn,
+    error,
+  }
+
+  /// Writes a message attributed to the calling plugin. The host keeps at most 100 messages
+  /// per render call and truncates each to 1 KiB; the excess is dropped and reported.
+  write: func(level: level, message: string);
+}
+
+/// The single entry point a plugin implements.
+interface renderer {
+  /// `config` is a JSON document chosen by the host. On success the plugin returns the widget
+  /// content as a JSON document of at most 64 KiB; on failure, a message for the maintainer.
+  render: func(config: string) -> result<string, string>;
+}
+
+world widget {
+  import log;
+  export renderer;
+}
