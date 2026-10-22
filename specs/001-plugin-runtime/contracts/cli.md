@@ -44,7 +44,7 @@ source code (SC-004).
 | Kind | When |
 | --- | --- |
 | `invalid-package` | Not a WebAssembly component, corrupted, or larger than the package limit |
-| `contract-mismatch` | Does not export `dashboard:widget/renderer@0.1.0` |
+| `contract-mismatch` | Does not export `dashboard:widget/renderer@0.1.0`, or was built for another version of the `dashboard:widget` contract |
 | `capability-refused` | Imports anything except `dashboard:widget/log@0.1.0`; the detail lists every refused import |
 | `cpu-budget-exceeded` | Ran out of fuel |
 | `time-limit-exceeded` | Hit the wall-clock time limit |

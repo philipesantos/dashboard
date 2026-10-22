@@ -101,6 +101,7 @@ runtime/                        # Security core (Principle IX)
 │   └── bin/runtime.rs          # CLI: run, bench
 ├── tests/
 │   ├── contract.rs             # Example plugin: User Stories 1 and 3
+│   ├── cli.rs                  # CLI output and exit codes (contracts/cli.md)
 │   └── hostile.rs              # Security suite: User Story 2, the phase gate
 └── examples/hello_world.rs     # Existing Wasmtime spike
 

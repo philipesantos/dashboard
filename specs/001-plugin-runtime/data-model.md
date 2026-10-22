@@ -11,7 +11,7 @@ Host-defined resource limits (FR-005, FR-006). A plugin can neither read nor cha
 | --- | --- | --- | --- |
 | `max_package_bytes` | integer | 10 MiB | Larger packages are refused as `invalid-package` |
 | `fuel` | integer | 500,000,000 | CPU budget per render call |
-| `time_limit` | duration | 1 s | Wall-clock limit per render call, enforced in 10 ms ticks |
+| `time_limit` | duration | 1 s | Wall-clock limit per render call, enforced in 10 ms ticks counted from real elapsed time |
 | `max_memory_bytes` | integer | 32 MiB | Sum of all linear memories per render call |
 | `max_output_bytes` | integer | 64 KiB | Checked before parsing the widget content |
 | `max_log_messages` | integer | 100 | Per render call; the rest are dropped and counted |
@@ -70,7 +70,7 @@ as a log message and is cut to 1 KiB; in `capability-refused`, each import name 
 | Kind | Source |
 | --- | --- |
 | `invalid-package` | Load: size, magic number or compile failure |
-| `contract-mismatch` | Load: missing or wrongly typed `renderer` export |
+| `contract-mismatch` | Load: missing or wrongly typed `renderer` export, or an import from another version of `dashboard:widget` |
 | `capability-refused` | Load: imports outside the allowlist, all listed |
 | `cpu-budget-exceeded` | Call: `Trap::OutOfFuel` |
 | `time-limit-exceeded` | Call: `Trap::Interrupt` from the epoch deadline |
