@@ -35,10 +35,13 @@ status 0. Changing `--config` changes the content.
 ```bash
 cargo run -p runtime --release -- run target/plugins/infinite-loop.wasm
 cargo run -p runtime --release -- run target/plugins/read-file.wasm
+cargo run -p runtime --release -- run target/plugins/log-spoof.wasm
 ```
 
 Expected: `error: cpu-budget-exceeded: …` for the first; `error: capability-refused: …` listing
-`wasi:filesystem/…` imports for the second; exit status 1 for both. The expected kind for each
+`wasi:filesystem/…` imports for the second; for the third, three `[plugin]` lines whose line
+breaks and control characters show escaped (`\n`, `\u{1b}`), the terminal title unchanged, and
+`error: plugin-error: \nerror: forged` on a single line; exit status 1 for all three. The expected kind for each
 hostile plugin is in [data-model.md](data-model.md#hostile-plugin-case).
 
 ## 4. Run the security suite (phase gate)

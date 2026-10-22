@@ -10,7 +10,7 @@ Loads the plugin, calls `render` once and prints the result.
 | Stream | Content |
 | --- | --- |
 | stdout | On success, the widget content as pretty-printed JSON. Nothing on failure. |
-| stderr | One line per plugin log message: `[plugin] <level>: <message>`. If messages were dropped: `[runtime] <n> log messages dropped`. On failure: `error: <kind>: <detail>`. |
+| stderr | One line per plugin log message: `[plugin] <level>: <message>`. If messages were dropped: `[runtime] <n> log messages dropped`. On failure: `error: <kind>: <detail>`. Text from the plugin is escaped, so it cannot add lines or control the terminal. |
 
 `--config` defaults to `{}`. The configuration must be valid JSON, otherwise it is a usage
 error.
