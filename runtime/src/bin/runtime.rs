@@ -7,6 +7,8 @@
 //! granted, and `runtime approve <plugin>` grants its required permissions, all together.
 //! `runtime optional <plugin> <permission> on|off` turns one optional permission on or off, and
 //! `runtime remove <plugin-id>` removes a plugin's approval and every grant with it.
+//! `runtime pack <component> --manifest <file> --output <file>` checks a manifest and adds it to
+//! a component, for authors outside this repository's xtask.
 //!
 //! The tool is the host's control in this phase: it works in development mode only, on local
 //! package files, with the development grant record (`--grants <path>`, or the default one in
@@ -22,6 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use runtime::grants::{GrantStore, Status};
+use runtime::manifest::MAX_MANIFEST_BYTES;
 use runtime::manifest::PluginId;
 use runtime::{CheckedPackage, Limits, Plugin, Runtime, escape, package};
 
@@ -30,7 +33,8 @@ const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-fil
        runtime permissions <plugin> [--grants <path>]
        runtime approve <plugin> [--grants <path>]
        runtime optional <plugin> <permission> on|off [--grants <path>]
-       runtime remove <plugin-id> [--grants <path>]";
+       runtime remove <plugin-id> [--grants <path>]
+       runtime pack <component> --manifest <file> --output <file>";
 
 /// Exit status when the plugin or the change was refused, or the plugin failed or was stopped.
 const PLUGIN_FAILED: u8 = 1;
@@ -51,6 +55,7 @@ enum Command {
     Approve,
     Optional,
     Remove,
+    Pack,
 }
 
 fn main() -> ExitCode {
@@ -62,6 +67,7 @@ fn main() -> ExitCode {
         Some("approve") => Command::Approve,
         Some("optional") => Command::Optional,
         Some("remove") => Command::Remove,
+        Some("pack") => Command::Pack,
         Some(command) => return usage_error(&format!("unknown command `{command}`")),
         None => return usage_error("no command given"),
     };
@@ -76,6 +82,7 @@ fn main() -> ExitCode {
         Command::Approve => approve(&options),
         Command::Optional => optional(&options),
         Command::Remove => remove(&options),
+        Command::Pack => pack(&options),
     }
 }
 
@@ -90,6 +97,9 @@ struct Options {
     grants: Option<PathBuf>,
     /// Only for `optional`: the permission, and whether to turn it on.
     optional: Option<(String, bool)>,
+    /// Only for `pack`: the manifest file and the package to write.
+    manifest: Option<PathBuf>,
+    output: Option<PathBuf>,
 }
 
 fn parse(args: &[String], command: Command) -> Result<Options, String> {
@@ -97,6 +107,8 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
     let mut config = None;
     let mut iterations = DEFAULT_ITERATIONS;
     let mut grants = None;
+    let mut manifest = None;
+    let mut output = None;
     let mut positional = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -116,10 +128,24 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
                     })?
                 });
             }
-            "--grants" => {
+            // pack checks and writes a package; it needs no grant record
+            "--grants" if command != Command::Pack => {
                 let value = args.next().ok_or("--grants needs a path")?;
                 if grants.replace(PathBuf::from(value)).is_some() {
                     return Err("give --grants only once".to_owned());
+                }
+            }
+            option @ ("--manifest" | "--output") if command == Command::Pack => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("{option} needs a path"))?;
+                let slot = if option == "--manifest" {
+                    &mut manifest
+                } else {
+                    &mut output
+                };
+                if slot.replace(PathBuf::from(value)).is_some() {
+                    return Err(format!("give {option} only once"));
                 }
             }
             "--iterations" if command == Command::Bench => {
@@ -136,11 +162,14 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         }
     }
     let mut positional = positional.into_iter();
-    let plugin = positional.next().ok_or(if command == Command::Remove {
-        "no plugin id given"
-    } else {
-        "no plugin file given"
+    let plugin = positional.next().ok_or(match command {
+        Command::Remove => "no plugin id given",
+        Command::Pack => "no component file given",
+        _ => "no plugin file given",
     })?;
+    if command == Command::Pack && (manifest.is_none() || output.is_none()) {
+        return Err("pack needs --manifest <file> and --output <file>".to_owned());
+    }
     let optional = if command == Command::Optional {
         let permission = positional.next().ok_or("no permission given")?;
         let on = match positional.next().as_deref() {
@@ -165,6 +194,8 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         iterations,
         grants,
         optional,
+        manifest,
+        output,
     })
 }
 
@@ -355,6 +386,38 @@ fn optional(options: &Options) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Checks the manifest and writes the component with it added as its manifest section
+/// (`contracts/package.md`). Compiles nothing and needs no grant record.
+fn pack(options: &Options) -> ExitCode {
+    let (Some(manifest_path), Some(output)) = (&options.manifest, &options.output) else {
+        return usage_error("pack needs --manifest <file> and --output <file>");
+    };
+    let component = match read_plugin(&options.plugin, Limits::default().max_package_bytes) {
+        Ok(component) => component,
+        Err(message) => return usage_error(&message),
+    };
+    // At most one byte over the limit, which the manifest check then refuses
+    let manifest_name = manifest_path.display().to_string();
+    let manifest = match read_capped(&manifest_name, MAX_MANIFEST_BYTES, "manifest file") {
+        Ok(manifest) => manifest,
+        Err(message) => return usage_error(&message),
+    };
+    let packed = match package::pack(&component, &manifest) {
+        Ok(packed) => packed,
+        Err(error) => return refused(&error),
+    };
+    if let Err(error) = std::fs::write(output, &packed) {
+        eprintln!(
+            "error: cannot write {}: {error}",
+            escape(&output.display().to_string())
+        );
+        return ExitCode::from(PLUGIN_FAILED);
+    }
+    println!("packed {}", escape(&output.display().to_string()));
+    println!("digest: {}", package::digest(&packed));
+    ExitCode::SUCCESS
+}
+
 /// Removes the plugin's approval and every grant with it, whatever file it was given for.
 fn remove(options: &Options) -> ExitCode {
     let id = match PluginId::parse(&options.plugin) {
@@ -455,12 +518,17 @@ fn grant_store(path: Option<&PathBuf>) -> Result<GrantStore, String> {
 /// Reads at most `max_bytes + 1` bytes, so a huge or endless file (for example `/dev/zero`) is
 /// never read whole; `Runtime::load` decides whether the size is acceptable.
 fn read_plugin(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
-    let file =
-        File::open(path).map_err(|error| format!("cannot read plugin file {path}: {error}"))?;
+    read_capped(path, max_bytes, "plugin file")
+}
+
+/// Reads at most `max_bytes + 1` bytes of the `what` at `path`, so the reader can tell it is too
+/// large without reading it whole.
+fn read_capped(path: &str, max_bytes: usize, what: &str) -> Result<Vec<u8>, String> {
+    let file = File::open(path).map_err(|error| format!("cannot read {what} {path}: {error}"))?;
     let mut bytes = Vec::new();
     file.take((max_bytes as u64).saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("cannot read plugin file {path}: {error}"))?;
+        .map_err(|error| format!("cannot read {what} {path}: {error}"))?;
     Ok(bytes)
 }
 

@@ -97,7 +97,8 @@ Checks the manifest (schema, id, version, known permissions) and writes the comp
 manifest section added at the end ([package.md](package.md)) to `--output`, replacing any file
 there. Refused with `invalid-manifest`,
 `unknown-permission`, or `manifest-mismatch` when the component already carries a manifest.
-Does not compile the component and needs no grant record. Prints the output path and its digest.
+Does not compile the component and needs no grant record, so it takes no `--grants`. Prints
+`packed <output>` and `digest: <digest>`; a refused pack writes nothing.
 
 ## Exit status
 
