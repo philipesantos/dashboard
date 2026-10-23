@@ -326,8 +326,9 @@ development mode.
   refused naming the connector, or the change follows User Story 5.
 - A plugin tries to read the request log, another widget's kept data or the verification
   results: the host offers no capability for any of them.
-- A service on the user's local network, such as a home server: no connector can reach it
-  (Principle III); only the developer's own machine, in development.
+- A service on the user's own machine or local network, such as a home server: in this feature
+  no connector reaches it; only the developer's own machine, in development. Constitution v2.1.0
+  lets a catalog connector reach one at an address the user chooses, from a later feature.
 
 ## Requirements *(mandatory)*
 
@@ -539,12 +540,17 @@ development mode.
   sandbox.
 - The security tests reach test services on the CI machine, not the internet; how they do so
   without weakening the rules for real connectors is decided in the plan.
-- Services on the user's local network are out of reach of every connector, by Principle III.
+- Constitution v2.1.0 lets a catalog connector reach a service on the user's own machine or
+  local network at an address the user chooses, which must stay local, without HTTPS when the
+  host shows the connection is not encrypted. Most such services need a credential, so the first
+  of these connectors arrives after feature 005. In this feature the proxy refuses every
+  non-public address, and the destination kinds (FR-004, FR-016) leave room for this one.
 - GitHub limits requests without an account; the catalog's GitHub connector serves public data
   within those limits until accounts arrive (feature 005).
 - The catalog is security core (Principle IX): every change to it is reviewed line by line.
 - One person uses the host on a machine, as in feature 002.
-- Out of scope: credentials, API keys and OAuth (005); user actions, operations that change data
-  driven by them, installation dialogs and the cross-account warning (Phase 3); storage (004);
+- Out of scope: credentials, API keys and OAuth (005); catalog connectors for services on the
+  user's machine or local network (after 005); user actions, operations that change data driven
+  by them, installation dialogs and the cross-account warning (Phase 3); storage (004);
   signatures and the store (Phase 6); updating widgets in the cloud while the computer is off
   (Phase 7), which a separate update entry point is meant to allow.
