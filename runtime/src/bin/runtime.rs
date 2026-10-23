@@ -5,6 +5,7 @@
 //! or the error that refused or stopped it. `runtime bench <plugin>` measures how long loading
 //! and rendering take. `runtime permissions <plugin>` shows what a plugin requests and what is
 //! granted, and `runtime approve <plugin>` grants its required permissions, all together.
+//! `runtime optional <plugin> <permission> on|off` turns one optional permission on or off, and
 //! `runtime remove <plugin-id>` removes a plugin's approval and every grant with it.
 //!
 //! The tool is the host's control in this phase: it works in development mode only, on local
@@ -28,6 +29,7 @@ const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-fil
        runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>]
        runtime permissions <plugin> [--grants <path>]
        runtime approve <plugin> [--grants <path>]
+       runtime optional <plugin> <permission> on|off [--grants <path>]
        runtime remove <plugin-id> [--grants <path>]";
 
 /// Exit status when the plugin or the change was refused, or the plugin failed or was stopped.
@@ -47,6 +49,7 @@ enum Command {
     Bench,
     Permissions,
     Approve,
+    Optional,
     Remove,
 }
 
@@ -57,6 +60,7 @@ fn main() -> ExitCode {
         Some("bench") => Command::Bench,
         Some("permissions") => Command::Permissions,
         Some("approve") => Command::Approve,
+        Some("optional") => Command::Optional,
         Some("remove") => Command::Remove,
         Some(command) => return usage_error(&format!("unknown command `{command}`")),
         None => return usage_error("no command given"),
@@ -70,6 +74,7 @@ fn main() -> ExitCode {
         Command::Bench => bench(&options),
         Command::Permissions => permissions(&options),
         Command::Approve => approve(&options),
+        Command::Optional => optional(&options),
         Command::Remove => remove(&options),
     }
 }
@@ -83,14 +88,16 @@ struct Options {
     iterations: u32,
     /// The grant record given with `--grants`.
     grants: Option<PathBuf>,
+    /// Only for `optional`: the permission, and whether to turn it on.
+    optional: Option<(String, bool)>,
 }
 
 fn parse(args: &[String], command: Command) -> Result<Options, String> {
     let renders = matches!(command, Command::Run | Command::Bench);
-    let mut plugin = None;
     let mut config = None;
     let mut iterations = DEFAULT_ITERATIONS;
     let mut grants = None;
+    let mut positional = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -125,20 +132,30 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
             option if option.starts_with("--") => {
                 return Err(format!("unknown option `{option}`"));
             }
-            path => {
-                // Required permissions are approved all together: approve takes no permission
-                if plugin.is_some() {
-                    return Err(format!("unexpected argument `{path}`"));
-                }
-                plugin = Some(path.to_owned());
-            }
+            argument => positional.push(argument.to_owned()),
         }
     }
-    let plugin = plugin.ok_or(if command == Command::Remove {
+    let mut positional = positional.into_iter();
+    let plugin = positional.next().ok_or(if command == Command::Remove {
         "no plugin id given"
     } else {
         "no plugin file given"
     })?;
+    let optional = if command == Command::Optional {
+        let permission = positional.next().ok_or("no permission given")?;
+        let on = match positional.next().as_deref() {
+            Some("on") => true,
+            Some("off") => false,
+            _ => return Err(format!("say whether to turn {permission} on or off")),
+        };
+        Some((permission, on))
+    } else {
+        None
+    };
+    // Required permissions are approved all together: approve takes no permission
+    if let Some(argument) = positional.next() {
+        return Err(format!("unexpected argument `{argument}`"));
+    }
     let config = config.unwrap_or_else(|| "{}".to_owned());
     serde_json::from_str::<serde_json::Value>(&config)
         .map_err(|error| format!("the configuration is not valid JSON: {error}"))?;
@@ -147,6 +164,7 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         config,
         iterations,
         grants,
+        optional,
     })
 }
 
@@ -314,6 +332,27 @@ fn bench(options: &Options) -> ExitCode {
 fn percentile(sorted: &[Duration], percent: usize) -> Duration {
     let rank = (percent * sorted.len()).div_ceil(100).max(1);
     sorted[rank - 1]
+}
+
+/// Turns one optional permission on or off for this file's approval, from the plugin's next
+/// call (FR-014).
+fn optional(options: &Options) -> ExitCode {
+    let Some((permission, on)) = &options.optional else {
+        return usage_error("no permission given");
+    };
+    let target = match Target::open(options) {
+        Ok(target) => target,
+        Err(status) => return status,
+    };
+    let checked = match target.check() {
+        Ok(checked) => checked,
+        Err(status) => return status,
+    };
+    if let Err(error) = checked.set_optional(&target.grants, &target.origin, permission, *on) {
+        return refused(&error);
+    }
+    println!("{} {}", escape(permission), if *on { "on" } else { "off" });
+    ExitCode::SUCCESS
 }
 
 /// Removes the plugin's approval and every grant with it, whatever file it was given for.

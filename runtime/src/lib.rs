@@ -108,6 +108,26 @@ impl CheckedPackage {
     pub fn contract(&self) -> Contract {
         self.contract
     }
+
+    /// Turns one optional permission of this package on or off, for packages from `origin`
+    /// (FR-014). Refused as `optional-needs-v1` for a contract v0 plugin, which cannot answer
+    /// "not granted", and otherwise as [`GrantStore::set_optional`] refuses.
+    pub fn set_optional(
+        &self,
+        grants: &GrantStore,
+        origin: &str,
+        permission: &str,
+        on: bool,
+    ) -> Result<(), RuntimeError> {
+        if self.contract == Contract::V0 {
+            return Err(RuntimeError::with_names(
+                ErrorKind::OptionalNeedsV1,
+                vec![permission.to_owned()],
+                Some("contract v0 has no optional permissions; build against contract v1"),
+            ));
+        }
+        grants.set_optional(&self.manifest, origin, permission, on)
+    }
 }
 
 /// A loaded plugin, compiled once and instantiated afresh for every render call. Its linking

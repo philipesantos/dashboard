@@ -19,6 +19,7 @@ use tempfile::NamedTempFile;
 
 use crate::error::{ErrorKind, RuntimeError};
 use crate::manifest::{Manifest, PluginId};
+use crate::permissions;
 
 /// The record format this host reads and writes.
 pub const RECORD_VERSION: u64 = 1;
@@ -258,9 +259,10 @@ impl GrantStore {
         })
     }
 
-    /// Turns one optional permission on or off. Refused as `not-declared` when the manifest
-    /// does not request it, `required-together` when it is required, and `not-granted` when
-    /// the plugin has no approval from `origin`.
+    /// Turns one optional permission on or off. Refused as `unknown-permission` when the host
+    /// does not know it, `not-declared` when the manifest does not request it,
+    /// `required-together` when it is required, and `not-granted` when the plugin has no
+    /// approval from `origin`.
     pub fn set_optional(
         &self,
         manifest: &Manifest,
@@ -269,6 +271,13 @@ impl GrantStore {
         on: bool,
     ) -> Result<(), RuntimeError> {
         let names = || vec![permission.to_owned()];
+        if permissions::by_name(permission).is_none() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::UnknownPermission,
+                names(),
+                Some("this host does not know it"),
+            ));
+        }
         match manifest.permission(permission) {
             None => {
                 return Err(RuntimeError::with_names(
@@ -859,6 +868,10 @@ mod tests {
             assert_eq!(
                 kind(store.set_optional(&undeclared, ORIGIN, "log", true)),
                 Err(ErrorKind::NotDeclared)
+            );
+            assert_eq!(
+                kind(store.set_optional(&optional, ORIGIN, "telepathy", true)),
+                Err(ErrorKind::UnknownPermission)
             );
             assert_eq!(
                 kind(store.set_optional(&optional, OTHER_ORIGIN, "log", true)),
