@@ -35,6 +35,12 @@ pub(crate) fn untrusted(text: &str, max_bytes: usize) -> String {
     escaped
 }
 
+/// Escapes text that came from a package, or from a record a person can edit, before it is shown,
+/// as [`untrusted`] does, without cutting it.
+pub fn escape(text: &str) -> String {
+    untrusted(text, usize::MAX)
+}
+
 /// Control characters, and the characters that change the direction of the text after them.
 fn needs_escape(c: char) -> bool {
     c.is_control()

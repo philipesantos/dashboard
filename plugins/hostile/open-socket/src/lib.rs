@@ -1,7 +1,7 @@
 //! Hostile plugin: opens a TCP connection with the standard library. Built for `wasm32-wasip2`,
 //! it imports `wasi:sockets`, which the host never offers, so it must be refused at load.
 
-wit_bindgen::generate!({ path: "../../../wit", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/v0", world: "widget" });
 
 use exports::dashboard::widget::renderer::Guest;
 

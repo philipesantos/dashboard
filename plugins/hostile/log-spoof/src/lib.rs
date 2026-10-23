@@ -2,7 +2,7 @@
 //! output, with line breaks, terminal escape sequences and a right-to-left override. The host
 //! must show them escaped (FR-011).
 
-wit_bindgen::generate!({ path: "../../../wit", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/v0", world: "widget" });
 
 use dashboard::widget::log::{Level, write};
 use exports::dashboard::widget::renderer::Guest;

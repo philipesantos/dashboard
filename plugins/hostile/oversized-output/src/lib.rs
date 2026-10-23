@@ -1,7 +1,7 @@
 //! Hostile plugin: returns valid JSON of 128 KiB, twice the size cap. The host must reject it
 //! before parsing it.
 
-wit_bindgen::generate!({ path: "../../../wit", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/v0", world: "widget" });
 
 use exports::dashboard::widget::renderer::Guest;
 

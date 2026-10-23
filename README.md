@@ -23,9 +23,14 @@ pnpm install
 pnpm tauri dev          # run the app
 pnpm tauri build        # build installers
 cargo xtask plugins     # build every plugin into target/plugins/
-cargo run -p runtime -- run target/plugins/hello-widget.wasm  # run a plugin
+cargo run -p runtime -- approve target/plugins/hello-widget.wasm  # approve its permissions
+cargo run -p runtime -- run target/plugins/hello-widget.wasm      # run a plugin
 cargo check --workspace # check every Rust crate
 ```
+
+A plugin runs only with the permissions its manifest declares and you approve.
+[docs/plugin-authors.md](docs/plugin-authors.md) explains how to write, pack, approve and run
+one.
 
 Recommended IDE setup: [VS Code](https://code.visualstudio.com/) with the [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) and [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) extensions.
 

@@ -3,7 +3,8 @@ name: Bench
 # Measures the plugin runtime on all three systems, with the release profile (User Story 4).
 # Run by hand: shared CI runners are too noisy for benchmarks to gate every change, and the
 # release build with LTO would add minutes to every CI run. The results go to the summary of
-# each job; specs/001-plugin-runtime/performance.md records them.
+# each job; specs/001-plugin-runtime/performance.md records the load and render times, and
+# specs/002-plugin-permissions/performance.md the permission checks (checks_us, relink_us).
 #
 # Two ways to run it: from the Actions tab once the workflow is on master, or by adding the
 # "bench" label to a pull request, which also works before the workflow reaches master.
@@ -49,12 +50,17 @@ jobs:
 
       - run: cargo xtask plugins --locked
 
+      # A plugin runs only once approved; the approval goes to a record of this job alone
       - name: Load and render hello-widget
         env:
           ITERATIONS: ${{ inputs.iterations || '1000' }}
+          GRANTS: ${{ runner.temp }}/bench-grants.json
         run: |
           cargo run -p runtime --release --locked -- \
-            bench target/plugins/hello-widget.wasm --iterations "$ITERATIONS" | tee bench.txt
+            approve target/plugins/hello-widget.wasm --grants "$GRANTS"
+          cargo run -p runtime --release --locked -- \
+            bench target/plugins/hello-widget.wasm --iterations "$ITERATIONS" --grants "$GRANTS" \
+            | tee bench.txt
 
       # Compiling runs outside every per-call limit (docs/threat-model.md)
       - name: Load packages near the size cap
@@ -74,4 +80,6 @@ jobs:
             echo '```text'
             cat bench.txt compile.txt
             echo '```'
+            echo 'Recorded in specs/001-plugin-runtime/performance.md (load, render, compile) and'
+            echo 'specs/002-plugin-permissions/performance.md (checks_us, relink_us).'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -23,6 +23,32 @@ The [data model](../../specs/001-plugin-runtime/data-model.md#hostile-plugin-cas
 source of these outcomes, and [`docs/threat-model.md`](../../docs/threat-model.md) maps them to
 threats.
 
+Since feature 002 every crate here carries a manifest (`manifest.json`, id `local/<crate>`),
+declaring `log` as required when it logs, and each test approves it first, so the case still
+meets the rule it breaks.
+
+## Permission cases
+
+The cases of [feature 002](../../specs/002-plugin-permissions/data-model.md#hostile-plugin-cases)
+break the permission rules, which are about the package and the grants, not the plugin's code.
+So they need no crate of their own: `runtime/tests/hostile.rs` packs the bare fixtures
+[`probe`](../fixtures/probe) (calls `log` and returns what it answered) and
+[`quiet`](../fixtures/quiet) (imports nothing) with each case's manifest.
+
+| Case | Rule | Expected outcome |
+| --- | --- | --- |
+| `no-manifest` | FR-001 | `no-manifest` |
+| `invalid-manifest` | FR-003 | `invalid-manifest`, naming the field |
+| `two-manifests` | FR-004 | `manifest-mismatch` |
+| `nested-manifest` | FR-004 | `manifest-mismatch` |
+| `undeclared-capability` | FR-006 | `not-declared`, naming `log`, even when approved |
+| `ungranted-capability` | FR-007 | `not-granted`, naming `log` |
+| `unknown-permission` | FR-008 | `unknown-permission`, naming it |
+| `escalating-update` | FR-011 | `needs-new-approval`, naming `log`; the approval unchanged |
+| `optional-off` | FR-019 | Runs; `log` answers `not-granted` and nothing is logged |
+| `same-id-other-origin` | FR-020 | `not-granted`, naming the file approved; the approval unchanged |
+| `grant-record-untouched` | FR-009, FR-010 | Every case above, and a probe using `log`, leaves the record in its file unchanged |
+
 ## How they are built
 
 Like any plugin, from source, by `cargo xtask plugins`, into `target/plugins/<crate>.wasm`;
@@ -36,7 +62,10 @@ not built fails instead of skipping.
 Every security rule has a test that breaks the build when the rule is broken (Principle VIII),
 and the suite only grows: never delete or weaken a case.
 
-1. Add a crate here that breaks the rule, and add it to `members` in `plugins/Cargo.toml`.
+1. Add a crate here that breaks the rule, with its `manifest.json`, and add it to `members` in
+   `plugins/Cargo.toml`. A case about the package or the grants can pack `probe` or `quiet`
+   instead, as the permission cases do.
 2. Add its test to `runtime/tests/hostile.rs`, asserting the error kind and calling
-   `assert_host_still_works`.
+   `assert_host_still_works`; a permission case also joins `PERMISSION_CASES`, so
+   `grant_record_untouched` runs it.
 3. Add the case to the data model's table and, if it is a new threat, to the threat model.

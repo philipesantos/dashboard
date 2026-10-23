@@ -1,0 +1,11 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "local/hello-widget",
+  "version": "0.2.0",
+  "author": "Dashboard contributors",
+  "permissions": [
+    { "name": "log", "required": true }
+  ],
+  "login_providers": []
+}

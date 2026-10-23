@@ -1,7 +1,7 @@
 //! Hostile plugin: reads a byte far beyond its own linear memory. WebAssembly bounds checks
 //! must trap, so the plugin can never see the host's memory (FR-008).
 
-wit_bindgen::generate!({ path: "../../../wit", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/v0", world: "widget" });
 
 use exports::dashboard::widget::renderer::Guest;
 

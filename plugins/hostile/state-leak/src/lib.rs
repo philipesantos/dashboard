@@ -1,7 +1,7 @@
 //! Hostile plugin: counts its own calls in a static. Every call must see a count of 1, because
 //! no state may survive from one call to the next, nor pass between plugins (FR-008).
 
-wit_bindgen::generate!({ path: "../../../wit", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/v0", world: "widget" });
 
 use std::sync::atomic::{AtomicU32, Ordering};
 

@@ -17,6 +17,9 @@ members = [
     "hostile/state-leak",
     "hostile/out-of-bounds",
     "hostile/log-spoof",
+    "fixtures/hello-v0",
+    "fixtures/probe",
+    "fixtures/quiet",
 ]
 
 [workspace.package]

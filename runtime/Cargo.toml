@@ -6,7 +6,22 @@ edition = "2024"
 publish = false
 
 [dependencies]
+# Default location of the development grant record: the system's data directory
+dirs = "7"
+# Plugin versions in manifests follow SemVer 2.0.0
+semver = "1"
+# Typed manifest and grant record
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Names the field path of every manifest error, such as permissions[0].name
+serde_path_to_error = "0.1"
+# The package digest: SHA-256 of the whole file
+sha2 = "0.10"
+# Writes the grant record beside itself, then renames it over the old one
+tempfile = "3"
+# Finds the manifest section without compiling the package. Pinned to the version Wasmtime 50
+# uses, so the build carries one copy.
+wasmparser = "=0.261.0"
 # Only what the runtime needs: the Cranelift compiler, the Component Model and parallel
 # compilation, which loads a plugin about 5 times faster (hello-widget: ~100 ms → ~20 ms).
 # Default features such as GC, threads, async and stack switching are left out of the build.
@@ -19,8 +34,14 @@ wasmtime = { version = "50", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+# Validates manifests against wit/manifest.schema.json, to prove the schema and the parser
+# agree (tests/manifest_schema.rs)
+boon = "0.6"
 # Turns WebAssembly text into the binary packages that tests pass to Runtime::load
 wat = "1"
+# Reads wit/v1 to check that every capability can answer not-granted (tests/contract_v1.rs).
+# Pinned to the version Wasmtime 50 uses.
+wit-parser = "=0.261.0"
 # The same features as above plus `wat`, for components written as text in tests and
 # examples. Cargo merges dev-dependency features into test builds, so anything added here
 # would also change the Wasmtime that the tests exercise.

@@ -1,0 +1,16 @@
+[package]
+name = "probe"
+version = "0.1.0"
+description = "Test fixture: a contract v1 plugin that reports what log answered"
+edition.workspace = true
+publish.workspace = true
+
+# Built bare: each test packs it with the manifest its case needs
+[package.metadata.dashboard]
+manifest = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen.workspace = true

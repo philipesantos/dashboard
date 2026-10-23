@@ -15,11 +15,13 @@ author direct access to the user's machine.
 
 A plugin MUST start with no capabilities. Every capability MUST be a host function that the
 plugin declares in its manifest and the user approves, and the host MUST link only the
-imports that were granted. An update that requests a new capability MUST require a new
-approval.
+imports that were granted. A capability the manifest marks as optional and the user has not
+granted MAY be linked only to a host stand-in that gives no capability and answers every call
+with "not granted". An update that requests a new capability MUST require a new approval.
 
 Rationale: least privilege; a capability that was never granted cannot be abused, and an
-update cannot escalate silently.
+update cannot escalate silently. Optional capabilities let a plugin run without them; the
+stand-in exists only because the Component Model has no optional imports.
 
 ### III. Network Only Through the Host Proxy
 
@@ -54,7 +56,10 @@ Rationale: model output can be steered by instructions hidden in the content the
 ### VII. Trust Decisions Only in Host Dialogs
 
 Granting permissions, installing plugins and connecting accounts MUST happen only in host
-dialogs. Neither AI output nor a plugin MAY perform, trigger or pre-approve these actions.
+dialogs. Until the host app has these dialogs (Phase 3), the host's development command-line
+tool MAY grant permissions to local packages, recording them only in a development grant
+record that installed plugins never use. Neither AI output nor a plugin MAY perform, trigger
+or pre-approve these actions.
 
 Rationale: these decisions expand what code can do, so they stay out of reach of the
 parties the threat model distrusts: plugin authors, external content and manipulated AI.
@@ -120,4 +125,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 1.1.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-22
+**Version**: 1.3.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23

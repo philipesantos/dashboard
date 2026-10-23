@@ -1,7 +1,7 @@
 //! Hostile plugin: recurses until its stack runs out. The call must fail as a crash and leave
 //! the host running.
 
-wit_bindgen::generate!({ path: "../../../wit", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/v0", world: "widget" });
 
 use exports::dashboard::widget::renderer::Guest;
 
