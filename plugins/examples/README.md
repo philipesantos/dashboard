@@ -4,6 +4,8 @@ Example plugins, one folder each.
 
 - [hello-widget](hello-widget/README.md): Rust, contract v1. Greets the name in its
   configuration; the starting point for a new plugin.
+- [github-releases](github-releases/README.md): Rust, contract 1.1.0. Shows the latest releases
+  of a GitHub repository, fetched through the catalog's GitHub connector in `update`.
 
 Each example has a `manifest.json` beside its `Cargo.toml`: who the plugin is and the
 permissions it needs. [`docs/plugin-authors.md`](../../docs/plugin-authors.md) explains the
