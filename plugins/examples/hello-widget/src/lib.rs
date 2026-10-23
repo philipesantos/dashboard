@@ -1,7 +1,7 @@
 //! Example plugin for contract v0: greets the name in its configuration and writes one log
 //! message.
 
-wit_bindgen::generate!({ path: "../../../wit", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/v0", world: "widget" });
 
 use dashboard::widget::log::{Level, write};
 use exports::dashboard::widget::renderer::Guest;

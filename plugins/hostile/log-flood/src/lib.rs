@@ -1,7 +1,7 @@
 //! Hostile plugin: writes 1,000 log messages, the first one 4 KiB long, then renders normally.
 //! The host must keep 100 messages, truncate the long one and report the rest as dropped.
 
-wit_bindgen::generate!({ path: "../../../wit", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/v0", world: "widget" });
 
 use dashboard::widget::log::{Level, write};
 use exports::dashboard::widget::renderer::Guest;

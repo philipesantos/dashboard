@@ -22,8 +22,8 @@ pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
 
 // Bindings for the `widget` world of plugin contract v0, the only copy of which is
-// wit/widget.wit.
-wasmtime::component::bindgen!({ path: "../wit", world: "widget" });
+// wit/v0/widget.wit.
+wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
 /// component version and layer.

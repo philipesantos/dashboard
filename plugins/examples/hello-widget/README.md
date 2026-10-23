@@ -5,7 +5,7 @@ and writes one log message. Start a new plugin from a copy of this folder.
 
 ## Contract v0
 
-The contract is [`wit/widget.wit`](../../../wit/widget.wit), the only copy, shared by the
+The contract is [`wit/v0/widget.wit`](../../../wit/v0/widget.wit), the only copy, shared by the
 host and every plugin.
 
 - The plugin exports `render(config: string) -> result<string, string>`. It receives the
