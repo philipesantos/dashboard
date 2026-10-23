@@ -23,21 +23,46 @@ Rationale: least privilege; a capability that was never granted cannot be abused
 update cannot escalate silently. Optional capabilities let a plugin run without them; the
 stand-in exists only because the Component Model has no optional imports.
 
-### III. Network Only Through the Host Proxy
+### III. External Data Only Through Host-Run Connectors
 
-All plugin network traffic MUST go through the host proxy, which enforces a per-domain
-allowlist. Plugins MUST NOT open sockets or send requests by any other path.
+Plugins MUST NOT have generic network access: the host MUST NOT offer them sockets or
+requests to a destination of their choosing. A plugin MAY reach an external service only by
+calling the operations of a connector its manifest declares. A connector is a declaration,
+never code, and the host runs it: each operation has a fixed destination and typed
+parameters, the host MUST validate every call against them, and operations that change data
+MUST be declared apart from those that only read.
 
-Rationale: the proxy is the single place where exfiltration can be blocked and audited.
+A connector's destination MUST be a domain of the project's official connector catalog, or a
+domain whose owner authorizes the connector's repository in a file published on that domain,
+which the host MUST verify at installation, at every update and periodically. Domains of the
+official catalog are reserved to it. A protocol connector of the catalog, such as RSS, MAY
+take its destination from the user in a host dialog, never from the plugin.
+
+All connector traffic MUST go through the host proxy: HTTPS only, to the exact hosts
+declared, never to a loopback or private address, with size and rate limits and a request
+log. Before approval, the host MUST show every destination a plugin's connectors reach, and
+whether data read from one connected account can reach another destination.
+
+The host's development command-line tool MAY run a local connector whose destination is not
+verified, or is a loopback address without HTTPS, recording it only in the development record
+that installed plugins never use.
+
+Rationale: a domain allowlist cannot prevent exfiltration, because any approved domain may
+forward what it receives. Running declarations instead of plugin code limits a plugin to the
+operations it declares, and verified domains let only the owner of a service publish a
+connector for it, so no impostor or duplicate connector exists. What remains, a destination
+receiving what the plugin sends it, the user judges with every destination in view.
 
 ### IV. Plugins Never See Secrets
 
 Plugins MUST NOT receive passwords, OAuth tokens or AI provider keys. Authentication and
-secrets MUST stay in the host and the OS keychain. A plugin MAY refer to a secret by name;
-the host injects it into the outgoing request.
+secrets MUST stay in the host and the OS keychain. A connector declares the credential its
+operations need, and the host MUST inject it only into that connector's requests to its own
+destination.
 
 Rationale: a malicious or compromised plugin can then misuse only what it was granted, never
-the user's credentials themselves.
+the user's credentials themselves, and a credential bound to its destination cannot reach
+another service.
 
 ### V. Plugins Stay Inside the Host Frame
 
@@ -55,8 +80,8 @@ Rationale: model output can be steered by instructions hidden in the content the
 
 ### VII. Trust Decisions Only in Host Dialogs
 
-Granting permissions, installing plugins and connecting accounts MUST happen only in host
-dialogs. Until the host app has these dialogs (Phase 3), the host's development command-line
+Granting permissions, installing plugins and connectors, and connecting accounts MUST happen
+only in host dialogs. Until the host app has these dialogs (Phase 3), the host's development command-line
 tool MAY grant permissions to local packages, recording them only in a development grant
 record that installed plugins never use. Neither AI output nor a plugin MAY perform, trigger
 or pre-approve these actions.
@@ -74,10 +99,12 @@ Rationale: a rule without a test erodes silently.
 
 ### IX. Human Review of the Security Core
 
-Every change to the security core (plugin runtime, permission engine, network proxy and
-secrets vault) MUST receive line-by-line human review before it is merged.
+Every change to the security core (plugin runtime, permission engine, connector engine and
+network proxy, secrets vault, and the official connector catalog) MUST receive line-by-line
+human review before it is merged.
 
-Rationale: these components enforce every other principle; a bug there breaks them all.
+Rationale: these components enforce every other principle, and the catalog decides which
+destinations every user trusts; a bug there breaks them all.
 
 ## Fixed Technical Decisions
 
@@ -125,4 +152,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 1.3.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
+**Version**: 2.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
