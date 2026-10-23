@@ -54,7 +54,8 @@ login providers: none
 `approved` reads `no` when the plugin has never been approved, and
 `no (approved from <path>)` when its approval belongs to another file; every permission then
 reads `not granted`. Each permission line is
-`<name> required|optional granted|not granted`. Declared login providers are listed with
+`<name> required|optional granted|not granted`; a plugin that requests none shows
+`permissions: none`. Declared login providers are listed with
 `(connecting accounts arrives in feature 005)`. A package that fails the manifest checks is
 refused with its kind, as in `run`.
 

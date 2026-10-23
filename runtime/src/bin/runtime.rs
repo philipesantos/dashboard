@@ -3,7 +3,8 @@
 //!
 //! `runtime run <plugin>` loads a plugin, calls its `render` once and prints the widget content,
 //! or the error that refused or stopped it. `runtime bench <plugin>` measures how long loading
-//! and rendering take.
+//! and rendering take. `runtime permissions <plugin>` shows what a plugin requests and what is
+//! granted, and `runtime approve <plugin>` grants its required permissions, all together.
 //!
 //! The tool is the host's control in this phase: it works in development mode only, on local
 //! package files, with the development grant record (`--grants <path>`, or the default one in
@@ -18,13 +19,15 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use runtime::grants::GrantStore;
-use runtime::{Limits, Plugin, Runtime};
+use runtime::grants::{GrantStore, Status};
+use runtime::{CheckedPackage, Limits, Plugin, Runtime, escape, package};
 
 const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>]
-       runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>]";
+       runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>]
+       runtime permissions <plugin> [--grants <path>]
+       runtime approve <plugin> [--grants <path>]";
 
-/// Exit status when the plugin was refused, failed or was stopped.
+/// Exit status when the plugin or the change was refused, or the plugin failed or was stopped.
 const PLUGIN_FAILED: u8 = 1;
 /// Exit status for usage errors: unknown command, missing file, invalid configuration.
 const USAGE_ERROR: u8 = 2;
@@ -32,23 +35,42 @@ const USAGE_ERROR: u8 = 2;
 /// Render calls `bench` measures when `--iterations` is not given.
 const DEFAULT_ITERATIONS: u32 = 1000;
 
+/// What `permissions` says of login providers until accounts can be connected.
+const LOGIN_PROVIDERS_LATER: &str = "(connecting accounts arrives in feature 005)";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Command {
+    Run,
+    Bench,
+    Permissions,
+    Approve,
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (command, options) = match args.first().map(String::as_str) {
-        Some(command @ ("run" | "bench")) => (command, parse(&args[1..], command == "bench")),
+    let command = match args.first().map(String::as_str) {
+        Some("run") => Command::Run,
+        Some("bench") => Command::Bench,
+        Some("permissions") => Command::Permissions,
+        Some("approve") => Command::Approve,
         Some(command) => return usage_error(&format!("unknown command `{command}`")),
         None => return usage_error("no command given"),
     };
-    match (command, options) {
-        (_, Err(message)) => usage_error(&message),
-        ("run", Ok(options)) => run(&options),
-        (_, Ok(options)) => bench(&options),
+    let options = match parse(&args[1..], command) {
+        Ok(options) => options,
+        Err(message) => return usage_error(&message),
+    };
+    match command {
+        Command::Run => run(&options),
+        Command::Bench => bench(&options),
+        Command::Permissions => permissions(&options),
+        Command::Approve => approve(&options),
     }
 }
 
 struct Options {
     plugin: String,
-    /// Already checked to be valid JSON.
+    /// Already checked to be valid JSON. Only for `run` and `bench`.
     config: String,
     /// Only for `bench`.
     iterations: u32,
@@ -56,7 +78,8 @@ struct Options {
     grants: Option<PathBuf>,
 }
 
-fn parse(args: &[String], bench: bool) -> Result<Options, String> {
+fn parse(args: &[String], command: Command) -> Result<Options, String> {
+    let renders = matches!(command, Command::Run | Command::Bench);
     let mut plugin = None;
     let mut config = None;
     let mut iterations = DEFAULT_ITERATIONS;
@@ -64,7 +87,7 @@ fn parse(args: &[String], bench: bool) -> Result<Options, String> {
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            option @ ("--config" | "--config-file") => {
+            option @ ("--config" | "--config-file") if renders => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("{option} needs a value"))?;
@@ -85,7 +108,7 @@ fn parse(args: &[String], bench: bool) -> Result<Options, String> {
                     return Err("give --grants only once".to_owned());
                 }
             }
-            "--iterations" if bench => {
+            "--iterations" if command == Command::Bench => {
                 iterations = args
                     .next()
                     .and_then(|value| value.parse().ok())
@@ -96,6 +119,7 @@ fn parse(args: &[String], bench: bool) -> Result<Options, String> {
                 return Err(format!("unknown option `{option}`"));
             }
             path => {
+                // Required permissions are approved all together: approve takes no permission
                 if plugin.is_some() {
                     return Err(format!("unexpected argument `{path}`"));
                 }
@@ -142,6 +166,113 @@ fn run(options: &Options) -> ExitCode {
     }
 }
 
+/// Shows what the plugin requests and what is granted to this file (FR-014); changes nothing.
+fn permissions(options: &Options) -> ExitCode {
+    let target = match Target::open(options) {
+        Ok(target) => target,
+        Err(status) => return status,
+    };
+    let checked = match target.check() {
+        Ok(checked) => checked,
+        Err(status) => return status,
+    };
+    let status = match target.grants.status(checked.manifest(), &target.origin) {
+        Ok(status) => status,
+        Err(error) => return refused(&error),
+    };
+    print!("{}", describe(&checked, &status));
+    ExitCode::SUCCESS
+}
+
+/// The output of `permissions`, as `contracts/cli.md` shows it. Every text that comes from the
+/// package or the record is escaped.
+fn describe(checked: &CheckedPackage, status: &Status) -> String {
+    let manifest = checked.manifest();
+    let mut text = format!(
+        "plugin: {} {}\nauthor: {}\ncontract: {}\n",
+        escape(manifest.id().as_str()),
+        escape(manifest.version()),
+        escape(manifest.author()),
+        checked.contract().as_str()
+    );
+    let approved = match &status.approval {
+        None => "no".to_owned(),
+        Some(entry) if !status.this_origin => {
+            format!("no (approved from {})", escape(&entry.origin))
+        }
+        Some(entry) => format!(
+            "version {} ({}) from {}",
+            escape(&entry.approved_version),
+            escape(&entry.approved_digest),
+            escape(&entry.origin)
+        ),
+    };
+    text.push_str(&format!("approved: {approved}\n"));
+    if status.permissions.is_empty() {
+        text.push_str("permissions: none\n");
+    } else {
+        text.push_str("permissions:\n");
+        for permission in &status.permissions {
+            text.push_str(&format!(
+                "  {}  {}  {}\n",
+                escape(&permission.name),
+                if permission.required {
+                    "required"
+                } else {
+                    "optional"
+                },
+                if permission.granted {
+                    "granted"
+                } else {
+                    "not granted"
+                }
+            ));
+        }
+    }
+    let providers = manifest.login_providers();
+    if providers.is_empty() {
+        text.push_str("login providers: none\n");
+    } else {
+        let providers: Vec<String> = providers.iter().map(|name| escape(name)).collect();
+        text.push_str(&format!(
+            "login providers: {} {LOGIN_PROVIDERS_LATER}\n",
+            providers.join(", ")
+        ));
+    }
+    text
+}
+
+/// Grants every required permission the manifest declares, all at once (FR-018), after the
+/// checks that need no grants (load steps 1–6): a package they refuse is granted nothing.
+fn approve(options: &Options) -> ExitCode {
+    let target = match Target::open(options) {
+        Ok(target) => target,
+        Err(status) => return status,
+    };
+    let checked = match target.check() {
+        Ok(checked) => checked,
+        Err(status) => return status,
+    };
+    let manifest = checked.manifest();
+    let digest = package::digest(&target.bytes);
+    let approval = match target.grants.approve(manifest, &target.origin, &digest) {
+        Ok(approval) => approval,
+        Err(error) => return refused(&error),
+    };
+    if let Some(replaced) = &approval.replaced {
+        println!("replaced: approval from {}", escape(replaced));
+    }
+    println!(
+        "approved {} {}",
+        escape(manifest.id().as_str()),
+        escape(manifest.version())
+    );
+    for permission in &approval.required {
+        println!("granted: {}", escape(permission));
+    }
+    ExitCode::SUCCESS
+}
+
 /// Times one load, then `iterations` render calls, each with its own instantiation.
 fn bench(options: &Options) -> ExitCode {
     let (plugin, load_time) = match load(options) {
@@ -177,24 +308,57 @@ fn percentile(sorted: &[Duration], percent: usize) -> Duration {
 /// Reads and loads a plugin with its grants, timing the load. On failure, prints why and
 /// returns the exit status.
 fn load(options: &Options) -> Result<(Plugin, Duration), ExitCode> {
-    let limits = Limits::default();
-    let path = &options.plugin;
-    let bytes =
-        read_plugin(path, limits.max_package_bytes).map_err(|message| usage_error(&message))?;
-    let origin = origin(path).map_err(|message| usage_error(&message))?;
-    let grants = grant_store(options.grants.as_ref()).map_err(|message| usage_error(&message))?;
-    let runtime = Runtime::new(limits).map_err(|error| {
-        eprintln!("error: cannot start the runtime: {error:#}");
-        ExitCode::from(PLUGIN_FAILED)
-    })?;
+    let target = Target::open(options)?;
     let start = Instant::now();
-    let plugin = runtime
-        .load(&bytes, &origin, Arc::new(grants))
-        .map_err(|error| {
-            eprintln!("error: {error}");
+    let plugin = target
+        .runtime
+        .load(&target.bytes, &target.origin, Arc::new(target.grants))
+        .map_err(|error| refused(&error))?;
+    Ok((plugin, start.elapsed()))
+}
+
+/// A plugin file read for a command, with where it came from, the grant record and a runtime.
+struct Target {
+    bytes: Vec<u8>,
+    origin: String,
+    grants: GrantStore,
+    runtime: Runtime,
+}
+
+impl Target {
+    /// On failure, prints why and returns the exit status.
+    fn open(options: &Options) -> Result<Target, ExitCode> {
+        let limits = Limits::default();
+        let path = &options.plugin;
+        let bytes =
+            read_plugin(path, limits.max_package_bytes).map_err(|message| usage_error(&message))?;
+        let origin = origin(path).map_err(|message| usage_error(&message))?;
+        let grants =
+            grant_store(options.grants.as_ref()).map_err(|message| usage_error(&message))?;
+        let runtime = Runtime::new(limits).map_err(|error| {
+            eprintln!("error: cannot start the runtime: {error:#}");
             ExitCode::from(PLUGIN_FAILED)
         })?;
-    Ok((plugin, start.elapsed()))
+        Ok(Target {
+            bytes,
+            origin,
+            grants,
+            runtime,
+        })
+    }
+
+    /// Load steps 1–6, which need no grants.
+    fn check(&self) -> Result<CheckedPackage, ExitCode> {
+        self.runtime
+            .check(&self.bytes)
+            .map_err(|error| refused(&error))
+    }
+}
+
+/// Prints a refusal and returns the exit status for it.
+fn refused(error: &runtime::RuntimeError) -> ExitCode {
+    eprintln!("error: {error}");
+    ExitCode::from(PLUGIN_FAILED)
 }
 
 /// The package's origin: its file's canonical path, so the same file has one origin however it

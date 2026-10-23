@@ -28,6 +28,7 @@ use permissions::Interfaces;
 pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
 pub use permissions::Contract;
+pub use text::escape;
 
 /// Bindings for the `widget` world of plugin contract v0 (`wit/v0`, `dashboard:widget@0.1.0`).
 pub(crate) mod v0 {
