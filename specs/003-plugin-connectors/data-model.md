@@ -55,7 +55,8 @@ reserves, in a connector outside the catalog, is `destination-reserved` (FR-005)
 
 Every placeholder names a declared parameter, and every declared parameter appears in exactly
 one place. An optional parameter may not fill a path segment. Literal values (query, headers,
-body) are public: `permissions` shows them and the log records them.
+body) are public: `permissions` shows them, and query values also appear in the logged
+address.
 
 ### Parameter
 
@@ -200,9 +201,10 @@ One JSON object per line of `<data>/requests.jsonl` ([R14](research.md#r14-kept-
 | `arguments` | Name → value as sent, each cut to 256 characters with ` [truncated]` |
 | `outcome` | `{ "status": 200 }`, `{ "refused": "<rule>", "detail": "…" }` or `{ "failed": "<rule>", "detail": "…" }` |
 | `sent_bytes`, `received_bytes`, `duration_ms` | For this request; a followed redirect gets its own entry, with `redirect_of` set |
-| `summary` | Only in the one entry written past an update's call limit: how many more calls were refused |
+| `summary` | Only in the one entry written past a run's call limit: how many more calls there were, by answer (`not-granted`, `refused`, `failed`, `ok`) |
 
-The connector and operation names a plugin passes are cut to 64 characters, and at most 16
+The connector and operation names a plugin passes are cut to 160 characters (the longest id),
+and at most 16
 arguments with names of at most 32 characters are written, before an entry is written. The CLI
 escapes every text field when it prints the log.
 
@@ -223,11 +225,12 @@ escapes every text field when it prints the log.
 
 ## A connector call
 
-Inside `update`, for `call(connector, operation, arguments)`, in order; the first rule that
-applies answers, and every call is logged:
+For `call(connector, operation, arguments)`, in order; the first rule that applies answers,
+and every call is logged:
 
-0. The update's call counter goes up, whatever follows; past the limit, the call is not logged
-   on its own but counted in one summary entry.
+0. The call counter of this run of `update` or `render` goes up, whatever follows; past the
+   limit (20), the call answers as below but is not logged on its own: one summary entry per run
+   counts those calls and their answers.
 1. The connector is in the plugin's table, built at link time from the granted connectors —
    else `not-granted`, whether it is off or not declared at all (Principle II, v2.3.0).
 2. The grant record, read again, still grants it — else `not-granted`.
@@ -258,7 +261,7 @@ New kinds a load, an approval or an update can end with (CLI contract names):
 | --- | --- |
 | `invalid-connector` | A connector file is too large, not JSON, breaks the schema or a rule above |
 | `credentials-not-supported` | A connector declares a credential (FR-017) |
-| `destination-not-verified` | A connector id names a repository (FR-004) |
+| `destination-not-verified` | A connector id names a repository (FR-004), or a local id when the runtime is not in development mode (FR-018) |
 | `destination-reserved` | A connector outside the catalog claims a catalog id or a reserved host (FR-005, FR-018) |
 | `connector-unavailable` | A declared connector is not found, has another major, or lacks a declared operation (FR-006) |
 | `contract-too-old` | A widget declares a connector but is built for a contract older than 1.1.0 (FR-016) |
@@ -274,7 +277,7 @@ Rules of a refused or failed call, seen by the widget in `call-error` and in the
 | Rule | Refused (nothing sent) or failed |
 | --- | --- |
 | `operation-not-declared`, `value-outside-type`, `called-outside-update`, `change-needs-user-action` | Refused |
-| `over-limit` | Refused (calls, rate) or failed (size, time) |
+| `over-limit` | Refused (calls, rate, request address or body size) or failed (response size, time) |
 | `non-public-address`, `redirect-not-allowed`, `unavailable`, `invalid-response` | Failed |
 | `not-granted` | Its own case of `call-error`: nothing sent; also the answer for a connector the manifest does not declare |
 
@@ -323,15 +326,19 @@ state directly, because no plugin can observe the rule.
 | `rebinding` | FR-007 | A name public on the first lookup and private on the second: the second call is refused |
 | `exact-port` | FR-007 | A redirect to the same host on another port is not followed |
 | `redirect-escape` | FR-007 | Redirects to an undeclared host, to a private address and to plain HTTP: not followed |
-| `tls` | FR-007 | A wrong name, an untrusted CA and an expired certificate: `failed(unavailable)`, nothing sent past the handshake |
-| `system-proxy` | FR-007 | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and their lowercase forms set, `NO_PROXY` cleared, for the HTTPS and the loopback agents: the proxy server receives nothing |
+| `tls` | FR-007 | A wrong name, an untrusted CA and an expired certificate: `failed(unavailable)`, nothing sent past the handshake; certificates whose AIA, OCSP and CRL addresses point at a recording server: it receives nothing, on the three systems |
+| `system-proxy` | FR-007 | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and their lowercase forms set, `NO_PROXY` and `no_proxy` cleared, in a child test process (the HTTPS agent, through the seam) and in the CLI's environment (the loopback agent): the proxy server receives nothing |
 | `cookie` | FR-007 | A `Set-Cookie` answer: the next request carries no `Cookie` |
-| `over-limits` | FR-008 | A body over 1 MiB, 4 MiB across an update, headers over 16 KiB, an address over 8 KiB, 21 calls, 6 redirects, a slow service, a burst over the per-widget and the per-host rates (two widgets), output over 256 KiB: refused or stopped, the widget gets nothing over the limit |
-| `log-flood` | FR-009 | 10 000 refused and not-granted calls in one update: one summary entry, and the entries written before the update are still there |
+| `over-limits` | FR-008 | A body over 1 MiB, 4 MiB across an update, headers over 16 KiB, an address over 8 KiB, a request body over 64 KiB (a catalog `POST` read through the seam), 21 calls, 6 redirects, a slow service, a burst over the per-widget and the per-host rates (two widgets), output over 256 KiB: refused or stopped, the widget gets nothing over the limit |
+| `log-flood` | FR-009 | 10 000 refused and not-granted calls in one update, and as many in one render: one summary entry each, and the entries written before them are still there |
 | `log-spoof` | FR-009 | Connector, operation and argument texts with newlines and terminal escapes: `runtime requests` prints them escaped, one line per entry |
-| `log-complete` | FR-009 | Every call of the suite, allowed or refused, and every redirect hop, has its entry; rotation keeps the newest |
+| `log-complete` | FR-009 | Every call of the suite, allowed or refused, and every redirect hop, has its own entry or is counted in its run's summary entry; rotation keeps the newest |
 | `call-in-render` | FR-010 | A call from `render` to a connector in the table: `refused(called-outside-update)`, nothing resolved or sent; to one that is off: `not-granted` |
 | `change-in-update` | FR-013 | A call to a change: refused |
 | `optional-off` | FR-015 | An optional connector that is off answers `not-granted`, nothing sent; turning it off, or removing the approval, from another process mid-update drops the response in flight; turning one on mid-update leaves it off until the next update |
 | `connector-table` (white box) | FR-015 | The table's keys are exactly the granted connectors, and the stand-in is linked when none is granted |
-| `test-seam` (white box) | R15 | A release build with `test-network` does not compile |
+| `catalog-reserves` (white box) | FR-005 | Every built-in catalog connector's `reserves` covers each host it declares; an extra catalog connector, added through the seam, with a destination outside its `reserves` is refused |
+
+Not a hostile plugin, so a CI step rather than a case: `cargo check -p runtime --release
+--features test-network` must fail (R15). The CLI tests (`runtime/tests/cli.rs`) cover `approve`
+without `--expect` for a widget with connectors (refused) and the `permissions` data-flow line.

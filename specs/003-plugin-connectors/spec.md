@@ -266,7 +266,8 @@ machine in development mode.
 - A widget calls a connector its manifest does not declare: it answers "not granted", as one
   that is off does; nothing is sent.
 - A local connector fixes an `X-` header: refused. Fixed values in queries, headers and bodies
-  are public: they appear before approval and in the log, so a key written there is no secret.
+  are public: they appear before approval, and the query ones in the logged address, so a key
+  written there is no secret.
 - A widget makes thousands of refused calls in one update: every call counts toward the update's
   call limit, and past it the log gets one summary entry, so earlier entries stay.
 - A local connector or the package changes between showing and approving: the approval, given
@@ -326,10 +327,10 @@ machine in development mode.
   read MUST be a GET or HEAD request without a body, and the host MUST refuse a connector that
   declares any other request as a read, naming the operation. Fixed values a connector writes
   into its requests (query values, headers, body fields) are public: they are shown before
-  approval and recorded in the request log. Outside the catalog, a connector MUST NOT fix any
-  `X-` header, since some servers read such headers to change a request's method or path. The
-  project MUST publish the connector schema, and the host MUST refuse a connector that does not
-  conform, naming the field and the problem.
+  approval. Outside the catalog, a connector MUST NOT fix any `X-` header, since some servers
+  read such headers to change a request's method or path. The project MUST publish the connector
+  schema, and the host MUST refuse a connector that does not conform, naming the field and the
+  problem.
 - **FR-003**: A parameter MUST be text with a maximum length and, optionally, a pattern or a
   fixed set of values; a whole number with a range; or true/false; and either required or
   optional. The host MUST check every value of every call against its type before sending
@@ -357,27 +358,28 @@ machine in development mode.
 - **FR-007**: Every connector request MUST go through the host proxy, which MUST: use HTTPS with
   a certificate valid for the destination host, that is, for its name, within its validity
   period and chaining to a root of the list the host ships (Mozilla's, updated with the host),
-  checked without any request of its own or of the operating system; connect only to the exact host and port of the
-  operation's destination, directly, never through a network proxy configured in the operating
-  system; refuse a destination given as an IP address; never connect to a loopback, private,
-  link-local or other non-public address, checking every address a name leads to at every
-  connection; follow a redirect only to a host the same connector declares, under these same
-  rules, at most a fixed number of times; and neither send nor keep cookies. Local connectors in
-  development are the only exception (FR-018).
+  checked without any request of its own or of the operating system; connect only to the exact
+  host and port of the operation's destination, directly, never through a network proxy
+  configured in the operating system; refuse a destination given as an IP address; never connect
+  to a loopback, private, link-local or other non-public address, checking every address a name
+  leads to at every connection; follow a redirect only to a host the same connector declares,
+  under these same rules, at most a fixed number of times; and neither send nor keep cookies.
+  Local connectors in development are the only exception (FR-018).
 - **FR-008**: The host MUST limit each call's time, request size (address and body) and response
-  size; the number of calls of each update, counting every call, refused ones included, and its
-  total response size; and the rate of calls per widget and per destination host across all
-  widgets in one run of the host. A call over a limit MUST fail with an error naming the limit,
-  and the widget MUST NOT receive any part of a response over the size limit.
+  size; the number of calls of each run of `update` or `render`, counting every call, refused
+  ones included, and the total response size of each update; and the rate of calls per widget
+  and per destination host across all widgets in one run of the host. A call over a limit MUST
+  fail with an error naming the limit, and the widget MUST NOT receive any part of a response
+  over the size limit.
 - **FR-009**: The host MUST record every connector call, allowed or refused, in a request log:
   time, widget, connector, operation, destination host, parameter values as sent (each cut to a
   maximum length, marked when cut), outcome (response status, or the refusal and its rule), bytes
   sent and received, and duration, with one entry per redirect followed. It MUST NOT record
-  credentials. Past an update's call limit, the host MUST record one summary entry instead of
-  one per call, so no plugin can push earlier entries out. The log MUST keep a bounded size,
-  dropping the oldest entries first. Only the host's own controls, in this phase the
-  command-line tool, MAY read it, escaping every text a plugin or a connector wrote; no plugin
-  MAY read or change it.
+  credentials. Past the call limit of a run of `update` or `render`, the host MUST record one
+  summary entry instead of one per call, so no plugin can push earlier entries out. The log
+  MUST keep a bounded size, dropping the oldest entries first. Only the host's own controls, in
+  this phase the command-line tool, MAY read it, escaping every text a plugin or a connector
+  wrote; no plugin MAY read or change it.
 - **FR-010**: A widget MAY call connectors only during an update; a call made during render MUST
   be refused. An update MUST have a time limit of its own, larger than render's, and the same CPU
   and memory limits as render. It returns a JSON data document within a size limit. The host MUST
@@ -435,19 +437,22 @@ machine in development mode.
   the files it was approved from, as in feature 002: a connector file elsewhere that claims the
   same id inherits nothing.
 - **FR-019**: Every refusal MUST name, in one message, the connector, operation, parameter or
-  destination concerned and the rule that applied: operation not declared, unknown operation,
-  value outside its type, read with a body outside the catalog, destination not verified,
-  destination reserved, non-public address, not HTTPS, redirect not allowed, over a limit,
-  called outside an update, change needs a user action, connector unavailable or of another
-  version, contract mismatch, invalid connector, credentials not supported yet.
+  destination concerned and the rule that applied: not granted, operation not declared, value
+  outside its type, called outside an update, change needs a user action, over a limit,
+  non-public address, redirect not allowed (to another host, a non-public address or plain
+  HTTP), unavailable, invalid response; and, when a widget or a connector loads or is approved:
+  invalid connector (including a read with a body or a fixed `X-` header outside the catalog,
+  or a destination that is not HTTPS), credentials not supported yet, destination not verified,
+  destination reserved, connector unavailable or of another version, contract mismatch,
+  contract too old, missing updater, approval changed.
 - **FR-020**: The hostile suite MUST gain one case per rule in FR-001, FR-002 (a read with a
   body outside the catalog; fixed `X-` headers), FR-003, FR-004 (a connector from a repository),
   FR-005, FR-006, FR-007 (a non-public address given directly, reached through a name and
   reached through a redirect; plain HTTP; certificates; system proxies), FR-008, FR-009 (a
-  flooded or spoofed log), FR-010, FR-013, FR-014, FR-015, FR-017 and FR-018. It MUST run on Windows, macOS and
-  Linux on every change that is not documentation-only, without depending on the internet, and
-  fail the build if any case is not refused or if any request reaches a destination it was not
-  approved for (Principle VIII).
+  flooded or spoofed log), FR-010, FR-013, FR-014, FR-015, FR-017 and FR-018. It MUST run on
+  Windows, macOS and Linux on every change that is not documentation-only, without depending on
+  the internet, and fail the build if any case is not refused or if any request reaches a
+  destination it was not approved for (Principle VIII).
 - **FR-021**: The catalog MUST start with a connector for GitHub public data that needs no
   account (a few read operations on public repositories). The project MUST ship an example
   widget that uses it, and documentation for widget authors (declaring connectors, the update
@@ -505,7 +510,7 @@ machine in development mode.
 - **SC-007**: Checking a widget's connectors when it loads adds less than 10 ms on every CI
   system.
 - **SC-008**: 100% of the connector calls made in the tests, allowed and refused, appear in the
-  request log.
+  request log, each with its own entry or counted in the summary entry of its run.
 - **SC-009**: Removing a widget's approval, or turning off one of its connectors, takes effect
   from the widget's next call and discards its kept data, every time.
 - **SC-010**: The catalog connector and the example widget validate against the published

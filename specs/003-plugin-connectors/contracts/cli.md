@@ -73,7 +73,7 @@ approval digest: sha256:0c7d…
   connectors.
 - `destinations:` lists every origin of the connector, the ones redirects may reach included.
 - `fixed:` lists every value the connector writes into the request itself (query, headers,
-  body): they are public and also recorded in the request log.
+  body): they are public; query values also appear in the logged address.
 - When a widget combines a local connector whose destination is this machine with any other
   destination, a line says so, before the login providers:
   `data flow: data read from this machine (http://127.0.0.1:8765) can reach https://api.github.com`.
@@ -117,7 +117,7 @@ Prints the request log, oldest first, the last `n` entries (default 50), one lin
 UTC; changes nothing. Every text a plugin or a connector wrote (names, arguments, paths, details)
 is escaped as feature 001 escapes log messages, so an entry cannot add lines or control the
 terminal. A followed redirect is its own line; the summary written past an update's call limit
-reads `… N more calls refused (over-limit)`.
+reads `… N more calls past the limit of this run (not-granted: a, refused: b, failed: c, ok: d)`.
 
 ```text
 2026-10-23T14:02:11.204Z local/github-releases catalog/github list-releases GET api.github.com /repos/rust-lang/rust/releases?per_page=5 200 3412B 184ms

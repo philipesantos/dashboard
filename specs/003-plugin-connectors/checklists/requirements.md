@@ -58,7 +58,8 @@
   to a feature of its own alongside installation in Phase 3: connectors from repositories with
   `/.well-known/` verification (until then, a connector whose id names a repository is refused
   as not verified, which covers the gate's "unverified destination"), registrable-domain
-  reservation (this feature reserves the catalog's exact hosts), RSS and other protocol
+  reservation (reversed by the constitution re-check: catalog connectors list the domains they
+  reserve, FR-005), RSS and other protocol
   connectors, catalog criteria, and updates on load and on a schedule (assumptions, FR-004,
   FR-005, FR-012). From 7 user stories and 24 requirements to 5 and 22.
 - `/speckit-clarify` on 2026-10-23 (spec, Clarifications): an update calls only reads (FR-013);

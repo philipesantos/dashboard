@@ -34,9 +34,9 @@ and the like to change a request's method or path, which would let a local conne
 as a change; the catalog's review checks each `X-` header. The host refuses `Authorization`,
 `Cookie`, `Proxy-*`, `Host`, `Content-*`, `Transfer-Encoding`, `Connection`, `Upgrade`, `TE`
 and `User-Agent`, which it sets or forbids itself. Every fixed value (query values, headers,
-body fields) is public: `permissions` shows it and the log records it, so a key written there is
-visibly no secret (Principle IV). Response headers passed to the widget are any names except
-`Set-Cookie` and `Cookie` (clarification 2).
+body fields) is public: `permissions` shows it, and query values also appear in the logged
+address, so a key written there is visibly no secret (Principle IV). Response headers passed to
+the widget are any names except `Set-Cookie` and `Cookie` (clarification 2).
 
 **Rationale**: data the host reads can do only what the host does with it; a schema lets
 authors check a connector before shipping it, and the same typed-parsing approach already
@@ -252,7 +252,10 @@ CI and break the address rule).
 **Decision**: never used (clarification 5): `proxy(None)`, and the `win-system-proxy` and
 `socks-proxy` features stay off. When a call fails as `unavailable`, its detail adds that the
 host connects directly and does not use network proxies. A hostile case sets `HTTPS_PROXY`,
-`HTTP_PROXY` and `ALL_PROXY` to a recording server and checks that it receives nothing.
+`HTTP_PROXY`, `ALL_PROXY` and their lowercase forms to a recording server, clears `NO_PROXY` and
+`no_proxy`, and checks that it receives nothing: for the HTTPS agent in a child test process
+through the seam (setting variables in the test process itself is unsafe in edition 2024), and
+for the loopback agent through the CLI.
 
 **Rationale**: behind a proxy the host cannot see which address a name leads to, so FR-007's
 address rule could not be enforced.
@@ -267,7 +270,7 @@ closes (as feature 001 did):
 | Update wall-clock time | 10 s (render keeps 1 s) |
 | Update fuel and memory | The render's: 500 M fuel units, 32 MiB |
 | One call's time (resolve, connect, TLS, response) | 5 s, cut to what is left of the update |
-| Calls per update, every call counted (refused, not granted and failed included) | 20; past it, one summary entry in the log |
+| Calls per run of `update` or `render`, every call counted (refused, not granted and failed included) | 20; past it, one summary entry in the log |
 | Arguments per call | 16, names at most 32 characters, checked before logging |
 | Response body per call | 1 MiB |
 | Response bodies per update | 4 MiB |
@@ -399,23 +402,23 @@ one needs approval even when no declared operation uses it.
 `<data dir>/dev.philsantos.dashboard/development/`, or `--data <dir>`; plugins have no file
 access.
 
-- Kept data: `widget-data/<sha256 of id and origin>.json`, written atomically:
-  `{ id, origin, digest, approval: { digest, connectors_on }, fetched_at_ms, data, last_update:
-  { at_ms, outcome, error } }`. Render gets `data`, `fetched_at_ms` and `last_update`, or no data
-  (FR-011). The file is discarded when `remove` runs, when `optional … off` turns a connector off,
-  and whenever a load finds that the package digest, the approval or the set of connectors that
-  are on no longer matches what the file recorded (clarification 4), so a change made by another
-  process is also caught.
+- Kept data: `widget-data/<sha256 of id and origin>.json`, written atomically: `{ id, origin,
+  digest, approval: { digest, connectors_on }, fetched_at_ms, data, last_update: { at_ms,
+  outcome, error } }`. Render gets `data`, `fetched_at_ms` and `last_update`, or no data
+  (FR-011). The file is discarded when `remove` runs, when `optional … off` turns a connector
+  off, and whenever a load finds that the package digest, the approval or the set of connectors
+  that are on no longer matches what the file recorded (clarification 4), so a change made by
+  another process is also caught.
 - Request log: `requests.jsonl`, one JSON object per call, appended under a file lock; when it
-  passes 2 MiB it is renamed to `requests.1.jsonl`, replacing the older one (FR-009). Each entry:
-  time, plugin id, connector, operation, kind, method, destination host, path, arguments (each
-  value cut to 256 characters), outcome (status, or the rule and detail), bytes sent and
+  passes 2 MiB it is renamed to `requests.1.jsonl`, replacing the older one (FR-009). Each
+  entry: time, plugin id, connector, operation, kind, method, destination host, path, arguments
+  (each value cut to 256 characters), outcome (status, or the rule and detail), bytes sent and
   received, duration; a followed redirect gets an entry of its own. The connector and operation
-  names a plugin passes are cut to 64 characters before they are written, and past an update's
-  call limit one summary entry counts the calls refused, so one update cannot push earlier
-  entries out. `runtime requests` escapes every text a plugin or a connector wrote, as feature
-  001 escapes log messages. The host never puts credentials in it; in this feature there are
-  none to put.
+  names a plugin passes are cut to 160 characters, the longest id, before they are written, and
+  past a run's call limit (of `update` or of `render`) one summary entry counts the remaining
+  calls by answer, so no run can push earlier entries out. `runtime requests` escapes every text
+  a plugin or a connector wrote, as feature 001 escapes log messages. The host never puts
+  credentials in it; in this feature there are none to put.
 - Times are integer milliseconds since the Unix epoch, so no date library is needed.
 
 **Rationale**: the same file discipline as the grant record (lock, atomic rename) and the same
@@ -440,18 +443,21 @@ own dev-dependency on itself, compiles `Runtime::with_test_network`. It takes:
 names under `.test`) and plain HTTP loopback servers, each recording every request it receives,
 and scripted per path: status, headers, body size, delay, redirect. Cases that need no seam
 (local connectors on loopback, parameters, limits, render-time calls, changes, optional off, the
-log, kept data, the proxy variables through the CLI) use the production network.
+log, kept data, the proxy variables for the loopback agent through the CLI) use the production
+network; the proxy variables for the HTTPS agent run in a child test process through the seam.
 
 The library refuses to compile with `test-network` outside debug builds (`compile_error!` on
-`all(feature = "test-network", not(debug_assertions))`), and CI's tests run in debug.
+`all(feature = "test-network", not(debug_assertions))`), and CI's tests run in debug; a CI step
+checks it, since `cargo check -p runtime --release --features test-network` must fail.
 
 **Spike**: a crate with a dev-dependency on itself that turns a feature on: its integration tests
 saw the feature, its release binary did not. The binary built for the tests did see it, so the
 CLI must offer no option that reaches the seam.
 
 **Rationale**: every rule is tested on the real path: same resolver code, same classifier, same
-TLS verifier, only the inputs (names, roots) differ. The seam cannot reach a release build: the release CLI and
-the Phase 3 app never enable the feature, and the CLI has no option that reaches it.
+TLS verifier, only the inputs (names, roots) differ. The seam cannot reach a release build: the
+release CLI and the Phase 3 app never enable the feature, and the CLI has no option that reaches
+it.
 
 ## R16. The first catalog connector and the example
 
@@ -474,8 +480,8 @@ this connector is the one feature 005 extends with an account.
 
 ## R17. CLI
 
-**Decision** ([contracts/cli.md](contracts/cli.md)): `update <plugin>` runs the widget's update and
-keeps its data; `run` renders connected widgets with their kept data; `permissions` shows
+**Decision** ([contracts/cli.md](contracts/cli.md)): `update <plugin>` runs the widget's update
+and keeps its data; `run` renders connected widgets with their kept data; `permissions` shows
 connectors, destinations, operations, the parameters and fixed values sent, where each kind
 comes from, whether data read from this machine can reach another destination, and an approval
 digest over all of it; `approve` of a widget that declares a connector requires
@@ -503,9 +509,9 @@ asks (FR-012).
 `deny.toml` gains two allowed licenses, both permissive and compatible with distributing the
 client under Apache-2.0: `ISC` (`ring`, `untrusted`, `rustls-webpki`) and `CDLA-Permissive-2.0`,
 a license for data, which covers Mozilla's root list (`webpki-roots`). `cargo deny check
-licenses` passed on the spike with this tree and those two changes. `rustls` and `rcgen` are taken
-without default features or with `ring`, so `aws-lc-rs` never enters the tree. Each crate must
-pass `cargo deny` and `cargo audit` in CI.
+licenses` passed on the spike with this tree and those two changes. `rustls` and `rcgen` are
+taken without default features or with `ring`, so `aws-lc-rs` never enters the tree. Each crate
+must pass `cargo deny` and `cargo audit` in CI.
 
 ## R19. Measuring
 
@@ -522,8 +528,15 @@ service would take 5 s (SC-004, under 1 s). `bench.yml` records them on the thre
   `Cargo.lock` when a change moves a crate of the network stack (`ureq`, `ureq-proto`, `rustls`,
   `rustls-webpki`, `ring`, `webpki-roots`, `url`, `regex`), and as security tests
   `plugins/hostile/` and `plugins/fixtures/`.
-- `clippy.toml` disallows `ureq` types outside `runtime/src/network/`, which allows them
-  explicitly, so no other module can open a connection without the review noticing.
+- `clippy.toml` disallows `ureq`'s types and free functions (`disallowed-types`,
+  `disallowed-methods`) and `std::net::{TcpStream, UdpSocket}` outside
+  `runtime/src/network/`, which allows them explicitly, so no other module can open a
+  connection without the review noticing.
+- `deny.toml` bans `rustls-platform-verifier`, `rustls-native-certs` and `native-tls`, so the
+  verifier decision of R8 cannot be undone by a dependency.
+- `catalog.rs` checks, in a unit test over the built-in list, that each catalog connector's
+  `reserves` covers every host it declares; a catalog connector added through the seam with a
+  host outside its `reserves` is refused when it loads (FR-005).
 - Tests never read `specs/`: CI skips documentation-only changes, so a test that read the drafts
   could change without CI running. The schema tests read `wit/`, `connectors/` and `plugins/`.
 

@@ -74,13 +74,13 @@ interface connectors {
     called-outside-update,
     /// The operation changes data; until user actions exist, `update` only reads.
     change-needs-user-action,
-    /// A limit: calls per update, rate, time, or response size.
+    /// A limit: calls per run, rate, request address or body size, response size, or time.
     over-limit,
     /// The destination's name led only to addresses that are not public.
     non-public-address,
     /// The service redirected to a destination the connector does not declare.
     redirect-not-allowed,
-    /// The request could not complete: name resolution, connection, certificate, time.
+    /// The request could not complete: name resolution, connection or certificate.
     unavailable,
     /// The response is not in the format the operation declares.
     invalid-response,

@@ -66,7 +66,7 @@ Checked against constitution v2.3.1, after an independent review (findings in [c
 | II. Zero capabilities by default | Pass | Each connector is a permission declared in the manifest and approved. The shared `connectors` import follows v2.3.0: at link time the host builds a table holding only the granted connectors; the lookup is a call's first step, so a connector that is off or not declared always answers `not-granted`; the stand-in is linked when none is granted; call-time checks only take away, and a white-box test checks the table (R12). A change to an approved connector's destinations or operations needs a new approval, and connectors a manifest drops are pruned (R13) |
 | III. External data only through host-run connectors | Pass | No socket or HTTP import is offered; the host runs declarations, and outside the catalog no `X-` header can turn a read into a change; destinations come from the catalog, whose listed domains are reserved with every host under them, or are local in development mode only; repository connectors are refused until verification exists (Phase 3); HTTPS with a verifier that makes no request of its own, exact hosts and ports, public addresses only (checked at every connection, redirects included), no system proxy, limits, a request log no plugin can flood; `permissions` shows every destination and fixed value, and `approve` grants only the digest that was shown (R1, R2, R5–R10, R14, R17) |
 | III. Local network | Pass | No catalog connector reaches the user's local network yet. The development exception lets local connectors reach this machine over loopback; when a widget combines one with any other destination, `permissions` says that data read from this machine can reach it (R17) |
-| IV. Plugins never see secrets | Pass | A connector that declares a credential is `credentials-not-supported`; the host sets `User-Agent` and forbids `Authorization`, `Cookie` and, outside the catalog, every `X-` header; fixed values are public, shown and logged, so none can pass for a secret; the log never records credentials (R1, R14) |
+| IV. Plugins never see secrets | Pass | A connector that declares a credential is `credentials-not-supported`; the host sets `User-Agent` and forbids `Authorization`, `Cookie` and, outside the catalog, every `X-` header; fixed values are public, shown before approval, so none can pass for a secret; the log never records credentials (R1, R14) |
 | V. Plugins stay inside the host frame | Pass (N/A) | No UI; render output rules unchanged |
 | VI. Human confirmation for AI actions | Pass (N/A) | No AI |
 | VII. Trust decisions only in host dialogs | Pass | Approvals of widgets and connectors go through the development CLI, on local files and the development record, as v2.3.1 allows; local connectors need the runtime's explicit development mode, which only the CLI sets; the test seam compiles only in debug test builds and no CLI option reaches it; no plugin can read or write the grants, the kept data of other widgets or the log (R2, R15) |
@@ -133,7 +133,7 @@ runtime/                        # Security core
 │   │   ├── mod.rs              # The only use of ureq: agents, requests, redirects, limits (R5, R7, R10)
 │   │   ├── address.rs          # Public-address classifier (R6)
 │   │   └── resolver.rs         # PublicOnly resolver; the test resolver behind test-network (R6, R15)
-│   ├── calls.rs                # One connector call, steps 1–12 of the data model; rates (R10, R12)
+│   ├── calls.rs                # One connector call, steps 0–13 of the data model; rates (R10, R12)
 │   ├── kept.rs                 # Kept data store (R14)
 │   ├── requests.rs             # Request log (R14)
 │   ├── manifest.rs             # + connectors
@@ -153,7 +153,7 @@ runtime/                        # Security core
 │   ├── contract_v1.rs          # + 1.1.0 is a superset of 1.0.0; connectors answers not-granted
 │   ├── manifest_schema.rs      # + connector schema agreement; every repo connector validates
 │   ├── cli.rs                  # + new commands and output
-│   └── hostile.rs              # + the 15 cases of FR-020
+│   └── hostile.rs              # + the 30 cases of FR-020
 
 plugins/
 ├── Cargo.toml                  # + the new crates
@@ -167,8 +167,8 @@ docs/connectors.md              # New: writing a connector, testing it in develo
 docs/threat-model.md            # Connectors replace the allowlist (B2, threats, tests)
 SECURITY.md, CONTRIBUTING.md    # Scope and security core name connectors
 .github/pull_request_template.md  # Security core: runtime/, wit/, connectors/, network-stack Cargo.lock; tests: plugins/fixtures/
-clippy.toml                     # ureq types only inside runtime/src/network/ (R20)
-deny.toml                       # + ISC, CDLA-Permissive-2.0
+clippy.toml                     # ureq and std::net sockets only inside runtime/src/network/ (R20)
+deny.toml                       # + ISC, CDLA-Permissive-2.0; bans the system verifiers (R20)
 ```
 
 **Structure Decision**: everything stays in the existing crates. The network module is the only
