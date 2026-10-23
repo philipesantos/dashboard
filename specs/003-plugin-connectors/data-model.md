@@ -34,8 +34,8 @@ A field named `credential`, `credentials` or `auth`, anywhere, is `credentials-n
 
 `<domain>` is a DNS name, compared in one normal form: lowercase ASCII, internationalized labels
 in their `xn--` form; a name that ends with a dot is refused. No path (other than `/`), query,
-fragment, user or password. An IP address
-outside the loopback forms above is `invalid-connector`. A destination whose host the catalog
+fragment, user or password. An IP address outside the loopback forms above is
+`invalid-connector`. A destination whose host the catalog
 reserves, in a connector outside the catalog, is `destination-reserved` (FR-005).
 
 ### Operation
@@ -204,9 +204,8 @@ One JSON object per line of `<data>/requests.jsonl` ([R14](research.md#r14-kept-
 | `summary` | Only in the one entry written past a run's call limit: how many more calls there were, by answer (`not-granted`, `refused`, `failed`, `ok`) |
 
 The connector and operation names a plugin passes are cut to 160 characters (the longest id),
-and at most 16
-arguments with names of at most 32 characters are written, before an entry is written. The CLI
-escapes every text field when it prints the log.
+and at most 16 arguments with names of at most 32 characters are written, before an entry is
+written. The CLI escapes every text field when it prints the log.
 
 ## Load decision
 
