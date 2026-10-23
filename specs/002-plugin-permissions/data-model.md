@@ -178,8 +178,9 @@ Details are escaped and cut to 1 KiB, as in feature 001; every name in a list is
 
 New cases of `runtime/tests/hostile.rs`, one per rule of FR-016. Each must be refused with its
 kind (or, for FR-019, contained; for FR-009 and FR-010, leave the record unchanged), and a
-well-behaved plugin must run right after on the same runtime. `probe` (v1, calls `log` and returns what it answered) and `quiet` (v1, no imports) are
-the bare fixtures under `plugins/fixtures/`; each case packs them with its own manifest.
+well-behaved plugin must run right after on the same runtime. `probe` (v1, calls `log` and
+returns what it answered) and `quiet` (v1, no imports) are the bare fixtures under
+`plugins/fixtures/`; each case packs them with its own manifest.
 
 | Case | Rule | Package | Grants | Expected |
 | --- | --- | --- | --- | --- |
