@@ -41,6 +41,15 @@ impl Contract {
         }
     }
 
+    /// The version of the `dashboard:widget` package, which ends every interface name of this
+    /// contract (`dashboard:widget/log@1.0.0`).
+    fn package_version(self) -> &'static str {
+        match self {
+            Contract::V0 => "0.1.0",
+            Contract::V1 => "1.0.0",
+        }
+    }
+
     /// The version whose `renderer` is `export`, matched exactly.
     pub fn from_renderer(export: &str) -> Option<Contract> {
         Contract::ALL
@@ -69,6 +78,9 @@ impl Permission {
         }
     }
 }
+
+/// The start of every interface name of the plugin contract, whatever its version.
+const CONTRACT_PREFIX: &str = "dashboard:widget/";
 
 /// Every permission this host knows. Features 003–005 add one row each, for contract v1 only.
 const REGISTRY: &[Permission] = &[Permission {
@@ -124,27 +136,196 @@ pub(crate) struct Decision {
 /// Load steps 5 and 6 (`data-model.md`, Load decision): the contract, then the imports. Needs
 /// no grants, so `approve` runs it too.
 pub(crate) fn check_component(
-    _interfaces: &Interfaces,
-    _manifest: &Manifest,
+    interfaces: &Interfaces,
+    manifest: &Manifest,
 ) -> Result<Contract, RuntimeError> {
-    Err(RuntimeError::new(
-        ErrorKind::ContractMismatch,
-        "not implemented yet",
-    ))
+    // Step 5: the contract the plugin implements, and nothing from another version of it
+    let implemented: Vec<Contract> = Contract::ALL
+        .into_iter()
+        .filter(|contract| {
+            interfaces
+                .exports
+                .iter()
+                .any(|export| export == contract.renderer())
+        })
+        .collect();
+    let contract = match implemented[..] {
+        [contract] => contract,
+        [] => {
+            return Err(RuntimeError::new(
+                ErrorKind::ContractMismatch,
+                format!(
+                    "exports no renderer of a contract this host runs ({}, {})",
+                    Contract::V0.renderer(),
+                    Contract::V1.renderer()
+                ),
+            ));
+        }
+        _ => {
+            return Err(RuntimeError::new(
+                ErrorKind::ContractMismatch,
+                "exports the renderer of more than one contract version",
+            ));
+        }
+    };
+    let mut foreign: Vec<String> = interfaces
+        .imports
+        .iter()
+        .filter(|import| {
+            import.starts_with(CONTRACT_PREFIX)
+                && import.rsplit_once('@').map(|(_, version)| version)
+                    != Some(contract.package_version())
+        })
+        .cloned()
+        .collect();
+    if !foreign.is_empty() {
+        foreign.sort();
+        return Err(RuntimeError::with_names(
+            ErrorKind::ContractMismatch,
+            foreign,
+            Some(&format!(
+                "implements contract {} but imports from another version of it",
+                contract.as_str()
+            )),
+        ));
+    }
+    if contract == Contract::V0 {
+        let optional: Vec<String> = manifest
+            .permissions()
+            .iter()
+            .filter(|permission| !permission.required)
+            .map(|permission| permission.name.clone())
+            .collect();
+        if !optional.is_empty() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::OptionalNeedsV1,
+                optional,
+                Some(
+                    "contract v0 cannot answer not-granted, so its permissions must be required; build against contract v1",
+                ),
+            ));
+        }
+    }
+
+    // Step 6: every import is a capability the host offers, through a declared permission
+    let mut refused = Vec::new();
+    let mut undeclared = Vec::new();
+    for import in &interfaces.imports {
+        match by_import(contract, import) {
+            None => refused.push(import.clone()),
+            Some(permission) if manifest.permission(permission.name).is_none() => {
+                undeclared.push(permission.name.to_owned());
+            }
+            Some(_) => {}
+        }
+    }
+    if !refused.is_empty() {
+        refused.sort();
+        return Err(RuntimeError::with_names(
+            ErrorKind::CapabilityRefused,
+            refused,
+            None,
+        ));
+    }
+    if !undeclared.is_empty() {
+        undeclared.sort();
+        undeclared.dedup();
+        return Err(RuntimeError::with_names(
+            ErrorKind::NotDeclared,
+            undeclared,
+            Some("the component imports them, but its manifest does not declare them"),
+        ));
+    }
+    Ok(contract)
 }
 
 /// Load steps 7–9: the plugin's approval from `origin`, then what to prune and what to link.
 pub(crate) fn decide(
-    _contract: Contract,
-    _interfaces: &Interfaces,
-    _manifest: &Manifest,
-    _origin: &str,
-    _entry: Option<&Entry>,
+    contract: Contract,
+    interfaces: &Interfaces,
+    manifest: &Manifest,
+    origin: &str,
+    entry: Option<&Entry>,
 ) -> Result<Decision, RuntimeError> {
-    Err(RuntimeError::new(
-        ErrorKind::NotGranted,
-        "not implemented yet",
-    ))
+    // Step 7: an approval from this package's origin, holding every required permission,
+    // imported or not, because required permissions are approved together (FR-018)
+    let id = manifest.id();
+    let required: Vec<String> = manifest
+        .permissions()
+        .iter()
+        .filter(|permission| permission.required)
+        .map(|permission| permission.name.clone())
+        .collect();
+    let entry = match entry {
+        None => {
+            return Err(RuntimeError::with_names(
+                ErrorKind::NotGranted,
+                required,
+                Some(&format!("{id} has no approval; approve it first")),
+            ));
+        }
+        Some(entry) if entry.origin != origin => {
+            return Err(RuntimeError::with_names(
+                ErrorKind::NotGranted,
+                required,
+                Some(&format!(
+                    "{id} is approved from {}, not from {origin}; approve this package to replace that approval",
+                    entry.origin
+                )),
+            ));
+        }
+        Some(entry) => entry,
+    };
+    let missing: Vec<String> = required
+        .into_iter()
+        .filter(|name| !entry.is_granted(name))
+        .collect();
+    if !missing.is_empty() {
+        return Err(RuntimeError::with_names(
+            ErrorKind::NeedsNewApproval,
+            missing,
+            Some(&format!(
+                "{id} {} was approved, and this version requires more; approve it again",
+                entry.approved_version
+            )),
+        ));
+    }
+
+    // Step 8: what the record grants that this manifest no longer declares
+    let prune = entry
+        .granted
+        .iter()
+        .filter(|name| manifest.permission(name).is_none())
+        .cloned()
+        .collect();
+
+    // Step 9: each import gets the real interface when granted, and the stand-in when it is an
+    // optional permission that is off. Steps 6 and 7 leave no other case; one would be refused.
+    let mut plan = LinkPlan {
+        contract,
+        real: Vec::new(),
+        stand_in: Vec::new(),
+    };
+    for import in &interfaces.imports {
+        let permission = by_import(contract, import);
+        let request = permission.and_then(|permission| manifest.permission(permission.name));
+        match (permission, request) {
+            (Some(permission), Some(_)) if entry.is_granted(permission.name) => {
+                plan.real.push(permission.name);
+            }
+            (Some(permission), Some(request)) if !request.required => {
+                plan.stand_in.push(permission.name);
+            }
+            _ => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::NotGranted,
+                    vec![import.clone()],
+                    Some("neither declared and granted, nor an optional permission that is off"),
+                ));
+            }
+        }
+    }
+    Ok(Decision { plan, prune })
 }
 
 /// The permission named `name`, if the host knows it.
