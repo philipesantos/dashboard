@@ -35,13 +35,18 @@ MUST be declared apart from those that only read.
 A connector's destination MUST be a domain of the project's official connector catalog, or a
 domain whose owner authorizes the connector's repository in a file published on that domain,
 which the host MUST verify at installation, at every update and periodically. Domains of the
-official catalog are reserved to it. A protocol connector of the catalog, such as RSS, MAY
-take its destination from the user in a host dialog, never from the plugin.
+official catalog are reserved to it. A catalog connector MAY instead take its destination
+from the user in a host dialog, never from the plugin: a protocol connector, such as RSS, an
+address on the internet; a connector for a service people run themselves, such as a home
+server, an address on the user's own machine or local network.
 
-All connector traffic MUST go through the host proxy: HTTPS only, to the exact hosts
-declared, never to a loopback or private address, with size and rate limits and a request
-log. Before approval, the host MUST show every destination a plugin's connectors reach, and
-whether data read from one connected account can reach another destination.
+All connector traffic MUST go through the host proxy, to the exact hosts declared or chosen,
+with size and rate limits and a request log. It MUST use HTTPS and never reach a loopback or
+private address, except an address on the user's machine or local network that the user
+chose for a catalog connector: that address MUST stay local, and the host MAY reach it without
+HTTPS when it shows that the connection is not encrypted. Before approval, the host MUST show
+every destination a plugin's connectors reach, and whether data read from one connected
+account or from the local network can reach another destination.
 
 The host's development command-line tool MAY run a local connector whose destination is not
 verified, or is a loopback address without HTTPS, recording it only in the development record
@@ -50,8 +55,10 @@ that installed plugins never use.
 Rationale: a domain allowlist cannot prevent exfiltration, because any approved domain may
 forward what it receives. Running declarations instead of plugin code limits a plugin to the
 operations it declares, and verified domains let only the owner of a service publish a
-connector for it, so no impostor or duplicate connector exists. What remains, a destination
-receiving what the plugin sends it, the user judges with every destination in view.
+connector for it, so no impostor or duplicate connector exists. A plugin reaches the local
+network only at an address the user chose, through operations the project reviewed, so it
+cannot scan the network or reach other devices. What remains, a destination receiving what
+the plugin sends it, the user judges with every destination in view.
 
 ### IV. Plugins Never See Secrets
 
@@ -152,4 +159,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
+**Version**: 2.1.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
