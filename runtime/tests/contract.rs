@@ -5,10 +5,10 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{TEST_ORIGIN, approved, fixture, manifest};
+use common::{TEST_ORIGIN, approved, fixture, manifest, repack};
 use runtime::grants::GrantStore;
 use runtime::package::pack;
-use runtime::{ErrorKind, Limits, LogLevel, LogMessage, Plugin, Runtime};
+use runtime::{Contract, ErrorKind, Limits, LogLevel, LogMessage, Plugin, Runtime};
 use serde_json::json;
 
 fn runtime() -> Runtime {
@@ -42,6 +42,7 @@ fn packed(wat: &str) -> Vec<u8> {
 fn hello_widget_renders_its_greeting_and_one_log() {
     let runtime = runtime();
     let plugin = load(&runtime, &fixture("hello-widget"));
+    assert_eq!(plugin.contract(), Contract::V1);
 
     let report = plugin.render("{}");
 
@@ -88,6 +89,41 @@ fn hello_widget_explains_a_configuration_it_cannot_use() {
         assert_eq!(error.kind(), ErrorKind::PluginError, "config {config}");
         assert!(!error.detail().is_empty());
     }
+}
+
+#[test]
+fn a_contract_v0_plugin_still_renders_after_approval() {
+    // FR-013, User Story 5 scenario 3
+    let runtime = runtime();
+    let plugin = load(&runtime, &fixture("hello-v0"));
+    assert_eq!(plugin.contract(), Contract::V0);
+
+    let report = plugin.render(r#"{"name":"Ada"}"#);
+    assert_eq!(
+        report.result.expect("hello-v0 renders"),
+        json!({"title": "Hello", "text": "Hello, Ada!"})
+    );
+    assert_eq!(
+        report.logs,
+        [LogMessage {
+            level: LogLevel::Info,
+            message: "rendering hello-v0".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn a_contract_v0_plugin_cannot_have_optional_permissions() {
+    let optional = repack(
+        &fixture("hello-v0"),
+        &manifest("local/hello-v0", "0.1.0", &[("log", false)]),
+    );
+    let (kind, detail) = load_error(&runtime(), &optional);
+    assert_eq!(kind, ErrorKind::OptionalNeedsV1);
+    assert!(
+        detail.contains("log"),
+        "the detail should name log: {detail}"
+    );
 }
 
 #[test]

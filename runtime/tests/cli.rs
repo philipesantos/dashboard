@@ -173,3 +173,204 @@ fn an_unknown_command_is_a_usage_error() {
     let output = runtime(&["explode"]);
     assert_eq!(output.status.code(), Some(2), "stderr: {}", stderr(&output));
 }
+
+// Plugin permissions (feature 002), User Story 1
+
+/// Runs `args` followed by `--grants <grants>`.
+fn runtime_with(grants: &Path, args: &[&str]) -> Output {
+    let mut args = args.to_vec();
+    args.extend(["--grants", path_str(grants)]);
+    runtime(&args)
+}
+
+/// Writes the `quiet` fixture, packed with `manifest`, to `dir/name.wasm`.
+fn packed_quiet(dir: &Path, name: &str, manifest: serde_json::Value) -> PathBuf {
+    let package =
+        runtime::package::pack(&common::fixture("quiet"), manifest.to_string().as_bytes())
+            .expect("the manifest is valid");
+    let path = dir.join(format!("{name}.wasm"));
+    std::fs::write(&path, package).expect("written");
+    path
+}
+
+fn quiet_manifest(author: &str, login_providers: &[&str]) -> serde_json::Value {
+    json!({
+        "manifest_version": 1,
+        "id": "local/quiet",
+        "version": "1.0.0",
+        "author": author,
+        "permissions": [],
+        "login_providers": login_providers
+    })
+}
+
+#[test]
+fn run_before_approve_is_not_granted_and_names_log() {
+    let (_dir, grants) = temp_grants();
+    let plugin = fixture_path("hello-widget");
+    let output = runtime_with(&grants, &["run", path_str(&plugin)]);
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "");
+    let stderr = stderr(&output);
+    assert!(stderr.starts_with("error: not-granted: "), "{stderr}");
+    assert!(stderr.contains("log"), "{stderr}");
+}
+
+#[test]
+fn permissions_shows_what_is_requested_and_granted_and_changes_nothing() {
+    let (_dir, grants) = temp_grants();
+    let plugin = fixture_path("hello-widget");
+
+    let output = runtime_with(&grants, &["permissions", path_str(&plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "plugin: local/hello-widget 0.2.0
+author: Dashboard contributors
+contract: v1
+approved: no
+permissions:
+  log  required  not granted
+login providers: none
+"
+    );
+    assert!(!grants.exists(), "permissions wrote the record");
+
+    approve_file(&grants, &plugin);
+    let record = std::fs::read(&grants).expect("the record");
+    let digest = runtime::package::digest(&std::fs::read(&plugin).expect("the plugin"));
+    let output = runtime_with(&grants, &["permissions", path_str(&plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "plugin: local/hello-widget 0.2.0
+author: Dashboard contributors
+contract: v1
+approved: version 0.2.0 ({digest}) from {}
+permissions:
+  log  required  granted
+login providers: none
+",
+            origin(&plugin)
+        )
+    );
+    assert_eq!(std::fs::read(&grants).expect("the record"), record);
+}
+
+#[test]
+fn approve_grants_every_required_permission_then_run_works() {
+    let (_dir, grants) = temp_grants();
+    let plugin = fixture_path("hello-widget");
+
+    let output = runtime_with(&grants, &["approve", path_str(&plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "approved local/hello-widget 0.2.0\ngranted: log\n"
+    );
+
+    let output = runtime_with(&grants, &["run", path_str(&plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+}
+
+#[test]
+fn approve_takes_no_permission() {
+    let (_dir, grants) = temp_grants();
+    let plugin = fixture_path("hello-widget");
+    let output = runtime_with(&grants, &["approve", path_str(&plugin), "log"]);
+    assert_eq!(output.status.code(), Some(2), "stderr: {}", stderr(&output));
+    assert!(!grants.exists(), "a refused approve wrote the record");
+}
+
+#[test]
+fn approve_refuses_a_package_the_checks_refuse_and_grants_nothing() {
+    let (dir, grants) = temp_grants();
+    let path = dir.path().join("not-wasm.wasm");
+    std::fs::write(&path, b"not wasm").unwrap();
+    let output = runtime_with(&grants, &["approve", path_str(&path)]);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).starts_with("error: invalid-package: "));
+    assert!(!grants.exists(), "a refused approve wrote the record");
+}
+
+#[test]
+fn package_text_is_escaped_when_shown() {
+    let (dir, grants) = temp_grants();
+    let plugin = packed_quiet(dir.path(), "quiet", quiet_manifest("\u{202e}evil", &[]));
+    let output = runtime_with(&grants, &["permissions", path_str(&plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let stdout = stdout(&output);
+    assert!(stdout.contains(r"author: \u{202e}evil"), "{stdout}");
+    assert!(!stdout.contains('\u{202e}'), "{stdout}");
+}
+
+#[test]
+fn login_providers_are_shown_and_give_nothing() {
+    let (dir, grants) = temp_grants();
+    let plugin = packed_quiet(dir.path(), "quiet", quiet_manifest("A", &["github"]));
+    let output = runtime_with(&grants, &["permissions", path_str(&plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert!(
+        stdout(&output)
+            .contains("login providers: github (connecting accounts arrives in feature 005)\n"),
+        "{}",
+        stdout(&output)
+    );
+}
+
+#[test]
+fn a_corrupt_record_grants_nothing_and_stays_as_it_was() {
+    let (_dir, grants) = temp_grants();
+    std::fs::write(&grants, "{").unwrap();
+    let plugin = fixture_path("hello-widget");
+
+    let output = runtime_with(&grants, &["run", path_str(&plugin)]);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    let stderr = stderr(&output);
+    assert!(stderr.starts_with("error: not-granted: "), "{stderr}");
+    assert!(stderr.contains(path_str(&grants)), "{stderr}");
+    assert!(stderr.contains("not JSON"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&grants).unwrap(), "{");
+}
+
+#[test]
+fn a_copy_of_an_approved_file_gets_none_of_its_grants() {
+    let (dir, grants) = temp_grants();
+    let original = fixture_path("hello-widget");
+    let copy = dir.path().join("hello-widget.wasm");
+    std::fs::copy(&original, &copy).unwrap();
+    approve_file(&grants, &original);
+
+    let output = runtime_with(&grants, &["run", path_str(&copy)]);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    let error = stderr(&output);
+    assert!(error.starts_with("error: not-granted: "), "{error}");
+    assert!(error.contains(&origin(&original)), "{error}");
+
+    let output = runtime_with(&grants, &["permissions", path_str(&copy)]);
+    let shown = stdout(&output);
+    assert!(
+        shown.contains(&format!(
+            "approved: no (approved from {})\n",
+            origin(&original)
+        )),
+        "{shown}"
+    );
+    assert!(shown.contains("  log  required  not granted\n"), "{shown}");
+
+    let output = runtime_with(&grants, &["approve", path_str(&copy)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert!(
+        stdout(&output).starts_with(&format!(
+            "replaced: approval from {}\napproved local/hello-widget 0.2.0\n",
+            origin(&original)
+        )),
+        "{}",
+        stdout(&output)
+    );
+    let output = runtime_with(&grants, &["run", path_str(&original)]);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).starts_with("error: not-granted: "));
+}
