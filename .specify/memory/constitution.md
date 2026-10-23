@@ -43,8 +43,10 @@ server, an address on the user's own machine or local network.
 All connector traffic MUST go through the host proxy, to the exact hosts declared or chosen,
 with size and rate limits and a request log. It MUST use HTTPS and never reach a loopback or
 private address, except an address on the user's machine or local network that the user
-chose for a catalog connector: that address MUST stay local, and the host MAY reach it without
-HTTPS when it shows that the connection is not encrypted. Before approval, the host MUST show
+chose for a catalog connector. That address MUST stay local. There the host MAY trust a
+certificate the user accepted at first use in a host dialog, and MUST refuse any other
+afterwards; it MAY reach the address without HTTPS, showing that the connection is not
+encrypted, only for a connector that sends no credential. Before approval, the host MUST show
 every destination a plugin's connectors reach, and whether data read from one connected
 account or from the local network can reach another destination.
 
@@ -57,19 +59,22 @@ forward what it receives. Running declarations instead of plugin code limits a p
 operations it declares, and verified domains let only the owner of a service publish a
 connector for it, so no impostor or duplicate connector exists. A plugin reaches the local
 network only at an address the user chose, through operations the project reviewed, so it
-cannot scan the network or reach other devices. What remains, a destination receiving what
-the plugin sends it, the user judges with every destination in view.
+cannot scan the network or reach other devices. Local addresses repeat from one network to the
+next, so only a certificate, valid for the address or accepted by the user, proves that the
+server is theirs. What remains, a destination receiving what the plugin sends it, the user
+judges with every destination in view.
 
 ### IV. Plugins Never See Secrets
 
 Plugins MUST NOT receive passwords, OAuth tokens or AI provider keys. Authentication and
 secrets MUST stay in the host and the OS keychain. A connector declares the credential its
 operations need, and the host MUST inject it only into that connector's requests to its own
-destination.
+destination, and only over HTTPS with a certificate that is valid for that destination or that
+the user accepted for it.
 
 Rationale: a malicious or compromised plugin can then misuse only what it was granted, never
 the user's credentials themselves, and a credential bound to its destination cannot reach
-another service.
+another service, not even a device that answers at the same local address on another network.
 
 ### V. Plugins Stay Inside the Host Frame
 
@@ -159,4 +164,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.1.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
+**Version**: 2.2.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
