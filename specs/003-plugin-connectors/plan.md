@@ -13,8 +13,8 @@ change), which the host runs; the catalog's connectors are built into the host, 
 serve development. A widget declares the connectors and operations it calls, each connector a
 permission under feature 002's engine, and calls them only from a new `update` entry point,
 whose JSON result the host keeps and hands to `render`, so render never waits on the network.
-Every request goes through one module: `ureq` with `rustls`' own verifier over the roots the
-system trusts, no proxy, no cookies, no compression, redirects checked by the host, and a
+Every request goes through one module: `ureq` with `rustls`' own verifier over Mozilla's root
+list, no proxy, no cookies, no compression, redirects checked by the host, and a
 resolver that connects only to public addresses. Every call, allowed or refused, lands in a
 request log that no plugin can flood. Contract v1 moves to
 1.1.0 with two worlds (`widget`, `connected-widget`), and widgets built for 1.0.0 keep running.
@@ -26,7 +26,7 @@ Spikes and decisions are in [research.md](research.md).
 
 **Primary Dependencies**: in the runtime, as in feature 002 (`wasmtime` 50, `serde`,
 `serde_json`, `semver`, `sha2`, `wasmparser`, `dirs`, `tempfile`), plus `ureq` `=3.5.0`
-(`rustls-no-provider`), `rustls` 0.23 (`ring`), `rustls-native-certs`, `url` and `regex`;
+(`rustls-no-provider`, `rustls-webpki-roots`), `rustls` 0.23 (`ring`), `url` and `regex`;
 `rcgen` as a dev-dependency (R5, R8, R18)
 
 **Storage**: the development grant record, now version 2 (R13); kept data and the request log
@@ -75,8 +75,8 @@ Checked against constitution v2.3.1, after an independent review (findings in [c
 | Fixed decisions: Wasmtime + Component Model (WIT) | Pass | Contract 1.1.0 is WIT; minor versions only add, checked by a test (R11) |
 | Fixed decisions: WASI 0.3 | Pass (N/A) | Still no WASI interface offered; `wasi:http`, 0.2 and 0.3, is refused like sockets |
 | Fixed decisions: plugin storage | Pass (N/A) | Plugin storage is feature 004; kept data, grants and the log are host files no plugin can reach, as v2.3.1 words it (R14) |
-| Fixed decisions: licenses | Pass | `cargo deny check licenses` passed on the spike's tree with ISC allowed (R18) |
-| Workflow: gates, nothing visible on the sandbox, CI on 3 systems | Pass | No UI; this feature delivers the gate's network case; `deny.toml` gains ISC (R18); `connectors/*.json` and `wit/*.json` are not documentation, so changes to them run the whole CI, and no test reads `specs/` (R20) |
+| Fixed decisions: licenses | Pass | `cargo deny check licenses` passed on the spike's tree with ISC and CDLA-Permissive-2.0 allowed, both permissive and compatible with Apache-2.0 (R18) |
+| Workflow: gates, nothing visible on the sandbox, CI on 3 systems | Pass | No UI; this feature delivers the gate's network case; `deny.toml` gains ISC and CDLA-Permissive-2.0 (R18); `connectors/*.json` and `wit/*.json` are not documentation, so changes to them run the whole CI, and no test reads `specs/` (R20) |
 
 **Post-design re-check**: Pass, after two rounds. The first draft linked the real `connectors`
 implementation when any connector was granted and refused the others with a check on every
@@ -84,8 +84,9 @@ call, which feature 002 had rejected; constitution v2.3.0 states the rule for sh
 and R12 follows it. An independent review against v2.3.0 then found three conflicts (the system
 certificate verifier fetching outside the proxy, a request log a plugin could flood, a missing
 connector not always answering `not-granted`) and twelve risks; the plan now resolves each, with
-the maintainer's choices on certificates (R8), reserved domains (R16), plugin storage (v2.3.1)
-and approval digests (R17).
+the maintainer's choices on certificates (R8: Mozilla's roots, after a later note showed that
+the system's roots read from disk are incomplete on Windows and ignore distrust decisions),
+reserved domains (R16), plugin storage (v2.3.1) and approval digests (R17).
 
 ## Project Structure
 
@@ -131,7 +132,6 @@ runtime/                        # Security core
 │   ├── network/
 │   │   ├── mod.rs              # The only use of ureq: agents, requests, redirects, limits (R5, R7, R10)
 │   │   ├── address.rs          # Public-address classifier (R6)
-│   │   ├── roots.rs            # The system's roots for rustls' verifier (R8)
 │   │   └── resolver.rs         # PublicOnly resolver; the test resolver behind test-network (R6, R15)
 │   ├── calls.rs                # One connector call, steps 1–12 of the data model; rates (R10, R12)
 │   ├── kept.rs                 # Kept data store (R14)
@@ -168,7 +168,7 @@ docs/threat-model.md            # Connectors replace the allowlist (B2, threats,
 SECURITY.md, CONTRIBUTING.md    # Scope and security core name connectors
 .github/pull_request_template.md  # Security core: runtime/, wit/, connectors/, network-stack Cargo.lock; tests: plugins/fixtures/
 clippy.toml                     # ureq types only inside runtime/src/network/ (R20)
-deny.toml                       # + ISC
+deny.toml                       # + ISC, CDLA-Permissive-2.0
 ```
 
 **Structure Decision**: everything stays in the existing crates. The network module is the only

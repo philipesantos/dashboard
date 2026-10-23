@@ -77,8 +77,10 @@
   "not granted". Risks included connectors never pruned, approval not bound to what was shown,
   the loopback data flow not shown, a trailing-dot bypass of reserved hosts, fixed `X-` headers
   that can turn a read into a change, untested rules, and the "Local data: SQLite" wording.
-  Chosen by the maintainer: `rustls-webpki` with the system's roots and no online revocation
-  (FR-007); catalog connectors list the domains they reserve (FR-005); constitution v2.3.1
+  Chosen by the maintainer: `rustls-webpki` with no online revocation, first over the system's
+  roots, then, after a note that Windows' store is incomplete and that reading the system's
+  roots ignores its distrust decisions, over Mozilla's root list on the three systems (FR-007,
+  R8); catalog connectors list the domains they reserve (FR-005); constitution v2.3.1
   words the fixed decision as plugin storage; `approve --expect <digest>` (FR-014). The other
   fixes follow from the constitution and are in spec FR-002, FR-008, FR-009, FR-015, FR-018,
   FR-020, research R1, R2, R5, R8, R10, R12–R18, R20 and the data model.

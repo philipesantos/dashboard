@@ -356,8 +356,8 @@ machine in development mode.
   not declare MUST be refused before anything is sent.
 - **FR-007**: Every connector request MUST go through the host proxy, which MUST: use HTTPS with
   a certificate valid for the destination host, that is, for its name, within its validity
-  period and chaining to a root the operating system trusts, checked without any request of its
-  own or of the operating system; connect only to the exact host and port of the
+  period and chaining to a root of the list the host ships (Mozilla's, updated with the host),
+  checked without any request of its own or of the operating system; connect only to the exact host and port of the
   operation's destination, directly, never through a network proxy configured in the operating
   system; refuse a destination given as an IP address; never connect to a loopback, private,
   link-local or other non-public address, checking every address a name leads to at every
@@ -539,6 +539,10 @@ machine in development mode.
   with a certificate valid for the destination or accepted by the user (Principle IV). Most such
   services need a credential, so the first of these connectors arrives after feature 005. In
   this feature the proxy refuses every non-public address.
+- Certificates are checked against Mozilla's root list, shipped with the host, the same on the
+  three systems: Windows keeps an incomplete root store and fetches missing roots on demand, and
+  reading the system's store ignores the distrust decisions the system applies. Roots that an
+  organization adds to its machines are not trusted, so services behind them cannot be reached.
 - GitHub limits requests without an account; the catalog's GitHub connector serves public data
   within those limits until accounts arrive (feature 005).
 - The catalog is security core (Principle IX): every change to it is reviewed line by line.

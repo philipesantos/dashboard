@@ -126,8 +126,8 @@ a read can carry to typed values in the URL.
 ## R5. The HTTP stack
 
 **Decision**: `ureq` 3.5.0, pinned exactly (`=3.5.0`), without default features, with
-`rustls-no-provider` only; `rustls` 0.23 without default features, with the `ring` provider; the
-roots from `rustls-native-certs` (R8). The `network` module is the only code that touches
+`rustls-no-provider` and `rustls-webpki-roots`; `rustls` 0.23 without default features, with the
+`ring` provider; Mozilla's roots (R8). The `network` module is the only code that touches
 `ureq`, enforced by Clippy (R20), and configures each agent:
 
 | Setting | Value | Why |
@@ -143,11 +143,11 @@ roots from `rustls-native-certs` (R8). The `network` module is the only code tha
 | timeouts | Per call, the smaller of the call limit and the update's remaining time | R10 |
 | resolver | `PublicOnly` (R6), through `ureq::unversioned::resolver::Resolver` | Connects only to addresses the host checked |
 | connection pool | One agent per update, dropped at its end | No state shared between widgets or updates |
-| certificates | `RootCerts::Specific` with the system's roots, `rustls`' own verifier | R8 |
+| certificates | `RootCerts::WebPki` (Mozilla's roots), `rustls`' own verifier | R8 |
 
-**Spike**: with the platform verifier the tree was 29 crates, none of them `tokio`; with the
-system roots instead (R8) it is 27, `cargo deny check licenses` passes once ISC is allowed, and
-the roots load (121 on the Linux machine). The custom resolver
+**Spike**: with the platform verifier the tree was 29 crates, none of them `tokio`; with
+Mozilla's roots instead (R8) it is 26, and `cargo deny check licenses` passes once ISC and
+CDLA-Permissive-2.0 are allowed. The custom resolver
 compiled against 3.5.0, refused `https://localhost:9/` as `host not found` before any
 connection, `https_only` refused `http://example.com/`, and with `HTTPS_PROXY` set the request
 still went to the resolver for the target, not to the proxy.
@@ -212,12 +212,12 @@ destination gets, and the approval already showed every origin of the connector 
 
 ## R8. Certificates
 
-**Decision**: `rustls`' own verifier (`rustls-webpki`), with the roots the operating system
-trusts, read by `rustls-native-certs` (the system store on Windows, the keychain on macOS, the
-certificate bundle on Linux), passed to `ureq` as `RootCerts::Specific`. Valid means: for the
-destination's name, within its validity period, chaining to one of those roots (FR-007). No
-revocation is checked online; a stapled OCSP response is not required. The roots load once per
-process.
+**Decision**: `rustls`' own verifier (`rustls-webpki`) over Mozilla's root list
+(`webpki-roots`, through `ureq`'s `RootCerts::WebPki`), the same on the three systems. Valid
+means: for the destination's name, within its validity period, chaining to one of those roots
+(FR-007). No revocation is checked online; a stapled OCSP response is not required. The list
+moves with the dependency: `cargo update`, the weekly audit, and in Phase 6 the signed updater
+bring new versions.
 
 **Rationale**: the review found that the system verifier (`rustls-platform-verifier` 0.7.1) lets
 the operating system fetch revocation and certificate data on its own: on Windows its chain
@@ -225,16 +225,27 @@ engine retrieves URLs with a 10 s timeout (only its test engine sets "cache only
 macOS its own source says it does not stop online revocation checks or root downloads. Those
 requests go to addresses written in the server's certificate, through the operating system's
 HTTP stack and proxy, with no address check and past the call's time limit: traffic outside the
-host proxy, against Principle III. It also pulls `webpki-root-certs`, whose license
-(CDLA-Permissive-2.0) fails `cargo deny`. With `rustls-webpki`, every byte of a connection goes
-to the address the host checked, the same code runs on the three systems, and the tests run that
-code with only the roots swapped (R15). Giving up online revocation is the trade: most clients
-skip it, and the roots stay those the system trusts.
+host proxy, against Principle III.
 
-**Alternatives considered**: the system verifier (above); Mozilla's roots bundled
-(`webpki-roots`): independent of the system, but CDLA-licensed and aging with the binary;
-an amendment allowing the operating system's certificate fetches outside the proxy (they cannot
-be tested in CI and break the address rule).
+The system's roots read from disk (`rustls-native-certs`), the first replacement, have two
+faults. Windows keeps an incomplete root store and downloads missing roots the first time its
+own verifier needs them, which reading the store never triggers, so a valid site could fail on
+a fresh machine while CI's well-stocked runners pass. And the `rustls` maintainers' own
+comparison says that path treats every root alike, ignoring the distrust decisions and
+constraints the system applies, so a CA the system stopped trusting would still be accepted.
+
+Mozilla's list is what Firefox trusts, with distrusted CAs removed; with it every byte of a
+connection goes to the address the host checked, the same code and roots run on the three
+systems, and the tests run that code with only the roots swapped (R15). The trade: online
+revocation is not checked (most clients skip it), the list ages with the binary until the next
+update, and roots an organization adds to its machines are not trusted; system proxies are not
+used anyway (R9).
+
+**Alternatives considered**: the system verifier (above, against Principle III); the system's
+roots from disk (above: incomplete on Windows, no distrust decisions); the system's roots and
+Mozilla's together (fixes Windows, still no distrust decisions for the system's); an amendment
+allowing the operating system's certificate fetches outside the proxy (they cannot be tested in
+CI and break the address rule).
 
 ## R9. System network proxies
 
@@ -482,17 +493,17 @@ asks (FR-012).
 | --- | --- | --- | --- | --- |
 | `ureq` `=3.5.0` | runtime | HTTP/1.1 client (R5) | No | MIT OR Apache-2.0 |
 | `rustls` 0.23 (`ring`) | runtime | TLS | No | Apache-2.0 OR ISC OR MIT |
-| `rustls-native-certs` 0.8 | runtime | The system's roots (R8) | No | Apache-2.0 OR ISC OR MIT |
+| `webpki-roots` 1 | runtime (through `ureq`) | Mozilla's root list (R8) | No | CDLA-Permissive-2.0 |
 | `ring` 0.17 | runtime (through `rustls`) | Cryptography | No | Apache-2.0 AND ISC |
 | `rustls-webpki`, `untrusted` | runtime (through `rustls`) | Certificate parsing | No | ISC |
 | `url` 2 | runtime | Origins and redirect targets (R6, R7) | Yes | MIT OR Apache-2.0 |
 | `regex` 1 | runtime | Parameter patterns (R3) | Yes | MIT OR Apache-2.0 |
 | `rcgen` 0.14 (`ring`) | runtime, dev | Test certificates (R15) | No | MIT OR Apache-2.0 |
 
-`deny.toml` gains `ISC` in its allowed licenses: it is a permissive license compatible with
-distributing the client under Apache-2.0, and `ring`, `untrusted` and `rustls-webpki` use it.
-`cargo deny check licenses` passed on the spike with this tree and that one change (it failed
-with `rustls-platform-verifier`, through `webpki-root-certs`). `rustls` and `rcgen` are taken
+`deny.toml` gains two allowed licenses, both permissive and compatible with distributing the
+client under Apache-2.0: `ISC` (`ring`, `untrusted`, `rustls-webpki`) and `CDLA-Permissive-2.0`,
+a license for data, which covers Mozilla's root list (`webpki-roots`). `cargo deny check
+licenses` passed on the spike with this tree and those two changes. `rustls` and `rcgen` are taken
 without default features or with `ring`, so `aws-lc-rs` never enters the tree. Each crate must
 pass `cargo deny` and `cargo audit` in CI.
 
@@ -509,7 +520,7 @@ service would take 5 s (SC-004, under 1 s). `bench.yml` records them on the thre
 
 - The pull request template lists as security core `runtime/`, `wit/`, `connectors/`, the root
   `Cargo.lock` when a change moves a crate of the network stack (`ureq`, `ureq-proto`, `rustls`,
-  `rustls-webpki`, `ring`, `rustls-native-certs`, `url`, `regex`), and as security tests
+  `rustls-webpki`, `ring`, `webpki-roots`, `url`, `regex`), and as security tests
   `plugins/hostile/` and `plugins/fixtures/`.
 - `clippy.toml` disallows `ureq` types outside `runtime/src/network/`, which allows them
   explicitly, so no other module can open a connection without the review noticing.
