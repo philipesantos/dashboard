@@ -11,6 +11,7 @@ use std::process::{Command, Output};
 use common::{approve, fixture_path, temp_grants};
 use runtime::grants::GrantStore;
 use serde_json::json;
+use tempfile::TempDir;
 
 fn runtime(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_runtime"))
@@ -406,5 +407,98 @@ fn remove_needs_a_well_formed_id() {
     for id in ["Local/X", "hello-widget", "local/"] {
         let output = runtime_with(&grants, &["remove", id]);
         assert_eq!(output.status.code(), Some(2), "{id}: {}", stderr(&output));
+    }
+}
+
+// User Story 4
+
+/// Writes the `probe` fixture, packed with `log` optional or required, to `dir/probe.wasm`.
+fn packed_probe(dir: &Path, log_required: bool) -> PathBuf {
+    let manifest = common::manifest("local/probe", "1.0.0", &[("log", log_required)]);
+    let package = runtime::package::pack(&common::fixture("probe"), manifest.as_bytes())
+        .expect("the manifest is valid");
+    let path = dir.join("probe.wasm");
+    std::fs::write(&path, package).expect("written");
+    path
+}
+
+#[test]
+fn optional_turns_a_permission_on_and_off_for_the_next_run() {
+    let (dir, grants) = temp_grants();
+    let plugin = packed_probe(dir.path(), false);
+    approve_file(&grants, &plugin);
+    let says = |grants: &Path| {
+        let output = runtime_with(grants, &["run", path_str(&plugin)]);
+        assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+        serde_json::from_str::<serde_json::Value>(&stdout(&output)).expect("JSON")["log"].clone()
+    };
+    assert_eq!(says(&grants), "not-granted");
+
+    let output = runtime_with(&grants, &["optional", path_str(&plugin), "log", "on"]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "log on\n");
+    assert_eq!(says(&grants), "ok");
+
+    let output = runtime_with(&grants, &["optional", path_str(&plugin), "log", "off"]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "log off\n");
+    assert_eq!(says(&grants), "not-granted");
+}
+
+#[test]
+fn optional_refuses_what_is_not_an_optional_permission_of_an_approved_v1_plugin() {
+    let (dir, grants) = temp_grants();
+    let optional = packed_probe(dir.path(), false);
+    let refusal = |plugin: &Path, permission: &str| {
+        let output = runtime_with(&grants, &["optional", path_str(plugin), permission, "on"]);
+        assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+        stderr(&output)
+    };
+
+    // No approval
+    assert!(refusal(&optional, "log").starts_with("error: not-granted: "));
+
+    // An approval of another file
+    let copy = dir.path().join("copy.wasm");
+    std::fs::copy(&optional, &copy).unwrap();
+    approve_file(&grants, &copy);
+    assert!(refusal(&optional, "log").starts_with("error: not-granted: "));
+
+    // A required permission
+    let other = TempDir::new().unwrap();
+    let required = packed_probe(other.path(), true);
+    approve_file(&grants, &required);
+    assert!(refusal(&required, "log").starts_with("error: required-together: "));
+
+    // A permission the manifest does not declare
+    let quiet = packed_quiet(dir.path(), "quiet", quiet_manifest("A", &[]));
+    approve_file(&grants, &quiet);
+    assert!(refusal(&quiet, "log").starts_with("error: not-declared: "));
+
+    // A permission the host does not know
+    assert!(refusal(&quiet, "telepathy").starts_with("error: unknown-permission: "));
+
+    // A contract v0 plugin
+    let v0 = fixture_path("hello-v0");
+    approve_file(&grants, &v0);
+    assert!(refusal(&v0, "log").starts_with("error: optional-needs-v1: "));
+}
+
+#[test]
+fn optional_takes_on_or_off() {
+    let (dir, grants) = temp_grants();
+    let plugin = packed_probe(dir.path(), false);
+    for args in [
+        vec!["optional", path_str(&plugin), "log"],
+        vec!["optional", path_str(&plugin), "log", "yes"],
+        vec!["optional", path_str(&plugin)],
+    ] {
+        let output = runtime_with(&grants, &args);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{args:?}: {}",
+            stderr(&output)
+        );
     }
 }

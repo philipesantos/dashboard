@@ -255,3 +255,94 @@ fn us3_the_same_version_number_with_other_contents_is_a_new_version() {
         ErrorKind::NeedsNewApproval
     );
 }
+
+// User Story 4: optional permissions let a plugin run with less, and every grant change applies
+// from the plugin's next call, while it stays loaded
+
+/// The probe's manifest, parsed, to change its grants through the store.
+fn probe_manifest(version: &str, permissions: &[(&str, bool)]) -> runtime::manifest::Manifest {
+    runtime::manifest::Manifest::parse(manifest("local/probe", version, permissions).as_bytes())
+        .expect("valid")
+}
+
+/// Renders and returns what the probe says `log` answered, or the call's error kind, with the
+/// number of log messages kept.
+fn probe_says(plugin: &Plugin) -> (Result<String, ErrorKind>, usize) {
+    let report = plugin.render("{}");
+    let said = report
+        .result
+        .map(|content| content["log"].as_str().unwrap_or_default().to_owned())
+        .map_err(|error| error.kind());
+    (said, report.logs.len())
+}
+
+#[test]
+fn us4_an_optional_permission_starts_off_and_changes_from_the_next_call() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    let package = probe("1.0.0", &[("log", false)]);
+    approve(&grants, &package, TEST_ORIGIN);
+    let optional = probe_manifest("1.0.0", &[("log", false)]);
+
+    // Loaded once, and kept loaded
+    let plugin = load(&runtime, &package, &grants).expect("it runs without log");
+    assert_eq!(probe_says(&plugin), (Ok("not-granted".to_owned()), 0));
+
+    grants
+        .set_optional(&optional, TEST_ORIGIN, "log", true)
+        .expect("on");
+    assert_eq!(probe_says(&plugin), (Ok("ok".to_owned()), 1));
+
+    grants
+        .set_optional(&optional, TEST_ORIGIN, "log", false)
+        .expect("off");
+    assert_eq!(probe_says(&plugin), (Ok("not-granted".to_owned()), 0));
+}
+
+#[test]
+fn us4_removing_the_approval_stops_a_loaded_plugin_on_its_next_call() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    let package = probe("1.0.0", &[("log", true)]);
+    approve(&grants, &package, TEST_ORIGIN);
+    let plugin = load(&runtime, &package, &grants).expect("approved, it runs");
+    assert_eq!(probe_says(&plugin), (Ok("ok".to_owned()), 1));
+
+    let id = runtime::manifest::PluginId::parse("local/probe").unwrap();
+    grants.remove(&id).expect("removed");
+    assert_eq!(probe_says(&plugin), (Err(ErrorKind::NotGranted), 0));
+}
+
+#[test]
+fn us4_approving_another_file_stops_a_loaded_plugin_on_its_next_call() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    let package = probe("1.0.0", &[("log", true)]);
+    approve(&grants, &package, TEST_ORIGIN);
+    let plugin = load(&runtime, &package, &grants).expect("approved, it runs");
+
+    approve(&grants, &package, "test://elsewhere");
+    assert_eq!(probe_says(&plugin), (Err(ErrorKind::NotGranted), 0));
+}
+
+#[test]
+fn us4_a_new_version_that_adds_an_optional_permission_runs_with_it_off() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    approve(&grants, &quiet_as_probe("1.0.0", &[]), TEST_ORIGIN);
+
+    let update = probe("1.1.0", &[("log", false)]);
+    let plugin = load(&runtime, &update, &grants).expect("no new approval needed");
+    assert_eq!(probe_says(&plugin), (Ok("not-granted".to_owned()), 0));
+}
+
+#[test]
+fn us4_an_optional_permission_that_becomes_required_needs_approval() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    approve(&grants, &probe("1.0.0", &[("log", false)]), TEST_ORIGIN);
+
+    let error = refusal(load(&runtime, &probe("1.1.0", &[("log", true)]), &grants));
+    assert_eq!(error.kind(), ErrorKind::NeedsNewApproval);
+    assert_eq!(error.names(), ["log"]);
+}
