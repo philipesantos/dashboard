@@ -99,7 +99,7 @@ permissions were never approved is refused, naming the permission (quickstart st
 ### Implementation for User Story 1
 
 - [X] T026 [US1] Move `plugins/examples/hello-widget` to contract v1: `path: "../../../wit/v1"`, handle the `Result` of `write` (it is always `Ok` here, since `log` is required; say so in a comment), bump the crate and `manifest.json` version to `0.2.0`, and update `plugins/examples/hello-widget/README.md` to say contract v1 and show `approve` before `run`
-- [ ] T027 [US1] Add a status query to `runtime/src/grants.rs` (or `permissions.rs`): for a manifest, each declared permission with `required` and granted or not, plus the entry's origin, approved version and digest, and whether the origin is this package's; unit tests
+- [X] T027 [US1] Add a status query to `runtime/src/grants.rs` (or `permissions.rs`): for a manifest, each declared permission with `required` and granted or not, plus the entry's origin, approved version and digest, and whether the origin is this package's; unit tests
 - [ ] T028 [US1] Add `permissions <plugin>` and `approve <plugin>` to `runtime/src/bin/runtime.rs` exactly as in `contracts/cli.md`: `approve` runs load steps 1–6 first and grants nothing if they refuse; every printed text from the package is escaped; update the usage text and the module comment
 
 **Checkpoint**: quickstart step 2 works; User Story 1 is complete

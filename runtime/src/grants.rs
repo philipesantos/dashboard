@@ -59,6 +59,27 @@ pub struct Approval {
     pub replaced: Option<String>,
 }
 
+/// What a package requests and what its approval grants, for display (FR-014).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status {
+    /// Each permission the manifest requests, in its order.
+    pub permissions: Vec<PermissionStatus>,
+    /// The plugin's approval, whatever its origin.
+    pub approval: Option<Entry>,
+    /// Whether the approval is from this package's origin. One from another origin grants
+    /// this package nothing.
+    pub this_origin: bool,
+}
+
+/// One permission a package requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionStatus {
+    pub name: String,
+    pub required: bool,
+    /// Granted to packages from this origin.
+    pub granted: bool,
+}
+
 /// The record as stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -159,6 +180,32 @@ impl GrantStore {
     /// the record cannot be used.
     pub fn entry(&self, id: &PluginId) -> Result<Option<Entry>, RuntimeError> {
         Ok(self.read()?.plugins.remove(id.as_str()))
+    }
+
+    /// What the manifest requests and what the plugin's approval grants to packages from
+    /// `origin`. Refused as `not-granted` when the record cannot be used.
+    pub fn status(&self, manifest: &Manifest, origin: &str) -> Result<Status, RuntimeError> {
+        let approval = self.entry(manifest.id())?;
+        let this_origin = approval
+            .as_ref()
+            .is_some_and(|entry| entry.origin == origin);
+        let permissions = manifest
+            .permissions()
+            .iter()
+            .map(|permission| PermissionStatus {
+                name: permission.name.clone(),
+                required: permission.required,
+                granted: this_origin
+                    && approval
+                        .as_ref()
+                        .is_some_and(|entry| entry.is_granted(&permission.name)),
+            })
+            .collect();
+        Ok(Status {
+            permissions,
+            approval,
+            this_origin,
+        })
     }
 
     /// Approves the manifest's required permissions, all together, for packages from `origin`
@@ -878,6 +925,57 @@ mod tests {
             assert_eq!(store.prune(&quiet, ORIGIN), Ok(vec!["log".to_owned()]));
             assert_eq!(granted(store, "local/probe"), Vec::<String>::new());
             assert!(entry(store, "local/probe").is_some(), "still approved");
+        });
+    }
+
+    #[test]
+    fn status_shows_each_request_and_what_this_origin_is_granted() {
+        for_each_store(|store| {
+            let optional = manifest("local/probe", "1.0.0", Some(false));
+            let status = |manifest: &Manifest, origin: &str| {
+                store.status(manifest, origin).expect("readable")
+            };
+            let log = |required: bool, granted: bool| PermissionStatus {
+                name: "log".to_owned(),
+                required,
+                granted,
+            };
+
+            assert_eq!(
+                status(&optional, ORIGIN),
+                Status {
+                    permissions: vec![log(false, false)],
+                    approval: None,
+                    this_origin: false
+                }
+            );
+
+            store.approve(&optional, ORIGIN, DIGEST).expect("approved");
+            let approved = status(&optional, ORIGIN);
+            assert!(approved.this_origin);
+            assert_eq!(approved.permissions, [log(false, false)]);
+            assert_eq!(
+                approved.approval.map(|entry| entry.approved_version),
+                Some("1.0.0".to_owned())
+            );
+
+            store
+                .set_optional(&optional, ORIGIN, "log", true)
+                .expect("on");
+            assert_eq!(status(&optional, ORIGIN).permissions, [log(false, true)]);
+
+            // From another origin, nothing is granted, and the approval shows where it is from
+            let elsewhere = status(&optional, OTHER_ORIGIN);
+            assert!(!elsewhere.this_origin);
+            assert_eq!(elsewhere.permissions, [log(false, false)]);
+            assert_eq!(
+                elsewhere.approval.map(|entry| entry.origin),
+                Some(ORIGIN.to_owned())
+            );
+
+            // A version that requires log, still granted
+            let required = manifest("local/probe", "1.1.0", Some(true));
+            assert_eq!(status(&required, ORIGIN).permissions, [log(true, true)]);
         });
     }
 
