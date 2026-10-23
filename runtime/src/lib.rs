@@ -5,6 +5,7 @@ mod error;
 mod host;
 mod imports;
 mod limits;
+pub mod manifest;
 mod permissions;
 mod text;
 
