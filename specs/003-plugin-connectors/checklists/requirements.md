@@ -45,24 +45,27 @@
     v2.2.0: catalog connectors only, at an address the user chooses, kept local; a credential
     only over HTTPS with a certificate valid or accepted by the user at first use; plain HTTP,
     shown as unencrypted, only for connectors without credentials), built after feature 005,
-    since most of them need a credential. This feature refuses every
-    non-public address and leaves room for that destination kind (assumptions).
+    since most of them need a credential. This feature refuses every non-public address and
+    leaves room for that destination kind (assumptions).
 - An operation's kind (read or change) is the word of whoever wrote the connector, checked only
   by the catalog's review. Decided with the maintainer on 2026-10-23: a read means it changes
   nothing in the service, never that no data leaves; outside the catalog a read must be a GET or
   HEAD without a body; and the approval shows the parameters each operation sends and whether
-  its kind was reviewed or declared (FR-002, FR-016, edge cases).
+  its kind was reviewed or declared (FR-002, FR-014, edge cases).
+- Scope cut with the maintainer on 2026-10-23, to keep the Phase 2 gate within reach: this
+  feature keeps the core (connector format, catalog with GitHub public data, proxy, update and
+  kept data, contract 1.1.0, local connectors in development, hostile cases, documents). Moved
+  to a feature of its own alongside installation in Phase 3: connectors from repositories with
+  `/.well-known/` verification (until then, a connector whose id names a repository is refused
+  as not verified, which covers the gate's "unverified destination"), registrable-domain
+  reservation (this feature reserves the catalog's exact hosts), RSS and other protocol
+  connectors, catalog criteria, and updates on load and on a schedule (assumptions, FR-004,
+  FR-005, FR-012). From 7 user stories and 24 requirements to 5 and 22.
 - Defaults chosen in the spec, for the maintainer to confirm or change with `/speckit-clarify`:
-  - An update calls only operations that read; changes need a user action (Phase 3) (FR-014).
-  - The request log records parameter values as sent, never credentials (FR-010).
-  - Turning off a connector or removing a widget's approval discards its kept data (FR-017).
-  - The catalog reserves the registrable domain of each host it declares (FR-005).
-  - One connector per repository, which may also hold one widget (FR-004).
-  - A verification that cannot complete keeps the last successful one up to a maximum age
-    (FR-006).
-  - An update interval below the host's minimum refuses the widget instead of being raised
-    (FR-013); the command-line tool updates only on request in this phase.
-  - The first catalog connectors are RSS/Atom and GitHub public data (FR-023).
-- "Command-line tool", "JSON", "HTTPS", "schema" and `/.well-known/` name the interfaces users
-  and service owners work with, as in features 001 and 002, not the implementation; the plan
-  decides the formats, the contract and every number.
+  - An update calls only operations that read; changes need a user action (Phase 3) (FR-013).
+  - The request log records parameter values as sent, never credentials (FR-009).
+  - Turning off a connector or removing a widget's approval discards its kept data (FR-015).
+  - The first catalog connector is GitHub public data (FR-021).
+- "Command-line tool", "JSON", "HTTPS", "GET" and "schema" name the interfaces users and
+  authors work with, as in features 001 and 002, not the implementation; the plan decides the
+  formats, the contract and every number.
