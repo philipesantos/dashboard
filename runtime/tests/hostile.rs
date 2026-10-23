@@ -144,11 +144,11 @@ fn reading_a_file_is_refused_at_load() {
     assert_eq!(error.kind(), ErrorKind::CapabilityRefused);
     assert!(
         error
-            .refused_imports()
+            .names()
             .iter()
             .any(|import| import.starts_with("wasi:filesystem/")),
         "the refused imports should name the filesystem: {:?}",
-        error.refused_imports()
+        error.names()
     );
     assert_host_still_works(&runtime);
 }
@@ -161,11 +161,11 @@ fn opening_a_socket_is_refused_at_load() {
     assert_eq!(error.kind(), ErrorKind::CapabilityRefused);
     assert!(
         error
-            .refused_imports()
+            .names()
             .iter()
             .any(|import| import.starts_with("wasi:sockets/")),
         "the refused imports should name the sockets: {:?}",
-        error.refused_imports()
+        error.names()
     );
     assert_host_still_works(&runtime);
 }

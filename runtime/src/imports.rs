@@ -36,7 +36,11 @@ pub(crate) fn check(engine: &Engine, component: &Component) -> Result<(), Runtim
             format!("built for another version of the plugin contract: imports {import}"),
         ));
     }
-    Err(RuntimeError::capability_refused(refused))
+    Err(RuntimeError::with_names(
+        ErrorKind::CapabilityRefused,
+        refused,
+        None,
+    ))
 }
 
 #[cfg(test)]
@@ -66,7 +70,7 @@ mod tests {
         let error = check_wat(r#"(component (import "wasi:filesystem/types@0.2.0" (instance)))"#)
             .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::CapabilityRefused);
-        assert_eq!(error.refused_imports(), ["wasi:filesystem/types@0.2.0"]);
+        assert_eq!(error.names(), ["wasi:filesystem/types@0.2.0"]);
     }
 
     #[test]
@@ -79,7 +83,7 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(
-            error.refused_imports(),
+            error.names(),
             ["wasi:clocks/wall-clock@0.2.0", "wasi:sockets/tcp@0.2.0"]
         );
     }
