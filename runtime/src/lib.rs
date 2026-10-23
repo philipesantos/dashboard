@@ -26,9 +26,15 @@ pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
 pub use permissions::Contract;
 
-// Bindings for the `widget` world of plugin contract v0, the only copy of which is
-// wit/v0/widget.wit.
-wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
+/// Bindings for the `widget` world of plugin contract v0 (`wit/v0`, `dashboard:widget@0.1.0`).
+pub(crate) mod v0 {
+    wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
+}
+
+/// Bindings for the `widget` world of plugin contract v1 (`wit/v1`, `dashboard:widget@1.0.0`).
+pub(crate) mod v1 {
+    wasmtime::component::bindgen!({ path: "../wit/v1", world: "widget" });
+}
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
 /// component version and layer.
@@ -85,7 +91,7 @@ pub struct Runtime {
 
 /// A loaded plugin, compiled once and instantiated afresh for every render call.
 pub struct Plugin {
-    pre: WidgetPre<HostState>,
+    pre: v0::WidgetPre<HostState>,
     limits: Limits,
     clock: Arc<EpochClock>,
 }
@@ -128,7 +134,7 @@ impl Runtime {
         start_epoch_ticker(&engine, Arc::clone(&clock))?;
 
         let mut linker = Linker::new(&engine);
-        Widget::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
+        v0::Widget::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
 
         Ok(Runtime {
             engine,
@@ -167,7 +173,7 @@ impl Runtime {
             RuntimeError::new(ErrorKind::ContractMismatch, format!("{error:#}"))
         };
         let pre = self.linker.instantiate_pre(&component).map_err(mismatch)?;
-        let pre = WidgetPre::new(pre).map_err(mismatch)?;
+        let pre = v0::WidgetPre::new(pre).map_err(mismatch)?;
         Ok(Plugin {
             pre,
             limits: self.limits.clone(),
