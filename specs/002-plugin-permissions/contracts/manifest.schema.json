@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Plugin manifest",
+  "description": "Who a plugin is and what it needs. Carried in the plugin package's dashboard-manifest custom section (specs/002-plugin-permissions/contracts/package.md). Draft of wit/manifest.schema.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_version", "id", "version", "author", "permissions", "login_providers"],
+  "properties": {
+    "$schema": {
+      "description": "Lets editors find this schema; the host ignores it.",
+      "type": "string",
+      "maxLength": 2048
+    },
+    "manifest_version": {
+      "description": "The version of this format.",
+      "const": 1
+    },
+    "id": {
+      "description": "Where the plugin comes from: its repository, or local/<name> for a plugin that comes from no repository. Lowercase only.",
+      "type": "string",
+      "maxLength": 160,
+      "oneOf": [
+        {
+          "title": "Repository",
+          "pattern": "^github\\.com/[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/[a-z0-9_-][a-z0-9._-]{0,99}$"
+        },
+        {
+          "title": "Local",
+          "pattern": "^local/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+        }
+      ]
+    },
+    "version": {
+      "description": "The plugin's version, in Semantic Versioning 2.0.0.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "author": {
+      "description": "Who publishes the plugin, as shown to the user.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "permissions": {
+      "description": "Every capability the plugin may use. A permission the host does not know refuses the plugin; the same name twice counts once, unless one entry is required and the other optional.",
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "required"],
+        "properties": {
+          "name": {
+            "description": "The permission, such as log.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "required": {
+            "description": "true: the user approves it with every other required permission, or the plugin does not run. false: optional; it starts off, and while off every use answers not-granted.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "login_providers": {
+      "description": "Accounts the plugin would ask the user to connect. Shown now; connecting arrives in feature 005.",
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["github"]
+      }
+    }
+  }
+}
