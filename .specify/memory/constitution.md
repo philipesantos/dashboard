@@ -56,7 +56,10 @@ Rationale: model output can be steered by instructions hidden in the content the
 ### VII. Trust Decisions Only in Host Dialogs
 
 Granting permissions, installing plugins and connecting accounts MUST happen only in host
-dialogs. Neither AI output nor a plugin MAY perform, trigger or pre-approve these actions.
+dialogs. Until the host app has these dialogs (Phase 3), the host's development command-line
+tool MAY grant permissions to local packages, recording them only in a development grant
+record that installed plugins never use. Neither AI output nor a plugin MAY perform, trigger
+or pre-approve these actions.
 
 Rationale: these decisions expand what code can do, so they stay out of reach of the
 parties the threat model distrusts: plugin authors, external content and manipulated AI.
@@ -122,4 +125,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 1.2.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-22
+**Version**: 1.3.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
