@@ -184,7 +184,7 @@ the corpus; `runtime pack` produces a package that loads
 ### Implementation for User Story 5
 
 - [X] T042 [US5] Add `pack <component> --manifest <file> --output <file>` to `runtime/src/bin/runtime.rs` as in `contracts/cli.md`, using `runtime::package::pack`
-- [ ] T043 [P] [US5] Write `docs/plugin-authors.md` (FR-017): what a manifest is and every field with its rules (link the schema), plugin ids (`local/<name>` for anything that is not installed from its repository; one plugin per repository), required versus optional permissions and handling `not-granted` in code, packing with `cargo xtask plugins` or `runtime pack`, approving and running in development with the CLI (an approval belongs to the file it was approved from, so rebuild in place), and contract v1 with its versioning rule
+- [X] T043 [P] [US5] Write `docs/plugin-authors.md` (FR-017): what a manifest is and every field with its rules (link the schema), plugin ids (`local/<name>` for anything that is not installed from its repository; one plugin per repository), required versus optional permissions and handling `not-granted` in code, packing with `cargo xtask plugins` or `runtime pack`, approving and running in development with the CLI (an approval belongs to the file it was approved from, so rebuild in place), and contract v1 with its versioning rule
 - [ ] T044 [P] [US5] Update `wit/README.md` (v0 and v1 directories, the not-granted rule, how features 003–005 extend v1, the manifest schema and its `dashboard-manifest` section) and `plugins/examples/README.md` (contract v1, manifests, link to `docs/plugin-authors.md`)
 
 **Checkpoint**: an author can write, check and pack a manifest from the documentation alone
