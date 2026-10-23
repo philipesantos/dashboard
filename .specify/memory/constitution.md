@@ -17,11 +17,17 @@ A plugin MUST start with no capabilities. Every capability MUST be a host functi
 plugin declares in its manifest and the user approves, and the host MUST link only the
 imports that were granted. A capability the manifest marks as optional and the user has not
 granted MAY be linked only to a host stand-in that gives no capability and answers every call
-with "not granted". An update that requests a new capability MUST require a new approval.
+with "not granted". When several capabilities share one import, such as the connectors a plugin
+declares, the host MUST build, when it links the plugin, a table that holds only the granted
+ones; a capability missing from it MUST answer every call with "not granted" and reach nothing,
+and checks made at call time MAY only take capabilities away, never add one to the table. An
+update that requests a new capability MUST require a new approval.
 
 Rationale: least privilege; a capability that was never granted cannot be abused, and an
 update cannot escalate silently. Optional capabilities let a plugin run without them; the
-stand-in exists only because the Component Model has no optional imports.
+stand-in exists only because the Component Model has no optional imports. A shared import
+cannot be linked once per capability, so the table built at link time does the linker's job:
+what was not granted is never built, rather than built and guarded on every call.
 
 ### III. External Data Only Through Host-Run Connectors
 
@@ -164,4 +170,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.2.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
+**Version**: 2.3.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
