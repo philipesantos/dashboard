@@ -66,6 +66,7 @@ only the CLI changes it.
   "record_version": 1,
   "plugins": {
     "local/hello-widget": {
+      "origin": "/home/ada/dashboard/target/plugins/hello-widget.wasm",
       "granted": ["log"],
       "approved_version": "0.2.0",
       "approved_digest": "sha256:3f1c…"
@@ -78,6 +79,7 @@ only the CLI changes it.
 | --- | --- |
 | `record_version` | `1`; a newer value makes the record unreadable to this host |
 | `plugins` | Map from plugin id to its entry; a plugin with no entry has no approval |
+| `origin` | Where the approved package came from: in the CLI, the canonical path of its file. The entry grants nothing to a package from any other origin (FR-020) |
 | `granted` | Sorted, unique permission names: the required permissions approved plus the optional ones turned on. A name the host does not know is kept and never linked |
 | `approved_version`, `approved_digest` | The package last approved, for display only |
 
@@ -85,8 +87,8 @@ Changes, each under the record's lock and written atomically:
 
 | Change | Effect on the entry |
 | --- | --- |
-| Approve (CLI `approve`) | Created if missing; `granted` = (`granted` ∩ declared) ∪ required; version and digest updated |
-| Turn an optional permission on or off (CLI `optional`) | Adds or removes that one name; refused for a required one |
+| Approve (CLI `approve`) | Same origin: `granted` = (`granted` ∩ declared) ∪ required. No entry, or one from another origin: replaced by a new entry with this origin and `granted` = required. Version and digest updated |
+| Turn an optional permission on or off (CLI `optional`) | Adds or removes that one name; refused for a required one, and for a package from another origin |
 | Remove (CLI `remove`) | Entry deleted |
 | Load of a package that no longer declares a granted permission | That name removed (FR-012) |
 
@@ -100,8 +102,8 @@ generation counter that every change increments.
 
 ## Load decision
 
-`Runtime::load(package, grant store)`. Each step refuses with its kind and stops; a step that
-finds several offending names lists them all.
+`Runtime::load(package, origin, grant store)`. Each step refuses with its kind and stops; a
+step that finds several offending names lists them all.
 
 | Step | Check | Refusal |
 | --- | --- | --- |
@@ -111,15 +113,15 @@ finds several offending names lists them all.
 | 4 | Compile (feature 001) | `invalid-package` |
 | 5 | Contract version of the `renderer` export; every `dashboard:widget` import from that same version; no optional permission in v0 | `contract-mismatch`, `optional-needs-v1` |
 | 6 | Every import belongs to a registered interface, and its permission is declared | `capability-refused`, `not-declared` |
-| 7 | The plugin has an entry, and every required permission is granted | `not-granted` (no entry or unreadable record), `needs-new-approval` (entry, missing permissions) |
+| 7 | The plugin has an entry from this origin, and every required permission is granted | `not-granted` (no entry, an entry from another origin, or an unreadable record), `needs-new-approval` (entry, missing permissions) |
 | 8 | Granted permissions no longer declared leave the entry | — |
 | 9 | Link: the real interface for each granted permission the component imports; the stand-in for each optional one that is off | `contract-mismatch` if linking still fails |
 
 ### Combinations (SC-002)
 
 Every combination of declared, granted and imported for one permission, as steps 6–9 decide
-it. Each row assumes the plugin has an approval (an entry in the record); a plugin without one
-is `not-granted` whatever it declares.
+it. Each row assumes the plugin has an approval from its own origin; a plugin without one, or
+whose approval belongs to another origin, is `not-granted` whatever it declares.
 
 | Declared | Granted | Imported | Outcome |
 | --- | --- | --- | --- |
@@ -142,6 +144,7 @@ is `not-granted` whatever it declares.
 | --- | --- |
 | component | Compiled once at load and kept |
 | manifest | As read at load |
+| origin | As given at load |
 | contract | `v0` or `v1` |
 | grant store | The one it was loaded with |
 | linked | The prepared instance (`instantiate_pre`) and the generation it was built for, or the refusal that generation produced |
@@ -193,6 +196,7 @@ returns what it answered) and `quiet` (v1, no imports) are the bare fixtures und
 | `unknown-permission` | FR-008 | `quiet` + a permission `telepathy` | — | `unknown-permission`, naming it |
 | `escalating-update` | FR-011 | `probe` + `log` optional, approved; then `probe` + `log` required, same id | Approval of the first | Second refused `needs-new-approval`, naming `log`; the entry unchanged |
 | `optional-off` | FR-019 | `probe` + `log` optional | Approved, `log` off | Runs; the probe reports `not-granted`; the report holds no log message |
+| `same-id-other-origin` | FR-020 | `probe` + `log` required, approved from one origin; the same bytes loaded from another | Approval from the first origin | `not-granted`, naming the approved origin; the entry unchanged |
 | `grant-record-untouched` | FR-009, FR-010 | Every case above and `probe`, run against a file-backed record | Approved as each case needs | The record's bytes and the store's generation are the same before and after every render; reading the record stays impossible (`read-file`, feature 001) |
 
 ## Performance record

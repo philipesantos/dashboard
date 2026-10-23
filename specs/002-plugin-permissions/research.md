@@ -100,9 +100,15 @@ possible); case-insensitive comparison (every reader must then normalize the sam
   permanent identifier. The runtime takes the record to use as an argument, so a load can
   never consult both, and a development package that claims an installed plugin's id only ever
   sees development grants (spec edge case).
-- **Format**: JSON, `record_version: 1`, one entry per plugin id with the set of granted
-  permissions and, for display, the version and digest last approved
-  ([data-model.md](data-model.md#grant-record)).
+- **Format**: JSON, `record_version: 1`, one entry per plugin id with the origin it was
+  approved from, the set of granted permissions and, for display, the version and digest last
+  approved ([data-model.md](data-model.md#grant-record)).
+- **Origin**: an entry grants only to packages from its own origin (FR-020). In the CLI, a
+  package's origin is the canonical path of its file (`std::fs::canonicalize`), which must be
+  UTF-8; tests use labels. A path that canonicalization does not unify with the approved one,
+  such as another spelling on a case-insensitive file system or a hard link, counts as another
+  origin: the mistake is a refusal, never a grant. Phase 3's installed record uses the
+  repository's permanent identifier as the origin.
 - **Writes**: every change takes an exclusive lock on `development-grants.json.lock`
   (`std::fs::File::lock`, stable since Rust 1.89), re-reads the record, applies the change,
   writes a temporary file in the same directory, syncs it and renames it over the record
@@ -117,7 +123,9 @@ possible); case-insensitive comparison (every reader must then normalize the sam
 **Rationale**: a lost update could bring a removed approval back (one process removes it while
 another writes an older copy), so read-modify-write must hold the lock. Writing beside the
 record and renaming means a crash leaves either the old record or the new one, never half of
-each. Plugins have no file access at all, so the record is out of their reach (FR-009).
+each. Plugins have no file access at all, so the record is out of their reach (FR-009). The
+origin keeps a file from elsewhere that copies an approved id from inheriting its grants: to
+use the approved path, it would have to overwrite a file in the user's own directories.
 
 **Alternatives considered**: SQLite (the plan's choice for plugin storage, feature 004, but
 heavy for a few entries); one file per plugin (more files to lock); the OS keychain (built for
@@ -142,10 +150,11 @@ secrets, not for a list the user reads).
   6. Imports: one outside every registered interface is `capability-refused` (feature 001's
      rule: the host offers no such capability); one whose permission the manifest does not
      declare is `not-declared` (FR-006).
-  7. Grants: the plugin must have an approval entry, and every required permission must be
-     granted, whether the component imports it or not, because required permissions are
-     approved together (FR-018). Missing ones are `not-granted` when the plugin has no entry,
-     and `needs-new-approval` when an earlier version was approved (FR-007, FR-011).
+  7. Grants: the plugin must have an approval entry from this package's origin, and every
+     required permission must be granted, whether the component imports it or not, because
+     required permissions are approved together (FR-018). Missing ones are `not-granted` when
+     the plugin has no entry or its entry belongs to another origin (FR-020), and
+     `needs-new-approval` when an earlier version was approved (FR-007, FR-011).
   8. Pruning: granted permissions this manifest no longer declares are removed from the record
      (FR-012).
   9. Link: a linker built for this plugin gets the real interface for each granted permission
@@ -229,20 +238,25 @@ version per feature (every plugin rebuilt for each new capability).
 
 ## R8. Updates
 
-**Decision**: the grant entry is keyed by plugin id, so a package with a known id and a
-different digest is a new version, whatever its version number says (spec edge case). Its
-required permissions are checked against the entry: all granted, it runs (US3 scenario 1);
-any missing, `needs-new-approval`, naming them, and the entry is left untouched (FR-011). A
-permission it adds as optional starts off (FR-011). Permissions it no longer declares leave the
-entry at its first load (R5, step 8; FR-012). The entry records the version and digest last
+**Decision**: the grant entry is keyed by plugin id and belongs to the origin it was approved
+from (R4), so a package from that origin with a different digest is a new version, whatever its
+version number says (spec edge case). Its required permissions are checked against the entry:
+all granted, it runs (US3 scenario 1); any missing, `needs-new-approval`, naming them, and the
+entry is left untouched (FR-011). A permission it adds as optional starts off (FR-011).
+Permissions it no longer declares leave the entry at its first load (R5, step 8; FR-012). A
+package from another origin that claims the id gets none of the entry's grants: it is
+`not-granted`, naming the approved origin, until approved, and that approval replaces the entry
+with the required permissions only (FR-020). The entry records the version and digest last
 approved, for `runtime permissions` to show.
 
 **Rationale**: approving the set, not the component, is what lets an unchanged update run
-without asking again, which the spec requires. Identity across versions is the id; in Phase 3
-the installation makes the id trustworthy by checking the repository.
+without asking again, which the spec requires. Identity across versions is the id, read from the
+origin approved; in Phase 3 the installation makes that origin the repository.
 
-**Alternatives considered**: grants per digest (every rebuild asks again, contrary to US3
-scenario 1); trusting the version number (the spec treats same-number packages as new
+**Alternatives considered**: grants per id alone (any file that claims the id inherits them);
+grants per digest (every rebuild asks again, contrary to US3 scenario 1, and approving on every
+build turns approval into a reflex); a separate `--grants` for other people's packages (safe
+only when remembered); trusting the version number (the spec treats same-number packages as new
 versions).
 
 ## R9. CLI commands
@@ -255,7 +269,8 @@ with the development record ([contracts/cli.md](contracts/cli.md)):
 - `permissions <plugin>`: lists id, version, author, contract, each permission with required or
   optional and granted or not, and the login providers.
 - `approve <plugin>`: grants every required permission the manifest declares, all at once, and
-  prints them; there is no way to approve only some (FR-018).
+  prints them; there is no way to approve only some (FR-018). An approval from another origin
+  is replaced, and the tool says so (FR-020).
 - `optional <plugin> <permission> on|off`: turns one optional permission on or off; refused for
   a required one (`required-together`) or one the manifest does not declare.
 - `remove <plugin-id>`: removes the plugin's approval and every grant with it.
@@ -290,6 +305,7 @@ required permissions); flags on `run` that grant on the fly (a decision hidden i
   the bytes; a WAT component with the section inside a nested module).
 - FR-009 and FR-010 are checked by running every case, and the probe, against a file-backed
   record: its bytes and the store's generation must not change across any render.
+- FR-020 is checked by loading the approved `probe`, byte for byte, from another origin.
 
 **Rationale**: the rules under test are about the package and the grants, not about plugin
 code; two small plugins cover every combination. `wit-component` dropped every unused import in

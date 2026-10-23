@@ -62,7 +62,7 @@ Checked against constitution v1.3.0.
 | Rule | Status | How the plan complies |
 | --- | --- | --- |
 | I. WebAssembly-only plugins | Pass | Packages stay WebAssembly components; the manifest is a custom section, never code |
-| II. Zero capabilities by default | Pass | A plugin without an approval does not run; each plugin's linker holds only its granted capabilities; an optional capability that is off gets only a stand-in that answers `not-granted` (R5); a new required permission needs a new approval (R8) |
+| II. Zero capabilities by default | Pass | A plugin without an approval does not run; each plugin's linker holds only its granted capabilities; an optional capability that is off gets only a stand-in that answers `not-granted` (R5); a new required permission needs a new approval, and an approval applies only to the file it was approved from (R8) |
 | III. Network only through the proxy | Pass (N/A) | No network capability in this feature; socket imports stay refused |
 | IV. Plugins never see secrets | Pass (N/A) | No secret interface; login providers are declared and shown only |
 | V. Plugins stay inside the host frame | Pass (N/A) | No UI; a plugin's text about its permissions reaches only its own output |
