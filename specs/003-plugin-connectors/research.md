@@ -57,10 +57,11 @@ WIT interface per service (code generation per connector, and still a declaratio
   (FR-005). The catalog starts with `catalog/github` (R16).
 - **Local** (development only): `local/<name>`, read from `<connectors dir>/<name>.json`, where
   the directory is `--connectors <dir>` or the default development one (R14). The file's own
-  `id` must match its name. Its origin is the file's canonical path, and an approval belongs to
-  that origin (FR-018), as a package's does in feature 002. `Runtime` reads local connectors
-  only when built with an explicit development option, which the CLI sets and the Phase 3 app
-  will not; without it a `local/` id is `destination-not-verified` (FR-018).
+  `id` must match its name: a `catalog/` id is `destination-reserved` (below), any other
+  mismatch `invalid-connector`, naming both. Its origin is the file's canonical path, and an
+  approval belongs to that origin (FR-018), as a package's does in feature 002. `Runtime` reads
+  local connectors only when built with an explicit development option, which the CLI sets and
+  the Phase 3 app will not; without it a `local/` id is `destination-not-verified` (FR-018).
 - **Repository ids** (`github.com/<owner>/<repository>`) are well-formed in manifests and
   connector files, so the refusal can say why: `destination-not-verified`, naming that
   connectors from repositories arrive with installation in Phase 3 (FR-004).
@@ -311,9 +312,12 @@ host call. 1 MiB covers a page of any JSON API a widget shows; four of them fit 
 - The host accepts a v1 plugin whose contract names all carry one version, with major 1 and not
   newer than its own (1.1.0); a newer minor is `contract-mismatch`, naming both versions
   (FR-016). Imports are linked against the 1.1.0 definitions: Wasmtime's linker matches an import
-  of a compatible minor version, both ways (feature 002, R5). Exports are looked up by the exact
-  names the component exports (`dashboard:widget/renderer@1.0.0`), and called as typed functions,
-  whose types 1.x never changes.
+  of a compatible minor version, both ways (feature 002, R5). Wasmtime 50 also finds an export
+  under a compatible version (`wasmtime-environ`'s `NameMap`, used for exports too), but the
+  bindings generated for `connected-widget` require `updater`, which a render-only widget lacks,
+  so exports are looked up one by one by the exact names the component exports
+  (`dashboard:widget/renderer@1.0.0`), and called as typed functions, whose types 1.x never
+  changes.
 - The permission registry records the minor version that introduced each interface: `log` 1.0,
   connectors 1.1. A widget whose manifest declares a connector but whose contract is older than
   1.1 is `contract-too-old`, naming 1.1.0.
@@ -327,8 +331,9 @@ linker, its renderer called through the exact-name lookup. Feature 002 already l
 import against a 1.0.0 definition; the export lookup is plain Wasmtime API.
 
 **Rationale**: two worlds keep render-only widgets as they are while connected widgets must
-implement `update`. Looking up exports by the name the component has, instead of through
-generated 1.1.0 bindings, is what makes older minors run without a binding per version.
+implement `update`. Looking up each export by the name the component has, instead of through
+the bindings generated for one world, lets one host run both worlds and older minors without a
+binding per version.
 
 **Alternatives considered**: one world with an optional export (the Component Model has none,
 so every widget would implement an empty `update`); a host binding per minor version (grows with
@@ -349,15 +354,16 @@ follow Principle II's rule for capabilities that share an import (constitution v
 - A call first looks its connector up in the table; a miss, whether the connector is off or not
   declared at all, answers `not-granted`, sends nothing and is logged as not granted, whatever
   else is wrong with the call. That path is the connector's stand-in.
-- Before it sends, and again before it hands a response to the widget, a call re-reads the
-  grant record (under its lock, as feature 002 reads it), so a change made by any process
-  applies; when its connector is no longer granted, it answers `not-granted` and drops a
-  response that arrived meanwhile (FR-015). This check can only take away: nothing at call time
-  adds an executor to the table, and a connector turned on during an update applies from the
-  plugin's next call, when it is linked again, as in feature 002.
-- Only then does `HostState` check whether the store runs `render` or `update`; a call during
-  `render` to a connector in the table is `called-outside-update`, and nothing is resolved or
-  sent (FR-010).
+- Right after the lookup, `HostState` checks whether the store runs `render` or `update`; a
+  call during `render` to a connector in the table is `called-outside-update`, and nothing is
+  read, resolved or sent (FR-010), so a flood of calls during render opens no file.
+- Just before it sends, after the checks on the operation, its arguments and the limits, and
+  again before it hands a response to the widget, a call re-reads the grant record (under its
+  lock, as feature 002 reads it), so a change made by any process applies; when its connector
+  is no longer granted, it answers `not-granted` and drops a response that arrived meanwhile
+  (FR-015). This check can only take away: nothing at call time adds an executor to the table,
+  and a connector turned on during an update applies from the plugin's next call, when it is
+  linked again, as in feature 002.
 - A white-box test checks that the table's keys are exactly the granted connectors and that the
   stand-in is linked when none is granted, since no plugin can see the difference (Principle
   VIII).
@@ -429,8 +435,13 @@ place, so the CLI and the tests can point everything at one temporary directory.
 **Decision**: a `test-network` cargo feature, never in `default`, turned on only by the runtime's
 own dev-dependency on itself, compiles `Runtime::with_test_network`. It takes:
 
-- a resolver map from names to IP addresses, standing in for DNS; the port always comes from
-  the destination, so the exact-port rule is tested;
+- routes from a destination's host and port to the socket addresses to connect to, standing in
+  for DNS, each lookup taking the next answer of its route so a name can change between calls
+  (`rebinding`); the exact-port rule is checked on the URL's origin before any lookup, so a
+  route never widens it and it is still tested, and the CLI tests on loopback, which use no
+  seam, cover the production path that takes the port from the URL. A route lets the example's
+  `https://api.github.com` (port 443) reach a test server on a port the system chose, which
+  binding port 443 itself would not allow without privileges;
 - the socket addresses that count as public for the test, so a server on `127.0.0.1:<port>`
   passes as a public destination while `127.0.0.1` on any other port, `10.0.0.1`, `::1` and the
   rest stay refused;
@@ -484,9 +495,10 @@ this connector is the one feature 005 extends with an account.
 and keeps its data; `run` renders connected widgets with their kept data; `permissions` shows
 connectors, destinations, operations, the parameters and fixed values sent, where each kind
 comes from, whether data read from this machine can reach another destination, and an approval
-digest over all of it; `approve` of a widget that declares a connector requires
-`--expect <digest>` and refuses, granting nothing, when the digest of what it would approve
-differs (FR-014); `optional <plugin> <connector-id> on|off`; `requests` prints the request log;
+digest over all of it ([data-model.md](data-model.md#approval-digest)), computed by the library;
+`approve` of a widget that declares a connector requires `--expect <digest>` (without it, a
+usage error) and refuses, granting nothing, when the digest of what it would approve differs
+(FR-014); `optional <plugin> <connector-id> on|off`; `requests` prints the request log;
 `check-connector <file>` validates a connector for authors. `--connectors <dir>` and
 `--data <dir>` join `--grants <path>` on every command that needs them.
 
@@ -515,10 +527,16 @@ must pass `cargo deny` and `cargo audit` in CI.
 
 ## R19. Measuring
 
-**Decision**: `runtime bench` adds the connector checks to `checks_us` (SC-007, under 10 ms) and
-prints `render_with_data_us`, a render of a connected widget from kept data while its test
-service would take 5 s (SC-004, under 1 s). `bench.yml` records them on the three systems into
+**Decision**: `runtime bench` adds the connector checks to `checks_us` (SC-007, under 10 ms) and,
+with `--kept-data <file>`, prints `render_with_data_us`, the median of 100 renders of a
+connected widget from that document as kept data, held in memory, with no update and no
+request (SC-004, under 1 s; that render never waits on a slow service is tested in
+`tests/updates.rs`). `bench.yml` benches `github-releases` that way, so nothing reaches the
+network, and records the numbers on the three systems into
 `specs/003-plugin-connectors/performance.md`, with the limits of R10 as measured.
+`compile_cost` moves from `runtime/examples/` to a workspace crate of its own, `bench/`,
+because an example builds with the runtime's dev-dependencies, which turn `test-network` on,
+and its release build would then hit the seam's `compile_error!` (R15).
 
 ## R20. Keeping the review on what matters
 

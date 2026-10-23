@@ -89,11 +89,33 @@ must be a `GET` or `HEAD` and a local connector fixes no `X-` header.
 
 ## 5. Refusals name the rule
 
-With `net-probe` packed with a manifest that declares `local/hello` and its `get` operation, as
-the hostile tests do, an update whose configuration asks for an operation it did not declare, a
-call during render, or `HTTPS_PROXY=http://127.0.0.1:9` set in the environment, gives:
-`refused(operation-not-declared)`, `refused(called-outside-update)`, and a request that still goes
-straight to `127.0.0.1:8765`. `rt requests` lists each one with its rule.
+With the connector of step 4 as first written, and its service still running, pack `net-probe`
+with a manifest that declares `local/hello` and its `get` operation, as the hostile tests do.
+Save as `$D/probe.json`:
+
+```json
+{
+  "manifest_version": 1, "id": "local/net-probe", "version": "0.1.0", "author": "You",
+  "permissions": [], "login_providers": [],
+  "connectors": [{ "id": "local/hello", "major": 0, "operations": ["get"], "required": true }]
+}
+```
+
+```sh
+rt pack target/plugins/net-probe.wasm --manifest $D/probe.json --output $D/net-probe.wasm
+rt permissions $D/net-probe.wasm        # note its "approval digest"
+rt approve $D/net-probe.wasm --expect <that digest>
+rt update $D/net-probe.wasm --config '{"calls":[{"connector":"local/hello","operation":"other","arguments":[]}]}'
+rt run $D/net-probe.wasm --config '{"render_calls":[{"connector":"local/hello","operation":"get","arguments":[]}]}'
+HTTPS_PROXY=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 \
+  rt update $D/net-probe.wasm --config '{"calls":[{"connector":"local/hello","operation":"get","arguments":[]}]}'
+rt requests
+```
+
+Expected: the first `update` reports one refused call, and `rt requests` shows it as
+`operation-not-declared`; `run` shows the answer `refused:called-outside-update`; the update
+with the proxy variables set still goes straight to `127.0.0.1:8765` and gets the file. `rt
+requests` lists each call with its rule.
 
 ## 6. Contract 1.0.0 still runs
 
@@ -107,7 +129,8 @@ Expected: the greeting, as in feature 002, and `contract: v1 (1.0.0)`.
 ## 7. Measurements
 
 ```sh
-rt bench target/plugins/github-releases.wasm --iterations 100
+rt bench target/plugins/github-releases.wasm --iterations 100 \
+  --kept-data plugins/examples/github-releases/bench-data.json
 ```
 
 Expected: `checks_us` under 10 000 (SC-007) and `render_with_data_us` under 1 000 000 (SC-004).

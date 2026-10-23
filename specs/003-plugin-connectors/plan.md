@@ -138,22 +138,24 @@ runtime/                        # Security core
 │   ├── requests.rs             # Request log (R14)
 │   ├── manifest.rs             # + connectors
 │   ├── permissions.rs          # Minor versions, connectors in the registry and the load decision (R11, R12)
-│   ├── grants.rs               # Record v2 (R13)
+│   ├── grants.rs               # Record v2 and the approval digest (R13, R17)
 │   ├── host.rs                 # + connectors real and stand-in; render/update phase
 │   ├── limits.rs               # + update and network limits (R10)
 │   ├── error.rs                # + the new kinds
 │   └── bin/runtime.rs          # + update, requests, check-connector; connectors in permissions, approve, optional
 ├── tests/
 │   ├── common/servers.rs       # HTTPS and HTTP test servers that record requests (R15)
-│   ├── connectors.rs           # Format, schema agreement, parameters, catalog rules (US1, US5)
 │   ├── network.rs              # Addresses, redirects, TLS, proxy, limits (US2)
-│   ├── updates.rs              # update, kept data, render with data, offline (US3)
+│   ├── updates.rs              # update, kept data, render with data, offline (US1, US3)
 │   ├── permissions.rs          # + connector approvals, changes, optional, revocation (US4)
 │   ├── contract.rs             # + 1.0.0 plugins on the 1.1.0 host; newer minor refused (US5)
 │   ├── contract_v1.rs          # + 1.1.0 is a superset of 1.0.0; connectors answers not-granted
 │   ├── manifest_schema.rs      # + connector schema agreement; every repo connector validates
 │   ├── cli.rs                  # + new commands and output
 │   └── hostile.rs              # + the 30 cases of FR-020
+└── examples/compile_cost.rs    # Moves to bench/ (R19)
+
+bench/                          # New workspace crate: compile_cost, built without the seam (R19)
 
 plugins/
 ├── Cargo.toml                  # + the new crates
@@ -171,7 +173,9 @@ clippy.toml                     # ureq and std::net sockets only inside runtime/
 deny.toml                       # + ISC, CDLA-Permissive-2.0; bans the system verifiers (R20)
 ```
 
-**Structure Decision**: everything stays in the existing crates. The network module is the only
+**Structure Decision**: everything stays in the existing crates, except `compile_cost`, which
+moves to a small workspace crate, `bench/`, because an example would build with the
+dev-dependency that turns the test seam on (R19). The network module is the only
 code that opens connections and the only user of `ureq`, so its review covers every byte that
 leaves the machine. The catalog gets a top-level `connectors/` directory, outside `runtime/`,
 because Phase 3 adds connectors there without touching host code, and it is listed in the

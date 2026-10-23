@@ -167,9 +167,9 @@ the new data appears.
 2. **Given** an update fails (service unreachable, error, update over its time limit, invalid
    output, a refused call), **When** the widget renders next, **Then** it shows the previous data
    and the failure.
-3. **Given** a service that takes longer than render's 1 s limit to answer, but less than the
-   update's own limit, **When** the widget updates, **Then** the update completes and its data
-   is kept.
+3. **Given** a service that takes longer than render's 1 s limit to answer, but less than a
+   call's own time limit, **When** the widget updates, **Then** the update completes and its
+   data is kept.
 4. **Given** an update that exceeds its own time limit, **When** the limit is reached, **Then**
    the update is stopped, its calls in flight are abandoned, and the previous data is kept.
 5. **Given** a widget updated successfully once, **When** it renders in a later run of the host,

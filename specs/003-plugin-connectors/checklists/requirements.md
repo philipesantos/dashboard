@@ -85,6 +85,18 @@
   words the fixed decision as plugin storage; `approve --expect <digest>` (FR-014). The other
   fixes follow from the constitution and are in spec FR-002, FR-008, FR-009, FR-015, FR-018,
   FR-020, research R1, R2, R5, R8, R10, R12–R18, R20 and the data model.
+- `/speckit-analyze` on 2026-10-23, after `/speckit-tasks`, with an independent reviewer: 32
+  findings (1 critical, 7 high, 13 medium, 11 low), those about code checked against the
+  repository, ureq 3.5.0 and Wasmtime 50. Critical: no test covered values placed in a request
+  body (Principle VIII). High: `runtime requests` had no task; the seam could not reach a test
+  server for `api.github.com:443`; the network tests could not run before loading existed; two
+  existing tests broke in Setup; `compile_cost`, an example, would build the seam in release;
+  the bench needed the network; `net-probe` could not produce several cases. Chosen by the
+  maintainer: seam routes from a destination's host and port (R15), `compile_cost` in a crate
+  of its own (R19), and `approve` without `--expect` a usage error, with the approval digest
+  defined in the data model and computed by the library. Every fix is in tasks.md, the data
+  model, research R2, R11, R12, R15, R17 and R19, the CLI contract, the quickstart and the
+  plan; the spec changed only in User Story 3's third scenario.
 - "Command-line tool", "JSON", "HTTPS", "GET" and "schema" name the interfaces users and
   authors work with, as in features 001 and 002, not the implementation; the plan decides the
   formats, the contract and every number.
