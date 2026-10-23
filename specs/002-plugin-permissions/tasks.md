@@ -134,8 +134,8 @@ never taken back one by one; removing the approval stops the plugin
 
 ### Tests for User Story 3
 
-- [ ] T032 [P] [US3] Add User Story 3's scenarios to `runtime/tests/permissions.rs`: a new version (different digest, same id, same origin) with the same permissions runs without approval; one that requires a new permission is `needs-new-approval` naming it, and the record entry stays as it was; approving it lets it run; a version that no longer declares `log` (`quiet`) drops `log` from the record at load, and a later version requiring it needs approval again; turning off a required permission is `required-together`; after removal the plugin is refused with `not-granted`; a package with the same version number and different contents is treated as a new version
-- [ ] T033 [P] [US3] Add CLI tests for `remove` to `runtime/tests/cli.rs`: prints `removed local/hello-widget` and `run` is then refused with `not-granted`; removing an id without approval prints `local/x has no approval` and exits 0; a malformed id is a usage error (exit 2)
+- [X] T032 [P] [US3] Add User Story 3's scenarios to `runtime/tests/permissions.rs`: a new version (different digest, same id, same origin) with the same permissions runs without approval; one that requires a new permission is `needs-new-approval` naming it, and the record entry stays as it was; approving it lets it run; a version that no longer declares `log` (`quiet`) drops `log` from the record at load, and a later version requiring it needs approval again; turning off a required permission is `required-together`; after removal the plugin is refused with `not-granted`; a package with the same version number and different contents is treated as a new version
+- [X] T033 [P] [US3] Add CLI tests for `remove` to `runtime/tests/cli.rs`: prints `removed local/hello-widget` and `run` is then refused with `not-granted`; removing an id without approval prints `local/x has no approval` and exits 0; a malformed id is a usage error (exit 2)
 
 ### Implementation for User Story 3
 

@@ -149,3 +149,109 @@ fn us1_approve_grants_every_required_permission_at_once() {
         .expect("approved");
     assert_eq!(approval.required, ["log"]);
 }
+
+// User Story 3: updates never widen access silently
+
+/// The `quiet` fixture, which imports nothing, packed as a version of `local/probe`.
+fn quiet_as_probe(version: &str, permissions: &[(&str, bool)]) -> Vec<u8> {
+    pack(
+        &fixture("quiet"),
+        manifest("local/probe", version, permissions).as_bytes(),
+    )
+    .expect("the manifest is valid")
+}
+
+fn probe_entry(grants: &GrantStore) -> Option<runtime::grants::Entry> {
+    let id = runtime::manifest::PluginId::parse("local/probe").expect("a valid id");
+    grants.entry(&id).expect("readable")
+}
+
+#[test]
+fn us3_a_new_version_with_the_same_permissions_runs_without_approval() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    approve(&grants, &probe("1.0.0", &[("log", true)]), TEST_ORIGIN);
+
+    // Another component, another digest, the same id from the same origin
+    let update = quiet_as_probe("1.1.0", &[("log", true)]);
+    let plugin = load(&runtime, &update, &grants).expect("the update runs");
+    assert_eq!(
+        plugin.render("{}").result.expect("it renders"),
+        json!({"quiet": true})
+    );
+}
+
+#[test]
+fn us3_a_new_version_that_requires_more_waits_for_approval() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    approve(&grants, &probe("1.0.0", &[]), TEST_ORIGIN);
+    let before = probe_entry(&grants);
+
+    let update = probe("1.1.0", &[("log", true)]);
+    let error = refusal(load(&runtime, &update, &grants));
+    assert_eq!(error.kind(), ErrorKind::NeedsNewApproval);
+    assert_eq!(error.names(), ["log"]);
+    assert_eq!(probe_entry(&grants), before, "the approval is unchanged");
+
+    approve(&grants, &update, TEST_ORIGIN);
+    let plugin = load(&runtime, &update, &grants).expect("approved, it runs");
+    assert_eq!(plugin.render("{}").result.unwrap(), json!({"log": "ok"}));
+}
+
+#[test]
+fn us3_a_permission_no_longer_declared_stops_being_granted() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    approve(&grants, &probe("1.0.0", &[("log", true)]), TEST_ORIGIN);
+
+    load(&runtime, &quiet_as_probe("1.1.0", &[]), &grants).expect("it runs");
+    let entry = probe_entry(&grants).expect("still approved");
+    assert!(!entry.is_granted("log"), "log left the record at load");
+
+    let error = refusal(load(&runtime, &probe("1.2.0", &[("log", true)]), &grants));
+    assert_eq!(error.kind(), ErrorKind::NeedsNewApproval);
+}
+
+#[test]
+fn us3_a_required_permission_cannot_be_turned_off_alone() {
+    let grants = GrantStore::in_memory();
+    let package = probe("1.0.0", &[("log", true)]);
+    approve(&grants, &package, TEST_ORIGIN);
+    let checked = runtime().check(&package).expect("checked");
+    let error = grants
+        .set_optional(checked.manifest(), TEST_ORIGIN, "log", false)
+        .expect_err("refused");
+    assert_eq!(error.kind(), ErrorKind::RequiredTogether);
+    assert!(probe_entry(&grants).expect("approved").is_granted("log"));
+}
+
+#[test]
+fn us3_a_removed_approval_refuses_the_plugin() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    let package = probe("1.0.0", &[("log", true)]);
+    approve(&grants, &package, TEST_ORIGIN);
+    load(&runtime, &package, &grants).expect("approved, it runs");
+
+    let id = runtime::manifest::PluginId::parse("local/probe").unwrap();
+    assert_eq!(grants.remove(&id), Ok(true));
+    let error = refusal(load(&runtime, &package, &grants));
+    assert_eq!(error.kind(), ErrorKind::NotGranted);
+}
+
+#[test]
+fn us3_the_same_version_number_with_other_contents_is_a_new_version() {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    approve(&grants, &probe("1.0.0", &[]), TEST_ORIGIN);
+
+    // Same number, other contents: judged on its permissions like any new version
+    let same_number = quiet_as_probe("1.0.0", &[]);
+    load(&runtime, &same_number, &grants).expect("nothing new to approve");
+    let requires_more = probe("1.0.0", &[("log", true)]);
+    assert_eq!(
+        refusal(load(&runtime, &requires_more, &grants)).kind(),
+        ErrorKind::NeedsNewApproval
+    );
+}

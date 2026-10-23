@@ -374,3 +374,37 @@ fn a_copy_of_an_approved_file_gets_none_of_its_grants() {
     assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
     assert!(stderr(&output).starts_with("error: not-granted: "));
 }
+
+// User Story 3
+
+#[test]
+fn remove_deletes_the_approval_and_run_is_then_refused() {
+    let (_dir, grants) = temp_grants();
+    let plugin = fixture_path("hello-widget");
+    approve_file(&grants, &plugin);
+
+    let output = runtime_with(&grants, &["remove", "local/hello-widget"]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "removed local/hello-widget\n");
+
+    let output = runtime_with(&grants, &["run", path_str(&plugin)]);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).starts_with("error: not-granted: "));
+}
+
+#[test]
+fn removing_a_plugin_without_approval_says_so() {
+    let (_dir, grants) = temp_grants();
+    let output = runtime_with(&grants, &["remove", "local/x"]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "local/x has no approval\n");
+}
+
+#[test]
+fn remove_needs_a_well_formed_id() {
+    let (_dir, grants) = temp_grants();
+    for id in ["Local/X", "hello-widget", "local/"] {
+        let output = runtime_with(&grants, &["remove", id]);
+        assert_eq!(output.status.code(), Some(2), "{id}: {}", stderr(&output));
+    }
+}
