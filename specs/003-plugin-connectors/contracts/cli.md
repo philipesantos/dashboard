@@ -83,7 +83,8 @@ approval digest: sha256:0c7d…
   destinations and the digests of its declared operations
   ([data-model.md](../data-model.md#approval-digest)). `approve` needs it for a widget that
   declares a connector.
-- A connector that cannot be used shows its refusal instead of its operations, for example
+- A connector that cannot be used shows its refusal instead of its operations, and then no
+  `approval digest:` line is printed, since `approve` would refuse; for example
   `github.com/ada/weather  required  error: destination-not-verified: connectors from repositories arrive with installation (Phase 3)`.
 
 ## `runtime approve <plugin> [--expect <digest>] [--grants <path>] [--data <dir>] [--connectors <dir>]`
@@ -124,8 +125,9 @@ As in feature 002, and discards the kept data of that plugin id.
 Prints the request log, oldest first, the last `n` entries (default 50), one line each; time in
 UTC; changes nothing. Every text a plugin or a connector wrote (names, arguments, paths, details)
 is escaped as feature 001 escapes log messages, so an entry cannot add lines or control the
-terminal. A followed redirect is its own line; the summary written past an update's call limit
-reads `… N more calls past the limit of this run (not-granted: a, refused: b, failed: c, ok: d)`.
+terminal. A followed redirect is its own line; a call that was not granted reads `not-granted` where a
+rule would be; the summary written past the call limit of a run of `update` or `render` reads
+`… N more calls past the limit of this run (not-granted: a, refused: b)`.
 
 ```text
 2026-10-23T14:02:11.204Z local/github-releases catalog/github list-releases GET api.github.com /repos/rust-lang/rust/releases?per_page=5 200 3412B 184ms

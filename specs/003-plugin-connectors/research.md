@@ -356,14 +356,17 @@ follow Principle II's rule for capabilities that share an import (constitution v
   else is wrong with the call. That path is the connector's stand-in.
 - Right after the lookup, `HostState` checks whether the store runs `render` or `update`; a
   call during `render` to a connector in the table is `called-outside-update`, and nothing is
-  read, resolved or sent (FR-010), so a flood of calls during render opens no file.
+  read, resolved or sent (FR-010), so a flood of calls during render reads no grant record
+  (each call is still logged).
 - Just before it sends, after the checks on the operation, its arguments and the limits, and
   again before it hands a response to the widget, a call re-reads the grant record (under its
   lock, as feature 002 reads it), so a change made by any process applies; when its connector
   is no longer granted, it answers `not-granted` and drops a response that arrived meanwhile
-  (FR-015). This check can only take away: nothing at call time adds an executor to the table,
-  and a connector turned on during an update applies from the plugin's next call, when it is
-  linked again, as in feature 002.
+  (FR-015). This check can only take away: nothing at call time adds an executor to the table.
+  A connector turned on through the same grant store applies when the plugin is linked again,
+  as in feature 002, which re-links when that store's generation moves; one turned on by another
+  process applies once the plugin is loaded again. The CLI runs one process per command, and
+  the Phase 3 app changes grants through its own store, so neither waits on this.
 - A white-box test checks that the table's keys are exactly the granted connectors and that the
   stand-in is linked when none is granted, since no plugin can see the difference (Principle
   VIII).
@@ -449,6 +452,9 @@ own dev-dependency on itself, compiles `Runtime::with_test_network`. It takes:
   host always uses (R8);
 - extra catalog connectors, so the hostile cases can exercise catalog rules (HTTPS, `POST`
   reads, reserved hosts) with connectors written in the test.
+
+The seam changes only the HTTPS agent; the loopback agent of local connectors keeps its
+production resolver, so loopback cases run as they would in the CLI.
 
 `tests/common/servers.rs` runs HTTPS servers (`rustls` server side, certificates from `rcgen`,
 names under `.test`) and plain HTTP loopback servers, each recording every request it receives,

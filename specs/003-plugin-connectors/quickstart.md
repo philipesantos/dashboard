@@ -15,7 +15,9 @@ export D=$(mktemp -d)   # PowerShell: $env:D = New-Item -ItemType Directory (Joi
 alias rt="cargo run -q -p runtime --release -- "   # or call the binary directly
 ```
 
-Every `rt` command below takes `--grants $D/grants.json --data $D`.
+Every `rt` command below that reads grants or data takes `--grants $D/grants.json --data $D`:
+`permissions`, `approve`, `optional`, `update`, `run` and `bench`; `requests` takes only
+`--data $D`, and `pack` and `check-connector` take neither.
 
 ## 1. The security suite (no internet needed)
 

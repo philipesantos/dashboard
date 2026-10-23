@@ -144,6 +144,7 @@ A v1 plugin exports `renderer`, and also `updater` when its manifest declares a 
 | `record_version` | `2`; a version 1 record is read as version 2 with no connectors, and written back as 2 |
 | `connectors` | One entry per connector the approved manifest declared |
 | `origin` | `catalog`, or the canonical path of the local connector file |
+| `version` | The connector's version, written by `approve` and rewritten by a load that finds a new version needing no approval (step 7) |
 | `granted` | Required connectors: `true`. Optional ones: `true` only while on |
 | `destinations` | Every origin of the connector, sorted |
 | `operations` | For each operation the widget declared: SHA-256 of its canonical declaration |
@@ -195,8 +196,10 @@ parameter, the kind or the destination of one changes the approval digest too.
 | `last_update` | `at_ms`, `outcome` (`ok` or `failed`) and, when failed, `error` (`<kind>: <detail>`) |
 
 Discarded (clarification 4): by `remove`; by `optional … off`; and on load when the package digest
-differs (a new version), the approval differs, or a connector recorded as on is now off. A
-failed update leaves `data` and `fetched_at_ms` and updates `last_update` only.
+differs (a new version), the approval differs (the approval digest covers each connector's
+version, so a new connector version discards the data even when it needs no new approval), or
+a connector recorded as on is now off. A failed update leaves `data` and `fetched_at_ms` and
+updates `last_update` only.
 
 ### What render receives
 
@@ -226,9 +229,9 @@ One JSON object per line of `<data>/requests.jsonl` ([R14](research.md#r14-kept-
 | `connector`, `operation`, `kind` | What was called |
 | `method`, `host`, `path` | The request as built (absent when refused before building) |
 | `arguments` | Name → value as sent, each cut to 256 characters with ` [truncated]` |
-| `outcome` | `{ "status": 200 }`, `{ "refused": "<rule>", "detail": "…" }` or `{ "failed": "<rule>", "detail": "…" }` |
+| `outcome` | `{ "status": 200 }`, `{ "not-granted": true }`, `{ "refused": "<rule>", "detail": "…" }` or `{ "failed": "<rule>", "detail": "…" }` |
 | `sent_bytes`, `received_bytes`, `duration_ms` | For this request; a followed redirect gets its own entry, with `redirect_of` set |
-| `summary` | Only in the one entry written past a run's call limit: how many more calls there were, by answer (`not-granted`, `refused`, `failed`, `ok`) |
+| `summary` | Only in the one entry written past a run's call limit: how many more calls there were, by answer (`not-granted`, `refused`); past the limit every call that steps 1–5 let through is `refused(over-limit)` at step 6, so none is sent, fails or succeeds |
 
 The connector and operation names a plugin passes are cut to 160 characters (the longest id),
 and at most 16 arguments with names of at most 32 characters are written, before an entry is
@@ -244,7 +247,7 @@ written. The CLI escapes every text field when it prints the log.
 | 5 | Contract: v1 accepts any minor up to 1.1.0, one version across all contract names; connectors need 1.1 or later; a widget with connectors exports `updater` | `contract-mismatch`, `contract-too-old`, `missing-updater` |
 | 6 | Imports, as before; `connectors` needs at least one declared connector | `capability-refused`, `not-declared` |
 | 6a | Each declared connector: found (catalog, or, when the runtime is in development mode, `local/<name>` in `<connectors dir>/<name>.json`), parses, carries the id it was found by, follows the destination rules, has the declared major and every declared operation | `invalid-connector` (also a local file whose `id` is not `local/<name>`, naming both), `credentials-not-supported`, `destination-not-verified` (a repository id, or a local id outside development mode), `destination-reserved` (also a local file whose `id` is a `catalog/` id), `connector-unavailable` (not found, another major, a declared operation missing) |
-| 7 | Grants, as before, plus each required connector, and each optional one that is on, matches the entry (origin, destinations, operation digests) | `not-granted`, `needs-new-approval` (naming what changed) |
+| 7 | Grants, as before, plus each required connector, and each optional one that is on, matches the entry (origin, destinations, operation digests); a new connector version that changes none of these needs no approval, and the load rewrites the entry's `version` | `not-granted`, `needs-new-approval` (naming what changed) |
 | 7a | Kept data still matches the package and the approval, or is discarded | — |
 | 8 | Granted permissions and connector entries this manifest no longer declares leave the entry | — |
 | 9 | Link: `connectors` real over a table of the granted connectors when there is one; the stand-in when none is granted (Principle II, v2.3.0) | `contract-mismatch` |
@@ -261,7 +264,7 @@ and every call is logged:
 1. The connector is in the plugin's table, built at link time from the granted connectors —
    else `not-granted`, whether it is off or not declared at all (Principle II, v2.3.0).
 2. The store runs `update`, not `render` — else `refused(called-outside-update)`; the grant
-   record is not read, so calls during render open no file.
+   record is not read, so calls during render read no grant record (each is still logged, step 0).
 3. The widget declared the operation for this connector — else `refused(operation-not-declared)`.
 4. It is a read — else `refused(change-needs-user-action)`.
 5. The arguments match the parameters (at most 16) — else `refused(value-outside-type)`.
@@ -365,7 +368,7 @@ state directly, because no plugin can observe the rule: `connector-table` throug
 | `log-complete` | FR-009 | Every call of the suite, allowed or refused, and every redirect hop, has its own entry or is counted in its run's summary entry; rotation keeps the newest |
 | `call-in-render` | FR-010 | A call from `render` to a connector in the table: `refused(called-outside-update)`, nothing resolved or sent; to one that is off: `not-granted` |
 | `change-in-update` | FR-013 | A call to a change: refused |
-| `optional-off` | FR-015 | An optional connector that is off answers `not-granted`, nothing sent; turning it off, or removing the approval, from another process mid-update drops the response in flight; turning one on mid-update leaves it off until the next update |
+| `optional-off` | FR-015 | An optional connector that is off answers `not-granted`, nothing sent; turning it off, or removing the approval, from another process mid-update drops the response in flight; turning one on from another process leaves it off for the loaded plugin, and on once the plugin is loaded again |
 | `connector-table` (white box) | FR-015 | The table's keys are exactly the granted connectors, and the stand-in is linked when none is granted |
 | `catalog-reserves` (white box) | FR-005 | Every built-in catalog connector's `reserves` covers each host it declares (a unit test in `runtime/src/catalog.rs`); an extra catalog connector, added through the seam, with a destination outside its `reserves` is refused |
 

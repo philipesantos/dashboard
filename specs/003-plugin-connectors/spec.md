@@ -260,7 +260,8 @@ machine in development mode.
   redirects, the call fails.
 - Host names are compared in one normal form, so `API.Example.com` and `api.example.com` are the
   same host for the catalog's reservation, and a name ending with a dot (`api.github.com.`) is
-  refused. A destination given as an IP address is refused outside development.
+  refused. A destination given as an IP address is refused, except a loopback address for a
+  local connector in development.
 - The catalog's GitHub connector reserves `github.com`: a local connector on `api.github.com`,
   `uploads.github.com` or `github.com` itself is refused, whatever its port.
 - A widget calls a connector its manifest does not declare: it answers "not granted", as one

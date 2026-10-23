@@ -97,6 +97,15 @@
   defined in the data model and computed by the library. Every fix is in tasks.md, the data
   model, research R2, R11, R12, R15, R17 and R19, the CLI contract, the quickstart and the
   plan; the spec changed only in User Story 3's third scenario.
+- Second `/speckit-analyze` on 2026-10-23, after those fixes, with another independent
+  reviewer: the fixes held, and 19 new findings (1 high, 8 medium, 10 low), checked against the
+  code. High: the new constructor and `approve` signatures broke the CLI and `compile_cost`
+  until a later task, now moved with T022 and T028. Chosen by the maintainer: a connector turned
+  on by another process applies once the plugin is loaded again, since feature 002 re-links only
+  when its own store changes. The rest: public builders for the options and the seam, the seam
+  limited to the HTTPS agent, a `not-granted` log outcome, a `net-probe` option that returns body
+  sizes, the commands each option applies to, connector version bumps, and the spec's wording
+  on IP destinations.
 - "Command-line tool", "JSON", "HTTPS", "GET" and "schema" name the interfaces users and
   authors work with, as in features 001 and 002, not the implementation; the plan decides the
   formats, the contract and every number.
