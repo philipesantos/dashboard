@@ -6,11 +6,34 @@
 //! `tests/manifest_schema.rs` keeps in agreement with this parser.
 
 use std::fmt;
+use std::marker::PhantomData;
+
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 
 use crate::error::{ErrorKind, RuntimeError};
+use crate::permissions;
 
 /// Largest manifest accepted, checked before parsing.
 pub const MAX_MANIFEST_BYTES: usize = 16 * 1024;
+
+/// The limits of `wit/manifest.schema.json`, in characters (Unicode scalar values), as JSON
+/// Schema counts them.
+const MAX_SCHEMA_CHARS: usize = 2048;
+const MAX_VERSION_CHARS: usize = 64;
+const MAX_AUTHOR_CHARS: usize = 100;
+const MAX_PERMISSIONS: usize = 32;
+const MAX_PERMISSION_NAME_CHARS: usize = 32;
+const MAX_LOGIN_PROVIDERS: usize = 8;
+const LOGIN_PROVIDERS: &[&str] = &["github"];
+
+/// Repository ids: the only host plugins are installed from, for now (research R3).
+const REPOSITORY_PREFIX: &str = "github.com/";
+const MAX_OWNER_CHARS: usize = 39;
+const MAX_REPOSITORY_CHARS: usize = 100;
+const LOCAL_PREFIX: &str = "local/";
+const MAX_LOCAL_NAME_CHARS: usize = 64;
 
 /// A plugin's manifest, as checked by [`Manifest::parse`]; there is no other way to build one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,11 +63,25 @@ impl Manifest {
     /// Parses and checks a manifest section's payload. Refuses it as `invalid-manifest`, naming
     /// the field and the problem, or as `unknown-permission`, naming every permission the host
     /// does not know.
-    pub fn parse(_payload: &[u8]) -> Result<Manifest, RuntimeError> {
-        Err(RuntimeError::new(
-            ErrorKind::InvalidManifest,
-            "not implemented yet",
-        ))
+    pub fn parse(payload: &[u8]) -> Result<Manifest, RuntimeError> {
+        if payload.len() > MAX_MANIFEST_BYTES {
+            return Err(invalid(format!(
+                "the manifest is {} bytes, over the limit of {MAX_MANIFEST_BYTES}",
+                payload.len()
+            )));
+        }
+        let text = std::str::from_utf8(payload)
+            .map_err(|error| invalid(format!("the manifest is not UTF-8: {error}")))?;
+
+        // serde_json refuses duplicate fields and stops at 128 levels of nesting; the typed
+        // structs refuse anything outside the format long before that.
+        let mut deserializer = serde_json::Deserializer::from_str(text);
+        let Object(raw): Object<RawManifest> = serde_path_to_error::deserialize(&mut deserializer)
+            .map_err(|error| field_error(&error.path().to_string(), error.inner()))?;
+        deserializer
+            .end()
+            .map_err(|error| invalid(format!("the manifest is not one JSON document: {error}")))?;
+        raw.check()
     }
 
     pub fn id(&self) -> &PluginId {
@@ -78,8 +115,22 @@ impl Manifest {
 
 impl PluginId {
     /// Checks a plugin id; the error says which form it must take.
-    pub fn parse(_id: &str) -> Result<PluginId, String> {
-        Err("not implemented yet".to_owned())
+    pub fn parse(id: &str) -> Result<PluginId, String> {
+        let valid = if let Some(path) = id.strip_prefix(REPOSITORY_PREFIX) {
+            path.split_once('/')
+                .is_some_and(|(owner, repository)| is_owner(owner) && is_repository(repository))
+        } else if let Some(name) = id.strip_prefix(LOCAL_PREFIX) {
+            is_local_name(name)
+        } else {
+            false
+        };
+        if valid {
+            Ok(PluginId(id.to_owned()))
+        } else {
+            Err(format!(
+                "`{id}` is not {REPOSITORY_PREFIX}<owner>/<repository> or {LOCAL_PREFIX}<name>, in lowercase"
+            ))
+        }
     }
 
     pub fn as_str(&self) -> &str {
@@ -90,6 +141,264 @@ impl PluginId {
 impl fmt::Display for PluginId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+/// The manifest as written, before the checks that types cannot express.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawManifest {
+    /// Lets editors find the schema. A string when present: `null` is not accepted.
+    #[serde(rename = "$schema", default, deserialize_with = "present_string")]
+    schema: Option<String>,
+    /// Any JSON number: the schema compares it with 1 by value, so `1.0` is 1.
+    manifest_version: serde_json::Number,
+    id: String,
+    version: String,
+    author: String,
+    permissions: Vec<Object<RawPermission>>,
+    login_providers: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPermission {
+    name: String,
+    required: bool,
+}
+
+/// A struct read only from a JSON object. A derived `Deserialize` also reads a struct from an
+/// array of its fields in order, which the schema does not allow.
+struct Object<T>(T);
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ObjectVisitor<T>(PhantomData<T>);
+
+        impl<'de, T: Deserialize<'de>> Visitor<'de> for ObjectVisitor<T> {
+            type Value = Object<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an object")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Object<T>, A::Error> {
+                T::deserialize(MapAccessDeserializer::new(map)).map(Object)
+            }
+        }
+
+        deserializer.deserialize_map(ObjectVisitor(PhantomData))
+    }
+}
+
+fn present_string<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
+}
+
+impl RawManifest {
+    fn check(self) -> Result<Manifest, RuntimeError> {
+        if let Some(schema) = &self.schema
+            && schema.chars().count() > MAX_SCHEMA_CHARS
+        {
+            return Err(field(
+                "$schema",
+                format!("longer than {MAX_SCHEMA_CHARS} characters"),
+            ));
+        }
+        if self.manifest_version.as_f64() != Some(1.0) {
+            return Err(field(
+                "manifest_version",
+                format!("must be 1, found {}", self.manifest_version),
+            ));
+        }
+        let id = PluginId::parse(&self.id).map_err(|problem| field("id", problem))?;
+        check_version(&self.version)?;
+        check_author(&self.author)?;
+        let permissions = check_permissions(self.permissions)?;
+        check_login_providers(&self.login_providers)?;
+
+        // Only after every rule of the schema: an unknown permission is a host's limit, not a
+        // malformed manifest (FR-008).
+        let unknown: Vec<String> = permissions
+            .iter()
+            .filter(|permission| permissions::by_name(&permission.name).is_none())
+            .map(|permission| permission.name.clone())
+            .collect();
+        if !unknown.is_empty() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::UnknownPermission,
+                unknown,
+                Some("this host does not know these permissions"),
+            ));
+        }
+
+        Ok(Manifest {
+            id,
+            version: self.version,
+            author: self.author,
+            permissions,
+            login_providers: self.login_providers,
+        })
+    }
+}
+
+fn check_version(version: &str) -> Result<(), RuntimeError> {
+    if version.chars().count() > MAX_VERSION_CHARS {
+        return Err(field(
+            "version",
+            format!("longer than {MAX_VERSION_CHARS} characters"),
+        ));
+    }
+    semver::Version::parse(version).map(drop).map_err(|error| {
+        field(
+            "version",
+            format!("`{version}` is not SemVer 2.0.0: {error}"),
+        )
+    })
+}
+
+fn check_author(author: &str) -> Result<(), RuntimeError> {
+    let length = author.chars().count();
+    if !(1..=MAX_AUTHOR_CHARS).contains(&length) {
+        return Err(field(
+            "author",
+            format!("must have 1 to {MAX_AUTHOR_CHARS} characters, found {length}"),
+        ));
+    }
+    if author.chars().any(char::is_control) {
+        return Err(field("author", "contains a control character"));
+    }
+    Ok(())
+}
+
+/// Checks each entry, then drops repeated ones: the same name twice counts once, unless one
+/// entry is required and the other optional.
+fn check_permissions(
+    raw: Vec<Object<RawPermission>>,
+) -> Result<Vec<PermissionRequest>, RuntimeError> {
+    let raw: Vec<RawPermission> = raw
+        .into_iter()
+        .map(|Object(permission)| permission)
+        .collect();
+    if raw.len() > MAX_PERMISSIONS {
+        return Err(field(
+            "permissions",
+            format!("more than {MAX_PERMISSIONS} entries"),
+        ));
+    }
+    for (index, permission) in raw.iter().enumerate() {
+        if !is_permission_name(&permission.name) {
+            return Err(field(
+                &format!("permissions[{index}].name"),
+                format!(
+                    "`{}` must be a lowercase letter, then up to {} lowercase letters, digits or hyphens",
+                    permission.name,
+                    MAX_PERMISSION_NAME_CHARS - 1
+                ),
+            ));
+        }
+    }
+    let mut permissions: Vec<PermissionRequest> = Vec::new();
+    for permission in raw {
+        match permissions.iter().find(|kept| kept.name == permission.name) {
+            None => permissions.push(PermissionRequest {
+                name: permission.name,
+                required: permission.required,
+            }),
+            Some(kept) if kept.required == permission.required => {}
+            Some(_) => {
+                return Err(field(
+                    "permissions",
+                    format!("`{}` is both required and optional", permission.name),
+                ));
+            }
+        }
+    }
+    Ok(permissions)
+}
+
+fn check_login_providers(providers: &[String]) -> Result<(), RuntimeError> {
+    if providers.len() > MAX_LOGIN_PROVIDERS {
+        return Err(field(
+            "login_providers",
+            format!("more than {MAX_LOGIN_PROVIDERS} entries"),
+        ));
+    }
+    for (index, provider) in providers.iter().enumerate() {
+        if !LOGIN_PROVIDERS.contains(&provider.as_str()) {
+            return Err(field(
+                &format!("login_providers[{index}]"),
+                format!(
+                    "`{provider}` is not a login provider; known: {}",
+                    LOGIN_PROVIDERS.join(", ")
+                ),
+            ));
+        }
+        if providers[..index].contains(provider) {
+            return Err(field(
+                "login_providers",
+                format!("`{provider}` is listed twice"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `[a-z][a-z0-9-]{0,31}`
+fn is_permission_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && name.len() <= MAX_PERMISSION_NAME_CHARS
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// `[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?`: 1–39 characters, hyphens only inside.
+fn is_owner(owner: &str) -> bool {
+    is_hyphenated(owner, MAX_OWNER_CHARS)
+}
+
+/// `[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?`: 1–64 characters, hyphens only inside.
+fn is_local_name(name: &str) -> bool {
+    is_hyphenated(name, MAX_LOCAL_NAME_CHARS)
+}
+
+/// 1 to `max` lowercase letters, digits and hyphens, starting and ending with a letter or a
+/// digit.
+fn is_hyphenated(name: &str, max: usize) -> bool {
+    let alphanumeric = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+    !name.is_empty()
+        && name.len() <= max
+        && name.chars().all(|c| alphanumeric(c) || c == '-')
+        && name.starts_with(alphanumeric)
+        && name.ends_with(alphanumeric)
+}
+
+/// `[a-z0-9_-][a-z0-9._-]{0,99}`: 1–100 characters, never starting with a dot (so never `.` or
+/// `..`).
+fn is_repository(repository: &str) -> bool {
+    !repository.is_empty()
+        && repository.len() <= MAX_REPOSITORY_CHARS
+        && !repository.starts_with('.')
+        && repository
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'))
+}
+
+fn invalid(detail: impl AsRef<str>) -> RuntimeError {
+    RuntimeError::new(ErrorKind::InvalidManifest, detail)
+}
+
+/// An `invalid-manifest` error naming the field path and the problem.
+fn field(path: &str, problem: impl fmt::Display) -> RuntimeError {
+    invalid(format!("{path}: {problem}"))
+}
+
+/// A parse error at `path`, which is `.` for the whole document.
+fn field_error(path: &str, error: &serde_json::Error) -> RuntimeError {
+    if path == "." {
+        invalid(error.to_string())
+    } else {
+        field(path, error)
     }
 }
 
@@ -531,6 +840,14 @@ mod tests {
         let mut trailing = manifest_with(|_| {});
         trailing.extend_from_slice(b" []");
         invalid(&trailing);
+    }
+
+    #[test]
+    fn refuses_objects_written_as_arrays() {
+        // serde can read a struct from an array of its fields in order; the schema cannot
+        invalid(br#"[1, "local/probe", "1.0.0", "A", [], []]"#);
+        invalid(br#"[null, 1, "local/probe", "1.0.0", "A", [], []]"#);
+        assert_invalid_field("permissions[0]", set("permissions", json!([["log", true]])));
     }
 
     #[test]
