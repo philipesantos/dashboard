@@ -6,7 +6,8 @@ use std::fmt;
 use crate::text;
 
 /// The rule behind a [`RuntimeError`]. The names are part of the CLI contract
-/// (`specs/001-plugin-runtime/contracts/cli.md`, `specs/002-plugin-permissions/contracts/cli.md`).
+/// (`specs/001-plugin-runtime/contracts/cli.md`, `specs/002-plugin-permissions/contracts/cli.md`,
+/// `specs/003-plugin-connectors/contracts/cli.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
     /// Not a WebAssembly component, corrupted, or larger than the package limit.
@@ -50,6 +51,26 @@ pub enum ErrorKind {
     InvalidOutput,
     /// The widget content exceeds the size cap.
     OutputTooLarge,
+    /// A connector file is too large, not JSON, or breaks the connector schema or a rule of the
+    /// host.
+    InvalidConnector,
+    /// A connector declares a credential, which arrives with feature 005.
+    CredentialsNotSupported,
+    /// A connector's id names a repository, whose destinations nothing verifies yet, or is a
+    /// local id while the runtime is not in development mode.
+    DestinationNotVerified,
+    /// A connector outside the catalog claims a catalog id or a host the catalog reserves.
+    DestinationReserved,
+    /// A declared connector is not found, has another major version, or lacks an operation the
+    /// widget declares.
+    ConnectorUnavailable,
+    /// A widget declares a connector but is built for a contract older than 1.1.0.
+    ContractTooOld,
+    /// A widget declares a connector but exports no `updater`, or `update` was asked of a
+    /// widget without one.
+    MissingUpdater,
+    /// An approval was given the digest of something other than what it would approve now.
+    ApprovalChanged,
 }
 
 impl ErrorKind {
@@ -75,6 +96,14 @@ impl ErrorKind {
             ErrorKind::PluginError => "plugin-error",
             ErrorKind::InvalidOutput => "invalid-output",
             ErrorKind::OutputTooLarge => "output-too-large",
+            ErrorKind::InvalidConnector => "invalid-connector",
+            ErrorKind::CredentialsNotSupported => "credentials-not-supported",
+            ErrorKind::DestinationNotVerified => "destination-not-verified",
+            ErrorKind::DestinationReserved => "destination-reserved",
+            ErrorKind::ConnectorUnavailable => "connector-unavailable",
+            ErrorKind::ContractTooOld => "contract-too-old",
+            ErrorKind::MissingUpdater => "missing-updater",
+            ErrorKind::ApprovalChanged => "approval-changed",
         }
     }
 }
@@ -185,6 +214,20 @@ mod tests {
             (ErrorKind::PluginError, "plugin-error"),
             (ErrorKind::InvalidOutput, "invalid-output"),
             (ErrorKind::OutputTooLarge, "output-too-large"),
+            (ErrorKind::InvalidConnector, "invalid-connector"),
+            (
+                ErrorKind::CredentialsNotSupported,
+                "credentials-not-supported",
+            ),
+            (
+                ErrorKind::DestinationNotVerified,
+                "destination-not-verified",
+            ),
+            (ErrorKind::DestinationReserved, "destination-reserved"),
+            (ErrorKind::ConnectorUnavailable, "connector-unavailable"),
+            (ErrorKind::ContractTooOld, "contract-too-old"),
+            (ErrorKind::MissingUpdater, "missing-updater"),
+            (ErrorKind::ApprovalChanged, "approval-changed"),
         ];
         for (kind, name) in kinds {
             assert_eq!(kind.as_str(), name);

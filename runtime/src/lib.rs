@@ -2,13 +2,19 @@
 //! under limits set by the host, with exactly the capabilities their manifest declares and the
 //! user granted (`specs/002-plugin-permissions/`).
 
+mod calls;
+mod catalog;
+mod connector;
 mod error;
 pub mod grants;
 mod host;
+mod kept;
 mod limits;
 pub mod manifest;
+mod network;
 pub mod package;
 mod permissions;
+mod requests;
 mod text;
 
 use std::sync::atomic::{AtomicU64, Ordering};
