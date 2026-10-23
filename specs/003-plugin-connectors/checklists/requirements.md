@@ -47,6 +47,11 @@
     shown as unencrypted, only for connectors without credentials), built after feature 005,
     since most of them need a credential. This feature refuses every
     non-public address and leaves room for that destination kind (assumptions).
+- An operation's kind (read or change) is the word of whoever wrote the connector, checked only
+  by the catalog's review. Decided with the maintainer on 2026-10-23: a read means it changes
+  nothing in the service, never that no data leaves; outside the catalog a read must be a GET or
+  HEAD without a body; and the approval shows the parameters each operation sends and whether
+  its kind was reviewed or declared (FR-002, FR-016, edge cases).
 - Defaults chosen in the spec, for the maintainer to confirm or change with `/speckit-clarify`:
   - An update calls only operations that read; changes need a user action (Phase 3) (FR-014).
   - The request log records parameter values as sent, never credentials (FR-010).

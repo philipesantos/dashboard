@@ -68,7 +68,8 @@ refused with nothing sent.
 1. **Given** a widget that declares a connector, **When** the maintainer asks what it requests,
    **Then** the tool lists each connector with its version, where its destinations come from
    (official catalog, verified for its repository, chosen by the user, or local development),
-   every destination host, and each operation the widget calls, marked as a read or a change.
+   every destination host, and each operation the widget calls, with the parameters it sends
+   and its kind, read or change, marked as reviewed or as declared by whoever wrote it.
 2. **Given** the widget is approved, **When** an update runs and the widget calls a declared
    operation with valid values, **Then** the host sends the request to the operation's
    destination, gives the widget the response, and records the call in the request log.
@@ -307,6 +308,12 @@ development mode.
 - An authorization that is too large, malformed or served through a redirect counts as no
   authorization.
 - A connector declares a credential: it is refused until feature 005.
+- A connector outside the catalog declares a POST, or a GET with a body, as a read: it is
+  refused, naming the operation, which must be declared as a change. A catalog connector may
+  declare such a read, such as a GraphQL query, because its review checks the kind.
+- A read still sends its parameters: a weather read sends the city to its service. The kind says
+  whether the service's data changes, never whether data leaves; the parameters shown before
+  approval say what leaves.
 - A widget declares a connector it never calls: allowed; a required connector still needs
   approval, as every required permission does (feature 002).
 - A response larger than the limit, or in a format other than the operation declares: the call
@@ -338,9 +345,12 @@ development mode.
   operations: no sockets, no generic HTTP, nothing else that sends data off the machine. A
   component that asks for any of them MUST be refused before it runs.
 - **FR-002**: A connector MUST be a declaration, never code. It states its id, version, author,
-  destinations and operations. Each operation states whether it reads or changes data, its
-  destination, the fixed shape of its request, the parameters a widget may fill in, each with
-  its type, and the format of its response (JSON or text). The project MUST publish the
+  destinations and operations. Each operation states its kind, its destination, the fixed shape
+  of its request, the parameters a widget may fill in, each with its type, and the format of its
+  response (JSON or text). Its kind is a change when it changes data in the service, and a read
+  otherwise; either kind sends its parameters to its destination. Outside the catalog, a read
+  MUST be a GET or HEAD request without a body, and the host MUST refuse a connector that
+  declares any other request as a read, naming the operation. The project MUST publish the
   connector schema, and the host MUST refuse a connector that does not conform, naming the field
   and the problem.
 - **FR-003**: A parameter MUST be text with a maximum length and, optionally, a pattern or a
@@ -350,12 +360,12 @@ development mode.
   where its operation places it (one path segment, one query value or one field of the request
   body), encoded by the host, so no value can change the destination, reach outside its place or
   add anything to the request.
-- **FR-004**: A connector's id MUST be the repository it comes from (`<host>/<owner>/<repository>`,
-  at most one connector per repository, which may also hold one widget), a catalog id that no
-  repository can claim, or a local id (`local/<name>`) for development. Its destinations depend
-  on that: a catalog connector's are those it declares, or the user's choice for a protocol
-  connector (FR-015); a repository connector's must authorize its repository (FR-006); a local
-  connector's are allowed only in development (FR-020).
+- **FR-004**: A connector's id MUST be the repository it comes from
+  (`<host>/<owner>/<repository>`, at most one connector per repository, which may also hold one
+  widget), a catalog id that no repository can claim, or a local id (`local/<name>`) for
+  development. Its destinations depend on that: a catalog connector's are those it declares, or
+  the user's choice for a protocol connector (FR-015); a repository connector's must authorize
+  its repository (FR-006); a local connector's are allowed only in development (FR-020).
 - **FR-005**: The official catalog MUST live in the project's repository and ship with the host:
   a connector is a catalog connector only if it is in the catalog the host was built with. Every
   host a catalog connector declares, and every host under the same registrable domain, MUST be
@@ -419,7 +429,9 @@ development mode.
 - **FR-016**: Before approval, the host MUST show, for every connector a widget declares, its id
   and version, where its destinations come from (catalog, verified for its repository, chosen by
   the user, or local development), every destination host, and every operation the widget calls,
-  marked as a read or a change. The approval covers those destinations and operations as shown.
+  with the parameters it sends to its destination and its kind, read or change, marked as
+  reviewed (catalog) or as declared by the service's owner (verified domain) or by the developer
+  (local). The approval covers those destinations and operations as shown.
   A new version of the widget or of a connector that adds a destination, changes the
   destination, parameters, request or kind of an operation the widget calls, or makes the widget
   call a new operation MUST be refused until approved, naming what changed, with the grants
@@ -447,16 +459,17 @@ development mode.
   as in feature 002: a connector file elsewhere that claims the same id inherits nothing.
 - **FR-021**: Every refusal MUST name, in one message, the connector, operation, parameter or
   destination concerned and the rule that applied: operation not declared, unknown operation,
-  value outside its type, destination not verified, destination reserved, non-public address,
-  not HTTPS, redirect not allowed, over a limit, called outside an update, change needs a user
-  action, connector unavailable or of another version, contract mismatch, invalid connector,
-  invalid authorization, credentials not supported yet, no destination chosen.
-- **FR-022**: The hostile suite MUST gain one case per rule in FR-001, FR-003, FR-005, FR-006,
-  FR-007, FR-008 (a non-public address given directly, reached through a name and reached
-  through a redirect; plain HTTP), FR-009, FR-011, FR-014, FR-015 and FR-017. It MUST run on
-  Windows, macOS and Linux on every change that is not documentation-only, without depending on
-  the internet, and fail the build if any case is not refused or if any request reaches a
-  destination it was not approved for (Principle VIII).
+  value outside its type, read with a body outside the catalog, destination not verified,
+  destination reserved, non-public address, not HTTPS, redirect not allowed, over a limit,
+  called outside an update, change needs a user action, connector unavailable or of another
+  version, contract mismatch, invalid connector, invalid authorization, credentials not
+  supported yet, no destination chosen.
+- **FR-022**: The hostile suite MUST gain one case per rule in FR-001, FR-002 (a read with a
+  body outside the catalog), FR-003, FR-005, FR-006, FR-007, FR-008 (a non-public address given
+  directly, reached through a name and reached through a redirect; plain HTTP), FR-009, FR-011,
+  FR-014, FR-015 and FR-017. It MUST run on Windows, macOS and Linux on every change that is not
+  documentation-only, without depending on the internet, and fail the build if any case is not
+  refused or if any request reaches a destination it was not approved for (Principle VIII).
 - **FR-023**: The catalog MUST start with two connectors that need no account: RSS and Atom feeds
   (a protocol connector) and GitHub public data (a few read operations on public repositories).
   The project MUST ship an example widget that uses a catalog connector, and documentation for
@@ -472,8 +485,9 @@ development mode.
 - **Connector**: the declaration, as data, of the operations a widget may call on one external
   service; it has an id, a version, an author, destinations and operations, and comes from the
   catalog, a repository or, in development, a local file.
-- **Operation**: one request a connector can make: a read or a change, its destination, the
-  fixed shape of its request, its parameters and the format of its response.
+- **Operation**: one request a connector can make: a read, which changes nothing in the service,
+  or a change; its destination, the fixed shape of its request, its parameters and the format of
+  its response.
 - **Parameter**: a value a widget fills in when calling an operation, with a type the host
   checks: text, whole number or true/false, with its bounds.
 - **Destination**: the host an operation reaches; it is declared by a catalog connector,
@@ -526,8 +540,9 @@ development mode.
 
 - In this phase the maintainer approves widgets and their connectors, chooses the destinations of
   protocol connectors and runs updates with the command-line tool. The host dialogs of Phase 3
-  apply the same rules, and the Phase 3 warning about data from one account reaching another
-  destination judges the destinations this feature shows.
+  apply the same rules, showing like the tool the parameters each operation sends and whether
+  its kind was reviewed or declared, and the Phase 3 warning about data from one account reaching
+  another destination judges the destinations this feature shows.
 - Installation from repositories, keeping each repository's permanent identifier, arrives in
   Phase 3. In this phase widgets and connectors load from local files in development mode. A
   local file may claim a repository id; the host then checks that the destination hosts
