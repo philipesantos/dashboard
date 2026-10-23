@@ -11,8 +11,8 @@ pub mod package;
 mod permissions;
 mod text;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -110,13 +110,22 @@ impl CheckedPackage {
     }
 }
 
-/// A loaded plugin, compiled once and instantiated afresh for every render call.
+/// A loaded plugin, compiled once and instantiated afresh for every render call. Its linking
+/// follows its grants: a change to them applies from the next call (FR-014, research R6).
 pub struct Plugin {
     package: CheckedPackage,
-    /// Linked with the capabilities the plugin's approval from this origin grants.
-    prepared: Prepared,
+    origin: String,
+    grants: Arc<GrantStore>,
+    linked: Mutex<Linked>,
     limits: Limits,
     clock: Arc<EpochClock>,
+}
+
+/// The plugin linked for one generation of its grant store, or the refusal that generation
+/// produced.
+struct Linked {
+    generation: u64,
+    prepared: Result<Arc<Prepared>, RuntimeError>,
 }
 
 /// A plugin linked for its contract version, ready to instantiate.
@@ -220,10 +229,17 @@ impl Runtime {
         grants: Arc<GrantStore>,
     ) -> Result<Plugin, RuntimeError> {
         let package = self.check(bytes)?;
+        // Read before the grants, so a change made while linking is seen on the next call
+        let generation = grants.generation();
         let prepared = prepare(&package, origin, &grants)?;
         Ok(Plugin {
             package,
-            prepared,
+            origin: origin.to_owned(),
+            grants,
+            linked: Mutex::new(Linked {
+                generation,
+                prepared: Ok(Arc::new(prepared)),
+            }),
             limits: self.limits.clone(),
             clock: Arc::clone(&self.clock),
         })
@@ -285,7 +301,21 @@ impl Plugin {
 
     /// Calls the plugin's `render` with a JSON configuration, in a fresh instance that is
     /// dropped when the call ends, so nothing survives from one call to the next (FR-008).
+    ///
+    /// If the grants changed since the plugin was last linked, it is linked again first, with
+    /// the compiled component kept; if they now refuse it, the call fails with that refusal and
+    /// nothing is instantiated. A call already running keeps the instance it started with.
     pub fn render(&self, config: &str) -> RenderReport {
+        let prepared = match self.current() {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                return RenderReport {
+                    result: Err(error),
+                    logs: Vec::new(),
+                    dropped_logs: 0,
+                };
+            }
+        };
         let mut store = Store::new(
             self.package.component.engine(),
             HostState::new(&self.limits),
@@ -293,13 +323,25 @@ impl Plugin {
         store.limiter(|state| &mut state.limiter);
         let result = self
             .start_limits(&mut store)
-            .and_then(|()| self.call(&mut store, config));
+            .and_then(|()| self.call(&prepared, &mut store, config));
         let state = store.into_data();
         RenderReport {
             result,
             logs: state.logs,
             dropped_logs: state.dropped_logs,
         }
+    }
+
+    /// The plugin linked for the grants as they are now: load steps 7–9 run again whenever the
+    /// store's generation moved since the last time.
+    fn current(&self) -> Result<Arc<Prepared>, RuntimeError> {
+        let mut linked = self.linked.lock().unwrap_or_else(PoisonError::into_inner);
+        let generation = self.grants.generation();
+        if linked.generation != generation {
+            linked.prepared = prepare(&self.package, &self.origin, &self.grants).map(Arc::new);
+            linked.generation = generation;
+        }
+        linked.prepared.clone()
     }
 
     /// Gives the call its CPU budget and its time limit, counted from now.
@@ -323,10 +365,11 @@ impl Plugin {
 
     fn call(
         &self,
+        prepared: &Prepared,
         store: &mut Store<HostState>,
         config: &str,
     ) -> Result<serde_json::Value, RuntimeError> {
-        let rendered = match &self.prepared {
+        let rendered = match prepared {
             Prepared::V0(pre) => pre.instantiate(&mut *store).and_then(|instance| {
                 instance
                     .dashboard_widget_renderer()

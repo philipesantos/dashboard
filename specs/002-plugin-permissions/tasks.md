@@ -160,7 +160,7 @@ render without being loaded again
 
 ### Implementation for User Story 4
 
-- [ ] T037 [US4] Make grant changes apply from the next call in `runtime/src/lib.rs` (research R6, `data-model.md` Plugin): `Plugin` keeps the generation its linking was built for; at the start of every `render`, if the store's generation differs, re-run steps 7–9 against the current grants and link again, keeping the compiled component; a refusal there becomes that call's error and nothing is instantiated; a call already running keeps its instance
+- [X] T037 [US4] Make grant changes apply from the next call in `runtime/src/lib.rs` (research R6, `data-model.md` Plugin): `Plugin` keeps the generation its linking was built for; at the start of every `render`, if the store's generation differs, re-run steps 7–9 against the current grants and link again, keeping the compiled component; a refusal there becomes that call's error and nothing is instantiated; a call already running keeps its instance
 - [ ] T038 [US4] Add `optional <plugin> <permission> on|off` to `runtime/src/bin/runtime.rs` as in `contracts/cli.md`, with each refusal kind of its table
 
 **Checkpoint**: quickstart step 4 works; User Story 4 is complete
