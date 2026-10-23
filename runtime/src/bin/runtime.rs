@@ -5,6 +5,7 @@
 //! or the error that refused or stopped it. `runtime bench <plugin>` measures how long loading
 //! and rendering take. `runtime permissions <plugin>` shows what a plugin requests and what is
 //! granted, and `runtime approve <plugin>` grants its required permissions, all together.
+//! `runtime remove <plugin-id>` removes a plugin's approval and every grant with it.
 //!
 //! The tool is the host's control in this phase: it works in development mode only, on local
 //! package files, with the development grant record (`--grants <path>`, or the default one in
@@ -20,12 +21,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use runtime::grants::{GrantStore, Status};
+use runtime::manifest::PluginId;
 use runtime::{CheckedPackage, Limits, Plugin, Runtime, escape, package};
 
 const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>]
        runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>]
        runtime permissions <plugin> [--grants <path>]
-       runtime approve <plugin> [--grants <path>]";
+       runtime approve <plugin> [--grants <path>]
+       runtime remove <plugin-id> [--grants <path>]";
 
 /// Exit status when the plugin or the change was refused, or the plugin failed or was stopped.
 const PLUGIN_FAILED: u8 = 1;
@@ -44,6 +47,7 @@ enum Command {
     Bench,
     Permissions,
     Approve,
+    Remove,
 }
 
 fn main() -> ExitCode {
@@ -53,6 +57,7 @@ fn main() -> ExitCode {
         Some("bench") => Command::Bench,
         Some("permissions") => Command::Permissions,
         Some("approve") => Command::Approve,
+        Some("remove") => Command::Remove,
         Some(command) => return usage_error(&format!("unknown command `{command}`")),
         None => return usage_error("no command given"),
     };
@@ -65,10 +70,12 @@ fn main() -> ExitCode {
         Command::Bench => bench(&options),
         Command::Permissions => permissions(&options),
         Command::Approve => approve(&options),
+        Command::Remove => remove(&options),
     }
 }
 
 struct Options {
+    /// A package file, or for `remove` a plugin id.
     plugin: String,
     /// Already checked to be valid JSON. Only for `run` and `bench`.
     config: String,
@@ -127,7 +134,11 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
             }
         }
     }
-    let plugin = plugin.ok_or("no plugin file given")?;
+    let plugin = plugin.ok_or(if command == Command::Remove {
+        "no plugin id given"
+    } else {
+        "no plugin file given"
+    })?;
     let config = config.unwrap_or_else(|| "{}".to_owned());
     serde_json::from_str::<serde_json::Value>(&config)
         .map_err(|error| format!("the configuration is not valid JSON: {error}"))?;
@@ -303,6 +314,24 @@ fn bench(options: &Options) -> ExitCode {
 fn percentile(sorted: &[Duration], percent: usize) -> Duration {
     let rank = (percent * sorted.len()).div_ceil(100).max(1);
     sorted[rank - 1]
+}
+
+/// Removes the plugin's approval and every grant with it, whatever file it was given for.
+fn remove(options: &Options) -> ExitCode {
+    let id = match PluginId::parse(&options.plugin) {
+        Ok(id) => id,
+        Err(problem) => return usage_error(&problem),
+    };
+    let grants = match grant_store(options.grants.as_ref()) {
+        Ok(grants) => grants,
+        Err(message) => return usage_error(&message),
+    };
+    match grants.remove(&id) {
+        Ok(true) => println!("removed {id}"),
+        Ok(false) => println!("{id} has no approval"),
+        Err(error) => return refused(&error),
+    }
+    ExitCode::SUCCESS
 }
 
 /// Reads and loads a plugin with its grants, timing the load. On failure, prints why and

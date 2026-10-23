@@ -139,7 +139,7 @@ never taken back one by one; removing the approval stops the plugin
 
 ### Implementation for User Story 3
 
-- [ ] T034 [US3] Add `remove <plugin-id>` to `runtime/src/bin/runtime.rs` as in `contracts/cli.md`, validating the id with the manifest's id rules (T013)
+- [X] T034 [US3] Add `remove <plugin-id>` to `runtime/src/bin/runtime.rs` as in `contracts/cli.md`, validating the id with the manifest's id rules (T013)
 
 **Checkpoint**: quickstart step 5 works; User Story 3 is complete
 
