@@ -41,7 +41,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 100,
-      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
     },
     "permissions": {
       "description": "Every capability the plugin may use. A permission the host does not know refuses the plugin; the same name twice counts once, unless one entry is required and the other optional.",

@@ -2,7 +2,8 @@
 
 Extends [feature 001's contract](../../001-plugin-runtime/contracts/cli.md). The tool is the
 host's control in this phase: it works in development mode only, on local package files, and
-keeps its decisions in the development grant record. It is a binary of the `runtime` crate:
+keeps its decisions in the development grant record, as Principle VII allows until the host
+dialogs exist (constitution v1.3.0). It is a binary of the `runtime` crate:
 `cargo run -p runtime --release -- <command>`.
 
 ## Common rules

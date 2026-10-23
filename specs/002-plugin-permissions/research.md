@@ -247,8 +247,9 @@ versions).
 
 ## R9. CLI commands
 
-**Decision**: the CLI is the host's control in this phase and works in development mode only,
-on local files, with the development record ([contracts/cli.md](contracts/cli.md)):
+**Decision**: the CLI is the host's control in this phase, as Principle VII allows until the
+host dialogs exist (constitution v1.3.0), and works in development mode only, on local files,
+with the development record ([contracts/cli.md](contracts/cli.md)):
 
 - `run` and `bench` now read the manifest and the grants.
 - `permissions <plugin>`: lists id, version, author, contract, each permission with required or
@@ -287,6 +288,8 @@ required permissions); flags on `run` that grant on the fly (a decision hidden i
   next to the assertions.
 - Duplicate and nested manifest sections are built in the test (a second section appended to
   the bytes; a WAT component with the section inside a nested module).
+- FR-009 and FR-010 are checked by running every case, and the probe, against a file-backed
+  record: its bytes and the store's generation must not change across any render.
 
 **Rationale**: the rules under test are about the package and the grants, not about plugin
 code; two small plugins cover every combination. `wit-component` dropped every unused import in

@@ -24,7 +24,7 @@ is required and no other field is accepted, except `$schema`, which the host ign
 | `manifest_version` | `1` |
 | `id` | `github.com/<owner>/<repository>` or `local/<name>`, lowercase ([research R3](research.md#r3-plugin-ids)) |
 | `version` | SemVer 2.0.0, at most 64 characters |
-| `author` | 1–100 characters, no control characters |
+| `author` | 1–100 characters, no control characters (`char::is_control`: C0, DEL and C1) |
 | `permissions` | At most 32 entries of `{ "name": <permission>, "required": true \| false }`; a name is `[a-z][a-z0-9-]{0,31}` |
 | `login_providers` | At most 8, unique, each one of `github` |
 
@@ -115,6 +115,27 @@ finds several offending names lists them all.
 | 8 | Granted permissions no longer declared leave the entry | — |
 | 9 | Link: the real interface for each granted permission the component imports; the stand-in for each optional one that is off | `contract-mismatch` if linking still fails |
 
+### Combinations (SC-002)
+
+Every combination of declared, granted and imported for one permission, as steps 6–9 decide
+it. Each row assumes the plugin has an approval (an entry in the record); a plugin without one
+is `not-granted` whatever it declares.
+
+| Declared | Granted | Imported | Outcome |
+| --- | --- | --- | --- |
+| no | no | no | Runs; nothing linked |
+| no | yes, left from an earlier version | no | Runs; nothing linked; the grant leaves the entry (step 8) |
+| no | no | yes | `not-declared` |
+| no | yes, left from an earlier version | yes | `not-declared` |
+| required | yes | yes | Runs; the real interface |
+| required | yes | no | Runs; nothing linked |
+| required | no | yes | `needs-new-approval` |
+| required | no | no | `needs-new-approval` |
+| optional | on | yes | Runs; the real interface |
+| optional | on | no | Runs; nothing linked |
+| optional | off | yes | Runs; the stand-in |
+| optional | off | no | Runs; nothing linked |
+
 ## Plugin
 
 | Field | Meaning |
@@ -156,8 +177,8 @@ Details are escaped and cut to 1 KiB, as in feature 001; every name in a list is
 ## Hostile-plugin cases
 
 New cases of `runtime/tests/hostile.rs`, one per rule of FR-016. Each must be refused with its
-kind (or, for FR-019, contained), and a well-behaved plugin must run right after on the same
-runtime. `probe` (v1, calls `log` and returns what it answered) and `quiet` (v1, no imports) are
+kind (or, for FR-019, contained; for FR-009 and FR-010, leave the record unchanged), and a
+well-behaved plugin must run right after on the same runtime. `probe` (v1, calls `log` and returns what it answered) and `quiet` (v1, no imports) are
 the bare fixtures under `plugins/fixtures/`; each case packs them with its own manifest.
 
 | Case | Rule | Package | Grants | Expected |
@@ -171,6 +192,7 @@ the bare fixtures under `plugins/fixtures/`; each case packs them with its own m
 | `unknown-permission` | FR-008 | `quiet` + a permission `telepathy` | — | `unknown-permission`, naming it |
 | `escalating-update` | FR-011 | `probe` + `log` optional, approved; then `probe` + `log` required, same id | Approval of the first | Second refused `needs-new-approval`, naming `log`; the entry unchanged |
 | `optional-off` | FR-019 | `probe` + `log` optional | Approved, `log` off | Runs; the probe reports `not-granted`; the report holds no log message |
+| `grant-record-untouched` | FR-009, FR-010 | Every case above and `probe`, run against a file-backed record | Approved as each case needs | The record's bytes and the store's generation are the same before and after every render; reading the record stays impossible (`read-file`, feature 001) |
 
 ## Performance record
 

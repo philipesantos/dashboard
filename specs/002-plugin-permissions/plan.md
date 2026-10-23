@@ -45,9 +45,9 @@ loading a plugin, on every CI system; re-linking after a grant change stays with
 targets of feature 001 (R11)
 
 **Constraints**: a plugin links only granted capabilities, or a stand-in for an optional one
-that is off (Principle II, constitution v1.2.0); grants change only through the host's own
-controls (Principle VII); everything under `runtime/` and `wit/` gets line-by-line human review
-(Principle IX)
+that is off (Principle II); grants change only through the development CLI, on local packages
+and the development record (Principle VII, constitution v1.3.0); everything under `runtime/`
+and `wit/` gets line-by-line human review (Principle IX)
 
 **Scale/Scope**: one capability (`log`) in two contract versions, one manifest format with its
 JSON Schema, one grant record, nine refusal rules, five new CLI commands, one example plugin
@@ -57,7 +57,7 @@ moved to v1, three new test fixtures
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Checked against constitution v1.2.0.
+Checked against constitution v1.3.0.
 
 | Rule | Status | How the plan complies |
 | --- | --- | --- |
@@ -67,7 +67,7 @@ Checked against constitution v1.2.0.
 | IV. Plugins never see secrets | Pass (N/A) | No secret interface; login providers are declared and shown only |
 | V. Plugins stay inside the host frame | Pass (N/A) | No UI; a plugin's text about its permissions reaches only its own output |
 | VI. Human confirmation for AI actions | Pass (N/A) | No AI in this feature |
-| VII. Trust decisions only in host dialogs | Pass | Grants change only through the CLI, the host's control in this phase; no plugin can read, write or request them; the dialogs of Phase 3 replace the CLI for end users |
+| VII. Trust decisions only in host dialogs | Pass | Until Phase 3, grants change only through the development CLI, on local packages and the development record, as Principle VII allows (v1.3.0); no plugin can read, write or request them, and a hostile case checks that running a plugin leaves the record unchanged; the dialogs of Phase 3 replace the CLI for end users |
 | VIII. Every security rule has a breaking test | Pass | One hostile case per rule of FR-016, in `runtime/tests/hostile.rs`, on three systems in CI; the feature 001 cases keep passing |
 | IX. Human review of the security core | Pass | The permission engine, manifest parser and grant record live in `runtime/`, and contract v1 and the manifest schema in `wit/`: all security core |
 | Fixed decisions: Wasmtime + Component Model (WIT) | Pass | Contract v1 is WIT; the manifest rides in the component itself |
