@@ -6,6 +6,7 @@ mod host;
 mod imports;
 mod limits;
 pub mod manifest;
+pub mod package;
 mod permissions;
 mod text;
 
