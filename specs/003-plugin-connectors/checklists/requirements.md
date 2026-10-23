@@ -61,11 +61,13 @@
   reservation (this feature reserves the catalog's exact hosts), RSS and other protocol
   connectors, catalog criteria, and updates on load and on a schedule (assumptions, FR-004,
   FR-005, FR-012). From 7 user stories and 24 requirements to 5 and 22.
-- Defaults chosen in the spec, for the maintainer to confirm or change with `/speckit-clarify`:
-  - An update calls only operations that read; changes need a user action (Phase 3) (FR-013).
-  - The request log records parameter values as sent, never credentials (FR-009).
-  - Turning off a connector or removing a widget's approval discards its kept data (FR-015).
-  - The first catalog connector is GitHub public data (FR-021).
+- `/speckit-clarify` on 2026-10-23 (spec, Clarifications): an update calls only reads (FR-013);
+  a widget receives only the response headers its operation declares, never cookie headers
+  (FR-002); the request log keeps parameter values as sent, cut to a maximum length, never
+  credentials (FR-009); kept data is discarded when the approval is removed, a connector is
+  turned off or a new version of the widget is loaded (FR-010); the host ignores system network
+  proxies and connects directly (FR-007).
+- Still a default, not asked: the first catalog connector is GitHub public data (FR-021).
 - "Command-line tool", "JSON", "HTTPS", "GET" and "schema" name the interfaces users and
   authors work with, as in features 001 and 002, not the implementation; the plan decides the
   formats, the contract and every number.

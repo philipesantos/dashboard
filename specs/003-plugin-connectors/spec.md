@@ -32,6 +32,27 @@ operations or to an unverified destination is blocked. Out of scope: credentials
 storage (004), signatures and the store (Phase 6). Docs that still describe the domain allowlist
 must be updated. First catalog connectors need no authentication."
 
+## Clarifications
+
+### Session 2026-10-23
+
+- Q: Until user actions arrive in Phase 3, may a widget's update call operations that change data
+  in a service, or only reads? → A: Only reads. Operations that change data can be declared and
+  are shown before approval, but become callable only from user actions in Phase 3 (FR-013).
+- Q: Besides the status and the body, should the widget receive response headers, such as the
+  `Link` header GitHub uses to page results? → A: Only the headers the operation declares by
+  name, such as `Link` or `ETag`; never a cookie header (FR-002, edge cases).
+- Q: Should the request log keep the value of each parameter a call sent, or only its name? →
+  A: The values as sent, each cut to a maximum length, never credentials, so the log shows what
+  left the machine (FR-009).
+- Q: When should the host discard the data it kept for a widget? → A: When the widget's
+  approval is removed, when one of its connectors is turned off, and when a new version of the
+  widget is loaded (FR-010, FR-011, edge cases).
+- Q: When the operating system is set to use a network proxy, as on company networks, should
+  connector requests go through it? → A: No. The host connects directly and ignores system
+  proxies, so the non-public address rule stays checkable; behind a required proxy, calls fail
+  with an error saying so (FR-007, edge cases).
+
 ## User Scenarios & Testing *(mandatory)*
 
 The people using this feature are the maintainer, who runs widgets and approves them and the
@@ -251,17 +272,25 @@ machine in development mode.
   approval, as every required permission does (feature 002).
 - A response larger than the limit, or in a format other than the operation declares: the call
   fails naming the limit or the format, and the widget gets nothing of it.
-- The service answers with an error status: the widget receives the status and the body, within
-  the limits; it is a normal answer, not a refusal.
+- The service answers with an error status: the widget receives the status, the body and the
+  declared headers, within the limits; it is a normal answer, not a refusal.
+- A declared header is missing from a response: the widget is told it is absent. Headers the
+  operation does not declare never reach the widget.
 - Two widgets use the same connector: each has its own approval and its own limits; the rate
   limit per destination host is shared, so together they cannot flood a service.
 - An update calls an operation that changes data: refused, naming that changes need a user
   action, which arrives in Phase 3.
 - The machine has no network: calls fail as unavailable, the update fails, and the previous data
   is kept.
+- The operating system is set to use a network proxy, as on some company networks: the host
+  ignores it and connects directly, because behind such a proxy it could not tell whether a name
+  leads to a private address. Where only the proxy reaches the internet, calls fail as
+  unavailable, and the error says that system proxies are not used.
 - The request log reaches its size limit: the oldest entries go first; recording never stops.
 - A widget's update returns output that is not valid JSON, or too large: the update fails and the
   previous data is kept.
+- A new version of a widget is loaded: it starts with no kept data, and its render is told there
+  is none yet until its first successful update.
 - A connector file an approved widget needs is gone or changed (development): the widget is
   refused naming the connector, or the change follows User Story 4.
 - A plugin tries to read the request log or another widget's kept data: the host offers no
@@ -279,10 +308,12 @@ machine in development mode.
   component that asks for any of them MUST be refused before it runs.
 - **FR-002**: A connector MUST be a declaration, never code. It states its id, version, author,
   destinations and operations. Each operation states its kind, its destination, the fixed shape
-  of its request, the parameters a widget may fill in, each with its type, and the format of its
-  response (JSON or text). Its kind is a change when it changes data in the service, and a read
-  otherwise; either kind sends its parameters to its destination. Outside the catalog, a read
-  MUST be a GET or HEAD request without a body, and the host MUST refuse a connector that
+  of its request, the parameters a widget may fill in, each with its type, the format of its
+  response (JSON or text), and the response headers it passes to the widget, by name; the widget
+  receives the status, the body and those headers only, and never a cookie header, which the
+  host MUST refuse to declare. Its kind is a change when it changes data in the service, and a
+  read otherwise; either kind sends its parameters to its destination. Outside the catalog, a
+  read MUST be a GET or HEAD request without a body, and the host MUST refuse a connector that
   declares any other request as a read, naming the operation. The project MUST publish the
   connector schema, and the host MUST refuse a connector that does not conform, naming the field
   and the problem.
@@ -310,30 +341,33 @@ machine in development mode.
   not declare MUST be refused before anything is sent.
 - **FR-007**: Every connector request MUST go through the host proxy, which MUST: use HTTPS with
   a certificate valid for the destination host; connect only to the exact host and port of the
-  operation's destination; refuse a destination given as an IP address; never connect to a
-  loopback, private, link-local or other non-public address, checking every address a name leads
-  to at every connection; follow a redirect only to a host the same connector declares, under
-  these same rules, at most a fixed number of times; and neither send nor keep cookies. Local
-  connectors in development are the only exception (FR-018).
+  operation's destination, directly, never through a network proxy configured in the operating
+  system; refuse a destination given as an IP address; never connect to a loopback, private,
+  link-local or other non-public address, checking every address a name leads to at every
+  connection; follow a redirect only to a host the same connector declares, under these same
+  rules, at most a fixed number of times; and neither send nor keep cookies. Local connectors in
+  development are the only exception (FR-018).
 - **FR-008**: The host MUST limit each call's time, request size and response size; the number
   of calls and the total response size of each update; and the rate of calls per widget and per
   destination host across all widgets. A call over a limit MUST fail with an error naming the
   limit, and the widget MUST NOT receive any part of a response over the size limit.
 - **FR-009**: The host MUST record every connector call, allowed or refused, in a request log:
-  time, widget, connector, operation, destination host, parameter values as sent, outcome
-  (response status, or the refusal and its rule), bytes sent and received, and duration. It MUST
-  NOT record credentials. The log MUST keep a bounded size, dropping the oldest entries first.
-  Only the host's own controls, in this phase the command-line tool, MAY read it; no plugin MAY
-  read or change it.
+  time, widget, connector, operation, destination host, parameter values as sent (each cut to a
+  maximum length, marked when cut), outcome (response status, or the refusal and its rule), bytes
+  sent and received, and duration. It MUST NOT record credentials. The log MUST keep a bounded
+  size, dropping the oldest entries first. Only the host's own controls, in this phase the
+  command-line tool, MAY read it; no plugin MAY read or change it.
 - **FR-010**: A widget MAY call connectors only during an update; a call made during render MUST
   be refused. An update MUST have a time limit of its own, larger than render's, and the same CPU
   and memory limits as render. It returns a JSON data document within a size limit. The host MUST
-  keep each widget's last valid data across runs, with the time it was fetched. An update that
-  fails (an error, a time or other limit, invalid output, a refused call that ends it) MUST leave
-  the previous data unchanged and record the reason.
+  keep each widget's last valid data across runs, with the time it was fetched, and MUST discard
+  it when the widget's approval is removed, when one of its connectors is turned off (FR-015) and
+  when a new version of the widget is loaded, so no version receives data another version
+  produced. An update that fails (an error, a time or other limit, invalid output, a refused call
+  that ends it) MUST leave the previous data unchanged and record the reason.
 - **FR-011**: Render MUST receive, through the configuration the host gives it, the kept data,
-  the time it was fetched and the outcome of the last update. Render's limits stay those of
-  feature 001, and render MUST NOT cause any network request.
+  the time it was fetched and the outcome of the last update, or that there is no data yet.
+  Render's limits stay those of feature 001, and render MUST NOT cause any network request.
 - **FR-012**: In this phase the host MUST update a widget only when the user asks, through the
   command-line tool. Updating on load and on a schedule, at an interval the widget declares,
   arrives with the host app (Phase 3).
@@ -400,8 +434,8 @@ machine in development mode.
   service; it has an id, a version, an author, destinations and operations, and comes from the
   catalog or, in development, a local file.
 - **Operation**: one request a connector can make: a read, which changes nothing in the service,
-  or a change; its destination, the fixed shape of its request, its parameters and the format of
-  its response.
+  or a change; its destination, the fixed shape of its request, its parameters, the format of its
+  response and the response headers it passes on.
 - **Parameter**: a value a widget fills in when calling an operation, with a type the host
   checks: text, whole number or true/false, with its bounds.
 - **Destination**: the host an operation reaches, declared by a catalog connector or, in
