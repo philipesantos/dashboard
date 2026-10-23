@@ -2,6 +2,7 @@
 //! under limits set by the host.
 
 mod error;
+pub mod grants;
 mod host;
 mod imports;
 mod limits;
