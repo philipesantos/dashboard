@@ -72,6 +72,45 @@
       "items": {
         "enum": ["github"]
       }
+    },
+    "connectors": {
+      "description": "The connectors the widget calls, each a permission of its own (specs/003-plugin-connectors/data-model.md). Absent means none. A widget that declares one is built for contract 1.1.0 or later and exports updater.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "major", "operations", "required"],
+        "properties": {
+          "id": {
+            "description": "catalog/<name>, local/<name> (development only), or a repository id, refused until installation (Phase 3).",
+            "type": "string",
+            "maxLength": 160,
+            "pattern": "^(catalog/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?|local/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?|github\\.com/[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/[a-z0-9_-][a-z0-9._-]{0,99})$"
+          },
+          "major": {
+            "description": "The connector's major version the widget is built for.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "operations": {
+            "description": "Every operation the widget calls; calling any other is refused.",
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            }
+          },
+          "required": {
+            "description": "true: approved with the other required permissions, or the widget does not run. false: optional; it starts off, and while off every call answers not-granted.",
+            "type": "boolean"
+          }
+        }
+      }
     }
   }
 }
