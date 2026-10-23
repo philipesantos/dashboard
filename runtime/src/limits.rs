@@ -1,4 +1,5 @@
-//! Host-defined resource limits (FR-005, FR-006). A plugin can neither read nor change them.
+//! Host-defined resource limits (FR-005, FR-006 of feature 001; FR-008, FR-010 of feature 003).
+//! A plugin can neither read nor change them.
 
 use std::fmt;
 use std::time::Duration;
@@ -10,8 +11,10 @@ const MIB: usize = 1024 * KIB;
 
 /// Limits applied to every plugin by the host.
 ///
-/// User Story 4 measured the runtime on all three systems and confirmed these defaults
-/// (`specs/001-plugin-runtime/performance.md`).
+/// User Story 4 of feature 001 measured the runtime on all three systems and confirmed the render
+/// defaults (`specs/001-plugin-runtime/performance.md`). The update and network limits are
+/// provisional values of `specs/003-plugin-connectors/research.md` (R10), measured before the
+/// feature closes. An update runs with the same fuel and memory caps as a render.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Limits {
     /// Larger packages are refused as `invalid-package`.
@@ -28,6 +31,43 @@ pub struct Limits {
     pub max_log_messages: usize,
     /// Longer log messages are truncated.
     pub max_log_message_bytes: usize,
+    /// Wall-clock limit per update call, larger than render's because an update waits on the
+    /// network; its CPU and memory caps are render's.
+    pub update_time_limit: Duration,
+    /// Wall-clock limit of one connector call (resolve, connect, TLS, response), cut to what is
+    /// left of the update.
+    pub call_time_limit: Duration,
+    /// Connector calls per run of `update` or `render`, every call counted, refused ones
+    /// included; past it, calls are refused and the request log gets one summary entry.
+    pub max_calls_per_run: usize,
+    /// Arguments per call.
+    pub max_arguments: usize,
+    /// Longest argument name, in characters.
+    pub max_argument_name_chars: usize,
+    /// Longest request address (path and query), in bytes.
+    pub max_request_address_bytes: usize,
+    /// Largest request body.
+    pub max_request_body_bytes: usize,
+    /// Largest response body of one call; the widget never receives part of a larger one.
+    pub max_response_body_bytes: usize,
+    /// Response bodies of one update together.
+    pub max_update_response_bytes: usize,
+    /// Response headers of one call together.
+    pub max_response_header_bytes: usize,
+    /// Redirects the host follows in one call.
+    pub max_redirects: usize,
+    /// Size cap of the data document an update returns, checked before parsing it.
+    pub max_update_output_bytes: usize,
+    /// Calls per minute of one widget.
+    pub calls_per_minute_per_widget: u32,
+    /// Calls per minute to one destination host, across every widget of one runtime.
+    pub calls_per_minute_per_host: u32,
+    /// Size of the request log before it is rotated, keeping one previous file.
+    pub max_request_log_bytes: usize,
+    /// Longest argument value written to the request log, in characters, before ` [truncated]`.
+    pub max_logged_value_chars: usize,
+    /// Longest connector or operation name written to the request log, in characters.
+    pub max_logged_name_chars: usize,
 }
 
 impl Default for Limits {
@@ -40,6 +80,23 @@ impl Default for Limits {
             max_output_bytes: 64 * KIB,
             max_log_messages: 100,
             max_log_message_bytes: KIB,
+            update_time_limit: Duration::from_secs(10),
+            call_time_limit: Duration::from_secs(5),
+            max_calls_per_run: 20,
+            max_arguments: 16,
+            max_argument_name_chars: 32,
+            max_request_address_bytes: 8 * KIB,
+            max_request_body_bytes: 64 * KIB,
+            max_response_body_bytes: MIB,
+            max_update_response_bytes: 4 * MIB,
+            max_response_header_bytes: 16 * KIB,
+            max_redirects: 5,
+            max_update_output_bytes: 256 * KIB,
+            calls_per_minute_per_widget: 30,
+            calls_per_minute_per_host: 60,
+            max_request_log_bytes: 2 * MIB,
+            max_logged_value_chars: 256,
+            max_logged_name_chars: 160,
         }
     }
 }
@@ -134,6 +191,30 @@ impl std::error::Error for MemoryLimitExceeded {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The defaults of research R10 (`specs/003-plugin-connectors/research.md`).
+    #[test]
+    fn update_and_network_defaults_are_those_of_the_plan() {
+        let limits = Limits::default();
+        assert_eq!(limits.update_time_limit, Duration::from_secs(10));
+        assert!(limits.update_time_limit > limits.time_limit);
+        assert_eq!(limits.call_time_limit, Duration::from_secs(5));
+        assert_eq!(limits.max_calls_per_run, 20);
+        assert_eq!(limits.max_arguments, 16);
+        assert_eq!(limits.max_argument_name_chars, 32);
+        assert_eq!(limits.max_request_address_bytes, 8 * KIB);
+        assert_eq!(limits.max_request_body_bytes, 64 * KIB);
+        assert_eq!(limits.max_response_body_bytes, MIB);
+        assert_eq!(limits.max_update_response_bytes, 4 * MIB);
+        assert_eq!(limits.max_response_header_bytes, 16 * KIB);
+        assert_eq!(limits.max_redirects, 5);
+        assert_eq!(limits.max_update_output_bytes, 256 * KIB);
+        assert_eq!(limits.calls_per_minute_per_widget, 30);
+        assert_eq!(limits.calls_per_minute_per_host, 60);
+        assert_eq!(limits.max_request_log_bytes, 2 * MIB);
+        assert_eq!(limits.max_logged_value_chars, 256);
+        assert_eq!(limits.max_logged_name_chars, 160);
+    }
 
     #[test]
     fn grants_growth_up_to_the_cap() {
