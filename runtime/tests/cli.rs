@@ -502,3 +502,120 @@ fn optional_takes_on_or_off() {
         );
     }
 }
+
+// User Story 5
+
+/// Writes `manifest` to `dir/manifest.json` and returns its path.
+fn manifest_file(dir: &Path, manifest: &str) -> PathBuf {
+    let path = dir.join("manifest.json");
+    std::fs::write(&path, manifest).expect("written");
+    path
+}
+
+#[test]
+fn pack_writes_a_package_that_loads_once_approved() {
+    let (dir, grants) = temp_grants();
+    let manifest = manifest_file(
+        dir.path(),
+        &common::manifest("local/probe", "1.0.0", &[("log", true)]),
+    );
+    let output_path = dir.path().join("probe.wasm");
+    let probe = fixture_path("probe");
+
+    // No --grants: packing touches no record
+    let output = runtime(&[
+        "pack",
+        path_str(&probe),
+        "--manifest",
+        path_str(&manifest),
+        "--output",
+        path_str(&output_path),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let package = std::fs::read(&output_path).expect("the package was written");
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "packed {}\ndigest: {}\n",
+            path_str(&output_path),
+            runtime::package::digest(&package)
+        )
+    );
+
+    let output = runtime_with(&grants, &["approve", path_str(&output_path)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let output = runtime_with(&grants, &["run", path_str(&output_path)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert!(
+        stdout(&output).contains(r#""log": "ok""#),
+        "{}",
+        stdout(&output)
+    );
+}
+
+#[test]
+fn pack_refuses_a_component_that_has_a_manifest_or_a_bad_manifest() {
+    let dir = TempDir::new().unwrap();
+    let output_path = dir.path().join("out.wasm");
+    let pack = |component: &Path, manifest: &str| {
+        let manifest = manifest_file(dir.path(), manifest);
+        let output = runtime(&[
+            "pack",
+            path_str(component),
+            "--manifest",
+            path_str(&manifest),
+            "--output",
+            path_str(&output_path),
+        ]);
+        assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+        stderr(&output)
+    };
+    let valid = common::manifest("local/probe", "1.0.0", &[]);
+
+    let error = pack(&fixture_path("hello-widget"), &valid);
+    assert!(error.starts_with("error: manifest-mismatch: "), "{error}");
+
+    let error = pack(
+        &fixture_path("probe"),
+        &valid.replacen('{', r#"{"homepage":"x","#, 1),
+    );
+    assert!(error.starts_with("error: invalid-manifest: "), "{error}");
+    assert!(error.contains("homepage"), "{error}");
+
+    let error = pack(
+        &fixture_path("probe"),
+        &common::manifest("local/probe", "1.0.0", &[("telepathy", true)]),
+    );
+    assert!(error.starts_with("error: unknown-permission: "), "{error}");
+    assert!(error.contains("telepathy"), "{error}");
+
+    assert!(!output_path.exists(), "a refused pack wrote its output");
+}
+
+#[test]
+fn pack_needs_its_options_and_takes_no_grant_record() {
+    let probe = fixture_path("probe");
+    for args in [
+        vec!["pack", path_str(&probe)],
+        vec!["pack", path_str(&probe), "--manifest", "m.json"],
+        vec!["pack", path_str(&probe), "--output", "o.wasm"],
+        vec![
+            "pack",
+            path_str(&probe),
+            "--manifest",
+            "m.json",
+            "--output",
+            "o.wasm",
+            "--grants",
+            "g.json",
+        ],
+    ] {
+        let output = runtime(&args);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+    }
+}

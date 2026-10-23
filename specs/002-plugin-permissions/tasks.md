@@ -177,9 +177,9 @@ the corpus; `runtime pack` produces a package that loads
 
 ### Tests for User Story 5
 
-- [ ] T039 [P] [US5] Create `runtime/tests/manifest_schema.rs`: compile `wit/manifest.schema.json` with `boon` (draft 2020-12); for a corpus of valid and invalid manifests covering every rule of T012, the schema and `Manifest::parse` must agree (the host-only rules, `unknown-permission` and mixed `required` duplicates, are listed apart); every `manifest.json` under `plugins/` validates and parses, and has a `local/` id (SC-006, FR-017)
-- [ ] T040 [P] [US5] Create `runtime/tests/contract_v1.rs`: parse `wit/v1` with `wit-parser` and fail if any function of any interface other than `renderer` does not return `result<T, E>` whose `E` is an enum or variant of its interface with `not-granted` as its first case (FR-013, research R7)
-- [ ] T041 [P] [US5] Add CLI tests for `pack` to `runtime/tests/cli.rs`: packing `probe.wasm` with a valid manifest prints the output path and a `sha256:` digest and the result loads after `approve`; a component that already has a manifest is `manifest-mismatch`; an invalid manifest is `invalid-manifest` naming the field; an unknown permission is `unknown-permission`; `pack` needs no `--grants`
+- [X] T039 [P] [US5] Create `runtime/tests/manifest_schema.rs`: compile `wit/manifest.schema.json` with `boon` (draft 2020-12); for a corpus of valid and invalid manifests covering every rule of T012, the schema and `Manifest::parse` must agree (the host-only rules, `unknown-permission` and mixed `required` duplicates, are listed apart); every `manifest.json` under `plugins/` validates and parses, and has a `local/` id (SC-006, FR-017)
+- [X] T040 [P] [US5] Create `runtime/tests/contract_v1.rs`: parse `wit/v1` with `wit-parser` and fail if any function of any interface other than `renderer` does not return `result<T, E>` whose `E` is an enum or variant of its interface with `not-granted` as its first case (FR-013, research R7)
+- [X] T041 [P] [US5] Add CLI tests for `pack` to `runtime/tests/cli.rs`: packing `probe.wasm` with a valid manifest prints the output path and a `sha256:` digest and the result loads after `approve`; a component that already has a manifest is `manifest-mismatch`; an invalid manifest is `invalid-manifest` naming the field; an unknown permission is `unknown-permission`; `pack` needs no `--grants`
 
 ### Implementation for User Story 5
 
