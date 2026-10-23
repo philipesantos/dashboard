@@ -1,0 +1,312 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Connector",
+  "description": "The operations a widget may call on one external service, as data the host runs (specs/003-plugin-connectors/data-model.md). Credentials arrive with feature 005: a field named credential, credentials or auth is refused as credentials-not-supported. Rules only the host checks, after the schema: X- headers outside the catalog, reserves only in the catalog, a destination name ending with a dot, reserved hosts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "connector_version",
+    "id",
+    "version",
+    "author",
+    "description",
+    "destinations",
+    "operations"
+  ],
+  "properties": {
+    "$schema": {
+      "description": "Lets editors find this schema; the host ignores it.",
+      "type": "string",
+      "maxLength": 2048
+    },
+    "connector_version": {
+      "description": "The version of this format.",
+      "const": 1
+    },
+    "id": {
+      "description": "catalog/<name> for the official catalog, local/<name> for development. Repository ids are well-formed but refused until installation (Phase 3).",
+      "type": "string",
+      "maxLength": 160,
+      "oneOf": [
+        {
+          "title": "Catalog",
+          "pattern": "^catalog/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+        },
+        {
+          "title": "Local",
+          "pattern": "^local/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+        },
+        {
+          "title": "Repository",
+          "pattern": "^github\\.com/[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/[a-z0-9_-][a-z0-9._-]{0,99}$"
+        }
+      ]
+    },
+    "version": {
+      "description": "The connector's version, in Semantic Versioning 2.0.0. Widgets depend on its major version.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "author": {
+      "$ref": "#/$defs/shown_text",
+      "maxLength": 100
+    },
+    "description": {
+      "$ref": "#/$defs/shown_text",
+      "maxLength": 200
+    },
+    "reserves": {
+      "description": "Catalog connectors only, and required there: the domains this connector reserves to the catalog, each with every host under it, reviewed with the connector. Together they cover every host it declares.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 253,
+        "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$"
+      }
+    },
+    "destinations": {
+      "description": "Every origin the connector reaches, by a short name. Redirects are followed only to these.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 8,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      },
+      "additionalProperties": {
+        "description": "https://<domain>[:<port>]. Local connectors may also use http://localhost:<port>, http://127.0.0.1:<port> or http://[::1]:<port>. The host checks the rest: a domain name, no path, query, fragment or credentials.",
+        "type": "string",
+        "maxLength": 260,
+        "pattern": "^(https://[^/?#@\\s]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\]):[0-9]{1,5})/?$"
+      }
+    },
+    "operations": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 64,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "$defs": {
+    "shown_text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "placeholder": {
+      "description": "Exactly {<parameter>}.",
+      "pattern": "^\\{[a-z][a-z0-9_]{0,31}\\}$"
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "method",
+        "destination",
+        "path",
+        "response"
+      ],
+      "properties": {
+        "kind": {
+          "description": "read: changes nothing in the service. change: changes data in it. Either kind sends its parameters to its destination. Outside the catalog a read must be GET or HEAD without a body.",
+          "enum": [
+            "read",
+            "change"
+          ]
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "HEAD",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "destination": {
+          "description": "A key of destinations.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "path": {
+          "description": "Starts with /. Each segment is literal or exactly {<parameter>}.",
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(/([A-Za-z0-9._~!$&'()*+,;=:@%-]*|\\{[a-z][a-z0-9_]{0,31}\\}))+$"
+        },
+        "query": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._~-]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "headers": {
+          "description": "Fixed request headers: Accept, Accept-Language, or X-… in catalog connectors only. Fixed values are public: shown before approval and logged. The host sets Host, User-Agent and the framing headers itself.",
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^(Accept|Accept-Language|X-[A-Za-z0-9-]{1,60})$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^[\\u0020-\\u007e]*$"
+          }
+        },
+        "body": {
+          "description": "A JSON object; a string exactly {<parameter>} is replaced by the typed value. Only for changes and for catalog reads.",
+          "type": "object"
+        },
+        "parameters": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,31}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/parameter"
+          }
+        },
+        "response": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format"
+          ],
+          "properties": {
+            "format": {
+              "description": "json: application/json or …+json. text: text/… or …+xml.",
+              "enum": [
+                "json",
+                "text"
+              ]
+            },
+            "headers": {
+              "description": "Response headers passed to the widget, by name; never Set-Cookie or Cookie.",
+              "type": "array",
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^(?![Ss][Ee][Tt]-[Cc][Oo][Oo][Kk][Ii][Ee]$)(?![Cc][Oo][Oo][Kk][Ii][Ee]$)[A-Za-z0-9-]{1,64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "oneOf": [
+        {
+          "title": "Text",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "max_length"
+          ],
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "required": {
+              "type": "boolean",
+              "default": true
+            },
+            "max_length": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2048
+            },
+            "pattern": {
+              "description": "Must match the whole value.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              }
+            }
+          },
+          "not": {
+            "required": [
+              "pattern",
+              "values"
+            ]
+          }
+        },
+        {
+          "title": "Integer",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "minimum",
+            "maximum"
+          ],
+          "properties": {
+            "type": {
+              "const": "integer"
+            },
+            "required": {
+              "type": "boolean",
+              "default": true
+            },
+            "minimum": {
+              "type": "integer",
+              "minimum": -9223372036854775808,
+              "maximum": 9223372036854775807
+            },
+            "maximum": {
+              "type": "integer",
+              "minimum": -9223372036854775808,
+              "maximum": 9223372036854775807
+            }
+          }
+        },
+        {
+          "title": "Flag",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "flag"
+            },
+            "required": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
