@@ -5,6 +5,7 @@ mod error;
 mod host;
 mod imports;
 mod limits;
+mod permissions;
 mod text;
 
 use std::sync::Arc;
@@ -20,6 +21,7 @@ use limits::MemoryLimitExceeded;
 
 pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
+pub use permissions::Contract;
 
 // Bindings for the `widget` world of plugin contract v0, the only copy of which is
 // wit/v0/widget.wit.
