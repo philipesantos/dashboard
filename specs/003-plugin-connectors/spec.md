@@ -540,10 +540,12 @@ development mode.
   sandbox.
 - The security tests reach test services on the CI machine, not the internet; how they do so
   without weakening the rules for real connectors is decided in the plan.
-- Constitution v2.1.0 lets a catalog connector reach a service on the user's own machine or
-  local network at an address the user chooses, which must stay local, without HTTPS when the
-  host shows the connection is not encrypted. Most such services need a credential, so the first
-  of these connectors arrives after feature 005. In this feature the proxy refuses every
+- Constitution v2.2.0 lets a catalog connector reach a service on the user's own machine or
+  local network at an address the user chooses, which must stay local. There the host may trust
+  a certificate the user accepted at first use, and may go without HTTPS, shown as not
+  encrypted, only for a connector that sends no credential; a credential travels only over HTTPS
+  with a certificate valid for the destination or accepted by the user (Principle IV). Most such
+  services need a credential, so the first of these connectors arrives after feature 005. In this feature the proxy refuses every
   non-public address, and the destination kinds (FR-004, FR-016) leave room for this one.
 - GitHub limits requests without an account; the catalog's GitHub connector serves public data
   within those limits until accounts arrive (feature 005).

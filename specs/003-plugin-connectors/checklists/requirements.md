@@ -41,9 +41,11 @@
     there are no impostor or duplicate connectors, and authors can run their own, paid services.
   - Network calls happen in an update entry point with its own time limit; render keeps 1 s and
     reads the data the host kept.
-  - Services on the user's machine or local network: decided now (constitution v2.1.0: catalog
-    connectors only, at an address the user chooses, kept local, HTTP shown as unencrypted),
-    built after feature 005, since most of them need a credential. This feature refuses every
+  - Services on the user's machine or local network: decided now (constitution v2.1.0 and
+    v2.2.0: catalog connectors only, at an address the user chooses, kept local; a credential
+    only over HTTPS with a certificate valid or accepted by the user at first use; plain HTTP,
+    shown as unencrypted, only for connectors without credentials), built after feature 005,
+    since most of them need a credential. This feature refuses every
     non-public address and leaves room for that destination kind (assumptions).
 - Defaults chosen in the spec, for the maintainer to confirm or change with `/speckit-clarify`:
   - An update calls only operations that read; changes need a user action (Phase 3) (FR-014).
