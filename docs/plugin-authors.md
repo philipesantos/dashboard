@@ -23,10 +23,9 @@ That is the answer when the capability is an optional permission the user has no
 (see below). A plugin that ignores it still runs; one that handles it can tell the user what is
 missing, inside its own widget.
 
-New capabilities arrive as new interfaces in later minor versions of v1 (`1.1.0`, `1.2.0`, …).
-A plugin built against an older v1 keeps working on a newer host. A plugin built against a
-newer one than the host runs is refused (`contract-mismatch`), because it may use what the host
-does not have.
+New capabilities will arrive as new interfaces in later minor versions of v1 (`1.1.0`,
+`1.2.0`, …). A plugin built against a newer version than the host runs is refused
+(`contract-mismatch`), because it may use what the host does not have.
 
 Contract [`v0`](../wit/v0/widget.wit) (`dashboard:widget@0.1.0`) still runs, but its `log`
 cannot answer `not-granted`, so a v0 plugin can only have required permissions. New plugins
