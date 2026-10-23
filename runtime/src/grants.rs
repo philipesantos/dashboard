@@ -7,17 +7,27 @@
 //! the same id gets none of its grants (FR-020).
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 
 use crate::error::{ErrorKind, RuntimeError};
 use crate::manifest::{Manifest, PluginId};
 
 /// The record format this host reads and writes.
 pub const RECORD_VERSION: u64 = 1;
+
+/// The app's directory inside the system's data directory. Provisional: it moves with the
+/// project's final name, before the first release.
+const APP_DIR: &str = "dev.philsantos.dashboard";
+/// The development record's file name.
+const RECORD_FILE: &str = "development-grants.json";
 
 /// One plugin's approval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,11 +60,49 @@ pub struct Approval {
 }
 
 /// The record as stored.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GrantRecord {
     record_version: u64,
     plugins: BTreeMap<String, Entry>,
+}
+
+impl GrantRecord {
+    fn empty() -> GrantRecord {
+        GrantRecord {
+            record_version: RECORD_VERSION,
+            plugins: BTreeMap::new(),
+        }
+    }
+
+    /// Reads a record, refusing anything this host would not have written.
+    fn parse(bytes: &[u8]) -> Result<GrantRecord, String> {
+        // The version first, so a newer record is named as such, whatever else it holds
+        let value: serde_json::Value =
+            serde_json::from_slice(bytes).map_err(|error| format!("not JSON: {error}"))?;
+        match value
+            .get("record_version")
+            .and_then(serde_json::Value::as_u64)
+        {
+            Some(RECORD_VERSION) => {}
+            Some(version) if version > RECORD_VERSION => {
+                return Err(format!(
+                    "record_version {version} is newer than this host's {RECORD_VERSION}"
+                ));
+            }
+            _ => return Err(format!("record_version must be {RECORD_VERSION}")),
+        }
+        // Parsed again from the bytes, which refuses duplicate fields
+        let record: GrantRecord =
+            serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+        for (id, entry) in &record.plugins {
+            PluginId::parse(id)?;
+            if !entry.granted.windows(2).all(|pair| pair[0] < pair[1]) {
+                return Err(format!("the grants of {id} are not sorted and unique"));
+            }
+        }
+        Ok(record)
+    }
 }
 
 /// The runtime's view of one grant record: where it lives, and a generation that every change
@@ -75,7 +123,7 @@ impl GrantStore {
     /// A store whose record lives in memory, empty at first.
     pub fn in_memory() -> GrantStore {
         GrantStore {
-            backing: Backing::Memory(Mutex::new(GrantRecord::default())),
+            backing: Backing::Memory(Mutex::new(GrantRecord::empty())),
             generation: AtomicU64::new(0),
         }
     }
@@ -91,7 +139,7 @@ impl GrantStore {
 
     /// The development record in the system's data directory, if the system has one.
     pub fn default_development_path() -> Option<PathBuf> {
-        None
+        dirs::data_dir().map(|dir| dir.join(APP_DIR).join(RECORD_FILE))
     }
 
     /// The record's file, for a store backed by one.
@@ -104,13 +152,13 @@ impl GrantStore {
 
     /// Increases with every change made through this store.
     pub fn generation(&self) -> u64 {
-        0
+        self.generation.load(Ordering::Acquire)
     }
 
     /// The plugin's approval, if it has one, whatever its origin. Refused as `not-granted` when
     /// the record cannot be used.
-    pub fn entry(&self, _id: &PluginId) -> Result<Option<Entry>, RuntimeError> {
-        Err(not_implemented())
+    pub fn entry(&self, id: &PluginId) -> Result<Option<Entry>, RuntimeError> {
+        Ok(self.read()?.plugins.remove(id.as_str()))
     }
 
     /// Approves the manifest's required permissions, all together, for packages from `origin`
@@ -119,11 +167,48 @@ impl GrantStore {
     /// required permissions are granted (FR-020).
     pub fn approve(
         &self,
-        _manifest: &Manifest,
-        _origin: &str,
-        _digest: &str,
+        manifest: &Manifest,
+        origin: &str,
+        digest: &str,
     ) -> Result<Approval, RuntimeError> {
-        Err(not_implemented())
+        let required: Vec<String> = manifest
+            .permissions()
+            .iter()
+            .filter(|permission| permission.required)
+            .map(|permission| permission.name.clone())
+            .collect();
+        self.change(|record| {
+            let (mut granted, replaced) = match record.plugins.get(manifest.id().as_str()) {
+                Some(entry) if entry.origin == origin => {
+                    let declared = entry
+                        .granted
+                        .iter()
+                        .filter(|name| manifest.permission(name).is_some())
+                        .cloned()
+                        .collect();
+                    (declared, None)
+                }
+                Some(entry) => (Vec::new(), Some(entry.origin.clone())),
+                None => (Vec::new(), None),
+            };
+            granted.extend(required.iter().cloned());
+            granted.sort();
+            granted.dedup();
+            record.plugins.insert(
+                manifest.id().to_string(),
+                Entry {
+                    origin: origin.to_owned(),
+                    granted,
+                    approved_version: manifest.version().to_owned(),
+                    approved_digest: digest.to_owned(),
+                },
+            );
+            let approval = Approval {
+                required: required.clone(),
+                replaced,
+            };
+            Ok((approval, true))
+        })
     }
 
     /// Turns one optional permission on or off. Refused as `not-declared` when the manifest
@@ -131,29 +216,224 @@ impl GrantStore {
     /// the plugin has no approval from `origin`.
     pub fn set_optional(
         &self,
-        _manifest: &Manifest,
-        _origin: &str,
-        _permission: &str,
-        _on: bool,
+        manifest: &Manifest,
+        origin: &str,
+        permission: &str,
+        on: bool,
     ) -> Result<(), RuntimeError> {
-        Err(not_implemented())
+        let names = || vec![permission.to_owned()];
+        match manifest.permission(permission) {
+            None => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::NotDeclared,
+                    names(),
+                    Some("the manifest does not request it"),
+                ));
+            }
+            Some(request) if request.required => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::RequiredTogether,
+                    names(),
+                    Some(
+                        "it is required: required permissions are approved together, and change only with a new approval or by removing it",
+                    ),
+                ));
+            }
+            Some(_) => {}
+        }
+        self.change(|record| {
+            let entry = approved_entry(record, manifest.id(), origin)?;
+            if entry.is_granted(permission) == on {
+                return Ok(((), false));
+            }
+            if on {
+                entry.granted.push(permission.to_owned());
+                entry.granted.sort();
+            } else {
+                entry.granted.retain(|name| name != permission);
+            }
+            Ok(((), true))
+        })
     }
 
     /// Removes the plugin's approval and every grant with it. Returns whether there was one.
-    pub fn remove(&self, _id: &PluginId) -> Result<bool, RuntimeError> {
-        Err(not_implemented())
+    pub fn remove(&self, id: &PluginId) -> Result<bool, RuntimeError> {
+        self.change(|record| {
+            let removed = record.plugins.remove(id.as_str()).is_some();
+            Ok((removed, removed))
+        })
     }
 
     /// Removes from the plugin's approval every permission this manifest no longer declares
     /// (FR-012), when the approval is from `origin`. Returns the names removed; writes nothing
     /// when there are none.
-    pub fn prune(&self, _manifest: &Manifest, _origin: &str) -> Result<Vec<String>, RuntimeError> {
-        Err(not_implemented())
+    pub fn prune(&self, manifest: &Manifest, origin: &str) -> Result<Vec<String>, RuntimeError> {
+        self.change(|record| {
+            let Some(entry) = record
+                .plugins
+                .get_mut(manifest.id().as_str())
+                .filter(|entry| entry.origin == origin)
+            else {
+                return Ok((Vec::new(), false));
+            };
+            let (kept, removed): (Vec<String>, Vec<String>) = entry
+                .granted
+                .drain(..)
+                .partition(|name| manifest.permission(name).is_some());
+            entry.granted = kept;
+            let changed = !removed.is_empty();
+            Ok((removed, changed))
+        })
+    }
+
+    /// The record as it is now.
+    fn read(&self) -> Result<GrantRecord, RuntimeError> {
+        match &self.backing {
+            Backing::Memory(record) => Ok(record
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()),
+            Backing::File(path) => {
+                // A record that does not exist is empty, and reading it creates nothing
+                match fs::metadata(path) {
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        return Ok(GrantRecord::empty());
+                    }
+                    Err(error) => return Err(damaged(path, error)),
+                    Ok(metadata) if !metadata.is_file() => return Err(damaged(path, "not a file")),
+                    Ok(_) => {}
+                }
+                let _lock = lock(path, false)?;
+                load(path)
+            }
+        }
+    }
+
+    /// Applies `apply` to the record under its lock, and writes the result when `apply` says it
+    /// changed it. A refusal, or a record that cannot be used, leaves it as it was.
+    fn change<T>(
+        &self,
+        apply: impl FnOnce(&mut GrantRecord) -> Result<(T, bool), RuntimeError>,
+    ) -> Result<T, RuntimeError> {
+        let (value, changed) = match &self.backing {
+            Backing::Memory(record) => {
+                let mut record = record.lock().unwrap_or_else(PoisonError::into_inner);
+                let mut changed_record = record.clone();
+                let (value, changed) = apply(&mut changed_record)?;
+                if changed {
+                    *record = changed_record;
+                }
+                (value, changed)
+            }
+            Backing::File(path) => {
+                // Read, change and write under one exclusive lock, so an update made by another
+                // process in between is never lost (research R4).
+                let _lock = lock(path, true)?;
+                let mut record = load(path)?;
+                let (value, changed) = apply(&mut record)?;
+                if changed {
+                    write(path, &record)?;
+                }
+                (value, changed)
+            }
+        };
+        if changed {
+            self.generation.fetch_add(1, Ordering::AcqRel);
+        }
+        Ok(value)
     }
 }
 
-fn not_implemented() -> RuntimeError {
-    RuntimeError::new(ErrorKind::NotGranted, "not implemented yet")
+/// The plugin's entry, if it was approved from `origin`; otherwise a `not-granted` error that
+/// says why.
+fn approved_entry<'a>(
+    record: &'a mut GrantRecord,
+    id: &PluginId,
+    origin: &str,
+) -> Result<&'a mut Entry, RuntimeError> {
+    match record.plugins.get_mut(id.as_str()) {
+        Some(entry) if entry.origin == origin => Ok(entry),
+        Some(entry) => Err(RuntimeError::new(
+            ErrorKind::NotGranted,
+            format!(
+                "{id} is approved from {}, not from {origin}; approve this package to replace that approval",
+                entry.origin
+            ),
+        )),
+        None => Err(RuntimeError::new(
+            ErrorKind::NotGranted,
+            format!("{id} has no approval; approve it first"),
+        )),
+    }
+}
+
+/// Takes the record's lock file, `<record>.lock`: shared to read, exclusive to change. The lock
+/// is released when the returned file is dropped.
+fn lock(path: &Path, exclusive: bool) -> Result<File, RuntimeError> {
+    let mut lock_path = OsString::from(path.as_os_str());
+    lock_path.push(".lock");
+    let lock_path = PathBuf::from(lock_path);
+    if exclusive && let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|error| unwritable(path, error))?;
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|error| damaged(&lock_path, error))?;
+    let locked = if exclusive {
+        file.lock()
+    } else {
+        file.lock_shared()
+    };
+    locked.map_err(|error| damaged(&lock_path, error))?;
+    Ok(file)
+}
+
+/// Reads the record at `path`, under a lock the caller holds.
+fn load(path: &Path) -> Result<GrantRecord, RuntimeError> {
+    match fs::read(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(GrantRecord::empty()),
+        Err(error) => Err(damaged(path, error)),
+        Ok(bytes) => GrantRecord::parse(&bytes).map_err(|reason| damaged(path, reason)),
+    }
+}
+
+/// Writes the record beside `path`, syncs it, then renames it over `path`, so a crash leaves
+/// either the old record or the new one, never part of each.
+fn write(path: &Path, record: &GrantRecord) -> Result<(), RuntimeError> {
+    let dir = path.parent().unwrap_or(Path::new(""));
+    let mut temporary = NamedTempFile::new_in(dir).map_err(|error| unwritable(path, error))?;
+    let mut json = serde_json::to_vec_pretty(record).expect("a grant record always serializes");
+    json.push(b'\n');
+    temporary
+        .write_all(&json)
+        .and_then(|()| temporary.as_file().sync_all())
+        .map_err(|error| unwritable(path, error))?;
+    temporary
+        .persist(path)
+        .map_err(|error| unwritable(path, error.error))?;
+    Ok(())
+}
+
+/// A record that cannot be used grants nothing, and is never written over (research R4).
+fn damaged(path: &Path, reason: impl std::fmt::Display) -> RuntimeError {
+    RuntimeError::new(
+        ErrorKind::NotGranted,
+        format!(
+            "the grant record {} cannot be used ({reason}); it grants nothing until it is fixed or deleted",
+            path.display()
+        ),
+    )
+}
+
+fn unwritable(path: &Path, error: io::Error) -> RuntimeError {
+    RuntimeError::new(
+        ErrorKind::NotGranted,
+        format!("cannot write the grant record {}: {error}", path.display()),
+    )
 }
 
 #[cfg(test)]
@@ -338,9 +618,10 @@ mod tests {
             );
 
             let probe = manifest("local/probe", "1.0.0", Some(true));
+            let optional = manifest("local/probe", "1.0.0", Some(false));
             let refusals = [
                 store.approve(&probe, ORIGIN, DIGEST).map(drop),
-                store.set_optional(&probe, ORIGIN, "log", true),
+                store.set_optional(&optional, ORIGIN, "log", true),
                 store.remove(&id("local/probe")).map(drop),
                 store.prune(&probe, ORIGIN).map(drop),
             ];
