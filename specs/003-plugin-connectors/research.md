@@ -291,25 +291,36 @@ every feature); a new major version (every plugin rebuilt).
 
 ## R12. Linking the connectors capability
 
-**Decision**: one `connectors` interface serves every connector, so the per-connector rule lives
-in the engine:
+**Decision**: one `connectors` interface serves every connector, so the plugin's connectors
+follow Principle II's rule for capabilities that share an import (constitution v2.3.0):
 
-- The interface is linked to the real implementation when at least one connector the manifest
-  declares is granted, and to a stand-in that answers `not-granted` to every call when every
-  declared connector is optional and off (Principle II).
-- The real implementation holds the link plan's snapshot: which connectors are granted and the
-  operations the manifest declares for each. A call to a connector that is off answers
-  `not-granted` before anything is looked up, sent or logged as sent.
+- At link time (load step 9), the host builds the plugin's connector table from the link plan:
+  one executor per declared connector that is granted, holding the connector's checked
+  declaration and the operations the manifest declares for it. An optional connector that is off
+  gets no executor: it is not in the table.
+- The interface is linked to the real implementation over that table when the table has an
+  entry, and to the stand-in, which answers `not-granted` to every call, when the plugin declares
+  connectors and none is granted.
+- A call looks its connector up in the table; a miss answers `not-granted`, sends nothing and is
+  logged as not granted. That path is the connector's stand-in.
 - A call checks the grant store's generation before it sends, and again before it hands a
-  response to the widget; if the grants changed, the plan is decided again and a connector no
-  longer granted answers `not-granted`, discarding a response that arrived in the meantime
-  (FR-015).
+  response to the widget; when the grants changed and its connector is no longer granted, it
+  answers `not-granted` and drops a response that arrived meanwhile (FR-015). This check can
+  only take away: nothing at call time adds an executor to the table, and a connector turned on
+  during an update applies from the plugin's next call, when it is linked again, as in
+  feature 002.
 - `HostState` knows whether the store runs `render` or `update`; a call during `render` is
   `called-outside-update` and nothing is resolved or sent (FR-010).
 
-**Rationale**: the Component Model cannot link one interface per connector, which is data, not
-WIT. Deciding from an immutable snapshot plus a generation check gives every call the same
-answer the link plan would, and the per-connector stand-in path is as empty as the stand-in.
+**Rationale**: what a plugin can reach is decided once, from the plan, when it is linked, as
+feature 002's linker decides it; a connector that was not granted is never built, rather than
+built and guarded on every call. Connectors are data, so the Component Model cannot give each one
+an import of its own.
+
+**Alternatives considered**: the real implementation checking the live grants on every call (the
+design feature 002 rejected, and Principle II now rules out); one interface per connector
+(connectors are data, WIT is static); no optional connectors (loses the pattern feature 005
+needs, a widget that shows more with an account connected).
 
 ## R13. The grant record, version 2
 

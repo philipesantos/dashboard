@@ -209,7 +209,7 @@ One JSON object per line of `<data>/requests.jsonl` ([R14](research.md#r14-kept-
 | 6a | Each declared connector: found (catalog, or local file in development), parses, follows the destination rules, has the declared major and every declared operation | `invalid-connector`, `credentials-not-supported`, `destination-not-verified`, `destination-reserved`, `connector-unavailable` |
 | 7 | Grants, as before, plus each required connector, and each optional one that is on, matches the entry (origin, destinations, operation digests) | `not-granted`, `needs-new-approval` (naming what changed) |
 | 7a | Kept data still matches the package and the approval, or is discarded | — |
-| 9 | Link: `connectors` real when a declared connector is granted, stand-in when all are optional and off | `contract-mismatch` |
+| 9 | Link: `connectors` real over a table of the granted connectors when there is one; the stand-in when none is granted (Principle II, v2.3.0) | `contract-mismatch` |
 
 ## A connector call
 
@@ -217,8 +217,8 @@ Inside `update`, for `call(connector, operation, arguments)`, in order; the firs
 applies answers, and every call is logged:
 
 1. The store runs `update`, not `render` — else `refused(called-outside-update)`.
-2. The connector is granted (snapshot, and the grant store's generation still matches) — else
-   `not-granted`.
+2. The connector is in the plugin's table, built at link time from the granted connectors, and
+   the grant store's generation still matches, or it is still granted — else `not-granted`.
 3. The widget declared the operation — else `refused(operation-not-declared)`; the connector has
    it — else `refused(unknown-operation)`.
 4. It is a read — else `refused(change-needs-user-action)`.
@@ -297,4 +297,4 @@ request, and a refused case must leave them empty.
 | `over-limits` | FR-008 | A body over 1 MiB, 21 calls, a slow service, a rate burst: refused or stopped, widget gets nothing over the limit |
 | `call-in-render` | FR-010 | A call from `render`: refused, nothing resolved or sent |
 | `change-in-update` | FR-013 | A call to a change: refused |
-| `optional-off` | FR-015 | An optional connector that is off: `not-granted`, nothing sent; turning it off mid-update drops the response in flight |
+| `optional-off` | FR-015 | An optional connector that is off has no entry in the table and answers `not-granted`, nothing sent; turning it off mid-update drops the response in flight; turning one on mid-update leaves it off until the next update |

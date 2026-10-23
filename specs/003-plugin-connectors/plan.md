@@ -43,7 +43,7 @@ ubuntu-24.04, macos-latest and windows-latest, no internet needed
 **Performance Goals**: SC-004: a widget whose service takes 5 s renders in under 1 s from kept
 data; SC-007: the connector checks add under 10 ms to loading a widget (R19)
 
-**Constraints**: no generic network for plugins (Principle III, v2.2.0); credentials refused
+**Constraints**: no generic network for plugins (Principle III, v2.3.0); credentials refused
 until feature 005 (Principle IV); grants change only through the development CLI (Principle VII);
 everything under `runtime/`, `wit/` and `connectors/` gets line-by-line review (Principle IX)
 
@@ -57,30 +57,29 @@ plugin
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Checked against constitution v2.2.0.
+Checked against constitution v2.3.0.
 
 | Rule | Status | How the plan complies |
 | --- | --- | --- |
 | I. WebAssembly-only plugins | Pass | Widgets stay components; connectors are JSON the host reads, never code (R1) |
-| II. Zero capabilities by default | Pass | Each connector is a permission declared in the manifest and approved; `connectors` is linked only when a declared connector is granted, and a stand-in answers `not-granted` when all are optional and off; a connector that is off answers `not-granted` per call from the link snapshot (R12); a change to an approved connector's destinations or operations needs a new approval (R13) |
+| II. Zero capabilities by default | Pass | Each connector is a permission declared in the manifest and approved. The shared `connectors` import follows v2.3.0: at link time the host builds a table holding only the granted connectors; one that is off has no entry and answers `not-granted`, and the stand-in is linked when none is granted; call-time checks only take away (R12). A change to an approved connector's destinations or operations needs a new approval (R13) |
 | III. External data only through host-run connectors | Pass | No socket or HTTP import is offered; the host runs declarations; destinations come from the catalog, whose hosts are reserved, or are local in development; repository connectors are refused until verification exists (Phase 3); HTTPS, exact hosts, public addresses only (checked at every connection, redirects included), no system proxy, limits, request log; `permissions` shows every destination before approval (R5–R10, R14) |
 | III. Local network | Pass (N/A) | No catalog connector reaches the user's machine or local network yet; the proxy refuses every non-public address; the destination kinds leave room (spec, assumptions) |
 | IV. Plugins never see secrets | Pass | A connector that declares a credential is `credentials-not-supported`; the host sets `User-Agent` and forbids `Authorization` and `Cookie` headers; the log never records credentials (R1, R14) |
 | V. Plugins stay inside the host frame | Pass (N/A) | No UI; render output rules unchanged |
 | VI. Human confirmation for AI actions | Pass (N/A) | No AI |
-| VII. Trust decisions only in host dialogs | Pass | Approvals of widgets and connectors go through the development CLI, on local files and the development record, as v2.2.0 allows; local connectors live only in development; no plugin can read or write the grants, the kept data of other widgets or the log |
+| VII. Trust decisions only in host dialogs | Pass | Approvals of widgets and connectors go through the development CLI, on local files and the development record, as v2.3.0 allows; local connectors live only in development; no plugin can read or write the grants, the kept data of other widgets or the log |
 | VIII. Every security rule has a breaking test | Pass | 15 hostile cases (data-model, FR-020) on three systems, without the internet; the cases of features 001 and 002 keep running, the v1 ones as 1.0.0 plugins on the 1.1.0 host |
 | IX. Human review of the security core | Pass | The connector parser, network module, engine changes and record live in `runtime/`; the contract and schemas in `wit/`; the catalog in `connectors/`; the pull request template's list grows to name `connectors/` |
 | Fixed decisions: Wasmtime + Component Model (WIT) | Pass | Contract 1.1.0 is WIT; minor versions only add, checked by a test (R11) |
 | Fixed decisions: WASI 0.3 | Pass (N/A) | Still no WASI interface offered; `wasi:http` is refused like sockets |
 | Workflow: gates, nothing visible on the sandbox, CI on 3 systems | Pass | No UI; this feature delivers the gate's network case; `deny.toml` gains ISC (R18) |
 
-**Post-design re-check**: Pass. One deviation from the letter of Principle II's wording is
-recorded, not a violation: the `connectors` interface serves every connector, so a connector that
-is off is refused per call from an immutable snapshot rather than by linking a separate stand-in;
-the outcome the principle requires (no capability, answer `not-granted`) is the same and has its
-own hostile case (R12). New dependencies pass `cargo deny` once ISC is allowed, and the test seam
-cannot reach a release build (R15).
+**Post-design re-check**: Pass. The first draft of this plan linked the real `connectors`
+implementation when any connector was granted and refused the others with a check on every
+call, which feature 002 had rejected; constitution v2.3.0 now states the rule for capabilities
+that share an import, and R12 follows it with a table built at link time. New dependencies pass
+`cargo deny` once ISC is allowed, and the test seam cannot reach a release build (R15).
 
 ## Project Structure
 
@@ -173,5 +172,4 @@ security core like `wit/`. Old contract versions live under `wit/history/`, froz
 
 ## Complexity Tracking
 
-No constitution violations to justify. The per-call refusal of a connector that is off, in
-place of a separate stand-in, is explained in the post-design re-check above.
+No constitution violations to justify.
