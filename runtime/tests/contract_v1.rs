@@ -7,8 +7,9 @@ use std::path::Path;
 
 use wit_parser::{Resolve, Type, TypeDefKind, TypeOwner};
 
-/// The interface every plugin implements, which carries no capability.
+/// The interfaces a plugin exports, which carry no capability.
 const RENDERER: &str = "renderer";
+const UPDATER: &str = "updater";
 const NOT_GRANTED: &str = "not-granted";
 
 /// Why a function breaks the rule, if it does.
@@ -49,7 +50,7 @@ fn every_capability_of_contract_v1_can_answer_not_granted() {
     let mut capabilities = 0;
     let mut broken = Vec::new();
     for (name, &interface) in &resolve.packages[package].interfaces {
-        if name == RENDERER {
+        if name == RENDERER || name == UPDATER {
             continue;
         }
         capabilities += 1;

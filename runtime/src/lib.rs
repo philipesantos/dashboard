@@ -35,7 +35,8 @@ pub(crate) mod v0 {
     wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
 }
 
-/// Bindings for the `widget` world of plugin contract v1 (`wit/v1`, `dashboard:widget@1.0.0`).
+/// Bindings for the `widget` world of plugin contract v1 (`wit/v1`, `dashboard:widget@1.1.0`).
+/// Wasmtime matches the imports and exports of 1.0.0 plugins against them by compatible version.
 pub(crate) mod v1 {
     wasmtime::component::bindgen!({ path: "../wit/v1", world: "widget" });
 }
