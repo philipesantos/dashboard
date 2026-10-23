@@ -8,6 +8,9 @@ manifest schema. Everything here is security core (constitution, Principle IX).
 - [`v0/widget.wit`](v0/widget.wit): plugin contract v0 (`dashboard:widget@0.1.0`), from
   [feature 001](../specs/001-plugin-runtime/spec.md). The host keeps running v0 plugins, with
   `log` required.
+- [`history/`](history): published versions, one directory each, frozen and never edited.
+  Plugins that build against an older minor version, and the test that a new minor version only
+  adds (`runtime/tests/contract_v1.rs`), read them from here.
 - [`manifest.schema.json`](manifest.schema.json): the JSON Schema (draft 2020-12) of the plugin
   manifest. The host's parser and this schema are tested to agree
   (`runtime/tests/manifest_schema.rs`).
