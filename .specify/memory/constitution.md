@@ -135,7 +135,7 @@ destinations every user trusts; a bug there breaks them all.
 | Rust plugins | cargo + wit-bindgen on `wasm32-unknown-unknown`, componentized with wit-component | Actively maintained; components import only what their WIT world declares |
 | Go, Python plugins | TinyGo, componentize-py | Advanced authors |
 | Secrets | `keyring` crate (OS keychain) | Tokens stay out of the app's files |
-| Local data | SQLite, one database per plugin | Simple isolation |
+| Plugin storage | SQLite, one database per plugin | Simple isolation; the host's own records (grants, the data an update returns, the request log) are host files that no plugin can reach |
 | Specifications | GitHub Spec Kit | Independent of the AI agent |
 | Licenses | Client Apache-2.0, servers AGPL-3.0 | Client adoption, protection of paid services |
 
@@ -170,4 +170,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.3.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
+**Version**: 2.3.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-23
