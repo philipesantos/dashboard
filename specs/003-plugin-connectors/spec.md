@@ -259,8 +259,18 @@ machine in development mode.
   plain HTTP, it is not followed and the call fails, naming the target. Past a fixed number of
   redirects, the call fails.
 - Host names are compared in one normal form, so `API.Example.com` and `api.example.com` are the
-  same host for the catalog's reservation. A destination given as an IP address is refused
-  outside development.
+  same host for the catalog's reservation, and a name ending with a dot (`api.github.com.`) is
+  refused. A destination given as an IP address is refused outside development.
+- The catalog's GitHub connector reserves `github.com`: a local connector on `api.github.com`,
+  `uploads.github.com` or `github.com` itself is refused, whatever its port.
+- A widget calls a connector its manifest does not declare: it answers "not granted", as one
+  that is off does; nothing is sent.
+- A local connector fixes an `X-` header: refused. Fixed values in queries, headers and bodies
+  are public: they appear before approval and in the log, so a key written there is no secret.
+- A widget makes thousands of refused calls in one update: every call counts toward the update's
+  call limit, and past it the log gets one summary entry, so earlier entries stay.
+- A local connector or the package changes between showing and approving: the approval, given
+  the digest of what was shown, is refused, and nothing is granted.
 - A connector declares a credential: it is refused until feature 005.
 - A connector outside the catalog declares a POST, or a GET with a body, as a read: it is
   refused, naming the operation, which must be declared as a change. A catalog connector may
@@ -296,7 +306,7 @@ machine in development mode.
 - A plugin tries to read the request log or another widget's kept data: the host offers no
   capability for either.
 - A service on the user's own machine or local network, such as a home server: in this feature
-  no connector reaches it; only the developer's own machine, in development. Constitution v2.2.0
+  no connector reaches it; only the developer's own machine, in development. Constitution v2.3.0
   lets a catalog connector reach one at an address the user chooses, from a later feature.
 
 ## Requirements *(mandatory)*
@@ -314,9 +324,12 @@ machine in development mode.
   host MUST refuse to declare. Its kind is a change when it changes data in the service, and a
   read otherwise; either kind sends its parameters to its destination. Outside the catalog, a
   read MUST be a GET or HEAD request without a body, and the host MUST refuse a connector that
-  declares any other request as a read, naming the operation. The project MUST publish the
-  connector schema, and the host MUST refuse a connector that does not conform, naming the field
-  and the problem.
+  declares any other request as a read, naming the operation. Fixed values a connector writes
+  into its requests (query values, headers, body fields) are public: they are shown before
+  approval and recorded in the request log. Outside the catalog, a connector MUST NOT fix any
+  `X-` header, since some servers read such headers to change a request's method or path. The
+  project MUST publish the connector schema, and the host MUST refuse a connector that does not
+  conform, naming the field and the problem.
 - **FR-003**: A parameter MUST be text with a maximum length and, optionally, a pattern or a
   fixed set of values; a whole number with a range; or true/false; and either required or
   optional. The host MUST check every value of every call against its type before sending
@@ -326,13 +339,15 @@ machine in development mode.
   add anything to the request.
 - **FR-004**: A connector's id MUST be a catalog id, which no other connector can claim, or a
   local id (`local/<name>`), usable only in development (FR-018). Connectors from repositories,
-  whose destination hosts their owners authorize (constitution v2.2.0, Principle III), arrive
+  whose destination hosts their owners authorize (constitution v2.3.0, Principle III), arrive
   with installation in Phase 3; until then, a connector whose id names a repository MUST be
   refused as not verified.
 - **FR-005**: The official catalog MUST live in the project's repository and ship with the host:
-  a connector is a catalog connector only if it is in the catalog the host was built with. Every
-  host a catalog connector declares MUST be reserved to the catalog: any other connector that
-  declares one MUST be refused, naming the host.
+  a connector is a catalog connector only if it is in the catalog the host was built with. Each
+  catalog connector MUST list the domains it reserves, reviewed with it, covering every host it
+  declares; each reserved domain and every host under it MUST be reserved to the catalog: any
+  other connector that declares one MUST be refused, naming the host. Host names are compared in
+  one normal form, and a name that ends with a dot MUST be refused.
 - **FR-006**: A widget's manifest MUST declare each connector it uses: its id, its major version,
   the operations the widget calls, and whether the connector is required or optional, each
   connector being a permission under the rules of feature 002. A widget MUST be refused at load,
@@ -340,23 +355,29 @@ machine in development mode.
   major version, or lacks an operation the widget declares. A call to an operation the widget did
   not declare MUST be refused before anything is sent.
 - **FR-007**: Every connector request MUST go through the host proxy, which MUST: use HTTPS with
-  a certificate valid for the destination host; connect only to the exact host and port of the
+  a certificate valid for the destination host, that is, for its name, within its validity
+  period and chaining to a root the operating system trusts, checked without any request of its
+  own or of the operating system; connect only to the exact host and port of the
   operation's destination, directly, never through a network proxy configured in the operating
   system; refuse a destination given as an IP address; never connect to a loopback, private,
   link-local or other non-public address, checking every address a name leads to at every
   connection; follow a redirect only to a host the same connector declares, under these same
   rules, at most a fixed number of times; and neither send nor keep cookies. Local connectors in
   development are the only exception (FR-018).
-- **FR-008**: The host MUST limit each call's time, request size and response size; the number
-  of calls and the total response size of each update; and the rate of calls per widget and per
-  destination host across all widgets. A call over a limit MUST fail with an error naming the
-  limit, and the widget MUST NOT receive any part of a response over the size limit.
+- **FR-008**: The host MUST limit each call's time, request size (address and body) and response
+  size; the number of calls of each update, counting every call, refused ones included, and its
+  total response size; and the rate of calls per widget and per destination host across all
+  widgets in one run of the host. A call over a limit MUST fail with an error naming the limit,
+  and the widget MUST NOT receive any part of a response over the size limit.
 - **FR-009**: The host MUST record every connector call, allowed or refused, in a request log:
   time, widget, connector, operation, destination host, parameter values as sent (each cut to a
   maximum length, marked when cut), outcome (response status, or the refusal and its rule), bytes
-  sent and received, and duration. It MUST NOT record credentials. The log MUST keep a bounded
-  size, dropping the oldest entries first. Only the host's own controls, in this phase the
-  command-line tool, MAY read it; no plugin MAY read or change it.
+  sent and received, and duration, with one entry per redirect followed. It MUST NOT record
+  credentials. Past an update's call limit, the host MUST record one summary entry instead of
+  one per call, so no plugin can push earlier entries out. The log MUST keep a bounded size,
+  dropping the oldest entries first. Only the host's own controls, in this phase the
+  command-line tool, MAY read it, escaping every text a plugin or a connector wrote; no plugin
+  MAY read or change it.
 - **FR-010**: A widget MAY call connectors only during an update; a call made during render MUST
   be refused. An update MUST have a time limit of its own, larger than render's, and the same CPU
   and memory limits as render. It returns a JSON data document within a size limit. The host MUST
@@ -378,15 +399,21 @@ machine in development mode.
   and version, where its destinations come from (official catalog or local development), every
   destination host, and every operation the widget calls, with the parameters it sends to its
   destination and its kind, read or change, marked as reviewed (catalog) or as declared by the
-  developer (local). The approval covers those destinations and operations as shown. A new
+  developer (local), and whether data read from the user's own machine, through a local
+  connector, can reach another destination (Principle III). The approval covers those
+  destinations and operations as shown: in this phase, the tool approves a widget that declares
+  a connector only when given the digest of what it showed, and refuses when anything changed
+  since. A new
   version of the widget or of a connector that adds a destination, changes the destination,
   parameters, request or kind of an operation the widget calls, or makes the widget call a new
   operation MUST be refused until approved, naming what changed, with the grants already given
   unchanged. A connector update that only adds operations the widget does not call MUST NOT need
   a new approval.
 - **FR-015**: An optional connector MUST start off and, while off, answer every call with "not
-  granted" and send nothing (Principle II). Removing a widget's approval or turning off one of
-  its connectors MUST take effect from the widget's next call, even within an update already
+  granted" and send nothing: the host links only the granted connectors, in a table built when
+  it links the widget, and a connector missing from it answers "not granted" (Principle II,
+  constitution v2.3.0). Removing a widget's approval or turning off one of its connectors, from
+  any process, MUST take effect from the widget's next call, even within an update already
   running; a request already sent MAY finish within its time limit, but its response MUST NOT
   reach the widget. The host MUST then discard the data it kept for that widget.
 - **FR-016**: Contract v1 MUST move to version 1.1.0, adding the connector capability, which can
@@ -401,10 +428,12 @@ machine in development mode.
   defines.
 - **FR-018**: The development command-line tool MAY run local connectors whose destination hosts
   are not verified, or are loopback addresses without HTTPS on any port, keeping their approvals
-  only in the development record that installed plugins never use (constitution v2.2.0,
-  Principle III). Even there, a host the catalog reserves and a non-loopback private address MUST
-  be refused. An approval that involves a connector belongs to the files it was approved from,
-  as in feature 002: a connector file elsewhere that claims the same id inherits nothing.
+  only in the development record that installed plugins never use (constitution v2.3.0,
+  Principle III). The host MUST refuse local connectors unless it runs in development mode,
+  which only the development tool turns on. Even there, a host the catalog reserves and a
+  non-loopback private address MUST be refused. An approval that involves a connector belongs to
+  the files it was approved from, as in feature 002: a connector file elsewhere that claims the
+  same id inherits nothing.
 - **FR-019**: Every refusal MUST name, in one message, the connector, operation, parameter or
   destination concerned and the rule that applied: operation not declared, unknown operation,
   value outside its type, read with a body outside the catalog, destination not verified,
@@ -489,12 +518,11 @@ machine in development mode.
   warning about data from one account reaching another destination judges the destinations this
   feature shows.
 - To keep the Phase 2 gate within reach, a feature of its own, alongside installation in Phase 3,
-  brings what constitution v2.2.0 already allows beyond this core: connectors from repositories,
+  brings what constitution v2.3.0 already allows beyond this core: connectors from repositories,
   whose destination hosts their owners authorize under `/.well-known/`, checked at installation,
   at every update and periodically, with an operation's kind marked as declared by the service's
-  owner; the catalog reserving whole registrable domains, not only its exact hosts; protocol
-  connectors such as RSS, whose destinations the user chooses in a host dialog; the criteria to
-  enter the catalog; and updates on load and on a schedule.
+  owner; protocol connectors such as RSS, whose destinations the user chooses in a host dialog;
+  the criteria to enter the catalog; and updates on load and on a schedule.
 - The numbers (update time limit, call time limit, request and response sizes, calls and bytes
   per update, rates, log size, number of redirects) are set in the plan and measured on the
   three systems, as feature 001 did.
@@ -503,7 +531,7 @@ machine in development mode.
   sandbox.
 - The security tests reach test services on the CI machine, not the internet; how they do so
   without weakening the rules for real connectors is decided in the plan.
-- Constitution v2.2.0 lets a catalog connector reach a service on the user's own machine or
+- Constitution v2.3.0 lets a catalog connector reach a service on the user's own machine or
   local network at an address the user chooses, which must stay local. There the host may trust
   a certificate the user accepted at first use, and may go without HTTPS, shown as not
   encrypted, only for a connector that sends no credential; a credential travels only over HTTPS
@@ -515,9 +543,8 @@ machine in development mode.
 - The catalog is security core (Principle IX): every change to it is reviewed line by line.
 - One person uses the host on a machine, as in feature 002.
 - Out of scope: credentials, API keys and OAuth (005); connectors from repositories, protocol
-  connectors, registrable-domain reservation, catalog criteria and scheduled updates (Phase 3,
-  with installation); catalog connectors for services on the user's machine or local network
-  (after 005); user actions, operations that change data driven by them, installation dialogs
-  and the cross-account warning (Phase 3); storage (004); signatures and the store (Phase 6);
-  updating widgets in the cloud while the computer is off (Phase 7), which a separate update
-  entry point is meant to allow.
+  connectors, catalog criteria and scheduled updates (Phase 3, with installation); catalog
+  connectors for services on the user's machine or local network (after 005); user actions,
+  operations that change data driven by them, installation dialogs and the cross-account warning
+  (Phase 3); storage (004); signatures and the store (Phase 6); updating widgets in the cloud
+  while the computer is off (Phase 7), which a separate update entry point is meant to allow.
