@@ -30,16 +30,17 @@ refused case.
 ## 2. A catalog connector, end to end (needs the internet)
 
 ```sh
-rt permissions target/plugins/github-releases.wasm
-rt approve target/plugins/github-releases.wasm
+rt permissions target/plugins/github-releases.wasm     # note its "approval digest"
+rt approve target/plugins/github-releases.wasm --expect <that digest>
 rt update target/plugins/github-releases.wasm --config '{"owner":"rust-lang","repo":"rust"}'
 rt run target/plugins/github-releases.wasm --config '{"owner":"rust-lang","repo":"rust"}'
 rt requests
 ```
 
 Expected: `permissions` shows `catalog/github`, `https://api.github.com`, `list-releases`
-marked `read (reviewed)` and the parameters it sends; `update` reports one call; `run` shows the
-latest releases; `requests` shows the one `GET` with its arguments.
+marked `read (reviewed)`, the parameters and fixed values it sends, and an approval digest;
+`approve` with any other digest is refused as `approval-changed`; `update` reports one call;
+`run` shows the latest releases; `requests` shows the one `GET` with its arguments.
 
 ## 3. Offline, render still shows the last data
 
@@ -81,9 +82,10 @@ rt check-connector $D/connectors/hello.json
 ```
 
 Expected: `ok: local/hello 0.1.0, 1 destination, 1 operation (1 read)`. Change the destination
-to `http://192.168.1.10:8765` or `https://api.github.com` and check again: refused as
-`invalid-connector` and `destination-reserved`. Change `"method"` to `"POST"`: refused, a read
-must be a `GET` or `HEAD` outside the catalog.
+to `http://192.168.1.10:8765`, `https://api.github.com` or `https://uploads.github.com.` and check
+again: refused as `invalid-connector`, `destination-reserved` and `invalid-connector`. Change
+`"method"` to `"POST"`, or add `"headers": {"X-HTTP-Method-Override": "DELETE"}`: refused, a read
+must be a `GET` or `HEAD` and a local connector fixes no `X-` header.
 
 ## 5. Refusals name the rule
 

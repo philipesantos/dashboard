@@ -66,10 +66,8 @@ interface connectors {
 
   /// The rule behind a call that was refused or failed.
   enum rule {
-    /// The manifest does not declare this connector or this operation.
+    /// The manifest does not declare this operation for this connector.
     operation-not-declared,
-    /// The connector has no operation by this name.
-    unknown-operation,
     /// An argument is unknown, repeated, missing or outside its parameter's type.
     value-outside-type,
     /// The call came from `render`; connectors are called only in `update`.
@@ -95,8 +93,8 @@ interface connectors {
   }
 
   variant call-error {
-    /// The connector is an optional permission the user has not turned on, or its approval
-    /// was removed: nothing was sent.
+    /// The connector is an optional permission the user has not turned on, its approval was
+    /// removed, or the manifest does not declare it: nothing was sent.
     not-granted,
     /// The host refused the call before sending anything.
     refused(problem),

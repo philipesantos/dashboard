@@ -1,8 +1,10 @@
 # Research: Plugin Connectors
 
-Decisions behind [plan.md](plan.md), each with what it rests on. Spike results come from a
-throwaway project outside the repository, built on Linux on 2026-10-23; the plan's first tasks
-repeat the parts that matter on all three systems.
+Decisions behind [plan.md](plan.md), each with what it rests on. Spike results come from
+throwaway projects outside the repository, built on Linux on 2026-10-23; the plan's first tasks
+repeat the parts that matter on all three systems. An independent review of the plan against
+constitution v2.3.0 changed R1, R2, R5, R8, R10 and R12 to R18 and added R20; the review's
+findings are listed in [checklists/requirements.md](checklists/requirements.md).
 
 ## R1. The connector format
 
@@ -12,6 +14,8 @@ into typed structs that refuse unknown fields, as the manifest is (feature 002, 
 connector, at most 64 KiB. Its fields:
 
 - `connector_version` (`1`), `id`, `version` (SemVer), `author`, `description`.
+- `reserves` (catalog connectors only, required there): the domains the connector reserves,
+  reviewed with it, which must cover every host it declares (FR-005, R16).
 - `destinations`: a map from a short name to an origin, `https://<host>[:<port>]`, with no
   path, query, fragment or credentials. A local connector may also use
   `http://localhost:<port>` or `http://127.0.0.1:<port>` / `http://[::1]:<port>` (R6).
@@ -24,11 +28,15 @@ connector, at most 64 KiB. Its fields:
   with feature 005 (FR-017). The format leaves room for them: feature 005 adds a field, and a
   connector without it keeps meaning what it means now.
 
-Fixed request headers are limited to `Accept`, `Accept-Language` and names that start with
-`X-`; the host refuses `Authorization`, `Cookie`, `Proxy-*`, `Host`, `Content-*`,
-`Transfer-Encoding`, `Connection`, `Upgrade`, `TE` and `User-Agent`, which it sets or forbids
-itself. Response headers passed to the widget are any names except `Set-Cookie` and `Cookie`
-(clarification 2).
+Fixed request headers are limited to `Accept` and `Accept-Language`, plus names that start with
+`X-` in catalog connectors only: some servers read `X-HTTP-Method-Override`, `X-Original-URL`
+and the like to change a request's method or path, which would let a local connector's read act
+as a change; the catalog's review checks each `X-` header. The host refuses `Authorization`,
+`Cookie`, `Proxy-*`, `Host`, `Content-*`, `Transfer-Encoding`, `Connection`, `Upgrade`, `TE`
+and `User-Agent`, which it sets or forbids itself. Every fixed value (query values, headers,
+body fields) is public: `permissions` shows it and the log records it, so a key written there is
+visibly no secret (Principle IV). Response headers passed to the widget are any names except
+`Set-Cookie` and `Cookie` (clarification 2).
 
 **Rationale**: data the host reads can do only what the host does with it; a schema lets
 authors check a connector before shipping it, and the same typed-parsing approach already
@@ -50,7 +58,9 @@ WIT interface per service (code generation per connector, and still a declaratio
 - **Local** (development only): `local/<name>`, read from `<connectors dir>/<name>.json`, where
   the directory is `--connectors <dir>` or the default development one (R14). The file's own
   `id` must match its name. Its origin is the file's canonical path, and an approval belongs to
-  that origin (FR-018), as a package's does in feature 002.
+  that origin (FR-018), as a package's does in feature 002. `Runtime` reads local connectors
+  only when built with an explicit development option, which the CLI sets and the Phase 3 app
+  will not; without it a `local/` id is `destination-not-verified` (FR-018).
 - **Repository ids** (`github.com/<owner>/<repository>`) are well-formed in manifests and
   connector files, so the refusal can say why: `destination-not-verified`, naming that
   connectors from repositories arrive with installation in Phase 3 (FR-004).
@@ -116,8 +126,9 @@ a read can carry to typed values in the URL.
 ## R5. The HTTP stack
 
 **Decision**: `ureq` 3.5.0, pinned exactly (`=3.5.0`), without default features, with
-`rustls-no-provider` and `platform-verifier`; `rustls` 0.23 with the `ring` provider. The
-`network` module is the only code that touches it, and configures each agent:
+`rustls-no-provider` only; `rustls` 0.23 without default features, with the `ring` provider; the
+roots from `rustls-native-certs` (R8). The `network` module is the only code that touches
+`ureq`, enforced by Clippy (R20), and configures each agent:
 
 | Setting | Value | Why |
 | --- | --- | --- |
@@ -132,8 +143,11 @@ a read can carry to typed values in the URL.
 | timeouts | Per call, the smaller of the call limit and the update's remaining time | R10 |
 | resolver | `PublicOnly` (R6), through `ureq::unversioned::resolver::Resolver` | Connects only to addresses the host checked |
 | connection pool | One agent per update, dropped at its end | No state shared between widgets or updates |
+| certificates | `RootCerts::Specific` with the system's roots, `rustls`' own verifier | R8 |
 
-**Spike**: with these features the tree is 29 crates, none of them `tokio`. The custom resolver
+**Spike**: with the platform verifier the tree was 29 crates, none of them `tokio`; with the
+system roots instead (R8) it is 27, `cargo deny check licenses` passes once ISC is allowed, and
+the roots load (121 on the Linux machine). The custom resolver
 compiled against 3.5.0, refused `https://localhost:9/` as `host not found` before any
 connection, `https_only` refused `http://example.com/`, and with `HTTPS_PROXY` set the request
 still went to the resolver for the target, not to the proxy.
@@ -155,7 +169,8 @@ changes its behavior.
   would all need overriding.
 - An HTTP/1.1 client written over `httparse`: the smallest dependency, but chunked encoding,
   header limits and connection handling become security-core code to review.
-- `native-tls`: three TLS stacks with three behaviors to test; `rustls` behaves the same on every
+- `native-tls`: three TLS stacks with three behaviors to test, each with the operating system's
+  own certificate fetching (R8); `rustls` with its own verifier behaves the same on every
   system.
 
 ## R6. Which addresses a connector may reach
@@ -197,17 +212,29 @@ destination gets, and the approval already showed every origin of the connector 
 
 ## R8. Certificates
 
-**Decision**: the system's verifier, through `rustls-platform-verifier` (`ureq`
-`RootCerts::PlatformVerifier`): Security.framework on macOS, the CryptoAPI on Windows, and the
-system's certificate store read with `rustls-native-certs` on Linux.
+**Decision**: `rustls`' own verifier (`rustls-webpki`), with the roots the operating system
+trusts, read by `rustls-native-certs` (the system store on Windows, the keychain on macOS, the
+certificate bundle on Linux), passed to `ureq` as `RootCerts::Specific`. Valid means: for the
+destination's name, within its validity period, chaining to one of those roots (FR-007). No
+revocation is checked online; a stapled OCSP response is not required. The roots load once per
+process.
 
-**Rationale**: "valid" means what the operating system says it means, including the roots and
-revocation the user's system trusts, and the host carries no root list it would have to keep up
-to date. Tests trust only their own CA (R15).
+**Rationale**: the review found that the system verifier (`rustls-platform-verifier` 0.7.1) lets
+the operating system fetch revocation and certificate data on its own: on Windows its chain
+engine retrieves URLs with a 10 s timeout (only its test engine sets "cache only"), and on
+macOS its own source says it does not stop online revocation checks or root downloads. Those
+requests go to addresses written in the server's certificate, through the operating system's
+HTTP stack and proxy, with no address check and past the call's time limit: traffic outside the
+host proxy, against Principle III. It also pulls `webpki-root-certs`, whose license
+(CDLA-Permissive-2.0) fails `cargo deny`. With `rustls-webpki`, every byte of a connection goes
+to the address the host checked, the same code runs on the three systems, and the tests run that
+code with only the roots swapped (R15). Giving up online revocation is the trade: most clients
+skip it, and the roots stay those the system trusts.
 
-**Alternatives considered**: Mozilla's roots bundled (`webpki-roots`): independent of the
-system, but its license (CDLA-Permissive-2.0) is outside the allowed list and the list ages with
-the binary.
+**Alternatives considered**: the system verifier (above); Mozilla's roots bundled
+(`webpki-roots`): independent of the system, but CDLA-licensed and aging with the binary;
+an amendment allowing the operating system's certificate fetches outside the proxy (they cannot
+be tested in CI and break the address rule).
 
 ## R9. System network proxies
 
@@ -229,10 +256,12 @@ closes (as feature 001 did):
 | Update wall-clock time | 10 s (render keeps 1 s) |
 | Update fuel and memory | The render's: 500 M fuel units, 32 MiB |
 | One call's time (resolve, connect, TLS, response) | 5 s, cut to what is left of the update |
-| Calls per update | 20 |
+| Calls per update, every call counted (refused, not granted and failed included) | 20; past it, one summary entry in the log |
+| Arguments per call | 16, names at most 32 characters, checked before logging |
 | Response body per call | 1 MiB |
 | Response bodies per update | 4 MiB |
 | Response headers per call | 16 KiB |
+| Request address (path and query) | 8 KiB |
 | Request body | 64 KiB |
 | Redirects per call | 5 |
 | Update output (the data document) | 256 KiB |
@@ -241,9 +270,11 @@ closes (as feature 001 did):
 | Request log | 2 MiB, plus one previous file of the same size |
 | Parameter value in the log | 256 characters, then ` [truncated]` |
 
-Rates are token buckets held by the `Runtime`, so they apply across widgets in one process. In
-the CLI each command is its own process; there, calls per update and the maintainer running each
-update bound the rate, and the Phase 3 app, which stays running, gets the full rule.
+Rates are token buckets held by the `Runtime`, so they apply across widgets in one run of the
+host. In the CLI each command is its own process; only the maintainer can start several, never a
+plugin, and calls per update bound each one; the Phase 3 app, which stays running, gets the full
+rule. Revocation does not depend on the process: before each send the call reads the grant
+record again (R12).
 
 **Rationale**: an update spends most of its time waiting, so its wall clock is far larger than
 render's while its CPU budget stays the same; Wasmtime counts no fuel while the plugin waits in a
@@ -301,16 +332,21 @@ follow Principle II's rule for capabilities that share an import (constitution v
 - The interface is linked to the real implementation over that table when the table has an
   entry, and to the stand-in, which answers `not-granted` to every call, when the plugin declares
   connectors and none is granted.
-- A call looks its connector up in the table; a miss answers `not-granted`, sends nothing and is
-  logged as not granted. That path is the connector's stand-in.
-- A call checks the grant store's generation before it sends, and again before it hands a
-  response to the widget; when the grants changed and its connector is no longer granted, it
-  answers `not-granted` and drops a response that arrived meanwhile (FR-015). This check can
-  only take away: nothing at call time adds an executor to the table, and a connector turned on
-  during an update applies from the plugin's next call, when it is linked again, as in
-  feature 002.
-- `HostState` knows whether the store runs `render` or `update`; a call during `render` is
-  `called-outside-update` and nothing is resolved or sent (FR-010).
+- A call first looks its connector up in the table; a miss, whether the connector is off or not
+  declared at all, answers `not-granted`, sends nothing and is logged as not granted, whatever
+  else is wrong with the call. That path is the connector's stand-in.
+- Before it sends, and again before it hands a response to the widget, a call re-reads the
+  grant record (under its lock, as feature 002 reads it), so a change made by any process
+  applies; when its connector is no longer granted, it answers `not-granted` and drops a
+  response that arrived meanwhile (FR-015). This check can only take away: nothing at call time
+  adds an executor to the table, and a connector turned on during an update applies from the
+  plugin's next call, when it is linked again, as in feature 002.
+- Only then does `HostState` check whether the store runs `render` or `update`; a call during
+  `render` to a connector in the table is `called-outside-update`, and nothing is resolved or
+  sent (FR-010).
+- A white-box test checks that the table's keys are exactly the granted connectors and that the
+  stand-in is linked when none is granted, since no plugin can see the difference (Principle
+  VIII).
 
 **Rationale**: what a plugin can reach is decided once, from the plan, when it is linked, as
 feature 002's linker decides it; a connector that was not granted is never built, rather than
@@ -338,6 +374,10 @@ differs, is `needs-new-approval`, naming what changed (a destination added, an o
 changed, an operation newly declared); `approve` records the new state. A connector that only
 added operations the widget does not declare digests the same and needs nothing (FR-014).
 
+Load step 8 prunes connectors too: an entry for a connector the manifest no longer declares
+is removed, so declaring it again in a later version needs a new approval, as feature 002 does
+for permissions (its FR-012).
+
 **Rationale**: digests per operation make "naming what changed" exact without storing the
 declarations twice, and a connector-wide list of destinations is what bounds redirects, so a new
 one needs approval even when no declared operation uses it.
@@ -359,8 +399,12 @@ access.
   passes 2 MiB it is renamed to `requests.1.jsonl`, replacing the older one (FR-009). Each entry:
   time, plugin id, connector, operation, kind, method, destination host, path, arguments (each
   value cut to 256 characters), outcome (status, or the rule and detail), bytes sent and
-  received, duration. The host never puts credentials in it; in this feature there are none to
-  put.
+  received, duration; a followed redirect gets an entry of its own. The connector and operation
+  names a plugin passes are cut to 64 characters before they are written, and past an update's
+  call limit one summary entry counts the calls refused, so one update cannot push earlier
+  entries out. `runtime requests` escapes every text a plugin or a connector wrote, as feature
+  001 escapes log messages. The host never puts credentials in it; in this feature there are
+  none to put.
 - Times are integer milliseconds since the Unix epoch, so no date library is needed.
 
 **Rationale**: the same file discipline as the grant record (lock, atomic rename) and the same
@@ -371,11 +415,13 @@ place, so the CLI and the tests can point everything at one temporary directory.
 **Decision**: a `test-network` cargo feature, never in `default`, turned on only by the runtime's
 own dev-dependency on itself, compiles `Runtime::with_test_network`. It takes:
 
-- a resolver map from names to socket addresses, standing in for DNS;
+- a resolver map from names to IP addresses, standing in for DNS; the port always comes from
+  the destination, so the exact-port rule is tested;
 - the socket addresses that count as public for the test, so a server on `127.0.0.1:<port>`
   passes as a public destination while `127.0.0.1` on any other port, `10.0.0.1`, `::1` and the
   rest stay refused;
-- the test CA's certificate, the only root trusted (no platform verifier);
+- the test CA's certificate as the only root, given to the same `rustls-webpki` verifier the
+  host always uses (R8);
 - extra catalog connectors, so the hostile cases can exercise catalog rules (HTTPS, `POST`
   reads, reserved hosts) with connectors written in the test.
 
@@ -385,12 +431,15 @@ and scripted per path: status, headers, body size, delay, redirect. Cases that n
 (local connectors on loopback, parameters, limits, render-time calls, changes, optional off, the
 log, kept data, the proxy variables through the CLI) use the production network.
 
+The library refuses to compile with `test-network` outside debug builds (`compile_error!` on
+`all(feature = "test-network", not(debug_assertions))`), and CI's tests run in debug.
+
 **Spike**: a crate with a dev-dependency on itself that turns a feature on: its integration tests
 saw the feature, its release binary did not. The binary built for the tests did see it, so the
 CLI must offer no option that reaches the seam.
 
 **Rationale**: every rule is tested on the real path: same resolver code, same classifier, same
-TLS code, only the inputs differ. The seam cannot reach a release build: the release CLI and
+TLS verifier, only the inputs (names, roots) differ. The seam cannot reach a release build: the release CLI and
 the Phase 3 app never enable the feature, and the CLI has no option that reaches it.
 
 ## R16. The first catalog connector and the example
@@ -398,8 +447,10 @@ the Phase 3 app never enable the feature, and the CLI has no option that reaches
 **Decision**: `catalog/github` ([draft](contracts/catalog-github.json)), destination
 `https://api.github.com`, three reads without an account: `get-repository`, `list-releases`
 and `list-issues`, with the `Accept` and `X-GitHub-Api-Version` headers fixed and `Link`,
-`ETag`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` passed to the widget. Its hosts reserve
-`api.github.com` exactly (FR-005); reserving whole registrable domains arrives in Phase 3.
+`ETag`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` passed to the widget. It reserves
+`github.com` (`"reserves": ["github.com"]`), so `api.github.com`, `uploads.github.com` and every
+other host under it belong to the catalog (FR-005). An explicit, reviewed list needs no public
+suffix list: the reviewer checks that it names whole domains of the service.
 
 The example widget `plugins/examples/github-releases` (contract 1.1.0, `connected-widget`)
 updates the latest releases of the repository in its configuration and renders them. A fixture,
@@ -413,9 +464,12 @@ this connector is the one feature 005 extends with an account.
 ## R17. CLI
 
 **Decision** ([contracts/cli.md](contracts/cli.md)): `update <plugin>` runs the widget's update and
-keeps its data; `run` renders connected widgets with their kept data; `permissions` and
-`approve` show connectors, destinations, operations, parameters sent and where each kind comes
-from; `optional <plugin> <connector-id> on|off`; `requests` prints the request log;
+keeps its data; `run` renders connected widgets with their kept data; `permissions` shows
+connectors, destinations, operations, the parameters and fixed values sent, where each kind
+comes from, whether data read from this machine can reach another destination, and an approval
+digest over all of it; `approve` of a widget that declares a connector requires
+`--expect <digest>` and refuses, granting nothing, when the digest of what it would approve
+differs (FR-014); `optional <plugin> <connector-id> on|off`; `requests` prints the request log;
 `check-connector <file>` validates a connector for authors. `--connectors <dir>` and
 `--data <dir>` join `--grants <path>` on every command that needs them.
 
@@ -428,7 +482,7 @@ asks (FR-012).
 | --- | --- | --- | --- | --- |
 | `ureq` `=3.5.0` | runtime | HTTP/1.1 client (R5) | No | MIT OR Apache-2.0 |
 | `rustls` 0.23 (`ring`) | runtime | TLS | No | Apache-2.0 OR ISC OR MIT |
-| `rustls-platform-verifier` 0.7 | runtime (through `ureq`) | System certificate verification (R8) | No | MIT OR Apache-2.0 |
+| `rustls-native-certs` 0.8 | runtime | The system's roots (R8) | No | Apache-2.0 OR ISC OR MIT |
 | `ring` 0.17 | runtime (through `rustls`) | Cryptography | No | Apache-2.0 AND ISC |
 | `rustls-webpki`, `untrusted` | runtime (through `rustls`) | Certificate parsing | No | ISC |
 | `url` 2 | runtime | Origins and redirect targets (R6, R7) | Yes | MIT OR Apache-2.0 |
@@ -437,7 +491,10 @@ asks (FR-012).
 
 `deny.toml` gains `ISC` in its allowed licenses: it is a permissive license compatible with
 distributing the client under Apache-2.0, and `ring`, `untrusted` and `rustls-webpki` use it.
-Each crate must pass `cargo deny` and `cargo audit` in CI.
+`cargo deny check licenses` passed on the spike with this tree and that one change (it failed
+with `rustls-platform-verifier`, through `webpki-root-certs`). `rustls` and `rcgen` are taken
+without default features or with `ring`, so `aws-lc-rs` never enters the tree. Each crate must
+pass `cargo deny` and `cargo audit` in CI.
 
 ## R19. Measuring
 
@@ -445,3 +502,21 @@ Each crate must pass `cargo deny` and `cargo audit` in CI.
 prints `render_with_data_us`, a render of a connected widget from kept data while its test
 service would take 5 s (SC-004, under 1 s). `bench.yml` records them on the three systems into
 `specs/003-plugin-connectors/performance.md`, with the limits of R10 as measured.
+
+## R20. Keeping the review on what matters
+
+**Decision**:
+
+- The pull request template lists as security core `runtime/`, `wit/`, `connectors/`, the root
+  `Cargo.lock` when a change moves a crate of the network stack (`ureq`, `ureq-proto`, `rustls`,
+  `rustls-webpki`, `ring`, `rustls-native-certs`, `url`, `regex`), and as security tests
+  `plugins/hostile/` and `plugins/fixtures/`.
+- `clippy.toml` disallows `ureq` types outside `runtime/src/network/`, which allows them
+  explicitly, so no other module can open a connection without the review noticing.
+- Tests never read `specs/`: CI skips documentation-only changes, so a test that read the drafts
+  could change without CI running. The schema tests read `wit/`, `connectors/` and `plugins/`.
+
+**Rationale**: the TLS and HTTP code that enforces Principle III lives in dependencies, so a lock
+file change is a change to the proxy; and the claim "only the network module opens connections"
+holds only if a tool checks it.
+

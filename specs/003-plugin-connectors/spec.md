@@ -441,9 +441,10 @@ machine in development mode.
   called outside an update, change needs a user action, connector unavailable or of another
   version, contract mismatch, invalid connector, credentials not supported yet.
 - **FR-020**: The hostile suite MUST gain one case per rule in FR-001, FR-002 (a read with a
-  body outside the catalog), FR-003, FR-004 (a connector from a repository), FR-005, FR-006,
-  FR-007 (a non-public address given directly, reached through a name and reached through a
-  redirect; plain HTTP), FR-008, FR-010, FR-013 and FR-015. It MUST run on Windows, macOS and
+  body outside the catalog; fixed `X-` headers), FR-003, FR-004 (a connector from a repository),
+  FR-005, FR-006, FR-007 (a non-public address given directly, reached through a name and
+  reached through a redirect; plain HTTP; certificates; system proxies), FR-008, FR-009 (a
+  flooded or spoofed log), FR-010, FR-013, FR-014, FR-015, FR-017 and FR-018. It MUST run on Windows, macOS and
   Linux on every change that is not documentation-only, without depending on the internet, and
   fail the build if any case is not refused or if any request reaches a destination it was not
   approved for (Principle VIII).

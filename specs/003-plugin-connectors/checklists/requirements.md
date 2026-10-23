@@ -68,6 +68,20 @@
   turned off or a new version of the widget is loaded (FR-010); the host ignores system network
   proxies and connects directly (FR-007).
 - Still a default, not asked: the first catalog connector is GitHub public data (FR-021).
+- Constitution re-check on 2026-10-23, after `/speckit-plan`: an independent review against
+  v2.3.0 found 3 conflicts, 12 risks and 6 nits, each checked against the sources before acting.
+  Conflicts: the system certificate verifier lets Windows and macOS fetch revocation and
+  certificate data outside the host proxy (confirmed in rustls-platform-verifier 0.7.1's
+  source, which also fails `cargo deny` through `webpki-root-certs`); a plugin could flood the
+  request log with refused calls; a connector missing from the table did not always answer
+  "not granted". Risks included connectors never pruned, approval not bound to what was shown,
+  the loopback data flow not shown, a trailing-dot bypass of reserved hosts, fixed `X-` headers
+  that can turn a read into a change, untested rules, and the "Local data: SQLite" wording.
+  Chosen by the maintainer: `rustls-webpki` with the system's roots and no online revocation
+  (FR-007); catalog connectors list the domains they reserve (FR-005); constitution v2.3.1
+  words the fixed decision as plugin storage; `approve --expect <digest>` (FR-014). The other
+  fixes follow from the constitution and are in spec FR-002, FR-008, FR-009, FR-015, FR-018,
+  FR-020, research R1, R2, R5, R8, R10, R12–R18, R20 and the data model.
 - "Command-line tool", "JSON", "HTTPS", "GET" and "schema" name the interfaces users and
   authors work with, as in features 001 and 002, not the implementation; the plan decides the
   formats, the contract and every number.

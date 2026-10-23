@@ -62,7 +62,9 @@ connectors:
     destinations: https://api.github.com
     list-releases  read (reviewed)  GET https://api.github.com/repos/{owner}/{repo}/releases
       sends: owner (text), repo (text), per_page (integer, optional), page (integer, optional)
+      fixed: Accept: application/vnd.github+json, X-GitHub-Api-Version: 2022-11-28
 login providers: none
+approval digest: sha256:0c7d…
 ```
 
 - `from:` is `official catalog` or `local file <path> (development)`.
@@ -70,14 +72,25 @@ login providers: none
   `read (declared by the developer)` or `change (declared by the developer)` for local
   connectors.
 - `destinations:` lists every origin of the connector, the ones redirects may reach included.
+- `fixed:` lists every value the connector writes into the request itself (query, headers,
+  body): they are public and also recorded in the request log.
+- When a widget combines a local connector whose destination is this machine with any other
+  destination, a line says so, before the login providers:
+  `data flow: data read from this machine (http://127.0.0.1:8765) can reach https://api.github.com`.
+- `approval digest:` is the SHA-256 of everything shown above it that an approval covers: the
+  package digest, the permissions, and each connector's origin, destinations and declared
+  operations. `approve` needs it for a widget that declares a connector.
 - A connector that cannot be used shows its refusal instead of its operations, for example
   `github.com/ada/weather  required  error: destination-not-verified: connectors from repositories arrive with installation (Phase 3)`.
 
-## `runtime approve <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]`
+## `runtime approve <plugin> [--expect <digest>] [--grants <path>] [--data <dir>] [--connectors <dir>]`
 
 As in feature 002: grants every required permission and every required connector, all together,
-and records each declared connector's destinations and operations. Refused, changing nothing,
-when any declared connector is refused at step 6a.
+and records each declared connector's destinations and operations. For a widget that declares a
+connector, `--expect` is required and must be the `approval digest` that `permissions` printed;
+when the digest of what `approve` would grant now differs, it refuses with `approval-changed`,
+changing nothing, so what is approved is what was shown (FR-014). Also refused, changing
+nothing, when any declared connector is refused at step 6a.
 
 ```text
 approved local/github-releases 0.1.0
@@ -101,7 +114,10 @@ As in feature 002, and discards the kept data of that plugin id.
 ## `runtime requests [--plugin <plugin-id>] [--last <n>] [--data <dir>]`
 
 Prints the request log, oldest first, the last `n` entries (default 50), one line each; time in
-UTC; changes nothing.
+UTC; changes nothing. Every text a plugin or a connector wrote (names, arguments, paths, details)
+is escaped as feature 001 escapes log messages, so an entry cannot add lines or control the
+terminal. A followed redirect is its own line; the summary written past an update's call limit
+reads `… N more calls refused (over-limit)`.
 
 ```text
 2026-10-23T14:02:11.204Z local/github-releases catalog/github list-releases GET api.github.com /repos/rust-lang/rust/releases?per_page=5 200 3412B 184ms
@@ -129,5 +145,7 @@ render_with_data_us: <render from kept data, no network>
 ## New error kinds
 
 `invalid-connector`, `credentials-not-supported`, `destination-not-verified`,
-`destination-reserved`, `connector-unavailable`, `contract-too-old` and `missing-updater`, as
-[data-model.md](../data-model.md#error-kinds) defines them.
+`destination-reserved`, `connector-unavailable`, `contract-too-old`, `missing-updater` and
+`approval-changed`, as [data-model.md](../data-model.md#error-kinds) defines them. A local
+connector is `destination-not-verified` when the runtime is not in development mode; the CLI
+always is.

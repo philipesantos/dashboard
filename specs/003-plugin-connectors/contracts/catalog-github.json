@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "author": "Dashboard contributors",
   "description": "Public data of GitHub repositories, read without an account",
+  "reserves": ["github.com"],
   "destinations": {
     "api": "https://api.github.com"
   },
