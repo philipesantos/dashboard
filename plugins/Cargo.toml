@@ -20,6 +20,7 @@ members = [
     "fixtures/hello-v0",
     "fixtures/probe",
     "fixtures/quiet",
+    "fixtures/net-probe",
 ]
 
 [workspace.package]
