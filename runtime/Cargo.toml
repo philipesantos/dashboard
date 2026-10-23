@@ -19,6 +19,18 @@ serde_path_to_error = "0.1"
 sha2 = "0.10"
 # Writes the grant record beside itself, then renames it over the old one
 tempfile = "3"
+# Parameter patterns of connectors: linear-time matching, so no value can stall a call
+# (specs/003-plugin-connectors/research.md, R3)
+regex = "1"
+# TLS for connector requests, with the ring provider only, so aws-lc-rs never enters the build
+# (R5, R18)
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# The HTTP client of the network module, its only user (R5). Pinned exactly: the resolver API
+# the host relies on is in its `unversioned` module, which may change in a minor release.
+# Mozilla's roots, rustls' own verifier, and no proxy, cookies or compression compiled in (R8, R9)
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls-no-provider", "rustls-webpki-roots"] }
+# Connector origins and redirect targets (R6, R7)
+url = "2"
 # Finds the manifest section without compiling the package. Pinned to the version Wasmtime 50
 # uses, so the build carries one copy.
 wasmparser = "=0.261.0"
@@ -33,7 +45,18 @@ wasmtime = { version = "50", default-features = false, features = [
     "std",
 ] }
 
+[features]
+# The test seam of research R15: test routes and roots instead of DNS and Mozilla's roots.
+# Only the runtime's own tests turn it on, through the dev-dependency below, and the library
+# refuses to compile with it outside debug builds.
+test-network = []
+
 [dev-dependencies]
+# Test certificates for the HTTPS test servers (tests/common/servers.rs); its default features
+# use ring, as rustls does here
+rcgen = "0.14"
+# The runtime's tests reach the test seam (R15); release builds never do
+runtime = { path = ".", features = ["test-network"] }
 # Validates manifests against wit/manifest.schema.json, to prove the schema and the parser
 # agree (tests/manifest_schema.rs)
 boon = "0.6"

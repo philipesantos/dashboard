@@ -2,7 +2,7 @@
 //! limit and bounded only by the package cap (`docs/threat-model.md`), so this measures what a
 //! package near that cap costs.
 //!
-//! Run with `cargo run -p runtime --release --example compile_cost -- <shape> [<MiB of code>]`,
+//! Run with `cargo run -p dashboard-bench --release --bin compile_cost -- <shape> [<MiB of code>]`,
 //! where the shape is `many` (many functions of about 1.2 KiB, like a large ordinary program) or
 //! `huge` (one function, as large as validation allows, with thousands of locals in use at
 //! once, which strains register allocation). It prints the package size, the load time and the

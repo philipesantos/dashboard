@@ -66,7 +66,7 @@ jobs:
       - name: Load packages near the size cap
         run: |
           for shape in many huge; do
-            cargo run -p runtime --release --locked --example compile_cost -- "$shape" | tee -a compile.txt
+            cargo run -p dashboard-bench --release --locked --bin compile_cost -- "$shape" | tee -a compile.txt
           done
 
       - name: Summary

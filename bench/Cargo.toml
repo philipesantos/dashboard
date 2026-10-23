@@ -1,0 +1,14 @@
+[package]
+name = "dashboard-bench"
+version = "0.1.0"
+description = "Measurements that run in release builds, outside the runtime's own targets"
+edition = "2024"
+publish = false
+
+# A crate of its own because an example of the runtime builds with the runtime's
+# dev-dependencies, which turn the test seam on, and the runtime refuses to compile with it in a
+# release build (specs/003-plugin-connectors/research.md, R19).
+[dependencies]
+runtime = { path = "../runtime" }
+# Turns the generated WebAssembly text into the large packages compile_cost loads
+wat = "1"
