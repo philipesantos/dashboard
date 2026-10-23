@@ -61,11 +61,11 @@ approved and check it is refused, naming the permission.
 The maintainer runs hostile packages that each try to get a capability without the right to
 it: one that uses a capability it never declared, one that declares a capability nobody
 granted, one that uses an optional capability that is off, one that carries two manifests, so
-that a tool and the host could read different ones, one whose manifest breaks the schema, and
-one whose new version quietly asks for more. Each is refused, the error names the rule, and
-the host keeps working; the one whose optional capability is off runs, and gets nothing from
-it. The cases run automatically on Windows, macOS and Linux and break the build if any one is
-not contained.
+that a tool and the host could read different ones, one whose manifest breaks the schema, one
+that copies an approved plugin's id from another file, and one whose new version quietly asks
+for more. Each is refused, the error names the rule, and the host keeps working; the one whose
+optional capability is off runs, and gets nothing from it. The cases run automatically on
+Windows, macOS and Linux and break the build if any one is not contained.
 
 **Why this priority**: every security rule needs a test that breaks the build (Principle VIII).
 The phase gate (exfiltration blocked) builds on these rules.
@@ -205,10 +205,11 @@ exact problem.
   (checked by the installation feature, Phase 3).
 - A package loaded from a local file during development claims the id of an installed plugin:
   it never receives that plugin's grants.
-- In development, two local packages with the same id are versions of one plugin: a local id is
-  the developer's own namespace, so a package that reuses another local plugin's id gets its
-  development grants under the update rules. Installation (Phase 3) ties every installed id to
-  its repository.
+- In development, a plugin's approval belongs to the file it was approved from: rebuilding that
+  file gives a new version, under the update rules, while another file that claims the same id
+  gets none of its grants until the maintainer approves it, which replaces the earlier approval
+  with the required permissions only. Installation (Phase 3) ties every installed id to its
+  repository in the same way.
 - A new package has the same version number as the installed one but different contents: it is
   treated like any other new version.
 - A manifest that is not valid JSON, is far larger than any manifest needs, or nests without
@@ -270,10 +271,10 @@ exact problem.
   approval, manifest does not match the plugin, invalid manifest, unknown permission, required
   permissions change only together, optional permission needs contract v1.
 - **FR-016**: The hostile-plugin suite MUST gain one case per rule in FR-001, FR-003, FR-004,
-  FR-006, FR-007, FR-008, FR-009, FR-010, FR-011 and FR-019, run on Windows, macOS and Linux on
-  every change that is not documentation-only, and fail the build if any case is not refused
-  or, for FR-019, if the capability gives the plugin anything, or, for FR-009 and FR-010, if
-  running any plugin changes the grant record (Principle VIII).
+  FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-019 and FR-020, run on Windows, macOS and
+  Linux on every change that is not documentation-only, and fail the build if any case is not
+  refused or, for FR-019, if the capability gives the plugin anything, or, for FR-009 and
+  FR-010, if running any plugin changes the grant record (Principle VIII).
 - **FR-017**: The example plugin MUST ship a manifest that validates against the published
   schema, and the author documentation MUST explain how to write one. Every plugin in this
   repository, examples and test fixtures alike, uses a local id: none is installed from a
@@ -285,6 +286,10 @@ exact problem.
 - **FR-019**: An optional capability that is off MUST be linked only to a stand-in that gives
   no capability and answers every use with "not granted" (Principle II); the plugin keeps
   running.
+- **FR-020**: A plugin's grants MUST apply only to packages from the place it was approved from:
+  in this phase, the package file. A package from anywhere else that claims the same id MUST be
+  refused as not granted, naming where the approval comes from, until the user approves it;
+  that approval replaces the earlier one, with only the required permissions granted.
 
 ### Key Entities
 
@@ -298,7 +303,8 @@ exact problem.
 - **Permission**: the right to one capability, marked required or optional, possibly narrowed
   by a scope (for example, one network domain, defined by feature 003).
 - **Grant**: the user's approval, kept by the host, of a plugin's required permissions, all
-  together, or of one of its optional permissions.
+  together, or of one of its optional permissions; it belongs to the place the plugin was
+  approved from.
 - **Stand-in**: what the host links in place of an optional capability that is off: it gives
   nothing and answers every use with "not granted".
 - **Grant record**: every grant the host keeps; host data that no plugin can reach.

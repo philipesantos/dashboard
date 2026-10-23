@@ -56,10 +56,13 @@
     packages until the host dialogs exist (Principle VII).
   - FR-009 and FR-010 get a hostile case: running any plugin must leave the grant record
     unchanged (FR-016).
-  - A package is refused for more than one manifest or a nested one; two local packages with
-    the same id are versions of one plugin (User Stories 1 and 2, edge cases).
+  - A package is refused for more than one manifest or a nested one (User Stories 1 and 2).
   - FR-007 refuses an ungranted required permission whether or not the plugin uses it.
   - Repository ids accept `github.com` only, for now (assumptions).
+- Approved by the maintainer on 2026-10-23, after a side review: a plugin's development grants
+  belong to the file it was approved from, so another file that copies the id inherits nothing
+  (FR-020, edge cases). Grants per digest were rejected: approving on every build turns
+  approval into a reflex.
 - "Command-line tool", "JSON" and "schema" name the interfaces the user works with, as in
   feature 001, not the implementation; the plan decides how the manifest is bound to the plugin
   and where grants are stored.
