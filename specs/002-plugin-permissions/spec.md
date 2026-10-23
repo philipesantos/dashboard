@@ -47,8 +47,9 @@ approved and check it is refused, naming the permission.
 4. **Given** a plugin that declares a required capability the maintainer has not approved,
    **When** it is loaded, **Then** it is refused before running, and the error names that
    capability and says it was not granted.
-5. **Given** a package without a manifest, or whose manifest does not describe that exact
-   plugin, **When** it is loaded, **Then** it is refused, and the error says why.
+5. **Given** a package without a manifest, with more than one, or whose only manifest sits
+   inside a nested part of the package, **When** it is loaded, **Then** it is refused, and the
+   error says why.
 6. **Given** a plugin with several required permissions, **When** the maintainer tries to
    approve only some of them, **Then** the tool refuses: required permissions are approved all
    together or not at all.
@@ -59,11 +60,12 @@ approved and check it is refused, naming the permission.
 
 The maintainer runs hostile packages that each try to get a capability without the right to
 it: one that uses a capability it never declared, one that declares a capability nobody
-granted, one that uses an optional capability that is off, one whose manifest belongs to
-another plugin, one whose manifest breaks the schema, and one whose new version quietly asks
-for more. Each is refused, the error names the rule, and the host keeps working; the one whose
-optional capability is off runs, and gets nothing from it. The cases run automatically on
-Windows, macOS and Linux and break the build if any one is not contained.
+granted, one that uses an optional capability that is off, one that carries two manifests, so
+that a tool and the host could read different ones, one whose manifest breaks the schema, and
+one whose new version quietly asks for more. Each is refused, the error names the rule, and
+the host keeps working; the one whose optional capability is off runs, and gets nothing from
+it. The cases run automatically on Windows, macOS and Linux and break the build if any one is
+not contained.
 
 **Why this priority**: every security rule needs a test that breaks the build (Principle VIII).
 The phase gate (exfiltration blocked) builds on these rules.
@@ -203,6 +205,10 @@ exact problem.
   (checked by the installation feature, Phase 3).
 - A package loaded from a local file during development claims the id of an installed plugin:
   it never receives that plugin's grants.
+- In development, two local packages with the same id are versions of one plugin: a local id is
+  the developer's own namespace, so a package that reuses another local plugin's id gets its
+  development grants under the update rules. Installation (Phase 3) ties every installed id to
+  its repository.
 - A new package has the same version number as the installed one but different contents: it is
   treated like any other new version.
 - A manifest that is not valid JSON, is far larger than any manifest needs, or nests without
@@ -229,9 +235,9 @@ exact problem.
   declares and the user granted. Every other capability MUST be unavailable to it.
 - **FR-006**: A plugin that uses a capability its manifest does not declare MUST be refused
   before it runs, with an error naming the capability and saying it was not declared.
-- **FR-007**: A plugin that declares a required capability the user has not granted, and uses
-  it, MUST be refused before it runs, with an error naming the capability and saying it was not
-  granted.
+- **FR-007**: A plugin that declares a required capability the user has not granted MUST be
+  refused before it runs, whether or not it uses it, with an error naming the capability and
+  saying it was not granted.
 - **FR-008**: A manifest that requests a permission the host does not know MUST be refused,
   naming that permission.
 - **FR-009**: The host MUST record the user's grants and keep them across runs. Only the host's
@@ -264,9 +270,10 @@ exact problem.
   approval, manifest does not match the plugin, invalid manifest, unknown permission, required
   permissions change only together, optional permission needs contract v1.
 - **FR-016**: The hostile-plugin suite MUST gain one case per rule in FR-001, FR-003, FR-004,
-  FR-006, FR-007, FR-008, FR-011 and FR-019, run on Windows, macOS and Linux on every change
-  that is not documentation-only, and fail the build if any case is not refused or, for
-  FR-019, if the capability gives the plugin anything (Principle VIII).
+  FR-006, FR-007, FR-008, FR-009, FR-010, FR-011 and FR-019, run on Windows, macOS and Linux on
+  every change that is not documentation-only, and fail the build if any case is not refused
+  or, for FR-019, if the capability gives the plugin anything, or, for FR-009 and FR-010, if
+  running any plugin changes the grant record (Principle VIII).
 - **FR-017**: The example plugin MUST ship a manifest that validates against the published
   schema, and the author documentation MUST explain how to write one. Every plugin in this
   repository, examples and test fixtures alike, uses a local id: none is installed from a
@@ -343,6 +350,7 @@ exact problem.
   manifest id is the repository the package came from and keeps the repository's permanent
   identifier, so updates must come from that same repository. In this phase the command-line
   tool loads local files in development mode only.
+- Repository ids accept `github.com` only, for now; installation (Phase 3) can add hosts.
 - Package signatures, which prove who published a release, arrive in Phase 6.
 - Out of scope: the network proxy (003), storage (004), the secrets vault and OAuth (005), the
   TypeScript example (006), any graphical interface, disabling and uninstalling (Phase 3),

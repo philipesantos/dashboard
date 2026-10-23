@@ -51,6 +51,15 @@
   - A grant change takes effect from the plugin's next call, not its next load, so a plugin
     that stays loaded in the app loses access at once; a call already running finishes within
     its time limit (FR-014, SC-005).
+- After `/speckit-analyze`, approved by the maintainer on 2026-10-23:
+  - Constitution v1.3.0 lets the development command-line tool grant permissions to local
+    packages until the host dialogs exist (Principle VII).
+  - FR-009 and FR-010 get a hostile case: running any plugin must leave the grant record
+    unchanged (FR-016).
+  - A package is refused for more than one manifest or a nested one; two local packages with
+    the same id are versions of one plugin (User Stories 1 and 2, edge cases).
+  - FR-007 refuses an ungranted required permission whether or not the plugin uses it.
+  - Repository ids accept `github.com` only, for now (assumptions).
 - "Command-line tool", "JSON" and "schema" name the interfaces the user works with, as in
   feature 001, not the implementation; the plan decides how the manifest is bound to the plugin
   and where grants are stored.
