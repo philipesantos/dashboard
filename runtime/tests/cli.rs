@@ -144,7 +144,14 @@ fn bench_prints_the_load_time_and_render_percentiles() {
         .collect();
     assert_eq!(
         keys,
-        ["load_ms", "render_p50_us", "render_p95_us", "render_max_us"]
+        [
+            "load_ms",
+            "render_p50_us",
+            "render_p95_us",
+            "render_max_us",
+            "checks_us",
+            "relink_us"
+        ]
     );
 }
 

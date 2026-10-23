@@ -30,7 +30,7 @@ plugin; the tool prints nothing for them.
 
 ## `runtime bench <plugin> [--iterations <n>] [--config …] [--grants <path>]`
 
-As in feature 001, with two more lines on stdout:
+As in feature 001, with two more lines on stdout, each the median of 100 runs:
 
 ```text
 checks_us: <find and parse the manifest, read the grants, check imports and grants; no compile>

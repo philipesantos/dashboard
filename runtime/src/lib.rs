@@ -352,6 +352,32 @@ impl Plugin {
         }
     }
 
+    /// Runs again every check of a load but the compile and the linking: the manifest section
+    /// and the manifest, the contract and the imports, and the grants (load steps 2, 3 and
+    /// 5–8), on the package bytes it was loaded from. For `runtime bench` (SC-007).
+    pub fn recheck(&self, bytes: &[u8]) -> Result<(), RuntimeError> {
+        let manifest = Manifest::parse(package::manifest_section(bytes)?)?;
+        let contract = permissions::check_component(&self.package.interfaces, &manifest)?;
+        let entry = self.grants.entry(manifest.id())?;
+        permissions::decide(
+            contract,
+            &self.package.interfaces,
+            &manifest,
+            &self.origin,
+            entry.as_ref(),
+        )
+        .map(drop)
+    }
+
+    /// Links the plugin again with its grants as they are now, as after a grant change (load
+    /// steps 7–9). For `runtime bench` (SC-007).
+    pub fn relink(&self) -> Result<(), RuntimeError> {
+        let mut linked = self.linked.lock().unwrap_or_else(PoisonError::into_inner);
+        linked.generation = self.grants.generation();
+        linked.prepared = prepare(&self.package, &self.origin, &self.grants).map(Arc::new);
+        linked.prepared.as_ref().map(drop).map_err(Clone::clone)
+    }
+
     /// The plugin linked for the grants as they are now: load steps 7–9 run again whenever the
     /// store's generation moved since the last time.
     fn current(&self) -> Result<Arc<Prepared>, RuntimeError> {

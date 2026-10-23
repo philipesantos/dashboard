@@ -333,12 +333,27 @@ fn approve(options: &Options) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Times one load, then `iterations` render calls, each with its own instantiation.
+/// How many times `bench` repeats the checks and the re-link, whose median it prints.
+const CHECK_REPEATS: u32 = 100;
+
+/// Times one load, then `iterations` render calls, each with its own instantiation. Then the
+/// checks of a load without the compile, and a re-link after a grant change (SC-007), each as
+/// the median of [`CHECK_REPEATS`] runs.
 fn bench(options: &Options) -> ExitCode {
-    let (plugin, load_time) = match load(options) {
-        Ok(loaded) => loaded,
+    let target = match Target::open(options) {
+        Ok(target) => target,
         Err(status) => return status,
     };
+    let bytes = target.bytes.clone();
+    let start = Instant::now();
+    let plugin = match target
+        .runtime
+        .load(&target.bytes, &target.origin, Arc::new(target.grants))
+    {
+        Ok(plugin) => plugin,
+        Err(error) => return refused(&error),
+    };
+    let load_time = start.elapsed();
 
     let mut times = Vec::with_capacity(options.iterations as usize);
     for _ in 0..options.iterations {
@@ -352,11 +367,36 @@ fn bench(options: &Options) -> ExitCode {
     }
     times.sort();
 
+    let checks = match median(|| plugin.recheck(&bytes)) {
+        Ok(time) => time,
+        Err(error) => return refused(&error),
+    };
+    let relink = match median(|| plugin.relink()) {
+        Ok(time) => time,
+        Err(error) => return refused(&error),
+    };
+
     println!("load_ms: {:.1}", load_time.as_secs_f64() * 1000.0);
     println!("render_p50_us: {}", percentile(&times, 50).as_micros());
     println!("render_p95_us: {}", percentile(&times, 95).as_micros());
     println!("render_max_us: {}", percentile(&times, 100).as_micros());
+    println!("checks_us: {}", checks.as_micros());
+    println!("relink_us: {}", relink.as_micros());
     ExitCode::SUCCESS
+}
+
+/// The median time of [`CHECK_REPEATS`] runs of `step`, or its first failure.
+fn median(
+    mut step: impl FnMut() -> Result<(), runtime::RuntimeError>,
+) -> Result<Duration, runtime::RuntimeError> {
+    let mut times = Vec::with_capacity(CHECK_REPEATS as usize);
+    for _ in 0..CHECK_REPEATS {
+        let start = Instant::now();
+        step()?;
+        times.push(start.elapsed());
+    }
+    times.sort();
+    Ok(percentile(&times, 50))
 }
 
 /// The nearest-rank percentile of sorted, non-empty times.
