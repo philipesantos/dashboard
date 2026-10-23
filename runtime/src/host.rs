@@ -1,10 +1,46 @@
 //! The host side of one render call: the state its store holds, the `log` capability of each
 //! contract version, and the stand-in linked in place of an optional capability that is off.
 
-use wasmtime::component::HasData;
+use wasmtime::component::{HasData, HasSelf, Linker};
 
 use crate::limits::{Limits, MemoryLimiter};
+use crate::permissions::Contract;
 use crate::{LogLevel, LogMessage, text, v0, v1};
+
+/// What [`link`] adds for a permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Link {
+    /// The capability itself: the permission is granted.
+    Real,
+    /// The stand-in that answers `not-granted`: the permission is optional and off.
+    StandIn,
+}
+
+/// Adds to `linker` the interface that carries `permission` in `contract`, real or stand-in.
+/// Features 003–005 add an arm per capability. Contract v0 has no stand-in: it cannot answer
+/// "not granted".
+pub(crate) fn link(
+    linker: &mut Linker<HostState>,
+    contract: Contract,
+    permission: &str,
+    link: Link,
+) -> wasmtime::Result<()> {
+    match (contract, permission, link) {
+        (Contract::V0, "log", Link::Real) => {
+            v0::dashboard::widget::log::add_to_linker::<_, HasSelf<_>>(linker, |state| state)
+        }
+        (Contract::V1, "log", Link::Real) => {
+            v1::dashboard::widget::log::add_to_linker::<_, HasSelf<_>>(linker, |state| state)
+        }
+        (Contract::V1, "log", Link::StandIn) => {
+            v1::dashboard::widget::log::add_to_linker::<_, LogStandIn>(linker, |_| LogStandIn)
+        }
+        _ => Err(wasmtime::format_err!(
+            "contract {} has no {link:?} interface for the {permission} permission",
+            contract.as_str()
+        )),
+    }
+}
 
 /// State of one render call, dropped with its store when the call ends.
 pub(crate) struct HostState {

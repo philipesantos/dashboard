@@ -1,10 +1,10 @@
 //! Plugin runtime: loads plugins packaged as WebAssembly components and runs them in a sandbox,
-//! under limits set by the host.
+//! under limits set by the host, with exactly the capabilities their manifest declares and the
+//! user granted (`specs/002-plugin-permissions/`).
 
 mod error;
 pub mod grants;
 mod host;
-mod imports;
 mod limits;
 pub mod manifest;
 pub mod package;
@@ -16,11 +16,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use wasmtime::component::{Component, HasSelf, Linker};
+use wasmtime::component::{Component, Linker};
 use wasmtime::{Config, Engine, Store, Trap};
 
+use grants::GrantStore;
 use host::HostState;
 use limits::MemoryLimitExceeded;
+use manifest::Manifest;
+use permissions::Interfaces;
 
 pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
@@ -83,17 +86,42 @@ pub struct RenderReport {
 /// Loads plugins and runs them under the host's limits.
 pub struct Runtime {
     engine: Engine,
-    /// Holds only the `log` capability; nothing else can ever be linked into a plugin.
-    linker: Linker<HostState>,
     limits: Limits,
     clock: Arc<EpochClock>,
 }
 
+/// A package that passed every check that needs no grants: load steps 1–6 of
+/// `specs/002-plugin-permissions/data-model.md`.
+pub struct CheckedPackage {
+    component: Component,
+    interfaces: Interfaces,
+    manifest: Manifest,
+    contract: Contract,
+}
+
+impl CheckedPackage {
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    pub fn contract(&self) -> Contract {
+        self.contract
+    }
+}
+
 /// A loaded plugin, compiled once and instantiated afresh for every render call.
 pub struct Plugin {
-    pre: v0::WidgetPre<HostState>,
+    package: CheckedPackage,
+    /// Linked with the capabilities the plugin's approval from this origin grants.
+    prepared: Prepared,
     limits: Limits,
     clock: Arc<EpochClock>,
+}
+
+/// A plugin linked for its contract version, ready to instantiate.
+enum Prepared {
+    V0(v0::WidgetPre<HostState>),
+    V1(v1::WidgetPre<HostState>),
 }
 
 impl Runtime {
@@ -133,20 +161,18 @@ impl Runtime {
         let clock = Arc::new(EpochClock::new());
         start_epoch_ticker(&engine, Arc::clone(&clock))?;
 
-        let mut linker = Linker::new(&engine);
-        v0::Widget::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
-
         Ok(Runtime {
             engine,
-            linker,
             limits,
             clock,
         })
     }
 
-    /// Checks and compiles a plugin package. A failure stops at the first step that refuses
-    /// the package, with that step's error kind.
-    pub fn load(&self, bytes: &[u8]) -> Result<Plugin, RuntimeError> {
+    /// Checks a plugin package without its grants: size, manifest, compilation, contract and
+    /// imports (load steps 1–6). A failure stops at the first step that refuses the package,
+    /// with that step's error kind.
+    pub fn check(&self, bytes: &[u8]) -> Result<CheckedPackage, RuntimeError> {
+        // Step 1: size and preamble
         if bytes.len() > self.limits.max_package_bytes {
             return Err(RuntimeError::new(
                 ErrorKind::InvalidPackage,
@@ -163,30 +189,106 @@ impl Runtime {
                 "not a WebAssembly component",
             ));
         }
-        // from_binary never accepts the text format, whatever Wasmtime features are enabled.
+        // Steps 2 and 3: the one manifest, before the compile, which costs far more
+        let manifest = Manifest::parse(package::manifest_section(bytes)?)?;
+        // Step 4: from_binary never accepts the text format, whatever Wasmtime features are
+        // enabled.
         let component = Component::from_binary(&self.engine, bytes)
             .map_err(|error| RuntimeError::new(ErrorKind::InvalidPackage, format!("{error:#}")))?;
-        // Before linking, so every refused import is named, not just the first the linker misses.
-        imports::check(&self.engine, &component)?;
+        // Steps 5 and 6: on names, before linking, so every refused import is named
+        let interfaces = Interfaces::of(&self.engine, &component);
+        let contract = permissions::check_component(&interfaces, &manifest)?;
+        Ok(CheckedPackage {
+            component,
+            interfaces,
+            manifest,
+            contract,
+        })
+    }
 
-        let mismatch = |error: wasmtime::Error| {
-            RuntimeError::new(ErrorKind::ContractMismatch, format!("{error:#}"))
-        };
-        let pre = self.linker.instantiate_pre(&component).map_err(mismatch)?;
-        let pre = v0::WidgetPre::new(pre).map_err(mismatch)?;
+    /// Checks a plugin package and its grants, and links it with exactly the capabilities its
+    /// manifest declares and its approval grants (load steps 1–9).
+    ///
+    /// `origin` is where the package came from: in the CLI, its file's canonical path. An
+    /// approval applies only to packages from the origin it was given for, so another package
+    /// that claims an approved id gets none of its grants (FR-020).
+    pub fn load(
+        &self,
+        bytes: &[u8],
+        origin: &str,
+        grants: Arc<GrantStore>,
+    ) -> Result<Plugin, RuntimeError> {
+        let package = self.check(bytes)?;
+        let prepared = prepare(&package, origin, &grants)?;
         Ok(Plugin {
-            pre,
+            package,
+            prepared,
             limits: self.limits.clone(),
             clock: Arc::clone(&self.clock),
         })
     }
 }
 
+/// Load steps 7–9: the plugin's approval from `origin`, pruning, then a linker built for this
+/// plugin alone, holding the real interface of each granted import and the stand-in of each
+/// optional one that is off. Nothing else is ever linked (Principle II).
+fn prepare(
+    package: &CheckedPackage,
+    origin: &str,
+    grants: &GrantStore,
+) -> Result<Prepared, RuntimeError> {
+    let manifest = &package.manifest;
+    let entry = grants.entry(manifest.id())?;
+    let decision = permissions::decide(
+        package.contract,
+        &package.interfaces,
+        manifest,
+        origin,
+        entry.as_ref(),
+    )?;
+    if !decision.prune.is_empty() {
+        grants.prune(manifest, origin)?;
+    }
+
+    let mismatch = |error: wasmtime::Error| {
+        RuntimeError::new(ErrorKind::ContractMismatch, format!("{error:#}"))
+    };
+    let mut linker = Linker::new(package.component.engine());
+    let plan = &decision.plan;
+    for permission in &plan.real {
+        host::link(&mut linker, plan.contract, permission, host::Link::Real).map_err(mismatch)?;
+    }
+    for permission in &plan.stand_in {
+        host::link(&mut linker, plan.contract, permission, host::Link::StandIn)
+            .map_err(mismatch)?;
+    }
+    let pre = linker
+        .instantiate_pre(&package.component)
+        .map_err(mismatch)?;
+    Ok(match plan.contract {
+        Contract::V0 => Prepared::V0(v0::WidgetPre::new(pre).map_err(mismatch)?),
+        Contract::V1 => Prepared::V1(v1::WidgetPre::new(pre).map_err(mismatch)?),
+    })
+}
+
 impl Plugin {
+    /// The manifest the plugin was loaded with.
+    pub fn manifest(&self) -> &Manifest {
+        &self.package.manifest
+    }
+
+    /// The contract version the plugin implements.
+    pub fn contract(&self) -> Contract {
+        self.package.contract
+    }
+
     /// Calls the plugin's `render` with a JSON configuration, in a fresh instance that is
     /// dropped when the call ends, so nothing survives from one call to the next (FR-008).
     pub fn render(&self, config: &str) -> RenderReport {
-        let mut store = Store::new(self.pre.engine(), HostState::new(&self.limits));
+        let mut store = Store::new(
+            self.package.component.engine(),
+            HostState::new(&self.limits),
+        );
         store.limiter(|state| &mut state.limiter);
         let result = self
             .start_limits(&mut store)
@@ -223,13 +325,19 @@ impl Plugin {
         store: &mut Store<HostState>,
         config: &str,
     ) -> Result<serde_json::Value, RuntimeError> {
-        let instance = self
-            .pre
-            .instantiate(&mut *store)
-            .map_err(|error| self.call_error(error))?;
-        let content = instance
-            .dashboard_widget_renderer()
-            .call_render(&mut *store, config)
+        let rendered = match &self.prepared {
+            Prepared::V0(pre) => pre.instantiate(&mut *store).and_then(|instance| {
+                instance
+                    .dashboard_widget_renderer()
+                    .call_render(&mut *store, config)
+            }),
+            Prepared::V1(pre) => pre.instantiate(&mut *store).and_then(|instance| {
+                instance
+                    .dashboard_widget_renderer()
+                    .call_render(&mut *store, config)
+            }),
+        };
+        let content = rendered
             .map_err(|error| self.call_error(error))?
             .map_err(|message| RuntimeError::new(ErrorKind::PluginError, message))?;
         // Before parsing, so oversized content costs no parsing work

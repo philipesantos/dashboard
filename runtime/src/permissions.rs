@@ -152,13 +152,29 @@ pub(crate) fn check_component(
     let contract = match implemented[..] {
         [contract] => contract,
         [] => {
-            return Err(RuntimeError::new(
+            // Imports from a version of the contract the host does not run say which one the
+            // plugin was built for
+            let mut unknown: Vec<String> = interfaces
+                .imports
+                .iter()
+                .filter(|import| {
+                    import.starts_with(CONTRACT_PREFIX)
+                        && !Contract::ALL.into_iter().any(|contract| {
+                            import.rsplit_once('@').map(|(_, version)| version)
+                                == Some(contract.package_version())
+                        })
+                })
+                .cloned()
+                .collect();
+            unknown.sort();
+            return Err(RuntimeError::with_names(
                 ErrorKind::ContractMismatch,
-                format!(
+                unknown,
+                Some(&format!(
                     "exports no renderer of a contract this host runs ({}, {})",
                     Contract::V0.renderer(),
                     Contract::V1.renderer()
-                ),
+                )),
             ));
         }
         _ => {

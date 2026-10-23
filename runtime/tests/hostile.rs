@@ -10,7 +10,8 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use common::fixture;
+use common::{TEST_ORIGIN, approved, fixture};
+use runtime::grants::GrantStore;
 use runtime::{ErrorKind, Limits, Plugin, RenderReport, Runtime, RuntimeError};
 use serde_json::json;
 
@@ -21,15 +22,19 @@ fn runtime() -> Runtime {
     Runtime::new(Limits::default()).expect("the runtime starts with the default limits")
 }
 
+/// Loads a fixture with its required permissions approved.
 fn load(runtime: &Runtime, name: &str) -> Arc<Plugin> {
+    let bytes = fixture(name);
     let plugin = runtime
-        .load(&fixture(name))
+        .load(&bytes, TEST_ORIGIN, approved(&bytes))
         .unwrap_or_else(|error| panic!("{name} should load: {error}"));
     Arc::new(plugin)
 }
 
+/// Loads a fixture approved by nobody, which must be refused.
 fn load_error(runtime: &Runtime, name: &str) -> RuntimeError {
-    match runtime.load(&fixture(name)) {
+    let grants = Arc::new(GrantStore::in_memory());
+    match runtime.load(&fixture(name), TEST_ORIGIN, grants) {
         Ok(_) => panic!("{name} was loaded, but it must be refused"),
         Err(error) => error,
     }

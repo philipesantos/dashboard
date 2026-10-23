@@ -7,12 +7,20 @@
 //! `huge` (one function, as large as validation allows, with thousands of locals in use at
 //! once, which strains register allocation). It prints the package size, the load time and the
 //! outcome; the package has no `renderer` export, so a load that compiles ends in
-//! `contract-mismatch`, after the compilation this measures.
+//! `contract-mismatch`, after the compilation this measures. The package carries a manifest
+//! and is approved, so nothing before the compile refuses it.
 
 use std::fmt::Write;
+use std::sync::Arc;
 use std::time::Instant;
 
+use runtime::grants::GrantStore;
+use runtime::manifest::Manifest;
+use runtime::package;
 use runtime::{Limits, Runtime};
+
+const MANIFEST: &str = r#"{"manifest_version":1,"id":"local/compile-cost","version":"0.1.0","author":"Dashboard contributors","permissions":[],"login_providers":[]}"#;
+const ORIGIN: &str = "compile-cost";
 
 const MIB: usize = 1024 * 1024;
 
@@ -85,13 +93,20 @@ fn main() {
         Some("huge") => huge(code_bytes),
         _ => panic!("usage: compile_cost many|huge [<MiB of code>]"),
     };
-    let package = wat::parse_str(&wat).expect("the generated text is valid");
+    let component = wat::parse_str(&wat).expect("the generated text is valid");
     drop(wat);
+    let package = package::pack(&component, MANIFEST.as_bytes()).expect("the manifest is valid");
+    drop(component);
+    let grants = GrantStore::in_memory();
+    let manifest = Manifest::parse(MANIFEST.as_bytes()).expect("the manifest is valid");
+    grants
+        .approve(&manifest, ORIGIN, &package::digest(&package))
+        .expect("approved");
 
     let runtime = Runtime::new(Limits::default()).expect("the runtime starts");
     reset_peak_memory();
     let start = Instant::now();
-    let outcome = match runtime.load(&package) {
+    let outcome = match runtime.load(&package, ORIGIN, Arc::new(grants)) {
         Ok(_) => "loaded".to_owned(),
         Err(error) => error.kind().as_str().to_owned(),
     };

@@ -1,18 +1,28 @@
-//! `runtime`: the command-line test tool (`specs/001-plugin-runtime/contracts/cli.md`).
+//! `runtime`: the command-line test tool (`specs/001-plugin-runtime/contracts/cli.md`,
+//! `specs/002-plugin-permissions/contracts/cli.md`).
 //!
 //! `runtime run <plugin>` loads a plugin, calls its `render` once and prints the widget content,
 //! or the error that refused or stopped it. `runtime bench <plugin>` measures how long loading
 //! and rendering take.
+//!
+//! The tool is the host's control in this phase: it works in development mode only, on local
+//! package files, with the development grant record (`--grants <path>`, or the default one in
+//! the system's data directory). A package's origin is its file's canonical path, and an
+//! approval applies only to the file it was given for: another file that copies an approved
+//! plugin's id inherits none of its grants (FR-020).
 
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use runtime::grants::GrantStore;
 use runtime::{Limits, Plugin, Runtime};
 
-const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>]
-       runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>]";
+const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>]
+       runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>]";
 
 /// Exit status when the plugin was refused, failed or was stopped.
 const PLUGIN_FAILED: u8 = 1;
@@ -42,12 +52,15 @@ struct Options {
     config: String,
     /// Only for `bench`.
     iterations: u32,
+    /// The grant record given with `--grants`.
+    grants: Option<PathBuf>,
 }
 
 fn parse(args: &[String], bench: bool) -> Result<Options, String> {
     let mut plugin = None;
     let mut config = None;
     let mut iterations = DEFAULT_ITERATIONS;
+    let mut grants = None;
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -65,6 +78,12 @@ fn parse(args: &[String], bench: bool) -> Result<Options, String> {
                         format!("cannot read configuration file {value}: {error}")
                     })?
                 });
+            }
+            "--grants" => {
+                let value = args.next().ok_or("--grants needs a path")?;
+                if grants.replace(PathBuf::from(value)).is_some() {
+                    return Err("give --grants only once".to_owned());
+                }
             }
             "--iterations" if bench => {
                 iterations = args
@@ -92,11 +111,12 @@ fn parse(args: &[String], bench: bool) -> Result<Options, String> {
         plugin,
         config,
         iterations,
+        grants,
     })
 }
 
 fn run(options: &Options) -> ExitCode {
-    let plugin = match load(&options.plugin) {
+    let plugin = match load(options) {
         Ok((plugin, _)) => plugin,
         Err(status) => return status,
     };
@@ -124,7 +144,7 @@ fn run(options: &Options) -> ExitCode {
 
 /// Times one load, then `iterations` render calls, each with its own instantiation.
 fn bench(options: &Options) -> ExitCode {
-    let (plugin, load_time) = match load(&options.plugin) {
+    let (plugin, load_time) = match load(options) {
         Ok(loaded) => loaded,
         Err(status) => return status,
     };
@@ -154,22 +174,50 @@ fn percentile(sorted: &[Duration], percent: usize) -> Duration {
     sorted[rank - 1]
 }
 
-/// Reads and loads a plugin, timing the load. On failure, prints why and returns the exit
-/// status.
-fn load(path: &str) -> Result<(Plugin, Duration), ExitCode> {
+/// Reads and loads a plugin with its grants, timing the load. On failure, prints why and
+/// returns the exit status.
+fn load(options: &Options) -> Result<(Plugin, Duration), ExitCode> {
     let limits = Limits::default();
+    let path = &options.plugin;
     let bytes =
         read_plugin(path, limits.max_package_bytes).map_err(|message| usage_error(&message))?;
+    let origin = origin(path).map_err(|message| usage_error(&message))?;
+    let grants = grant_store(options.grants.as_ref()).map_err(|message| usage_error(&message))?;
     let runtime = Runtime::new(limits).map_err(|error| {
         eprintln!("error: cannot start the runtime: {error:#}");
         ExitCode::from(PLUGIN_FAILED)
     })?;
     let start = Instant::now();
-    let plugin = runtime.load(&bytes).map_err(|error| {
-        eprintln!("error: {error}");
-        ExitCode::from(PLUGIN_FAILED)
-    })?;
+    let plugin = runtime
+        .load(&bytes, &origin, Arc::new(grants))
+        .map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::from(PLUGIN_FAILED)
+        })?;
     Ok((plugin, start.elapsed()))
+}
+
+/// The package's origin: its file's canonical path, so the same file has one origin however it
+/// is named on the command line.
+fn origin(path: &str) -> Result<String, String> {
+    std::fs::canonicalize(path)
+        .map_err(|error| format!("cannot read plugin file {path}: {error}"))?
+        .into_os_string()
+        .into_string()
+        .map_err(|_| format!("the path of plugin file {path} is not UTF-8"))
+}
+
+/// The record given with `--grants`, or the default development record.
+fn grant_store(path: Option<&PathBuf>) -> Result<GrantStore, String> {
+    match path {
+        Some(path) => Ok(GrantStore::open(path)),
+        None => GrantStore::default_development_path()
+            .map(GrantStore::open)
+            .ok_or_else(|| {
+                "this system has no data directory for the grant record; give --grants <path>"
+                    .to_owned()
+            }),
+    }
 }
 
 /// Reads at most `max_bytes + 1` bytes, so a huge or endless file (for example `/dev/zero`) is

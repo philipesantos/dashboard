@@ -1,29 +1,47 @@
-//! Plugin contract v0: loading packages and rendering the example plugin (User Stories 1 and 3).
+//! Plugin contracts: loading packages and rendering the example plugin (feature 001, User
+//! Stories 1 and 3).
 
 mod common;
 
-use common::fixture;
-use runtime::{ErrorKind, Limits, LogLevel, LogMessage, Runtime};
+use std::sync::Arc;
+
+use common::{TEST_ORIGIN, approved, fixture, manifest};
+use runtime::grants::GrantStore;
+use runtime::package::pack;
+use runtime::{ErrorKind, Limits, LogLevel, LogMessage, Plugin, Runtime};
 use serde_json::json;
 
 fn runtime() -> Runtime {
     Runtime::new(Limits::default()).expect("the runtime starts with the default limits")
 }
 
-/// Loads `bytes` and returns the kind and detail of the error, failing if loading succeeds.
+/// Loads `bytes` with its required permissions approved.
+fn load(runtime: &Runtime, bytes: &[u8]) -> Plugin {
+    runtime
+        .load(bytes, TEST_ORIGIN, approved(bytes))
+        .unwrap_or_else(|error| panic!("the package should load: {error}"))
+}
+
+/// Loads `bytes`, approved by nobody, and returns the kind and detail of the error, failing if
+/// loading succeeds.
 fn load_error(runtime: &Runtime, bytes: &[u8]) -> (ErrorKind, String) {
-    match runtime.load(bytes) {
+    match runtime.load(bytes, TEST_ORIGIN, Arc::new(GrantStore::in_memory())) {
         Ok(_) => panic!("the package was loaded, but it should have been refused"),
         Err(error) => (error.kind(), error.detail().to_owned()),
     }
 }
 
+/// A WAT component packed with a manifest that requests nothing, so the checks after the
+/// manifest decide it.
+fn packed(wat: &str) -> Vec<u8> {
+    let component = wat::parse_str(wat).unwrap();
+    pack(&component, manifest("local/test", "0.1.0", &[]).as_bytes()).unwrap()
+}
+
 #[test]
 fn hello_widget_renders_its_greeting_and_one_log() {
     let runtime = runtime();
-    let plugin = runtime
-        .load(&fixture("hello-widget"))
-        .expect("hello-widget loads");
+    let plugin = load(&runtime, &fixture("hello-widget"));
 
     let report = plugin.render("{}");
 
@@ -44,9 +62,7 @@ fn hello_widget_renders_its_greeting_and_one_log() {
 #[test]
 fn hello_widget_greets_the_configured_name() {
     let runtime = runtime();
-    let plugin = runtime
-        .load(&fixture("hello-widget"))
-        .expect("hello-widget loads");
+    let plugin = load(&runtime, &fixture("hello-widget"));
 
     for (config, text) in [
         (r#"{"name":"Ada"}"#, "Hello, Ada!"),
@@ -64,9 +80,7 @@ fn hello_widget_greets_the_configured_name() {
 #[test]
 fn hello_widget_explains_a_configuration_it_cannot_use() {
     let runtime = runtime();
-    let plugin = runtime
-        .load(&fixture("hello-widget"))
-        .expect("hello-widget loads");
+    let plugin = load(&runtime, &fixture("hello-widget"));
 
     for config in ["{bad", r#"{"name":5}"#] {
         let report = plugin.render(config);
@@ -108,7 +122,7 @@ fn a_package_over_the_size_limit_is_refused_before_anything_else() {
 
 #[test]
 fn a_component_without_the_renderer_export_does_not_match_the_contract() {
-    let component = wat::parse_str("(component)").unwrap();
+    let component = packed("(component)");
     assert_eq!(
         load_error(&runtime(), &component).0,
         ErrorKind::ContractMismatch
@@ -118,12 +132,11 @@ fn a_component_without_the_renderer_export_does_not_match_the_contract() {
 #[test]
 fn a_component_built_for_another_contract_version_does_not_match() {
     // A plugin built for 0.2.0 imports that version's log interface, with its functions.
-    let component = wat::parse_str(
+    let component = packed(
         r#"(component
              (import "dashboard:widget/log@0.2.0" (instance
                (export "write" (func (param "message" string))))))"#,
-    )
-    .unwrap();
+    );
     let (kind, detail) = load_error(&runtime(), &component);
     assert_eq!(kind, ErrorKind::ContractMismatch);
     assert!(
@@ -134,7 +147,7 @@ fn a_component_built_for_another_contract_version_does_not_match() {
 
 #[test]
 fn a_component_using_a_turned_off_proposal_is_refused() {
-    let component = wat::parse_str("(component (core module (memory i64 1)))").unwrap();
+    let component = packed("(component (core module (memory i64 1)))");
     assert_eq!(
         load_error(&runtime(), &component).0,
         ErrorKind::InvalidPackage
