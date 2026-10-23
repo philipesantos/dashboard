@@ -12,6 +12,10 @@ allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-3-Clause",
+    # Mozilla's root certificate list, as data (webpki-roots); permissive
+    "CDLA-Permissive-2.0",
+    # ring, untrusted and rustls-webpki, the TLS stack of the connector network module; permissive
+    "ISC",
     "MIT",
     "MPL-2.0",
     "Unicode-3.0",
@@ -26,6 +30,15 @@ multiple-versions = "warn"
 wildcards = "deny"
 # Path dependencies between workspace crates have no version requirement.
 allow-wildcard-paths = true
+# Certificate verifiers that let the operating system fetch revocation and root data on its own,
+# outside the host proxy, or that read the system's roots without its distrust decisions:
+# connectors check certificates with rustls' own verifier over Mozilla's roots only
+# (specs/003-plugin-connectors/research.md, R8).
+deny = [
+    { name = "rustls-platform-verifier" },
+    { name = "rustls-native-certs" },
+    { name = "native-tls" },
+]
 
 [sources]
 unknown-registry = "deny"
