@@ -1,37 +1,131 @@
 //! The plugin package: one WebAssembly component whose manifest rides in one top-level custom
 //! section (`specs/002-plugin-permissions/contracts/package.md`, research R1).
 
+use std::fmt::Write;
+
+use sha2::{Digest, Sha256};
+use wasmparser::{Encoding, Parser, Payload};
+
 use crate::error::{ErrorKind, RuntimeError};
+use crate::manifest::Manifest;
 
 /// The custom section that carries a plugin's manifest.
 pub const MANIFEST_SECTION: &str = "dashboard-manifest";
+
+/// The id of a custom section in the binary format.
+const CUSTOM_SECTION_ID: u8 = 0;
 
 /// The payload of the package's only manifest section, found without compiling the package.
 ///
 /// Refuses a package with no manifest section as `no-manifest`; one with two or more at the top
 /// level, or one inside a nested module or component, as `manifest-mismatch`; one that is not a
 /// well-formed component as `invalid-package`.
-pub fn manifest_section(_package: &[u8]) -> Result<&[u8], RuntimeError> {
-    Err(RuntimeError::new(
-        ErrorKind::NoManifest,
-        "not implemented yet",
-    ))
+pub fn manifest_section(package: &[u8]) -> Result<&[u8], RuntimeError> {
+    // Walks the section headers of the package and of every nested module and component,
+    // without validating or compiling anything.
+    let mut depth = 0_usize;
+    let mut top_level = Vec::new();
+    let mut nested = false;
+    for payload in Parser::new(0).parse_all(package) {
+        let payload = payload
+            .map_err(|error| RuntimeError::new(ErrorKind::InvalidPackage, error.to_string()))?;
+        match payload {
+            Payload::Version { encoding, .. } => {
+                if depth == 0 && encoding != Encoding::Component {
+                    return Err(RuntimeError::new(
+                        ErrorKind::InvalidPackage,
+                        "not a WebAssembly component",
+                    ));
+                }
+                depth += 1;
+            }
+            Payload::End(_) => depth -= 1,
+            Payload::CustomSection(section) if section.name() == MANIFEST_SECTION => {
+                if depth == 1 {
+                    top_level.push(section.data());
+                } else {
+                    nested = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if nested {
+        return Err(RuntimeError::new(
+            ErrorKind::ManifestMismatch,
+            format!(
+                "a {MANIFEST_SECTION} section sits inside a nested module or component; the manifest must be one top-level section"
+            ),
+        ));
+    }
+    match top_level[..] {
+        [manifest] => Ok(manifest),
+        [] => Err(RuntimeError::new(
+            ErrorKind::NoManifest,
+            format!("the package has no {MANIFEST_SECTION} section"),
+        )),
+        _ => Err(RuntimeError::new(
+            ErrorKind::ManifestMismatch,
+            format!(
+                "the package has {} {MANIFEST_SECTION} sections; it must have exactly one",
+                top_level.len()
+            ),
+        )),
+    }
 }
 
 /// The package digest: `sha256:` and the SHA-256 of the whole file, in lowercase hex.
-pub fn digest(_package: &[u8]) -> String {
-    String::new()
+pub fn digest(package: &[u8]) -> String {
+    let mut digest = String::from("sha256:");
+    for byte in Sha256::digest(package) {
+        write!(digest, "{byte:02x}").expect("writing to a String never fails");
+    }
+    digest
 }
 
 /// Checks `manifest` and appends it to `component` as its manifest section, at the end.
 ///
 /// Refuses an invalid manifest as `invalid-manifest` or `unknown-permission`, and a component
 /// that already has a manifest section as `manifest-mismatch`.
-pub fn pack(_component: &[u8], _manifest: &[u8]) -> Result<Vec<u8>, RuntimeError> {
-    Err(RuntimeError::new(
-        ErrorKind::InvalidManifest,
-        "not implemented yet",
-    ))
+pub fn pack(component: &[u8], manifest: &[u8]) -> Result<Vec<u8>, RuntimeError> {
+    Manifest::parse(manifest)?;
+    match manifest_section(component) {
+        Err(error) if error.kind() == ErrorKind::NoManifest => {}
+        Ok(_) => {
+            return Err(RuntimeError::new(
+                ErrorKind::ManifestMismatch,
+                format!("the component already has a {MANIFEST_SECTION} section"),
+            ));
+        }
+        Err(error) => return Err(error),
+    }
+
+    // A custom section: its id, the size of what follows, the name's length and bytes, then
+    // the payload as it is.
+    let mut contents = Vec::with_capacity(MANIFEST_SECTION.len() + manifest.len() + 1);
+    leb128(MANIFEST_SECTION.len(), &mut contents);
+    contents.extend_from_slice(MANIFEST_SECTION.as_bytes());
+    contents.extend_from_slice(manifest);
+    let mut package = Vec::with_capacity(component.len() + contents.len() + 6);
+    package.extend_from_slice(component);
+    package.push(CUSTOM_SECTION_ID);
+    leb128(contents.len(), &mut package);
+    package.extend_from_slice(&contents);
+    Ok(package)
+}
+
+/// Appends `value` in unsigned LEB128, the binary format's encoding of sizes.
+fn leb128(mut value: usize, out: &mut Vec<u8>) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            out.push(byte);
+            return;
+        }
+        out.push(byte | 0x80);
+    }
 }
 
 #[cfg(test)]
@@ -42,6 +136,14 @@ mod tests {
     use super::*;
 
     const MANIFEST: &str = r#"{"manifest_version":1,"id":"local/probe","version":"1.0.0","author":"A","permissions":[],"login_providers":[]}"#;
+
+    /// [`MANIFEST`] requesting `permission`, required.
+    fn manifest_requesting(permission: &str) -> String {
+        MANIFEST.replace(
+            r#""permissions":[]"#,
+            &format!(r#""permissions":[{{"name":"{permission}","required":true}}]"#),
+        )
+    }
 
     /// `text` as a WAT string literal.
     fn wat_string(text: &str) -> String {
@@ -97,7 +199,7 @@ mod tests {
         let package = component(&format!(
             "{} {}",
             manifest_field(MANIFEST),
-            manifest_field(&MANIFEST.replace("[]}", "[{\"name\":\"log\",\"required\":true}]}"))
+            manifest_field(&manifest_requesting("log"))
         ));
         assert_refused(&package, ErrorKind::ManifestMismatch);
 
@@ -186,7 +288,7 @@ mod tests {
         let error = pack(&bare, b"{}").expect_err("an empty object");
         assert_eq!(error.kind(), ErrorKind::InvalidManifest);
 
-        let telepathy = MANIFEST.replace("[]}", "[{\"name\":\"telepathy\",\"required\":true}]}");
+        let telepathy = manifest_requesting("telepathy");
         let error = pack(&bare, telepathy.as_bytes()).expect_err("an unknown permission");
         assert_eq!(error.kind(), ErrorKind::UnknownPermission);
 
