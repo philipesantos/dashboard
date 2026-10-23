@@ -119,3 +119,29 @@ pub fn temp_grants() -> (TempDir, PathBuf) {
     let path = dir.path().join("grants.json");
     (dir, path)
 }
+
+/// `package` with `payload` appended as one more manifest section, unchecked, as a hostile
+/// author could write it.
+pub fn append_manifest_section(package: &[u8], payload: &[u8]) -> Vec<u8> {
+    fn leb128(mut value: usize, out: &mut Vec<u8>) {
+        loop {
+            let byte = (value & 0x7f) as u8;
+            value >>= 7;
+            if value == 0 {
+                out.push(byte);
+                return;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+    let name = runtime::package::MANIFEST_SECTION.as_bytes();
+    let mut contents = Vec::new();
+    leb128(name.len(), &mut contents);
+    contents.extend_from_slice(name);
+    contents.extend_from_slice(payload);
+    let mut appended = package.to_vec();
+    appended.push(0);
+    leb128(contents.len(), &mut appended);
+    appended.extend_from_slice(&contents);
+    appended
+}

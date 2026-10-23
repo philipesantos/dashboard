@@ -1,8 +1,10 @@
-//! The hostile-plugin suite, the security gate of Phase 1 (SC-001, Principle VIII).
+//! The hostile-plugin suite, the security gate of Phases 1 and 2 (Principle VIII).
 //!
-//! Each case must be refused or stopped with the error kind that names its rule
-//! (`specs/001-plugin-runtime/data-model.md`, Hostile-plugin case), and a well-behaved plugin
-//! must render normally right after it, on the same runtime (acceptance scenario 4).
+//! Each case must be refused or stopped with the error kind that names its rule, and a
+//! well-behaved plugin must render normally right after it, on the same runtime. The cases of
+//! feature 001 come first (`specs/001-plugin-runtime/data-model.md`, Hostile-plugin case), then
+//! those of feature 002, one per rule of its FR-016 (`specs/002-plugin-permissions/data-model.md`,
+//! Hostile-plugin cases).
 
 mod common;
 
@@ -10,10 +12,13 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use common::{TEST_ORIGIN, approved, fixture};
-use runtime::grants::GrantStore;
+use common::{TEST_ORIGIN, append_manifest_section, approve, approved, fixture, manifest};
+use runtime::grants::{Entry, GrantStore};
+use runtime::manifest::PluginId;
+use runtime::package::pack;
 use runtime::{ErrorKind, Limits, Plugin, RenderReport, Runtime, RuntimeError};
 use serde_json::json;
+use tempfile::TempDir;
 
 /// A render still running after this means a limit failed: the test fails instead of hanging.
 const WATCHDOG: Duration = Duration::from_secs(30);
@@ -279,5 +284,354 @@ fn plugin_text_cannot_imitate_the_host() {
         report.logs[0].message,
         r"ok\n[runtime] 0 log messages dropped"
     );
+    assert_host_still_works(&runtime);
+}
+
+// Feature 002: the permission cases. Each is a setup, which approves what the case needs, and an
+// act, which loads and renders and must be refused or contained; `grant_record_untouched` runs
+// every act again against a file-backed record that must not change.
+
+/// The origin of the second file in `same-id-other-origin`.
+const OTHER_ORIGIN: &str = "test://elsewhere";
+
+struct PermissionCase {
+    name: &'static str,
+    setup: fn(&GrantStore),
+    act: fn(&Runtime, &Arc<GrantStore>),
+}
+
+/// The `probe` fixture packed with a manifest for `local/probe`.
+fn probe(version: &str, permissions: &[(&str, bool)]) -> Vec<u8> {
+    pack(
+        &fixture("probe"),
+        manifest("local/probe", version, permissions).as_bytes(),
+    )
+    .expect("the manifest is valid")
+}
+
+fn load_from(
+    runtime: &Runtime,
+    package: &[u8],
+    origin: &str,
+    grants: &Arc<GrantStore>,
+) -> Result<Arc<Plugin>, RuntimeError> {
+    runtime
+        .load(package, origin, Arc::clone(grants))
+        .map(Arc::new)
+}
+
+/// Asserts that loading `package` from the test origin is refused with `kind`.
+fn assert_refused(
+    runtime: &Runtime,
+    package: &[u8],
+    grants: &Arc<GrantStore>,
+    kind: ErrorKind,
+) -> RuntimeError {
+    match load_from(runtime, package, TEST_ORIGIN, grants) {
+        Ok(_) => panic!("loaded, but it must be refused with {kind}"),
+        Err(error) => {
+            assert_eq!(error.kind(), kind, "{error}");
+            error
+        }
+    }
+}
+
+fn probe_entry(grants: &GrantStore) -> Option<Entry> {
+    let id = PluginId::parse("local/probe").expect("a valid id");
+    grants.entry(&id).expect("the record is readable")
+}
+
+fn no_setup(_: &GrantStore) {}
+
+/// FR-001: a package without a manifest.
+const NO_MANIFEST: PermissionCase = PermissionCase {
+    name: "no-manifest",
+    setup: no_setup,
+    act: |runtime, grants| {
+        assert_refused(runtime, &fixture("probe"), grants, ErrorKind::NoManifest);
+    },
+};
+
+/// FR-003: manifests that break the schema, refused naming the field.
+const INVALID_MANIFEST: PermissionCase = PermissionCase {
+    name: "invalid-manifest",
+    setup: no_setup,
+    act: |runtime, grants| {
+        let unknown_field = manifest("local/probe", "1.0.0", &[("log", true)]).replacen(
+            '{',
+            r#"{"homepage":"https://example.com","#,
+            1,
+        );
+        let uppercase_id = manifest("local/Probe", "1.0.0", &[("log", true)]);
+        for (payload, field) in [(unknown_field, "homepage"), (uppercase_id, "id")] {
+            let package = append_manifest_section(&fixture("probe"), payload.as_bytes());
+            let error = assert_refused(runtime, &package, grants, ErrorKind::InvalidManifest);
+            assert!(error.detail().contains(field), "{error}");
+        }
+    },
+};
+
+/// FR-004: two manifests, so a tool and the host could read different ones.
+const TWO_MANIFESTS: PermissionCase = PermissionCase {
+    name: "two-manifests",
+    setup: no_setup,
+    act: |runtime, grants| {
+        let second = manifest("local/probe", "1.0.0", &[("log", true)]);
+        let package = append_manifest_section(&probe("1.0.0", &[]), second.as_bytes());
+        assert_refused(runtime, &package, grants, ErrorKind::ManifestMismatch);
+    },
+};
+
+/// FR-004: the only manifest inside a nested module, where a tool could miss it.
+const NESTED_MANIFEST: PermissionCase = PermissionCase {
+    name: "nested-manifest",
+    setup: no_setup,
+    act: |runtime, grants| {
+        let payload = manifest("local/probe", "1.0.0", &[])
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        let package = wat::parse_str(format!(
+            r#"(component (core module (@custom "dashboard-manifest" "{payload}")))"#
+        ))
+        .expect("valid WAT");
+        assert_refused(runtime, &package, grants, ErrorKind::ManifestMismatch);
+    },
+};
+
+/// FR-008: a permission this host does not know.
+const UNKNOWN_PERMISSION: PermissionCase = PermissionCase {
+    name: "unknown-permission",
+    setup: no_setup,
+    act: |runtime, grants| {
+        let payload = manifest("local/quiet", "1.0.0", &[("telepathy", true)]);
+        let package = append_manifest_section(&fixture("quiet"), payload.as_bytes());
+        let error = assert_refused(runtime, &package, grants, ErrorKind::UnknownPermission);
+        assert_eq!(error.names(), ["telepathy"]);
+    },
+};
+
+/// FR-006: an import the manifest does not declare, even with an approval.
+const UNDECLARED_CAPABILITY: PermissionCase = PermissionCase {
+    name: "undeclared-capability",
+    setup: |grants| approve(grants, &probe("1.0.0", &[]), TEST_ORIGIN),
+    act: |runtime, grants| {
+        let error = assert_refused(
+            runtime,
+            &probe("1.0.0", &[]),
+            grants,
+            ErrorKind::NotDeclared,
+        );
+        assert_eq!(error.names(), ["log"]);
+    },
+};
+
+/// FR-007: a required permission nobody granted.
+const UNGRANTED_CAPABILITY: PermissionCase = PermissionCase {
+    name: "ungranted-capability",
+    setup: no_setup,
+    act: |runtime, grants| {
+        let package = probe("1.0.0", &[("log", true)]);
+        let error = assert_refused(runtime, &package, grants, ErrorKind::NotGranted);
+        assert_eq!(error.names(), ["log"]);
+    },
+};
+
+/// FR-011: a new version that quietly makes an optional permission required.
+const ESCALATING_UPDATE: PermissionCase = PermissionCase {
+    name: "escalating-update",
+    setup: |grants| approve(grants, &probe("1.0.0", &[("log", false)]), TEST_ORIGIN),
+    act: |runtime, grants| {
+        let first = load_from(
+            runtime,
+            &probe("1.0.0", &[("log", false)]),
+            TEST_ORIGIN,
+            grants,
+        )
+        .expect("the approved version loads");
+        assert_eq!(
+            render(&first, "{}").result.expect("it renders"),
+            json!({"log": "not-granted"})
+        );
+
+        let before = probe_entry(grants);
+        let update = probe("1.1.0", &[("log", true)]);
+        let error = assert_refused(runtime, &update, grants, ErrorKind::NeedsNewApproval);
+        assert_eq!(error.names(), ["log"]);
+        assert_eq!(probe_entry(grants), before, "the approval is unchanged");
+    },
+};
+
+/// FR-019: an optional capability that is off gives the plugin nothing.
+const OPTIONAL_OFF: PermissionCase = PermissionCase {
+    name: "optional-off",
+    setup: |grants| approve(grants, &probe("1.0.0", &[("log", false)]), TEST_ORIGIN),
+    act: |runtime, grants| {
+        let plugin = load_from(
+            runtime,
+            &probe("1.0.0", &[("log", false)]),
+            TEST_ORIGIN,
+            grants,
+        )
+        .expect("an optional permission that is off does not stop the plugin");
+        let report = render(&plugin, "{}");
+        assert_eq!(
+            report.result.expect("it renders"),
+            json!({"log": "not-granted"})
+        );
+        assert!(
+            report.logs.is_empty(),
+            "the stand-in wrote {:?}",
+            report.logs
+        );
+        assert_eq!(report.dropped_logs, 0);
+    },
+};
+
+/// FR-020: another file that claims an approved plugin's id, byte for byte the same.
+const SAME_ID_OTHER_ORIGIN: PermissionCase = PermissionCase {
+    name: "same-id-other-origin",
+    setup: |grants| approve(grants, &probe("1.0.0", &[("log", true)]), TEST_ORIGIN),
+    act: |runtime, grants| {
+        let before = probe_entry(grants);
+        match load_from(
+            runtime,
+            &probe("1.0.0", &[("log", true)]),
+            OTHER_ORIGIN,
+            grants,
+        ) {
+            Ok(_) => panic!("a package from another origin got the approval's grants"),
+            Err(error) => {
+                assert_eq!(error.kind(), ErrorKind::NotGranted, "{error}");
+                assert!(error.detail().contains(TEST_ORIGIN), "{error}");
+            }
+        }
+        assert_eq!(probe_entry(grants), before, "the approval is unchanged");
+    },
+};
+
+/// The probe with `log` granted, for `grant_record_untouched`: a plugin that uses a granted
+/// capability, several times.
+const PROBE: PermissionCase = PermissionCase {
+    name: "probe",
+    setup: |grants| approve(grants, &probe("1.0.0", &[("log", true)]), TEST_ORIGIN),
+    act: |runtime, grants| {
+        let plugin = load_from(
+            runtime,
+            &probe("1.0.0", &[("log", true)]),
+            TEST_ORIGIN,
+            grants,
+        )
+        .expect("the approved probe loads");
+        for _ in 0..3 {
+            assert_eq!(
+                render(&plugin, "{}").result.expect("it renders"),
+                json!({"log": "ok"})
+            );
+        }
+    },
+};
+
+const PERMISSION_CASES: [&PermissionCase; 11] = [
+    &NO_MANIFEST,
+    &INVALID_MANIFEST,
+    &TWO_MANIFESTS,
+    &NESTED_MANIFEST,
+    &UNKNOWN_PERMISSION,
+    &UNDECLARED_CAPABILITY,
+    &UNGRANTED_CAPABILITY,
+    &ESCALATING_UPDATE,
+    &OPTIONAL_OFF,
+    &SAME_ID_OTHER_ORIGIN,
+    &PROBE,
+];
+
+/// Runs a case against an in-memory record, then a well-behaved plugin on the same runtime.
+fn run_case(case: &PermissionCase) {
+    let runtime = runtime();
+    let grants = Arc::new(GrantStore::in_memory());
+    (case.setup)(&grants);
+    (case.act)(&runtime, &grants);
+    assert_host_still_works(&runtime);
+}
+
+#[test]
+fn a_package_without_a_manifest_is_refused() {
+    run_case(&NO_MANIFEST);
+}
+
+#[test]
+fn a_manifest_that_breaks_the_schema_is_refused_naming_the_field() {
+    run_case(&INVALID_MANIFEST);
+}
+
+#[test]
+fn a_package_with_two_manifests_is_refused() {
+    run_case(&TWO_MANIFESTS);
+}
+
+#[test]
+fn a_manifest_in_a_nested_module_is_refused() {
+    run_case(&NESTED_MANIFEST);
+}
+
+#[test]
+fn an_unknown_permission_is_refused_naming_it() {
+    run_case(&UNKNOWN_PERMISSION);
+}
+
+#[test]
+fn an_undeclared_import_is_refused_even_when_approved() {
+    run_case(&UNDECLARED_CAPABILITY);
+}
+
+#[test]
+fn a_required_permission_nobody_granted_is_refused() {
+    run_case(&UNGRANTED_CAPABILITY);
+}
+
+#[test]
+fn an_update_that_requires_more_is_refused_and_changes_nothing() {
+    run_case(&ESCALATING_UPDATE);
+}
+
+#[test]
+fn an_optional_capability_that_is_off_gives_nothing() {
+    run_case(&OPTIONAL_OFF);
+}
+
+#[test]
+fn another_file_with_an_approved_id_gets_none_of_its_grants() {
+    run_case(&SAME_ID_OTHER_ORIGIN);
+}
+
+/// FR-009, FR-010: no plugin, well-behaved or hostile, changes the grant record by running.
+/// Each case runs against a record in a file; after its loads and renders, the file holds the
+/// same bytes and the store the same generation as after its setup.
+#[test]
+fn grant_record_untouched() {
+    let runtime = runtime();
+    for case in PERMISSION_CASES {
+        let dir = TempDir::new().expect("a temporary directory");
+        let path = dir.path().join("grants.json");
+        let grants = Arc::new(GrantStore::open(&path));
+        (case.setup)(&grants);
+        let bytes = std::fs::read(&path).ok();
+        let generation = grants.generation();
+
+        (case.act)(&runtime, &grants);
+
+        assert_eq!(
+            std::fs::read(&path).ok(),
+            bytes,
+            "{}: the record changed",
+            case.name
+        );
+        assert_eq!(
+            grants.generation(),
+            generation,
+            "{}: the store changed",
+            case.name
+        );
+    }
     assert_host_still_works(&runtime);
 }
