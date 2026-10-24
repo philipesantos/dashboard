@@ -13,15 +13,16 @@ errors with exit 2.
 
 ## `runtime permissions <plugin> …`
 
-As in feature 003, plus, for a plugin that declares storage, one line after `permissions:` and the
-`approval digest:` line:
+As in feature 003, plus, for a plugin that declares storage, one line after the permissions and
+the `approval digest:` line:
 
 ```text
 plugin: local/update-counter 0.1.0
 author: Dashboard contributors
 contract: v1 (1.2.0)
 approved: version 0.1.0 (sha256:51c0…) from /home/ada/dashboard/target/plugins/update-counter.wasm
-permissions: storage (required, granted)
+permissions:
+  storage  required  granted
 storage: quota 65536 bytes (64 KiB), approved up to 65536 bytes, used 412 bytes
 login providers: none
 approval digest: sha256:7e2a…

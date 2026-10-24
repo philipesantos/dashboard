@@ -19,6 +19,11 @@
 //! connectors in `--connectors <dir>`, which only this tool reads: it runs the runtime in
 //! development mode.
 //!
+//! For widgets with storage (`specs/004-plugin-storage/contracts/cli.md`): `permissions` shows
+//! the quota declared, the quota approved and the store's usage, with the approval digest that
+//! `approve --expect` needs, and `update` says what the update did with its store. Stores live
+//! in `<data dir>/storage/`.
+//!
 //! The tool is the host's control in this phase: it works in development mode only, on local
 //! package files, with the development grant record (`--grants <path>`, or the default one in
 //! the system's data directory). A package's origin is its file's canonical path, and an
@@ -347,11 +352,23 @@ fn update(options: &Options) -> ExitCode {
                 escape(manifest.id().as_str()),
                 escape(manifest.version())
             );
-            let calls = report.calls;
-            println!(
-                "calls: {} ({} not granted, {} refused, {} failed), {} bytes received",
-                calls.calls, calls.not_granted, calls.refused, calls.failed, calls.received_bytes
-            );
+            if !manifest.connectors().is_empty() {
+                let calls = report.calls;
+                println!(
+                    "calls: {} ({} not granted, {} refused, {} failed), {} bytes received",
+                    calls.calls,
+                    calls.not_granted,
+                    calls.refused,
+                    calls.failed,
+                    calls.received_bytes
+                );
+            }
+            if let Some(storage) = report.storage {
+                println!(
+                    "storage: {} calls, {} writes kept, used {} of {} bytes",
+                    storage.calls, storage.writes_kept, storage.used_bytes, storage.quota_bytes
+                );
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -533,7 +550,12 @@ fn permissions(options: &Options) -> ExitCode {
         Err(error) => return refused(&error),
     };
     let entry = status.approval.clone().filter(|_| status.this_origin);
-    print!("{}", describe(&checked, &status, entry.as_ref()));
+    let used = checked.manifest().storage().map(|_| {
+        target
+            .runtime
+            .storage_used_bytes(checked.manifest().id(), &target.origin)
+    });
+    print!("{}", describe(&checked, &status, entry.as_ref(), used));
     ExitCode::SUCCESS
 }
 
@@ -543,6 +565,7 @@ fn describe(
     checked: &CheckedPackage,
     status: &Status,
     entry: Option<&runtime::grants::Entry>,
+    used: Option<Result<u64, runtime::RuntimeError>>,
 ) -> String {
     let manifest = checked.manifest();
     let mut text = format!(
@@ -586,6 +609,9 @@ fn describe(
             ));
         }
     }
+    if let (Some(storage), Some(used)) = (manifest.storage(), used) {
+        text.push_str(&describe_storage(storage, entry, used));
+    }
     let declares_connectors = !manifest.connectors().is_empty();
     if declares_connectors {
         text.push_str(&describe_connectors(checked, entry));
@@ -601,10 +627,54 @@ fn describe(
         ));
     }
     // The digest of what `approve` would grant, only when it could grant it
-    if declares_connectors && checked.refused_connectors().is_empty() {
+    if (declares_connectors || manifest.storage().is_some())
+        && checked.refused_connectors().is_empty()
+    {
         text.push_str(&format!("approval digest: {}\n", checked.approval_digest()));
     }
     text
+}
+
+/// The `storage:` line of `permissions`: the quota declared, the one the last approval showed,
+/// and the store's usage (`specs/004-plugin-storage/contracts/cli.md`).
+fn describe_storage(
+    storage: runtime::manifest::StorageRequest,
+    entry: Option<&runtime::grants::Entry>,
+    used: Result<u64, runtime::RuntimeError>,
+) -> String {
+    let approved = entry.and_then(|entry| entry.storage_quota_bytes);
+    let approval = match approved {
+        Some(approved) => format!("approved up to {approved} bytes"),
+        None => "not approved".to_owned(),
+    };
+    let used = match used {
+        Ok(bytes) => format!("used {bytes} bytes"),
+        Err(error) => format!("usage unknown ({error})"),
+    };
+    let above = match approved {
+        Some(approved) if storage.quota_bytes > approved => {
+            " (above the approved quota: approve again)"
+        }
+        _ => "",
+    };
+    format!(
+        "storage: quota {} bytes{}, {approval}, {used}{above}\n",
+        storage.quota_bytes,
+        size_in_units(storage.quota_bytes)
+    )
+}
+
+/// ` (64 KiB)` or ` (8 MiB)` for a whole number of either, otherwise nothing.
+fn size_in_units(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    if bytes >= MIB && bytes.is_multiple_of(MIB) {
+        format!(" ({} MiB)", bytes / MIB)
+    } else if bytes >= KIB && bytes.is_multiple_of(KIB) {
+        format!(" ({} KiB)", bytes / KIB)
+    } else {
+        String::new()
+    }
 }
 
 /// The `connectors` section of `permissions` (contracts/cli.md): each connector, where it comes
@@ -824,9 +894,11 @@ fn approve(options: &Options) -> ExitCode {
         Err(status) => return status,
     };
     let manifest = checked.manifest();
-    if !manifest.connectors().is_empty() && options.expect.is_none() {
+    if (!manifest.connectors().is_empty() || manifest.storage().is_some())
+        && options.expect.is_none()
+    {
         return usage_error(&format!(
-            "approve needs --expect <digest> for a widget that declares connectors: run `runtime permissions {}` and give the approval digest it prints",
+            "approve needs --expect <digest> for a widget that declares connectors or storage: run `runtime permissions {}` and give the approval digest it prints",
             options.plugin
         ));
     }
@@ -845,6 +917,9 @@ fn approve(options: &Options) -> ExitCode {
     );
     for permission in &approval.required {
         println!("granted: {}", escape(permission));
+    }
+    if let Some(storage) = manifest.storage() {
+        println!("storage: quota {} bytes", storage.quota_bytes);
     }
     if !checked.connectors().is_empty() {
         let connectors: Vec<String> = checked

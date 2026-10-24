@@ -53,6 +53,40 @@ pub(crate) fn storage_dir(data_dir: &Path) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// The usage of the store of `id` from `origin` in `data_dir`, read without creating anything:
+/// 0 when it has none yet. For `runtime permissions`.
+pub(crate) fn used_bytes(
+    data_dir: &Path,
+    id: &str,
+    origin: &str,
+    limits: &Limits,
+) -> Result<u64, String> {
+    let file = data_dir.join(STORAGE_DIR).join(store_file_name(id, origin));
+    if !file.exists() {
+        return Ok(0);
+    }
+    let identity = Identity {
+        id: id.to_owned(),
+        origin: origin.to_owned(),
+    };
+    match connection::open(&file, Mode::Show, Some(&identity), &read_settings(limits)) {
+        Ok(None) => Ok(0),
+        Ok(Some(connection)) => connection.usage().map_err(|error| describe(&error)),
+        Err(error) => Err(describe(&error)),
+    }
+}
+
+/// The settings of a connection that only reads, outside a run: no file cap to speak of, and the
+/// longest wait for another process.
+fn read_settings(limits: &Limits) -> Settings {
+    Settings {
+        max_name_bytes: limits.max_storage_name_bytes,
+        max_value_bytes: limits.max_storage_value_bytes,
+        file_cap_bytes: 0,
+        busy_timeout: limits.max_storage_busy_wait,
+    }
+}
+
 /// Which store a linked plugin reaches, computed at link time and never from a call
 /// (`data-model.md`, Store binding).
 #[derive(Debug, Clone, PartialEq, Eq)]

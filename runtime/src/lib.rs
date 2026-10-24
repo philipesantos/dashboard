@@ -541,6 +541,18 @@ impl Runtime {
         RequestLog::new(self.options.data_dir(), &self.limits).read_last(n, plugin)
     }
 
+    /// The usage of the store of `id` from `origin`, in bytes: 0 when it has none yet. Reads
+    /// the store without changing or creating anything; refused as `storage-failed` when the
+    /// store cannot be read, naming why.
+    pub fn storage_used_bytes(
+        &self,
+        id: &manifest::PluginId,
+        origin: &str,
+    ) -> Result<u64, RuntimeError> {
+        storage::used_bytes(self.options.data_dir(), id.as_str(), origin, &self.limits)
+            .map_err(|reason| RuntimeError::new(ErrorKind::StorageFailed, reason))
+    }
+
     /// Checks a plugin package without its grants: size, manifest, compilation, contract and
     /// imports (load steps 1–6). A failure stops at the first step that refuses the package,
     /// with that step's error kind.
