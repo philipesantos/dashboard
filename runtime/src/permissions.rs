@@ -161,8 +161,6 @@ impl Interfaces {
             .map(String::as_str)
     }
 
-    // Used by the exact-name export lookup (specs/003-plugin-connectors/tasks.md, T026)
-    #[allow(dead_code)]
     pub(crate) fn renderer(&self) -> Option<&str> {
         self.export(RENDERER)
     }

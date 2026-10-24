@@ -39,6 +39,27 @@ fn packed(wat: &str) -> Vec<u8> {
     pack(&component, manifest("local/test", "0.1.0", &[]).as_bytes()).unwrap()
 }
 
+/// SC-006, research R11: a plugin built from the frozen 1.0.0 contract loads, links and renders
+/// exactly as before on the 1.1.0 host, its imports matched by compatible version and its
+/// renderer found by the name it exports.
+#[test]
+fn a_contract_1_0_0_plugin_runs_on_the_1_1_0_host() {
+    let runtime = runtime();
+    let plugin = load(&runtime, &fixture("hello-widget"));
+    assert_eq!(plugin.contract(), Contract::V1);
+    assert_eq!(
+        plugin.contract_version().version,
+        semver::Version::new(1, 0, 0)
+    );
+    assert_eq!(plugin.contract_version().display(), "v1 (1.0.0)");
+    let report = plugin.render(r#"{"name":"Ada"}"#);
+    assert_eq!(
+        report.result.expect("hello-widget renders"),
+        json!({"title": "Hello", "text": "Hello, Ada!"})
+    );
+    assert_eq!(report.logs.len(), 1);
+}
+
 #[test]
 fn hello_widget_renders_its_greeting_and_one_log() {
     let runtime = runtime();

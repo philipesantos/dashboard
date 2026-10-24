@@ -43,7 +43,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use wasmtime::component::{Component, Linker};
+use wasmtime::component::{Component, ComponentExportIndex, InstancePre, Linker};
 use wasmtime::{Config, Engine, Store, Trap};
 
 use grants::GrantStore;
@@ -64,10 +64,13 @@ pub(crate) mod v0 {
     wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
 }
 
-/// Bindings for the `widget` world of plugin contract v1 (`wit/v1`, `dashboard:widget@1.1.0`).
-/// Wasmtime matches the imports and exports of 1.0.0 plugins against them by compatible version.
+/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.1.0`), from its widest world,
+/// `connected-widget`, for the host side of every interface. Wasmtime matches the imports of
+/// plugins built for an older minor against them by compatible version. Exports are looked up
+/// one by one, by the exact names each plugin has, since a render-only widget has no `updater`
+/// (`specs/003-plugin-connectors/research.md`, R11).
 pub(crate) mod v1 {
-    wasmtime::component::bindgen!({ path: "../wit/v1", world: "widget" });
+    wasmtime::component::bindgen!({ path: "../wit/v1", world: "connected-widget" });
 }
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
@@ -248,7 +251,27 @@ struct Linked {
 /// A plugin linked for its contract version, ready to instantiate.
 enum Prepared {
     V0(v0::WidgetPre<HostState>),
-    V1(v1::WidgetPre<HostState>),
+    V1(V1Pre),
+}
+
+/// A contract v1 plugin, linked, with its exports found by their exact names.
+struct V1Pre {
+    pre: InstancePre<HostState>,
+    render: ComponentExportIndex,
+    /// The `update` function, for a plugin that exports `updater`; looked up once loading runs
+    /// updates (specs/003-plugin-connectors/tasks.md, T035).
+    #[allow(dead_code)]
+    update: Option<ComponentExportIndex>,
+}
+
+/// The function `function` of the exported interface `interface`.
+fn export_function(
+    component: &Component,
+    interface: &str,
+    function: &str,
+) -> Option<ComponentExportIndex> {
+    let instance = component.get_export_index(None, interface)?;
+    component.get_export_index(Some(&instance), function)
 }
 
 impl Runtime {
@@ -431,7 +454,23 @@ fn prepare(
         .map_err(mismatch)?;
     Ok(match plan.contract {
         Contract::V0 => Prepared::V0(v0::WidgetPre::new(pre).map_err(mismatch)?),
-        Contract::V1 => Prepared::V1(v1::WidgetPre::new(pre).map_err(mismatch)?),
+        Contract::V1 => {
+            let interfaces = &package.interfaces;
+            let render = interfaces
+                .renderer()
+                .and_then(|renderer| export_function(&package.component, renderer, "render"))
+                .ok_or_else(|| {
+                    RuntimeError::new(ErrorKind::ContractMismatch, "exports no render function")
+                })?;
+            let update = interfaces
+                .updater()
+                .and_then(|updater| export_function(&package.component, updater, "update"));
+            Prepared::V1(V1Pre {
+                pre,
+                render,
+                update,
+            })
+        }
     })
 }
 
@@ -553,10 +592,11 @@ impl Plugin {
                     .dashboard_widget_renderer()
                     .call_render(&mut *store, config)
             }),
-            Prepared::V1(pre) => pre.instantiate(&mut *store).and_then(|instance| {
+            Prepared::V1(v1) => v1.pre.instantiate(&mut *store).and_then(|instance| {
                 instance
-                    .dashboard_widget_renderer()
-                    .call_render(&mut *store, config)
+                    .get_typed_func::<(&str,), (Result<String, String>,)>(&mut *store, &v1.render)?
+                    .call(&mut *store, (config,))
+                    .map(|(result,)| result)
             }),
         };
         let content = rendered
