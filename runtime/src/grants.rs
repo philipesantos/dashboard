@@ -9,6 +9,9 @@
 //! Version 2 (`specs/003-plugin-connectors/data-model.md`) adds the connectors each approval
 //! covers: where each came from, its destinations and the digests of the operations the widget
 //! declares, so a change to any of them needs a new approval.
+//!
+//! Version 3 (`specs/004-plugin-storage/data-model.md`) adds the storage quota the last approval
+//! showed, so a later version that declares more needs the user again.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -25,17 +28,21 @@ use crate::error::{ErrorKind, RuntimeError};
 use crate::manifest::{Manifest, PluginId};
 use crate::permissions;
 
-/// The record format this host writes. It also reads version 1, as version 2 with no
-/// connectors, and writes it back as version 2.
-pub const RECORD_VERSION: u64 = 2;
+/// The record format this host writes. It also reads versions 1 and 2, as version 3 with no
+/// connectors (version 1) and no storage quota, and writes them back as version 3.
+pub const RECORD_VERSION: u64 = 3;
 /// The format of feature 002, still read.
 const RECORD_VERSION_1: u64 = 1;
+/// The format of feature 003, still read.
+const RECORD_VERSION_2: u64 = 2;
 
 /// The app's directory inside the system's data directory. Provisional: it moves with the
 /// project's final name, before the first release.
 pub(crate) const APP_DIR: &str = "dev.philsantos.dashboard";
 /// The development record's file name.
 const RECORD_FILE: &str = "development-grants.json";
+/// The permission whose approval carries a quota.
+const STORAGE: &str = "storage";
 
 /// One plugin's approval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,8 +99,21 @@ impl Entry {
     /// or optional and on, a declared quota above the approved one, or none approved yet.
     /// `None` when the approval covers it.
     pub fn storage_change(&self, manifest: &Manifest) -> Option<String> {
-        let _ = manifest;
-        None
+        let declared = manifest.storage()?;
+        if !declared.required && !self.is_granted(STORAGE) {
+            return None;
+        }
+        match self.storage_quota_bytes {
+            Some(approved) if declared.quota_bytes <= approved => None,
+            Some(approved) => Some(format!(
+                "storage quota raised from {approved} to {} bytes",
+                declared.quota_bytes
+            )),
+            None => Some(format!(
+                "storage with a quota of {} bytes is not approved yet",
+                declared.quota_bytes
+            )),
+        }
     }
 
     /// What changed in `connectors` since this approval, for each required connector and each
@@ -157,8 +177,9 @@ pub struct ConnectorState {
 }
 
 /// The approval digest (`data-model.md`, Approval digest): `sha256:` and the hex SHA-256 of a
-/// canonical JSON of the package digest, the manifest's permissions and each declared
-/// connector's id, origin, version, `required`, destinations and operation digests. What
+/// canonical JSON of the package digest, the manifest's permissions, each declared connector's
+/// id, origin, version, `required`, destinations and operation digests, and the storage
+/// declaration when there is one. What
 /// `permissions` shows and `approve` grants carry the same one.
 pub fn approval_digest(
     package_digest: &str,
@@ -186,11 +207,19 @@ pub fn approval_digest(
             })
         })
         .collect();
-    let document = serde_json::json!({
+    let mut document = serde_json::json!({
         "package": package_digest,
         "permissions": permissions,
         "connectors": connectors,
     });
+    // Only when declared, so a widget without storage keeps the digest, and the kept data, it
+    // had (`specs/004-plugin-storage/data-model.md`, Approval digest)
+    if let Some(storage) = manifest.storage() {
+        document["storage"] = serde_json::json!({
+            "required": storage.required,
+            "quota_bytes": storage.quota_bytes,
+        });
+    }
     crate::connector::sha256(crate::connector::canonical(&document).as_bytes())
 }
 
@@ -249,7 +278,7 @@ impl GrantRecord {
             .get("record_version")
             .and_then(serde_json::Value::as_u64)
         {
-            Some(version @ (RECORD_VERSION_1 | RECORD_VERSION)) => version,
+            Some(version @ (RECORD_VERSION_1 | RECORD_VERSION_2 | RECORD_VERSION)) => version,
             Some(version) if version > RECORD_VERSION => {
                 return Err(format!(
                     "record_version {version} is newer than this host's {RECORD_VERSION}"
@@ -257,7 +286,7 @@ impl GrantRecord {
             }
             _ => {
                 return Err(format!(
-                    "record_version must be {RECORD_VERSION_1} or {RECORD_VERSION}"
+                    "record_version must be {RECORD_VERSION_1}, {RECORD_VERSION_2} or {RECORD_VERSION}"
                 ));
             }
         };
@@ -274,6 +303,11 @@ impl GrantRecord {
                     "{id} has connectors in a record of version {RECORD_VERSION_1}, which has none"
                 ));
             }
+            if version < RECORD_VERSION && entry.storage_quota_bytes.is_some() {
+                return Err(format!(
+                    "{id} has a storage quota in a record of version {version}, which has none"
+                ));
+            }
             for (connector, grant) in &entry.connectors {
                 if !grant.destinations.windows(2).all(|pair| pair[0] < pair[1]) {
                     return Err(format!(
@@ -282,7 +316,7 @@ impl GrantRecord {
                 }
             }
         }
-        // A version 1 record is version 2 with no connectors, and is written back as 2
+        // Older records are version 3 with no connectors or storage quota, written back as 3
         record.record_version = RECORD_VERSION;
         Ok(record)
     }
@@ -346,8 +380,9 @@ impl GrantStore {
         origin: &str,
         permission: &str,
     ) -> Result<bool, RuntimeError> {
-        let _ = (plugin, origin, permission);
-        Ok(false)
+        Ok(self
+            .entry(plugin)?
+            .is_some_and(|entry| entry.origin == origin && entry.is_granted(permission)))
     }
 
     /// Runs `commit` only while the record, read under its shared lock, grants `permission` to
@@ -361,8 +396,29 @@ impl GrantStore {
         permission: &str,
         commit: impl FnOnce() -> T,
     ) -> Result<Option<T>, RuntimeError> {
-        let _ = (plugin, origin, permission, commit);
-        Ok(None)
+        let granted = |record: &GrantRecord| {
+            record
+                .plugins
+                .get(plugin.as_str())
+                .is_some_and(|entry| entry.origin == origin && entry.is_granted(permission))
+        };
+        match &self.backing {
+            Backing::Memory(record) => {
+                let record = record.lock().unwrap_or_else(PoisonError::into_inner);
+                Ok(granted(&record).then(commit))
+            }
+            Backing::File(path) => {
+                match fs::metadata(path) {
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                    Err(error) => return Err(damaged(path, error)),
+                    Ok(_) => {}
+                }
+                // Held until `commit` returns: a change to the record waits for it
+                let _lock = lock(path, false)?;
+                let record = load(path)?;
+                Ok(granted(&record).then(commit))
+            }
+        }
     }
 
     /// The plugin's approval, if it has one, whatever its origin. Refused as `not-granted` when
@@ -407,6 +463,12 @@ impl GrantStore {
         origin: &str,
         digest: &str,
     ) -> Result<Approval, RuntimeError> {
+        if manifest.storage().is_some() {
+            return Err(RuntimeError::new(
+                ErrorKind::ApprovalChanged,
+                "a plugin that declares storage is approved only with the approval digest of what was shown, its quota included",
+            ));
+        }
         let required: Vec<String> = manifest
             .permissions()
             .iter()
@@ -454,7 +516,8 @@ impl GrantStore {
     /// now: anything that changed since it was shown is refused as `approval-changed`, granting
     /// nothing (FR-014). Each declared connector is recorded with its origin, destinations and
     /// operation digests; required ones are granted, and an optional one keeps its state when
-    /// nothing about it changed, and is off otherwise.
+    /// nothing about it changed, and is off otherwise. A plugin that declares storage is
+    /// approved here, with the quota shown recorded (feature 004).
     pub fn approve_connected(
         &self,
         manifest: &Manifest,
@@ -526,7 +589,8 @@ impl GrantStore {
                     approved_version: manifest.version().to_owned(),
                     approved_digest: digest.to_owned(),
                     connectors: grants,
-                    storage_quota_bytes: None,
+                    // The quota this approval showed, smaller or larger than before
+                    storage_quota_bytes: manifest.storage().map(|storage| storage.quota_bytes),
                 },
             );
             let replaced = previous
@@ -673,6 +737,27 @@ impl GrantStore {
             let entry = approved_entry(record, manifest.id(), origin)?;
             if entry.is_granted(permission) == on {
                 return Ok(((), false));
+            }
+            // Storage turned on with a quota the user did not approve needs the user again
+            if on
+                && permission == STORAGE
+                && let Some(declared) = manifest.storage()
+                && entry
+                    .storage_quota_bytes
+                    .is_none_or(|approved| declared.quota_bytes > approved)
+            {
+                let approved = entry.storage_quota_bytes.map_or_else(
+                    || "no storage quota is approved".to_owned(),
+                    |approved| format!("the approved quota is {approved} bytes"),
+                );
+                return Err(RuntimeError::with_names(
+                    ErrorKind::NeedsNewApproval,
+                    names(),
+                    Some(&format!(
+                        "it declares a quota of {} bytes and {approved}; approve the plugin again",
+                        declared.quota_bytes
+                    )),
+                ));
             }
             if on {
                 entry.granted.push(permission.to_owned());
@@ -2060,9 +2145,12 @@ mod tests {
             .storage_change(&stored_manifest(true, 4096))
             .expect("not approved yet");
         assert!(change.contains("4096"), "{change}");
-        // Optional storage that is off needs nothing; turned on, it does
+        // Optional storage that is off needs nothing; turned on, it does. A fresh record: an
+        // approval from the same origin keeps what is still declared and on
+        let store = GrantStore::in_memory();
         approve_stored(&store, &stored_manifest(false, 4096));
         let off = entry(&store, STORED).unwrap();
+        assert!(!off.is_granted("storage"));
         assert_eq!(off.storage_change(&stored_manifest(false, 131072)), None);
         let mut on = off.clone();
         on.granted = vec!["storage".to_owned()];

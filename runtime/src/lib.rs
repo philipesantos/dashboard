@@ -305,15 +305,16 @@ impl CheckedPackage {
     }
 
     /// The digest of everything an approval of this package covers (`data-model.md`, Approval
-    /// digest), which `approve` needs for a widget that declares a connector.
+    /// digest), which `approve` needs for a widget that declares a connector or storage.
     pub fn approval_digest(&self) -> String {
         grants::approval_digest(&self.digest, &self.manifest, &self.connector_states())
     }
 
     /// Approves this package from `origin`: its required permissions and, for a widget that
-    /// declares connectors, every connector, only when `expected` is its approval digest
-    /// (FR-014). A widget with connectors and no expected digest is refused as
-    /// `approval-changed`, granting nothing; the CLI asks for `--expect` before.
+    /// declares connectors or storage, every connector and the storage quota, only when
+    /// `expected` is its approval digest (FR-014; feature 004, FR-008). Such a widget with no
+    /// expected digest is refused as `approval-changed`, granting nothing; the CLI asks for
+    /// `--expect` before.
     pub fn approve(
         &self,
         grants: &GrantStore,
@@ -323,13 +324,13 @@ impl CheckedPackage {
         if let Some((_, error)) = self.refused_connectors.first() {
             return Err(error.clone());
         }
-        if self.connectors.is_empty() {
+        if self.connectors.is_empty() && self.manifest.storage().is_none() {
             return grants.approve(&self.manifest, origin, &self.digest);
         }
         let Some(expected) = expected else {
             return Err(RuntimeError::new(
                 ErrorKind::ApprovalChanged,
-                "a widget that declares connectors is approved only with the approval digest of what was shown",
+                "a widget that declares connectors or storage is approved only with the approval digest of what was shown",
             ));
         };
         grants.approve_connected(
