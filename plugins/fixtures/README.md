@@ -19,4 +19,5 @@ a plugin from [`examples/hello-widget`](../examples/hello-widget) instead.
   `render`, the storage calls its configuration lists and returns every answer; it can spin
   between calls, end its update with an error, a panic, an endless loop or a memory grab after
   them, and return output that is not JSON or of a given size. Built without a manifest; each
-  test packs it with its own.
+  test packs it with its own. The storage cases of the hostile suite run on it
+  ([`plugins/hostile/README.md`](../hostile/README.md#storage-cases)).

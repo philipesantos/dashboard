@@ -18,6 +18,7 @@ normally. They are security test fixtures and are never shipped.
 | `state-leak` | Counts its calls in a static | Renders `{"calls":1}` every time, also across two loads |
 | `out-of-bounds` | Reads far beyond its own memory | `plugin-crashed` |
 | `log-spoof` | Logs and errors with line breaks and terminal escapes | `plugin-error`, with every text escaped |
+| `storage-file` | Declares storage, then opens a store file with `std::fs` | `capability-refused`, listing `wasi:filesystem/*` |
 
 The [data model](../../specs/001-plugin-runtime/data-model.md#hostile-plugin-case) is the
 source of these outcomes, and [`docs/threat-model.md`](../../docs/threat-model.md) maps them to
@@ -96,10 +97,50 @@ runtime. Nothing reaches the internet.
 | `connector-table` (white box) | FR-015 | The table holds exactly the granted connectors; the stand-in when none |
 | `catalog-reserves` (white box) | FR-005 | A catalog connector outside its reserves is refused |
 
+## Storage cases
+
+The cases of [feature 004](../../specs/004-plugin-storage/data-model.md#hostile-cases-fr-017)
+are the storage case of the Phase 2 gate: no plugin reads or changes another plugin's storage,
+or anything outside its own store. They live in
+[`runtime/tests/hostile/storage.rs`](../../runtime/tests/hostile/storage.rs) and pack the
+fixture [`store-probe`](../fixtures/store-probe), which makes the storage calls its
+configuration lists, with each case's manifest; only `storage-file` is a crate of its own. Every
+case runs between two snapshots of the data directory (`host-records-untouched`): the grant
+record, kept data, the request log and every other store must come out byte for byte as they
+went in, except what the case changes on purpose. After each case, the example
+[`update-counter`](../examples/update-counter) updates and renders normally on the same
+runtime.
+
+| Case | Rule | Expected outcome |
+| --- | --- | --- |
+| `other-plugin` | FR-002, FR-003 | B reads, lists and writes with A's names: only its own store; A's unchanged |
+| `same-id-other-origin` | FR-002 | `not-granted`; approved, its own empty store; another id at the same path, too |
+| `name-injection` | FR-003, FR-004 | Paths, NUL, quotes, line breaks, SQL and `ATTACH` text round-trip as names; `a%` is no pattern |
+| `storage-file` | FR-002 | `capability-refused`, listing `wasi:filesystem/*` |
+| `quota-raised` | FR-008 | `needs-new-approval`, naming both quotas |
+| `approval-digest` | FR-008 | `approval-changed` with no or a stale digest, nothing granted |
+| `quota-fill` | FR-006 | `refused(over-quota)`, the write not kept |
+| `quota-lowered` | FR-006 | Data kept; deletes pass; a write must fit the new quota |
+| `many-entries` | FR-005, FR-007 | Each entry counts its cost; the quota comes before the file cap |
+| `churn` | FR-007 | Rewrites and deletes never take the file past its cap |
+| `file-cap-hit` | FR-007, FR-010 | `failed(over-limit)`, then `failed(run-aborted)`; nothing kept, `storage-failed` |
+| `unwritable-store` | FR-007, FR-010 | `failed(unavailable)`; nothing kept, `storage-failed` |
+| `over-limits` | FR-007 | `invalid-name` or `refused(over-limit)` for names, values, calls and bytes per update |
+| `write-in-render` | FR-009 | `refused(render-only-reads)`; nothing changed |
+| `crash-after-writes` | FR-010 | A trap, a limit, an error or invalid output after writes: nothing kept |
+| `killed-mid-update` | FR-010 | The process killed mid-update: the state from before, never `damaged` |
+| `optional-off` | FR-001 | `not-granted`, nothing read or written; the data there when turned on |
+| `taken-away-mid-update` | FR-011 | `not-granted` from the next call, and nothing of the update kept |
+| `show-spoof` | FR-014 | `runtime storage show` prints every name and value escaped, one entry per line |
+| `foreign-store` | FR-004 | A planted table, trigger, view or identity, or another plugin's file: `failed(damaged)`, left alone |
+| `store-hardened` (white box) | FR-004 | Every hardening layer as set, every attempt past one refused |
+| `store-binding` (white box) | FR-002 | The bound store is the file of the plugin's id and origin; the stand-in has none |
+| `host-records-untouched` | FR-013 | Every case above leaves the host's records and other stores as they were |
+
 ## How they are built
 
 Like any plugin, from source, by `cargo xtask plugins`, into `target/plugins/<crate>.wasm`;
-no built `.wasm` is ever committed. `read-file` and `open-socket` declare
+no built `.wasm` is ever committed. `read-file`, `open-socket` and `storage-file` declare
 `[package.metadata.dashboard] target = "wasm32-wasip2"`, so they import WASI the way the
 standard library does; the others build for `wasm32-unknown-unknown`. A test whose fixture was
 not built fails instead of skipping.
