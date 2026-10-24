@@ -484,6 +484,18 @@ pub(crate) fn authorize(connection: &mut Connection) -> Result<(), Failure> {
         .map_err(|error| failure(error, "installing the authorizer"))
 }
 
+/// Takes the store's exclusive lock and releases it: no other process holds the store, and an
+/// interrupted update's journal is rolled back. For removing a store file (research R14).
+pub(crate) fn lock_exclusively(file: &Path, settings: &Settings) -> Result<(), StoreError> {
+    let connection = configure(file, Mode::Clear, settings).map_err(|failure| match failure {
+        Failure::Store(error) => error,
+        Failure::HotJournal => StoreError::Busy("the store's journal cannot be rolled back".into()),
+    })?;
+    connection
+        .execute_batch("BEGIN EXCLUSIVE; ROLLBACK")
+        .map_err(|error| store_error(error, "locking the store"))
+}
+
 /// The bundled SQLite is the one this host was built and reviewed with, and its defensive mode
 /// takes effect (research R1). Checked once per process, before any store is opened.
 pub fn engine_check() -> Result<(), String> {

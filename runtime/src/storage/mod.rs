@@ -10,10 +10,7 @@
 //! for an update, commits its writes only when the update succeeded and storage is still
 //! granted (R7).
 
-// Until the CLI uses them (task T047)
-#[allow(dead_code)]
 mod admin;
-#[allow(dead_code)]
 mod connection;
 
 use std::path::{Path, PathBuf};
@@ -29,6 +26,7 @@ use crate::limits::Limits;
 use crate::manifest::PluginId;
 use connection::{Identity, Mode, Settings, StoreConnection, StoreError};
 
+pub use admin::{StoreInfo, StoreState, StoreView};
 pub use connection::engine_check;
 #[cfg(feature = "test-network")]
 pub use connection::{Foreign, HardeningReport, hardening_report, plant_foreign_store};
@@ -77,6 +75,82 @@ pub(crate) fn used_bytes(
         Ok(Some(connection)) => connection.usage().map_err(|error| describe(&error)),
         Err(error) => Err(describe(&error)),
     }
+}
+
+/// What `runtime storage clear` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Cleared {
+    /// The store was emptied; it had this usage.
+    Emptied { used_bytes: u64 },
+    /// The store file was deleted, damaged or orphaned, for this reason.
+    Removed { reason: String },
+    /// There was no store.
+    NoStore,
+}
+
+/// The stores of `data_dir`, for `runtime storage list`.
+pub(crate) fn list_stores(data_dir: &Path, limits: &Limits) -> Vec<StoreInfo> {
+    admin::list(&data_dir.join(STORAGE_DIR), limits)
+}
+
+/// The store of `id` from `origin`, for `runtime storage show`.
+pub(crate) fn show_store(
+    data_dir: &Path,
+    id: &str,
+    origin: &str,
+    limits: &Limits,
+) -> Result<Option<StoreView>, RuntimeError> {
+    let file = data_dir.join(STORAGE_DIR).join(store_file_name(id, origin));
+    if !file.exists() {
+        return Ok(None);
+    }
+    let identity = Identity {
+        id: id.to_owned(),
+        origin: origin.to_owned(),
+    };
+    admin::show(&file, &identity, limits).map_err(admin_error)
+}
+
+/// Clears the store of `id` from `origin`, or removes its file when it is damaged or the
+/// origin's file is gone, for `runtime storage clear`. No other store is touched.
+pub(crate) fn clear_store(
+    data_dir: &Path,
+    id: &str,
+    origin: &str,
+    limits: &Limits,
+) -> Result<Cleared, RuntimeError> {
+    let file = data_dir.join(STORAGE_DIR).join(store_file_name(id, origin));
+    if !file.exists() {
+        return Ok(Cleared::NoStore);
+    }
+    let remove = |reason: String| {
+        admin::remove(&file, limits)
+            .map(|()| Cleared::Removed { reason })
+            .map_err(admin_error)
+    };
+    if !Path::new(origin).exists() {
+        return remove("its package file is gone".to_owned());
+    }
+    let identity = Identity {
+        id: id.to_owned(),
+        origin: origin.to_owned(),
+    };
+    match admin::clear(&file, &identity, limits) {
+        Ok(Some(used_bytes)) => Ok(Cleared::Emptied { used_bytes }),
+        Ok(None) => remove("it held no store".to_owned()),
+        Err(StoreError::Damaged(detail)) => remove(format!("damaged: {detail}")),
+        Err(error) => Err(admin_error(error)),
+    }
+}
+
+/// A store the CLI cannot use, as `storage-failed: <rule>: <detail>`.
+fn admin_error(error: StoreError) -> RuntimeError {
+    let (rule, detail) = match error {
+        StoreError::Damaged(detail) => ("damaged", detail),
+        StoreError::Busy(detail) => ("busy", detail),
+        StoreError::Unavailable(detail) | StoreError::FileCap(detail) => ("unavailable", detail),
+    };
+    RuntimeError::new(ErrorKind::StorageFailed, format!("{rule}: {detail}"))
 }
 
 /// The settings of a connection that only reads, outside a run: no file cap to speak of, and the

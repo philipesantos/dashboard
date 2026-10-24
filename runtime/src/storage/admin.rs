@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::connection::{Entry, Identity, StoreError};
+use super::connection::{self, Entry, Identity, Mode, StoreError};
 use crate::limits::Limits;
 
 /// One store found in the storage directory.
@@ -13,14 +13,17 @@ pub struct StoreInfo {
     pub file: PathBuf,
     /// The id and origin the store records, when it can be read.
     pub identity: Option<(String, String)>,
-    /// Its usage, or why it is damaged.
+    /// Its usage, or why it cannot be shown.
     pub state: StoreState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreState {
     Used(u64),
+    /// Not a store the host wrote, or not under the name of the plugin it records.
     Damaged(String),
+    /// Busy in another process, or unreadable: named, never shown as damaged.
+    Unreadable(String),
 }
 
 /// What a store holds, for `runtime storage show`.
@@ -34,8 +37,65 @@ pub struct StoreView {
 /// Every `*.sqlite` file of `storage_dir`, with what it records, sorted by id then origin; a
 /// file whose name is not the hash of the id and origin inside it is damaged.
 pub(crate) fn list(storage_dir: &Path, limits: &Limits) -> Vec<StoreInfo> {
-    let _ = (storage_dir, limits);
-    Vec::new()
+    let Ok(entries) = std::fs::read_dir(storage_dir) else {
+        return Vec::new();
+    };
+    let mut stores: Vec<StoreInfo> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "sqlite"))
+        .map(|file| describe_store(file, limits))
+        .collect();
+    stores.sort_by(|a, b| {
+        // Stores whose identity can be read first, by id then origin; the rest by file name
+        (a.identity.is_none(), &a.identity, &a.file).cmp(&(
+            b.identity.is_none(),
+            &b.identity,
+            &b.file,
+        ))
+    });
+    stores
+}
+
+fn describe_store(file: PathBuf, limits: &Limits) -> StoreInfo {
+    let opened = connection::open(&file, Mode::List, None, &super::read_settings(limits));
+    let (identity, state) = match opened {
+        Ok(Some(store)) => match (store.identity(), store.usage()) {
+            (Ok(identity), Ok(usage)) => {
+                let expected = super::store_file_name(&identity.id, &identity.origin);
+                let state = if file.file_name().is_some_and(|name| *name == *expected) {
+                    StoreState::Used(usage)
+                } else {
+                    StoreState::Damaged(format!(
+                        "the file is named for another plugin than {} from {}",
+                        identity.id, identity.origin
+                    ))
+                };
+                (Some((identity.id, identity.origin)), state)
+            }
+            (Err(error), _) | (_, Err(error)) => (None, state_of(error)),
+        },
+        Ok(None) => (
+            None,
+            StoreState::Damaged("an empty file, with no store in it".to_owned()),
+        ),
+        Err(error) => (None, state_of(error)),
+    };
+    StoreInfo {
+        file,
+        identity,
+        state,
+    }
+}
+
+fn state_of(error: StoreError) -> StoreState {
+    match error {
+        StoreError::Damaged(detail) => StoreState::Damaged(detail),
+        StoreError::Busy(detail) => StoreState::Unreadable(format!("busy: {detail}")),
+        StoreError::Unavailable(detail) | StoreError::FileCap(detail) => {
+            StoreState::Unreadable(format!("unavailable: {detail}"))
+        }
+    }
 }
 
 /// What the store at `file` holds, read-only; `None` when there is no store yet.
@@ -44,25 +104,55 @@ pub(crate) fn show(
     identity: &Identity,
     limits: &Limits,
 ) -> Result<Option<StoreView>, StoreError> {
-    let _ = (file, identity, limits);
-    Err(StoreError::Unavailable("not implemented".to_owned()))
+    let Some(store) = connection::open(
+        file,
+        Mode::Show,
+        Some(identity),
+        &super::read_settings(limits),
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(StoreView {
+        used_bytes: store.usage()?,
+        entries: store.entries()?,
+    }))
 }
 
 /// Empties the store at `file` in one exclusive transaction and returns the usage it had; `None`
-/// when there is no store. The file keeps its size: later writes reuse its pages.
+/// when there is no store. The file keeps its size: later writes reuse its pages. No `VACUUM`:
+/// the hardened connection refuses it (research R14).
 pub(crate) fn clear(
     file: &Path,
     identity: &Identity,
     limits: &Limits,
 ) -> Result<Option<u64>, StoreError> {
-    let _ = (file, identity, limits);
-    Err(StoreError::Unavailable("not implemented".to_owned()))
+    let Some(store) = connection::open(
+        file,
+        Mode::Clear,
+        Some(identity),
+        &super::read_settings(limits),
+    )?
+    else {
+        return Ok(None);
+    };
+    let usage = store.usage()?;
+    store.remove_all()?;
+    store.set_usage(0)?;
+    store.commit()?;
+    Ok(Some(usage))
 }
 
-/// Deletes the store file at `file`, damaged or orphaned, once no other process holds it.
+/// Deletes the store file at `file`, damaged or orphaned, once no other process holds it: an
+/// exclusive lock taken first, which also rolls back an interrupted update's journal, then
+/// released before the file goes. A file that is no database at all is deleted as it is.
 pub(crate) fn remove(file: &Path, limits: &Limits) -> Result<(), StoreError> {
-    let _ = (file, limits);
-    Err(StoreError::Unavailable("not implemented".to_owned()))
+    match connection::lock_exclusively(file, &super::read_settings(limits)) {
+        Ok(()) | Err(StoreError::Damaged(_)) => {}
+        Err(error) => return Err(error),
+    }
+    std::fs::remove_file(file)
+        .map_err(|error| StoreError::Unavailable(format!("deleting {}: {error}", file.display())))
 }
 
 #[cfg(test)]
@@ -73,7 +163,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::storage::connection::{self, Mode, Settings};
+    use crate::storage::connection::Settings;
     use crate::storage::store_file_name;
 
     fn identity(id: &str, origin: &str) -> Identity {

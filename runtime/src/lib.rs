@@ -553,6 +553,27 @@ impl Runtime {
             .map_err(|reason| RuntimeError::new(ErrorKind::StorageFailed, reason))
     }
 
+    /// Every store in the data directory, sorted by id then origin, for `runtime storage list`.
+    /// Changes nothing.
+    pub fn list_stores(&self) -> Vec<storage::StoreInfo> {
+        storage::list_stores(self.options.data_dir(), &self.limits)
+    }
+
+    /// What the store of `id` from `origin` holds, read-only; `None` when it has none yet.
+    pub fn show_store(
+        &self,
+        id: &manifest::PluginId,
+        origin: &str,
+    ) -> Result<Option<storage::StoreView>, RuntimeError> {
+        storage::show_store(self.options.data_dir(), id.as_str(), origin, &self.limits)
+    }
+
+    /// Empties the store of `id` from `origin`, or deletes its file when it is damaged or the
+    /// origin's file is gone. Only the host's own controls reach a store this way (spec FR-014).
+    pub fn clear_store(&self, id: &str, origin: &str) -> Result<storage::Cleared, RuntimeError> {
+        storage::clear_store(self.options.data_dir(), id, origin, &self.limits)
+    }
+
     /// Checks a plugin package without its grants: size, manifest, compilation, contract and
     /// imports (load steps 1–6). A failure stops at the first step that refuses the package,
     /// with that step's error kind.
