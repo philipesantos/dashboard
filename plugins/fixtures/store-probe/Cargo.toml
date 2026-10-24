@@ -1,0 +1,17 @@
+[package]
+name = "store-probe"
+version = "0.1.0"
+description = "Test fixture: a contract 1.2.0 widget that makes the storage calls its configuration lists"
+edition.workspace = true
+publish.workspace = true
+
+# Built bare: each test packs it with the manifest its case needs
+[package.metadata.dashboard]
+manifest = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json.workspace = true
+wit-bindgen.workspace = true

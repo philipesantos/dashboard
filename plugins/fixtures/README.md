@@ -15,3 +15,8 @@ a plugin from [`examples/hello-widget`](../examples/hello-widget) instead.
   sizes instead of bodies. Built without a manifest; each test packs it with its own.
   The connector cases of the hostile suite run on it
   ([`plugins/hostile/README.md`](../hostile/README.md#connector-cases)).
+- `store-probe`: a contract 1.2.0 widget (`stored-widget`) that makes, in `update` and in
+  `render`, the storage calls its configuration lists and returns every answer; it can spin
+  between calls, end its update with an error, a panic, an endless loop or a memory grab after
+  them, and return output that is not JSON or of a given size. Built without a manifest; each
+  test packs it with its own.
