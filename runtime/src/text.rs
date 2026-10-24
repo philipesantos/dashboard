@@ -47,8 +47,37 @@ pub fn escape(text: &str) -> String {
 /// pass for two fields; other bytes as `bytes(<size>) <hexadecimal>`. Only the first `max_bytes`
 /// of `bytes` are shown, followed by ` [truncated, <size> bytes]`.
 pub fn quote_entry(bytes: &[u8], max_bytes: usize) -> String {
-    let _ = (bytes, max_bytes);
-    String::new()
+    let mut shown = match std::str::from_utf8(bytes) {
+        Ok(text) => {
+            let mut cut = text.len().min(max_bytes);
+            while !text.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            let mut quoted = String::with_capacity(cut + 2);
+            quoted.push('"');
+            for c in text[..cut].chars() {
+                match c {
+                    '"' => quoted.push_str("\\\""),
+                    '\\' => quoted.push_str("\\\\"),
+                    c if needs_escape(c) => quoted.extend(c.escape_default()),
+                    c => quoted.push(c),
+                }
+            }
+            quoted.push('"');
+            quoted
+        }
+        Err(_) => {
+            let hex: String = bytes[..bytes.len().min(max_bytes)]
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            format!("bytes({}) {hex}", bytes.len())
+        }
+    };
+    if bytes.len() > max_bytes {
+        shown.push_str(&format!(" [truncated, {} bytes]", bytes.len()));
+    }
+    shown
 }
 
 /// Control characters, and the characters that change the direction of the text after them.
