@@ -487,3 +487,169 @@ fn store_binding() {
     let hello = vault.world.approve_and_load(&fixture("hello-widget"));
     assert_eq!(hello.store_binding(), None);
 }
+
+// User Story 3: the quota bounds what a plugin keeps
+
+/// `store-probe` as `local/store-probe`, version `version`, with required storage of `quota`.
+fn quota_probe(version: &str, quota: u64) -> Vec<u8> {
+    repack(
+        &fixture("store-probe"),
+        &stored_manifest("local/store-probe", version, true, quota),
+    )
+}
+
+#[test]
+fn quota_raised() {
+    let vault = Vault::new();
+    let origin = vault.origin("quota");
+    vault.plugin(&quota_probe("0.1.0", 4096), &origin);
+    // A new build at the same path that asks for more
+    let larger = quota_probe("0.2.0", 8192);
+    vault.contained(&[], || {
+        let error = vault
+            .world
+            .try_load_at(&larger, &origin)
+            .err()
+            .expect("a larger quota needs approval");
+        assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+        assert_eq!(error.names(), ["storage"]);
+        let detail = error.to_string();
+        assert!(
+            detail.contains("4096") && detail.contains("8192"),
+            "{detail}"
+        );
+    });
+    // Approved at a smaller quota, a version back at the earlier larger one needs the user again
+    vault.plugin(&quota_probe("0.3.0", 2048), &origin);
+    let back = quota_probe("0.4.0", 4096);
+    vault.contained(&[], || {
+        let error = vault
+            .world
+            .try_load_at(&back, &origin)
+            .err()
+            .expect("above the quota approved last");
+        assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+        assert!(error.to_string().contains("2048"), "{error}");
+    });
+}
+
+#[test]
+fn approval_digest() {
+    let vault = Vault::new();
+    let origin = vault.origin("digest");
+    let package = quota_probe("0.1.0", 4096);
+    let checked = vault.world.runtime.check(&package).unwrap();
+    let stale = vault
+        .world
+        .runtime
+        .check(&quota_probe("0.1.0", 2048))
+        .unwrap()
+        .approval_digest();
+    vault.contained(&[], || {
+        for expected in [None, Some(stale.as_str())] {
+            let error = checked
+                .approve(&vault.world.grants, &origin, expected)
+                .expect_err("refused");
+            assert_eq!(
+                error.kind(),
+                ErrorKind::ApprovalChanged,
+                "{expected:?}: {error}"
+            );
+        }
+    });
+    let error = vault
+        .world
+        .try_load_at(&package, &origin)
+        .err()
+        .expect("nothing was granted");
+    assert_eq!(error.kind(), ErrorKind::NotGranted, "{error}");
+}
+
+#[test]
+fn quota_fill() {
+    let vault = Vault::new();
+    let origin = vault.origin("fill");
+    let plugin = vault.plugin(&quota_probe("0.1.0", 1000), &origin);
+    vault.contained(&vault.own("local/store-probe", &origin), || {
+        let found = update(
+            &plugin,
+            &[
+                json!({ "op": "set", "name": "a", "value_size": 400 }), // 465
+                json!({ "op": "set", "name": "b", "value_size": 400 }), // 930
+                json!({ "op": "set", "name": "c", "value_size": 10 }),  // 1005: refused
+                get("c"),
+                // Replacing counts the old entry as gone: 930 - 465 + 535 = 1000
+                json!({ "op": "set", "name": "a", "value_size": 470 }),
+                json!({ "op": "set", "name": "a", "value_size": 471 }),
+                json!({ "op": "usage" }),
+            ],
+        );
+        assert_eq!(found[2]["error"], "refused:over-quota", "{}", found[2]);
+        let detail = found[2]["detail"].as_str().unwrap();
+        assert!(
+            detail.contains("1000") && detail.contains("1005"),
+            "{detail}"
+        );
+        assert_eq!(
+            found[3],
+            json!({ "ok": null }),
+            "nothing of the refused write was kept"
+        );
+        assert_eq!(found[4], json!({ "ok": null }));
+        assert_eq!(found[5]["error"], "refused:over-quota");
+        assert_eq!(found[6], json!({ "ok": { "used": 1000, "quota": 1000 } }));
+    });
+    assert_eq!(
+        render(&plugin, &[json!({ "op": "usage" })]),
+        [json!({ "ok": { "used": 1000, "quota": 1000 } })]
+    );
+}
+
+#[test]
+fn quota_lowered() {
+    let vault = Vault::new();
+    let origin = vault.origin("lowered");
+    let first = vault.plugin(&quota_probe("0.1.0", 1000), &origin);
+    update(
+        &first,
+        &[
+            json!({ "op": "set", "name": "a", "value_size": 400 }),
+            json!({ "op": "set", "name": "b", "value_size": 400 }),
+        ],
+    );
+
+    // A new version with a smaller quota loads without a new approval
+    let lowered = vault.world.load_at(&quota_probe("0.2.0", 500), &origin);
+    vault.contained(&vault.own("local/store-probe", &origin), || {
+        let found = update(
+            &lowered,
+            &[
+                json!({ "op": "usage" }),
+                json!({ "op": "set", "name": "c", "value": "" }),
+                // Smaller, but usage stays over the new quota: refused
+                json!({ "op": "set", "name": "a", "value_size": 300 }),
+                json!({ "op": "delete", "name": "b" }),
+                json!({ "op": "set", "name": "a", "value_size": 300 }),
+                json!({ "op": "usage" }),
+            ],
+        );
+        assert_eq!(
+            found[0],
+            json!({ "ok": { "used": 930, "quota": 500 } }),
+            "data kept"
+        );
+        assert_eq!(found[1]["error"], "refused:over-quota");
+        assert_eq!(found[2]["error"], "refused:over-quota");
+        assert_eq!(found[3], json!({ "ok": null }), "deletes pass");
+        assert_eq!(found[4], json!({ "ok": null }), "a write that fits passes");
+        assert_eq!(found[5], json!({ "ok": { "used": 365, "quota": 500 } }));
+    });
+    // The approval keeps its quota: the file cap stays that of 1000 bytes
+    let entry = vault
+        .world
+        .grants
+        .entry(&runtime::manifest::PluginId::parse("local/store-probe").unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(entry.storage_quota_bytes, Some(1000));
+}
