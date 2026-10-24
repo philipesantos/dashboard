@@ -14,8 +14,7 @@ export D=$(mktemp -d)   # PowerShell: $env:D = New-Item -ItemType Directory (Joi
 alias rt="cargo run -q -p runtime --release -- "   # or call the binary directly
 ```
 
-Every `rt` command below takes `--grants $D/grants.json --data $D`, except `storage list` and
-`storage clear --id …`, which also take both, and `pack`, which takes neither.
+Every `rt` command below takes `--grants $D/grants.json --data $D`.
 
 ## 1. The security suite
 
@@ -38,10 +37,10 @@ rt run target/plugins/update-counter.wasm
 rt storage show target/plugins/update-counter.wasm
 ```
 
-Expected: `permissions` shows `storage: quota 65536 bytes (64 KiB), not approved`; `approve`
-without `--expect` is a usage error, and with another digest `approval-changed`; each `update`
-prints the storage line; `run` shows a count of 2 and both notes; `storage show` lists the entries,
-quoted and escaped. Run the last two commands again in a new shell: the same values (SC-008).
+Expected: `permissions` shows `storage: quota 65536 bytes (64 KiB), not approved, used 0 bytes`;
+`approve` without `--expect` is a usage error, and with another digest `approval-changed`; each
+`update` prints the storage line; `run` shows a count of 2 and both notes; `storage show` lists
+the entries, quoted and escaped. Run the last two commands again in a new shell: the same values (SC-008).
 
 ## 3. A new version keeps the data; a larger quota needs approval
 

@@ -122,9 +122,11 @@ interface storage {
     render-only-reads,
     /// The write would take the store's usage past the quota the manifest declares.
     over-quota,
-    /// A limit: calls per run, bytes written per update, value size, or the store's file size.
+    /// A limit: calls per run, bytes written per update, value size, or the store's file size;
+    /// reaching the file size ends the run, as `run-aborted` says.
     over-limit,
-    /// The name is empty or longer than 256 bytes in UTF-8.
+    /// The name is empty or longer than 256 bytes in UTF-8, or a `list` prefix or `after` is
+    /// longer than that.
     invalid-name,
     /// The store's file is not one the host wrote for this plugin; the host left it as it is.
     damaged,
@@ -132,6 +134,9 @@ interface storage {
     busy,
     /// The store could not be read or written: disk full, data directory unavailable.
     unavailable,
+    /// An earlier call of this run failed in a way that ended its transaction, such as reaching
+    /// the store's file size: nothing was done, and nothing this run wrote will be kept.
+    run-aborted,
   }
 
   /// A rule and a message for the plugin's author.

@@ -3,25 +3,38 @@
 Decisions behind [plan.md](plan.md), each with what it rests on. Spike results come from
 throwaway projects outside the repository, built on Linux on 2026-10-24 (rusqlite 0.41.0 with
 its bundled SQLite 3.54.0, release build); the plan's first tasks repeat the parts that matter on
-all three systems.
+all three systems. An independent review of the plan against constitution v2.3.1 changed R1, R4,
+R6 to R12, R14, R15 and R17; its findings, each reproduced before acting, are listed in
+[checklists/requirements.md](checklists/requirements.md).
 
 ## R1. The storage engine
 
-**Decision**: `rusqlite` `=0.41.0` with the features `bundled` (SQLite 3.54.0 compiled into the
-host, the same on the three systems, never the system's library), `hooks` (the authorizer, R4)
-and `limits` (connection limits, R4). Nothing else: no `load_extension`, `functions`, `vtab`,
-`backup` or `blob` feature. One database file per plugin store (constitution, Fixed Technical
-Decisions: SQLite, one database per plugin).
+**Decision**: `rusqlite` `=0.41.0` with `default-features = false` and the features `bundled`
+(SQLite 3.54.0 compiled into the host, the same on the three systems), `hooks` (the authorizer,
+R4) and `limits` (connection limits, R4). Nothing else: not the default `cache` (statement cache,
+`hashlink`), nor `load_extension`, `functions`, `vtab`, `backup` or `blob`. The runtime also
+depends directly on `libsqlite3-sys` `=0.39.0`, which rusqlite only requires as `0.39.0` (a caret
+requirement, rusqlite's `Cargo.toml`), so the SQLite the host compiles changes only through
+`runtime/Cargo.toml`, never through a `Cargo.lock` update alone. One database file per plugin
+store (constitution, Fixed Technical Decisions: SQLite, one database per plugin).
+
+The build can still be switched to the system's SQLite by the environment
+(`LIBSQLITE3_SYS_USE_PKG_CONFIG`) or given extra compile flags (`LIBSQLITE3_FLAGS`,
+libsqlite3-sys' `build.rs`). So the storage module checks, before it opens any store, that the
+linked SQLite is exactly 3.54.0 and that `SQLITE_DBCONFIG_DEFENSIVE` takes effect; otherwise
+every store is `unavailable` and a plugin with required storage is refused at load (R11), and a
+test fails the build on any other SQLite. Extra compile flags cannot be detected this way; the
+white-box case `store-hardened` checks each layer on the SQLite that was actually built.
 
 Only `runtime/src/storage/` uses `rusqlite`; Clippy's `disallowed-types` and
 `disallowed-methods` refuse `rusqlite::Connection` and its constructors anywhere else (R15), so
 every statement the host runs is in that module and its line-by-line review covers them all.
 
-**Spike**: the dependency tree adds `libsqlite3-sys` 0.39.0 (MIT, builds SQLite with `cc`),
-`hashlink`, `hashbrown`, `foldhash` (Zlib), `fallible-iterator`, `fallible-streaming-iterator`,
-`smallvec`, `bitflags`, `pkg-config`, `vcpkg`, `cc`, `shlex`, `find-msvc-tools`: MIT, Apache-2.0
-or Zlib, all already allowed in `deny.toml`. rusqlite's MSRV is 1.89, below the workspace's
-1.97.
+**Spike**: the dependency tree (with the default `cache`, which the decision leaves out) adds
+`libsqlite3-sys` 0.39.0 (MIT, builds SQLite with `cc`), `hashlink`, `hashbrown`, `foldhash`
+(Zlib), `fallible-iterator`, `fallible-streaming-iterator`, `smallvec`, `bitflags`, `pkg-config`,
+`vcpkg`, `cc`, `shlex`, `find-msvc-tools`: MIT, Apache-2.0 or Zlib, all already allowed in
+`deny.toml`. rusqlite's MSRV is 1.89, below the workspace's 1.97.
 
 **Rationale**: the fixed decision names SQLite; the bundled build pins one SQLite version for
 every user, so hardening behaves the same everywhere, and no system library a user installed
@@ -32,7 +45,8 @@ changes it. rusqlite is the maintained binding with the authorizer and limits AP
 or `sled` (would need a constitution amendment of the fixed decision); compiling SQLite with
 `SQLITE_OMIT_LOAD_EXTENSION` through `LIBSQLITE3_FLAGS` in `.cargo/config.toml` (an environment
 setting is easy to lose in another build of the host, such as the Tauri app; R4 closes extensions
-on the connection instead, and the white-box case checks it).
+on the connection instead; the version check above catches the system library, and the white-box
+case checks every layer on whatever was built).
 
 ## R2. Declaring storage in the manifest
 
@@ -90,27 +104,38 @@ decision says one per plugin, and a query bug would cross plugins); a file name 
 ## R4. Hardening the connection
 
 **Decision**: every connection the host opens on a store, in every mode, is set up by one
-function before any statement runs:
+function, in this order, before any statement of a plugin's call runs:
 
-1. `OpenFlags`: read-write and create for `update` and for the CLI's `clear`; **read-only** for
-   `render`, `show` and `list` (SQLite itself then refuses writes, under the host's own refusal,
-   R7); never URI file names; `SQLITE_OPEN_EXRESCODE`.
-2. `set_limit(SQLITE_LIMIT_ATTACHED, 0)`: no other database can be attached at all.
-3. `set_db_config`: `DEFENSIVE` on (no `writable_schema`, no direct shadow-table writes),
+1. The path: the data directory is made absolute and canonical when the runtime starts (the CLI's
+   `--data` included), so a store's path always starts with `/` or a drive letter. The bundled
+   build defines `SQLITE_USE_URI` (libsqlite3-sys' `build.rs`), so SQLite would read a name that
+   starts with `file:` as a URI whatever the open flags; an absolute path never does.
+2. `OpenFlags`: read-write for `update` and the CLI's `clear`, creating the file only in
+   `update`; **read-only** for `render`, `show` and `list` (SQLite itself then refuses writes,
+   under the host's own refusal, R7); `SQLITE_OPEN_EXRESCODE`.
+3. `set_limit(SQLITE_LIMIT_ATTACHED, 0)`: no other database can be attached at all.
+4. `set_db_config`: `DEFENSIVE` on (no `writable_schema`, no direct shadow-table writes),
    `ENABLE_TRIGGER` off, `ENABLE_VIEW` off, `TRUSTED_SCHEMA` off; extension loading stays off
    (its default, and rusqlite's `load_extension` feature is not compiled in).
-4. `set_limit(SQLITE_LIMIT_LENGTH, …)` to the largest name plus value the host accepts, and
-   `SQLITE_LIMIT_SQL_LENGTH` to the length of the host's longest statement.
-5. Pragmas, set by the host before the authorizer is installed: `max_page_count` (the file cap,
-   R10), `secure_delete = FAST` (deleted values are overwritten on their pages),
-   `journal_mode = DELETE` and `synchronous = FULL` (R8), `busy_timeout` (R8).
-6. An authorizer that allows only what the host's statements need, and denies everything else:
-   reading and writing the two tables of R5, `SELECT`, and transactions. It denies every
-   function, `ATTACH`, `DETACH`, `PRAGMA`, `CREATE`, `DROP`, `ALTER` and anything new.
+5. `set_limit(SQLITE_LIMIT_LENGTH, …)` to the largest name plus value the host accepts plus 4 KiB
+   (SQLite counts a row's record header against it: the spike refused a 256 B name with a 256 KiB
+   value at exactly their sum), and `SQLITE_LIMIT_SQL_LENGTH` to the length of the host's longest
+   statement. The host's own checks (R10) are the exact limits; these are the layer beneath.
+6. Pragmas: `max_page_count` (the file cap, R10), `secure_delete = ON` (deleted names and values
+   are overwritten with zeros, on B-tree, overflow and free pages; `FAST` would leave free and
+   overflow pages as they were), `journal_mode = DELETE` and `synchronous = FULL` (R8),
+   `busy_timeout` (R8).
+7. In `update` and `clear` only, on a file with no tables yet: the host's `CREATE TABLE`
+   statements and its identity rows (R5).
+8. The schema check (R5): it reads `sqlite_schema`, so it runs before the authorizer.
+9. An authorizer that allows only what the host's call statements need, and denies everything
+   else: reading and writing the two tables of R5, `SELECT`, and transactions. It denies every
+   function, `ATTACH`, `DETACH`, `PRAGMA`, `CREATE`, `DROP`, `ALTER`, reads of `sqlite_schema`,
+   and anything new.
 
-The host's statements are a fixed set of prepared statements (R5), with every name and value
-bound as a parameter, never formatted into SQL. They use no SQL function, so lengths and usage are
-computed in Rust.
+Steps 7 and 8 are host statements with no plugin input; from step 9 on, only the fixed prepared
+statements of R5 run, with every name and value bound as a parameter, never formatted into SQL.
+They use no SQL function, so lengths and usage are computed in Rust.
 
 **Spike** (each layer alone, then together): with only the limit, `ATTACH` fails ("too many
 attached databases - max 0"); with nothing set, `ATTACH` succeeds, as the control;
@@ -119,13 +144,23 @@ attached databases - max 0"); with nothing set, `ATTACH` succeeds, as the contro
 `PRAGMA`, `CREATE`, `length()` and `load_extension()` all fail as "not authorized". A name holding
 NUL, `../`, quotes and `'; DROP TABLE entries; --` round-trips byte for byte.
 
+**Testing each layer** (the white-box case `store-hardened`): the test calls the production setup
+function, with no switch that production code does not use, then reads each layer's state back
+(`SQLITE_LIMIT_ATTACHED`, `LENGTH` and `SQL_LENGTH` queried with `-1`; the `db_config` getters for
+`DEFENSIVE`, `ENABLE_TRIGGER`, `ENABLE_VIEW`, `TRUSTED_SCHEMA`; `PRAGMA max_page_count` and
+`secure_delete` read before the authorizer is installed) and makes one attempt per layer on the
+finished connection: `ATTACH`, `load_extension()`, any other function, `PRAGMA`, `CREATE`, a
+statement longer than the SQL limit, a value past the length limit, a write on the render
+connection. A store file with a trigger or a view planted in it is the case `foreign-store`.
+
 **Rationale**: plugins never send SQL, so these layers protect against a mistake in the host's
 own statements and against a store file someone changed outside the host (triggers and views in
-a planted schema never run). Each layer is checked on its own by the white-box case
-`store-hardened`, since no plugin can observe them (Principle VIII).
+a planted schema never run, and the schema check refuses the file anyway). Each layer is checked
+by itself, since no plugin can observe them (Principle VIII).
 
 **Alternatives considered**: the authorizer alone (one mistake in its match would open
-everything); `SQLITE_OMIT_LOAD_EXTENSION` at compile time (R1).
+everything); `SQLITE_OMIT_LOAD_EXTENSION` at compile time (R1); test-only switches to turn layers
+off one by one (they would test a setup production never runs).
 
 ## R5. The store's format and statements
 
@@ -149,7 +184,11 @@ CREATE TABLE entries (name BLOB PRIMARY KEY NOT NULL, value BLOB NOT NULL) STRIC
   AND name > after ORDER BY name LIMIT page + 1`, where `successor` is the shortest byte string
   greater than every string that starts with the prefix (no upper bound when there is none). No
   `LIKE` or `GLOB`, whose `%` and `_` would turn a name into a pattern. One more row than the page
-  says whether there is a next page.
+  says whether there is a next page. `prefix` and `after` follow the name's length limit
+  (`invalid-name` past it); an empty `prefix` lists every name.
+- `runtime storage list` has no binding to compare with, so it checks that each file's name is the
+  hash of the `id` and `origin` stored in it, and shows any other file as `damaged`: a file renamed
+  or copied in the directory never shows another plugin's identity.
 
 **Rationale**: the schema check makes the file's content what the host wrote or nothing; storing
 the identity in the file makes the binding checkable without a separate index; byte ranges keep
@@ -159,23 +198,31 @@ names opaque (spec FR-003).
 
 **Decision**: an entry's usage is `len(name in UTF-8) + len(value) + storage_entry_cost_bytes`;
 a store's usage is the sum over its entries, kept in the `store` table and changed in the same
-transaction as every write. A write checks the usage it would leave: `usage - old entry + new
-entry`, where the old entry is the one it replaces (spec edge case). A write is refused as
-`over-quota` when that is above the quota, unless it does not raise usage while usage is already
-above the quota after a lowered quota (spec FR-006): then it succeeds only if usage after it is
-within the quota; deletes always succeed. The quota is the one the manifest declares now (R12);
-the approval records the largest the user approved.
+transaction as every write. A write is refused as `over-quota` when the usage it would leave,
+`usage - old entry + new entry` (the old entry being the one it replaces, spec edge case), is
+above the quota; deletes always succeed. The same rule covers a store already over a lowered
+quota (spec FR-006): only writes that leave usage within the quota pass. The quota is the one the
+manifest declares now; the approval records the quota the user last approved (R12).
 
 `storage_entry_cost_bytes` is provisional at 64. Spike: 2,000 entries of 32 bytes (16 + 16)
 make a 94,208-byte file, about 11 bytes of SQLite overhead per entry beyond the two header pages;
 64 per entry leaves room for B-tree pages left partly empty by deletes. The bench measures it on
-the three systems (R13).
+the three systems (R16).
+
+Usage is not disk space. A value just too large to fit in its B-tree page takes a whole 4 KiB
+overflow page: in the spike, 1 MiB of usage made files of 0.54 MB (32-byte values), 1.09 MB
+(500 B), 4.58 MB (1,000 B), 4.19 MB (1,100 B), 3.14 MB (1,500 B), 2.37 MB (2,000 B) and 1.21 MB
+(4,000 B): at most 4.4 times the usage. The file cap (R10) is set above that, so the quota, not
+the cap, is what a widget meets in normal use.
 
 `usage` computed this way never depends on page sizes or the file system, so it is the same on
 every system (spec FR-005); the file cap (R10) bounds what SQLite actually uses on disk.
 
 **Alternatives considered**: the file's size as usage (differs per system and after deletes);
-computing usage by scanning all entries at each write (cost grows with the store).
+counting usage in pages, or rounding values up to the overflow pages they take (closer to disk,
+but authors could no longer predict usage from their data, and a SQLite upgrade could change it;
+the maintainer chose logical usage with a higher file cap); computing usage by scanning all
+entries at each write (cost grows with the store).
 
 ## R7. Read-only render, all-or-nothing update
 
@@ -188,21 +235,38 @@ computing usage by scanning all entries at each write (cost grows with the store
   and `delete` are refused as `refused(render-only-reads)` by the host before SQLite is reached;
   the read-only connection is the layer beneath. A store that does not exist yet reads as empty.
 - `update`: the connection is opened read-write and starts `BEGIN IMMEDIATE`: no other writer
-  can start until it ends, and its own reads see its own writes. The transaction commits only
-  after the plugin's `update` returned `ok` with valid output and the grant check of R9 passes;
-  in every other case (an error, a trap, a limit, invalid or oversized output, storage taken away
-  during the run) it rolls back. The store is committed before the host records the kept data;
-  a commit that fails fails the update as `storage-failed`, naming the cause, and the previous
-  kept data stays.
+  can start until it ends, and its own reads see its own writes.
+- **A transaction SQLite ended is the end of the run's storage.** SQLite rolls the whole
+  transaction back by itself on some errors, `SQLITE_FULL` (the file cap) and `SQLITE_IOERR`
+  among them, and then runs every later statement in autocommit mode, each committed on its own
+  (spike: after "database or disk is full" in `BEGIN IMMEDIATE`, `is_autocommit()` is true, the
+  next insert succeeds and stays, and `ROLLBACK` answers "no transaction is active"). So after
+  every statement that fails in an update, the host checks `is_autocommit()`; when the transaction
+  is gone, the run is aborted: the failing call answers its rule (`over-limit` for the file cap,
+  `unavailable` for a full disk or an I/O error), every later storage call answers
+  `failed(run-aborted)` without running anything, and the update fails as `storage-failed`, with
+  nothing of it kept. The host never runs a plugin's statement outside its own transaction.
+- **Commit.** The transaction commits only after the plugin's `update` returned `ok` with valid
+  output and the run was not aborted, and only while the grant record still grants storage from
+  this origin: the host takes the grant record's shared lock, reads it, commits, and only then
+  releases the lock, so a removal or a turn-off cannot fall between the check and the commit (a
+  grant change waits for the lock; grant changes never take a store's lock, so the order cannot
+  deadlock). In every other case (an error, a trap, a limit, invalid or oversized output, an
+  aborted run, storage taken away during the run) it rolls back. The store is committed before the
+  host records the kept data; a commit that fails fails the update as `storage-failed`, naming the
+  cause, and the previous kept data stays.
 - A widget that declares storage must export `updater` (`missing-updater`, spec clarification 2);
   one that declares storage and no connector has its update run as any other.
 
-**Rationale**: the transaction gives all-or-nothing for free, and the commit happens only in host
-code after the guest is gone, so no guest behaviour can commit half an update. Read-only render
+**Rationale**: the transaction gives all-or-nothing, and the commit happens only in host code
+after the guest is gone, so no guest behaviour can commit part of an update: SQLite's own
+rollback is caught and turned into the end of the run, never into autocommit. Read-only render
 keeps render a pure view (spec FR-009).
 
 **Alternatives considered**: committing each write (half-written data after a trap); a snapshot
-copy of the store for render (costs a copy per render).
+copy of the store for render (costs a copy per render); savepoints around each write so a full
+file undoes only that write (SQLite may still roll back the whole transaction on `SQLITE_FULL`, as
+the spike showed).
 
 ## R8. Concurrency between processes
 
@@ -212,10 +276,20 @@ while it reads; an update holds the reserved lock from its first storage call, a
 exclusive lock only to commit, waiting for renders in progress (each at most 1 s). An update that
 cannot get its lock in time fails as `failed(busy)`, its writes not kept.
 
-**Rationale**: the CLI runs one process per command, and two may run at once; the rollback
-journal keeps one file per store at rest (no `-wal` and `-shm` files), and a crash during a
-commit is rolled back by SQLite on the next open. Render and update never see part of each other
-(spec FR-010, US4 scenario 6).
+**A process killed during an update** (Ctrl-C, a crash, a power cut) leaves a hot journal beside
+the store. A read-write open rolls it back; a read-only open cannot, and fails with
+`SQLITE_READONLY_ROLLBACK` (extended code 776; spike: a child process aborted after writing past
+its page cache left the journal, the read-only open failed with 776, and a read-write open then
+read the state from before the update and removed the journal). So when a read-only open
+(`render`, `show`, `list`) meets 776, the host opens the store read-write once, hardened as in R4,
+reads one row so SQLite rolls the journal back, closes it, and opens read-only again; if that fails,
+the call answers `failed(busy)`, never `damaged`, so the maintainer is never told to clear a store
+that only needs recovering. The case `killed-mid-update` checks it.
+
+**Rationale**: the CLI runs one process per command, and two may run at once; the rollback journal
+keeps one file per store at rest (no `-wal` and `-shm` files), and SQLite's own recovery restores
+the state from before an interrupted update. Render and update never see part of each other (spec
+FR-010, US4 scenario 6).
 
 **Alternatives considered**: WAL mode (readers never wait, but two more files per store, and a
 reader held open stops checkpoints; renders are short, so waiting is cheap).
@@ -232,7 +306,10 @@ reader held open stops checkpoints; renders are short, so waiting is cheap).
   plugin's id and origin. Each storage call re-reads the grant record, under its lock, as a
   connector call does before it sends (feature 003, R12); when storage is no longer granted from
   this origin, the call answers `not-granted`, the run's transaction is marked to roll back, and
-  every later call answers `not-granted`. The commit of R7 checks once more.
+  every later call answers `not-granted`. The commit of R7 checks once more, under the grant
+  record's lock, so a removal after the plugin's last call is caught too.
+- The stand-in answers every call `not-granted` and counts nothing: it holds no store and reaches
+  nothing, so it needs no limit, and Principle II leaves it no other answer.
 - An update whose storage was taken away fails as `not-granted`, naming storage, and its writes
   are not kept.
 
@@ -254,55 +331,75 @@ Provisional, in `Limits`, measured before the feature closes (R13):
 
 | Limit | Value | Why |
 | --- | --- | --- |
-| `max_storage_quota_bytes` (the host cap) | 8 MiB | Room for settings, notes and caches of a widget; keeps 50 plugins under 1 GiB of files |
+| `max_storage_quota_bytes` (the host cap) | 8 MiB | Room for settings, notes and caches of a widget |
 | `storage_entry_cost_bytes` | 64 | R6 |
-| `max_storage_name_bytes` | 256 | Names are keys, not data |
+| `max_storage_name_bytes` | 256 | Names are keys, not data; also the limit of `list`'s `prefix` and `after` |
 | `max_storage_value_bytes` | 256 KiB | The size of an update's output; one value never dwarfs render's memory |
 | `max_storage_calls_per_run` | 1,000 | Every call counted, refused ones included; bounds host time per run (R9) |
 | `max_storage_written_bytes_per_update` | 1 MiB | Names and values of every `set` in one update, replaced ones included; bounds the journal |
-| `storage_list_page` | 100 names | One page of `list` |
-| File cap | `2 × quota + 64 KiB`, rounded up to pages | `max_page_count`; above it SQLite answers "full", reported as `over-limit` |
+| `storage_list_page` | 100 names | One page of `list`; fixed by the host, so no call can ask for more |
+| File cap | `5 × approved quota + 64 KiB`, rounded up to pages, never below the file's current size | `max_page_count`; above the worst measured file (4.4 × usage, R6); at the 8 MiB cap, about 40 MiB |
 
 A call past `max_storage_calls_per_run` is `refused(over-limit)`; so is a `set` past the bytes per
-update, a name or value past its size (`invalid-name` for names), and a write that hits the file
-cap, which is checked by SQLite itself, so no sequence of writes and deletes passes it. The
-`churn` and `many-entries` cases check that real use never reaches the cap with the entry cost
-above.
+update, and a value past its size; a name, prefix or `after` past its size is `invalid-name`. The
+file cap is checked by SQLite itself, so no sequence of writes and deletes passes it; a write that
+reaches it ends the run's transaction (R7). The cap follows the approved quota, not the declared
+one: `max_page_count` cannot be set below a file's current size (spike: set to 3 on a 1,119-page
+file, it stays 1,119), so a cap computed from a lowered quota would sit below the file for good.
+After a re-approval at a smaller quota, the cap is that quota's, or the file's current size when
+that is larger. The `churn` and `many-entries` cases fill the quota with values from 32 B to 4 KiB,
+1,000 B among them, and check that the quota is met first and the file stays under its cap.
 
 ## R11. Failures
 
 The `storage` interface answers, besides `not-granted`, `refused(problem)` (the host refused
 before changing anything: `render-only-reads`, `over-quota`, `over-limit`, `invalid-name`) and
-`failed(problem)` (the store could not do it: `damaged`, `busy`, `unavailable`), each with a
-detail for the author ([contract](contracts/widget-v1.2.wit)). A store that is `damaged` is never
-deleted or repaired by the host; `runtime storage clear` empties it on the maintainer's word. A
-full disk or an unwritable data directory is `unavailable`. Load-time refusals reuse existing
-kinds: `invalid-manifest`, `contract-too-old`, `missing-updater`, `needs-new-approval`,
-`approval-changed`; one new kind, `storage-failed`, names an update whose commit failed.
+`failed(problem)` (the store could not do it: `damaged`, `busy`, `unavailable`, and
+`run-aborted` after the run's transaction ended, R7), each with a detail for the author
+([contract](contracts/widget-v1.2.wit)). The file cap answers `failed(over-limit)`: unlike the
+refusals, it ends the run. A store that is `damaged` is never changed, deleted or repaired by the
+host on its own; `runtime storage clear` removes it on the maintainer's word (R14). A full disk or
+an unwritable data directory is `unavailable`.
+
+The data directory itself (spec edge case): at load step 8a, before linking, the host checks that
+`<data dir>/storage/` exists or can be created as a directory it can write, and that the SQLite
+check of R1 passed. If not, a plugin whose storage is required is refused as `storage-failed`,
+naming the cause; one whose storage is optional and on is linked to the real interface, whose
+calls answer `failed(unavailable)`, never as if they had worked.
+
+Load-time refusals otherwise reuse existing kinds: `invalid-manifest`, `contract-too-old`,
+`missing-updater`, `needs-new-approval`, `approval-changed`. One new kind, `storage-failed`, names
+an update whose storage could not be committed (busy, damaged, unavailable, the file cap, an
+aborted run) and a plugin refused at load because storage is unavailable.
 
 ## R12. Approvals and the grant record, version 3
 
 **Decision**:
 
-- The grant record moves to version 3: an entry gains `storage_quota_bytes`, the largest quota the
-  user approved for it, present only when an approved manifest declared storage. Versions 1 and 2
+- The grant record moves to version 3: an entry gains `storage_quota_bytes`, the quota of the
+  user's last approval, present only when an approved manifest declared storage. Versions 1 and 2
   are read as version 3 without it, and written back as 3.
 - The approval digest (feature 003, `data-model.md`) gains `"storage": {"required": …,
   "quota_bytes": …}` only for a manifest that declares storage, so the digests of widgets without
   storage, and their kept data, do not change.
 - `approve` needs `--expect <digest>` for any plugin that declares storage, required or optional
-  (spec clarification 1), as for connectors; the approval records the declared quota.
+  (spec clarification 1), as for connectors; the approval sets `storage_quota_bytes` to the quota
+  it showed, smaller or larger than before (spec clarification 4).
 - Load step 7 for storage: when storage is required, or optional and on, a declared quota above
   `storage_quota_bytes` (or one never approved) is `needs-new-approval`, naming both quotas, the
-  approval unchanged. A lower quota needs nothing, and the record keeps what was approved, so a
-  later version may go back up to it.
+  approval unchanged. A lower quota needs nothing and changes nothing in the record, so a later
+  version may go back up to the approved quota; after the user approves a smaller quota, going
+  above it needs the user again.
 - `optional <plugin> storage on` is refused as `needs-new-approval` when the declared quota is
   above the approved one, or none was approved.
 - Removing an approval, or turning storage off, deletes no store (spec FR-011); only `runtime
   storage clear` does (R14).
 
 **Rationale**: the same pattern as connectors: what was shown is what is approved, and only an
-increase needs the user again.
+increase over the user's last decision needs the user again.
+
+**Alternatives considered**: keeping the largest quota ever approved (fewer approvals, but a quota
+the user last saw smaller would run without asking; the maintainer chose the last one shown).
 
 ## R13. Contract 1.2.0
 
@@ -316,7 +413,9 @@ increase needs the user again.
   (imports `log`, `connectors` and `storage`, exports both). The host binds the widest world,
   `connected-stored-widget`, and keeps looking up exports by their exact names (feature 003, R11).
 - `runtime/tests/contract_v1.rs` checks 1.2.0 against 1.1.0, and 1.1.0 against 1.0.0, as it does
-  now; every capability of 1.2.0 answers `not-granted` first.
+  now; every capability of 1.2.0 answers `not-granted` first. The comparison alone would follow a
+  frozen file that someone edited, so the test also pins `wit/history/1.0.0/widget.wit` and
+  `wit/history/1.1.0/widget.wit` by their SHA-256.
 - `V1_VERSION` becomes 1.2.0; a manifest that declares storage on a contract older than 1.2.0 is
   `contract-too-old`, naming 1.2.0. Every plugin of the repository built for 1.0.0 and 1.1.0 keeps
   building from `wit/history/` and runs unchanged (spec SC-007).
@@ -335,20 +434,32 @@ declare storage). The author guide says to declare what the world imports either
 - `runtime storage list` lists every store in the data directory: id, origin, usage, the approved
   quota or `not approved`, and `no file` when the origin's file is gone (spec clarification 3).
 - `runtime storage show <plugin>` prints a store's usage and quota and every entry, one per line:
-  names and text values escaped and quoted, values that are not UTF-8 as hexadecimal, each cut at
-  1 KiB with the full size shown.
+  names and text values in double quotes, escaped as log messages are and, inside the quotes, `"`
+  as `\"` and `\` as `\\` (feature 001's escaping leaves both as they are, `text.rs`, so a name
+  such as `count" = "999` could otherwise pass for two fields); values that are not UTF-8 as
+  `bytes(<size>)` and hexadecimal; each cut at 1 KiB with the full size shown. A new function
+  beside `text::escape` does the quoting, tested on its own.
 - `runtime storage clear <plugin>` and `runtime storage clear --id <id> --origin <path>` empty a
-  store under an exclusive lock and `VACUUM` it; when the origin's file is gone, the store's file
-  is removed.
+  store in one `BEGIN EXCLUSIVE` transaction on a connection hardened as in R4: every entry
+  deleted, usage set to 0, committed; `secure_delete = ON` overwrites the deleted content. No
+  `VACUUM`: it attaches a database internally, which the attach limit and the authorizer refuse
+  (spike: "too many attached databases - max 0"), and it cannot run inside a transaction; the
+  freed pages are reused by later writes, and the file never passes its cap. A store that is
+  `damaged`, or whose origin's file is gone, is removed instead: under an exclusive lock taken by a
+  read-write open (which first rolls back any hot journal, R8), the host closes it and deletes the
+  database file, the journal being already gone; a store busy in another process is `busy`, and
+  nothing changes.
 - `runtime bench` gains storage numbers (R16).
 
 ## R15. Keeping the review on what matters
 
 `clippy.toml` refuses `rusqlite::Connection` and its `open*` constructors outside
 `runtime/src/storage/`, the module that holds every SQL statement (R1). `deny.toml` needs no new
-license; `rusqlite` is pinned exactly, as `ureq` is, since a minor version could change the
-authorizer's action list. The pull request template already lists `runtime/` as security core;
-it gains `plugins/fixtures/store-probe` beside the other fixtures.
+license. `rusqlite` and `libsqlite3-sys` are pinned exactly, as `ureq` is (R1): a minor version
+could change the authorizer's action list, and a new `libsqlite3-sys` bundles another SQLite,
+which is C code in the security core. The pull request template already lists `runtime/` as
+security core; its `Cargo.lock` line, which names the network stack's crates, gains `rusqlite`
+and `libsqlite3-sys`, and its fixtures line gains `plugins/fixtures/store-probe`.
 
 ## R16. Measuring
 
@@ -365,7 +476,20 @@ and file sizes measured, and confirms or changes R10 (spec SC-006).
   gives it; its render reads them and shows them (spec FR-018, SC-008).
 - `plugins/fixtures/store-probe`: contract 1.2.0, `stored-widget`; makes the storage calls its
   configuration lists, in `update` and in `render`, returns what each answered, and can end with a
-  trap (panic, out of fuel, out of memory, an endless loop) or an error after them. The hostile
-  cases pack it with each case's manifest, as feature 003 packs `net-probe`.
+  trap (panic, out of fuel, out of memory, an endless loop) or an error after them. A `spin` step
+  burns a given number of loop iterations between calls, so a test can change the grants while the
+  plugin runs. The hostile cases pack it with each case's manifest, as feature 003 packs
+  `net-probe`.
+- Changing grants during a run without a race: an update's first write creates the store's
+  `-journal` file, so the test waits for that file, then turns storage off or removes the approval
+  from another grant store, while the probe spins with no further storage call and then returns
+  `ok`; only the commit check of R7 can then refuse the writes. A variant makes one more call after
+  the change (`not-granted`). For render, which leaves no file to watch, the test runs with a
+  render time limit of 10 s, starts a render that reads, spins for about 3 s and reads again, and
+  changes the grants 1 s after the start; the second read must answer `not-granted`. A run of the
+  host taking longer than 1 s to reach its first read would fail the test, never pass it wrongly.
+- `killed-mid-update`: the test starts `runtime update` as a child process with the probe writing
+  more than SQLite's page cache holds and then spinning, waits for the journal, kills the process,
+  and checks that `render` and `storage show` read the state from before the update (R8).
 - `plugins/hostile/storage-file`: `wasm32-wasip2`, opens a path its configuration gives with
   `std::fs`; refused at load as `capability-refused`, listing `wasi:filesystem/*`.

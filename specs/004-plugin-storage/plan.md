@@ -15,9 +15,10 @@ origin; no call names a store. Plugins see a key-value interface (`get`, `set`, 
 (`rusqlite` with its bundled SQLite). Every connection is hardened layer by layer: no attaching,
 no extensions, defensive mode, no triggers or views, and an authorizer that allows only the host's
 statements. Render reads one consistent view on a read-only connection; update writes in one
-transaction, committed only after it returned `ok` and storage is still granted. Usage counts
-names, values and a fixed cost per entry, the same on every system, and a file cap bounds the
-disk. Contract v1 moves to 1.2.0 (1.1.0 frozen first), the grant record to version 3, and the CLI
+transaction, committed only after it returned `ok`, under the grant record's lock while storage is
+still granted; a transaction SQLite ends on its own (a full file) ends the run's writes. Usage
+counts names, values and a fixed cost per entry, the same on every system, and a file cap of five
+times the approved quota bounds the disk. Contract v1 moves to 1.2.0 (1.1.0 frozen first), the grant record to version 3, and the CLI
 gains `storage list`, `show` and `clear`. Spikes and decisions are in [research.md](research.md).
 
 ## Technical Context
@@ -25,7 +26,8 @@ gains `storage list`, `show` and `clear`. Spikes and decisions are in [research.
 **Language/Version**: Rust (edition 2024, stable; MSRV 1.97 because of Wasmtime 50)
 
 **Primary Dependencies**: in the runtime, as in feature 003, plus `rusqlite` `=0.41.0`
-(`bundled`, `hooks`, `limits`), which builds SQLite 3.54.0 from source with `cc` (R1)
+(no default features; `bundled`, `hooks`, `limits`) and `libsqlite3-sys` `=0.39.0`, which builds
+SQLite 3.54.0 from source with `cc`, checked at startup (R1)
 
 **Storage**: plugin stores, one SQLite file each, in `<data dir>/storage/` (R3, R5); the
 development grant record moves to version 3 (R12); kept data and the request log unchanged
@@ -46,16 +48,16 @@ grants change only through the development CLI (Principle VII); everything under
 `wit/` gets line-by-line review (Principle IX)
 
 **Scale/Scope**: one storage module, contract 1.2.0 with 2 new worlds, grant record v3, 1 new
-error kind and 7 call rules, 3 new CLI subcommands (`storage list|show|clear`) and storage in
-`permissions`, `approve`, `optional`, `update`, `remove` and `bench`, 20 hostile cases (2 white
-box), 1 example, 1 fixture and 1 hostile crate
+error kind and 8 call rules, 3 new CLI subcommands (`storage list|show|clear`) and storage in
+`permissions`, `approve`, `optional`, `update`, `remove` and `bench`, 22 hostile cases (2 white
+box) and 8 other named tests, 1 example, 1 fixture and 1 hostile crate
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Checked against constitution v2.3.1. The independent review comes next, before `/speckit-tasks`
-(see the note below the table).
+Checked against constitution v2.3.1, after an independent review (findings in
+[checklists/requirements.md](checklists/requirements.md)).
 
 | Rule | Status | How the plan complies |
 | --- | --- | --- |
@@ -66,17 +68,27 @@ Checked against constitution v2.3.1. The independent review comes next, before `
 | V. Plugins stay inside the host frame | Pass (N/A) | No UI |
 | VI. Human confirmation for AI actions | Pass (N/A) | No AI |
 | VII. Trust decisions only in host dialogs | Pass | Approvals, quotas and turning storage on or off go through the development CLI, on local files and the development record; no plugin can read or change its grants, its quota or another store (R3, R12) |
-| VIII. Every security rule has a breaking test | Pass | 20 hostile cases, two of them white box (hardening layers, binding), on three systems; the cases of features 001 to 003 keep running, 1.0.0 and 1.1.0 plugins on the 1.2.0 host |
-| IX. Human review of the security core | Pass | The storage module, the engine and record changes live in `runtime/`, the contract and schema in `wit/`; Clippy keeps `rusqlite` inside `runtime/src/storage/` (R15); the PR template names the new fixture |
-| Fixed decisions: Wasmtime + Component Model (WIT) | Pass | Contract 1.2.0 is WIT; minors only add, checked by a test (R13) |
+| VIII. Every security rule has a breaking test | Pass | 22 hostile cases, two of them white box (hardening layers read back and tried on the production setup, binding), and 8 other named tests, on three systems; mid-run grant changes are tested without a race, the commit-time check included (R17); the cases of features 001 to 003 keep running, 1.0.0 and 1.1.0 plugins on the 1.2.0 host |
+| IX. Human review of the security core | Pass | The storage module, the engine and record changes live in `runtime/`, the contract and schema in `wit/`; Clippy keeps `rusqlite` inside `runtime/src/storage/`; `rusqlite` and `libsqlite3-sys` are pinned exactly in `runtime/Cargo.toml`, so the bundled SQLite moves only there, and the PR template lists both under `Cargo.lock` and names the new fixture (R1, R15) |
+| Fixed decisions: host app, UI | Pass (N/A) | No change to the Tauri shell or the UI |
+| Fixed decisions: Wasmtime + Component Model (WIT) | Pass | Contract 1.2.0 is WIT; minors only add, checked by a test, and the frozen versions are pinned by hash (R13) |
 | Fixed decisions: WASI 0.3 | Pass (N/A) | Still no WASI interface offered; `wasi:filesystem` refused (`storage-file`) |
+| Fixed decisions: JS/TS, Rust, Go and Python plugins | Pass | The example and fixtures are Rust on `wasm32-unknown-unknown` with wit-bindgen, `storage-file` on `wasm32-wasip2` as the other WASI cases; nothing changes for other languages |
+| Fixed decisions: secrets | Pass (N/A) | No secret is stored; the `keyring` decision is untouched |
 | Fixed decisions: plugin storage | Pass | SQLite, one database per plugin (R1, R3); the host's own records stay separate files no plugin can reach (FR-013) |
+| Fixed decisions: specifications | Pass | This feature goes through Spec Kit |
 | Fixed decisions: licenses | Pass | The new tree is MIT, Apache-2.0 or Zlib, all already allowed (R1) |
 | Workflow: gates, nothing visible on the sandbox, CI on 3 systems | Pass | No UI; this feature delivers the gate's storage case; `wit/*.json` and the plugins are code for the docs-only rule, so their changes run the whole CI |
+| Workflow: Spec Kit and the Constitution Check | Pass | specify, clarify, plan, this check with an independent review, then tasks |
+| Governance | Pass | No conflict needs an amendment; no exception is taken |
 
-**Post-design re-check**: Pass on the author's own reading. Per the project's practice since
-feature 003, an independent review of every MUST and MAY against these artifacts runs before
-`/speckit-tasks`, and each finding is checked at the source before the plan changes.
+**Post-design re-check**: Pass, after an independent review against v2.3.1. It found 3 conflicts
+(a write that fills the file let SQLite end the update's transaction and commit later writes one
+by one; a `Cargo.lock` update alone could change the bundled SQLite; no load step for an
+unavailable data directory), 13 risks and 11 consistency gaps. Each was reproduced in a spike or
+read in the sources before the plan changed (R1, R4, R6 to R12, R14, R15, R17), and the maintainer
+chose the file cap (five times the quota, R10) and which quota an approval keeps (the last shown,
+R12).
 
 ## Project Structure
 
@@ -107,7 +119,7 @@ wit/                            # Security core: contracts
 └── history/1.1.0/widget.wit    # New: published 1.1.0, frozen
 
 runtime/                        # Security core
-├── Cargo.toml                  # + rusqlite =0.41.0 (bundled, hooks, limits)
+├── Cargo.toml                  # + rusqlite =0.41.0 (bundled, hooks, limits), libsqlite3-sys =0.39.0
 ├── src/
 │   ├── storage/
 │   │   ├── mod.rs              # Store binding, run state, the five calls, commit (R3, R6, R7, R9)
@@ -118,6 +130,7 @@ runtime/                        # Security core
 │   ├── manifest.rs             # + quota_bytes, storage at most once
 │   ├── permissions.rs          # + storage in the registry; 1.2.0; storage needs 1.2 and updater
 │   ├── grants.rs               # Record v3, approval digest with storage, quota at load and on
+│   ├── text.rs                 # + quoting for `storage show`: `"` and `\` escaped (R14)
 │   ├── limits.rs               # + storage limits (R10)
 │   ├── error.rs                # + storage-failed
 │   └── bin/runtime.rs          # + storage list|show|clear; storage in permissions, approve, optional, update, remove, bench
@@ -129,7 +142,7 @@ runtime/                        # Security core
     ├── manifest_schema.rs      # + quota_bytes agreement
     ├── cli.rs                  # + storage commands and output
     ├── hostile.rs              # + mod storage
-    └── hostile/storage.rs      # The 20 cases of FR-017
+    └── hostile/storage.rs      # The 22 cases of FR-017
 
 plugins/
 ├── Cargo.toml                  # + the new crates
@@ -142,7 +155,7 @@ docs/plugin-authors.md          # + storage, quota, read-only render, not for se
 docs/threat-model.md            # + storage threats and their tests
 SECURITY.md                     # Scope names plugin storage
 plugins/hostile/README.md       # + storage cases
-.github/pull_request_template.md  # + plugins/fixtures/store-probe
+.github/pull_request_template.md  # Cargo.lock: + rusqlite, libsqlite3-sys; tests: + plugins/fixtures/store-probe
 clippy.toml                     # rusqlite only inside runtime/src/storage/ (R15)
 ```
 

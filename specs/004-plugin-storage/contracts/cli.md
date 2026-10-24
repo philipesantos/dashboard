@@ -27,15 +27,16 @@ login providers: none
 approval digest: sha256:7e2a…
 ```
 
-- The `storage:` line shows the declared quota, `approved up to <n> bytes` or `not approved`, and
-  the usage of this package's store (`used 0 bytes` when it has none yet).
+- The `storage:` line shows the declared quota, `approved up to <n> bytes` (the quota of the last
+  approval) or `not approved`, and the usage of this package's store (`used 0 bytes` when it has
+  none yet).
 - A declared quota above the approved one adds `(above the approved quota: approve again)`.
 
 ## `runtime approve <plugin> [--expect <digest>] …`
 
 As in feature 003. `--expect` is required whenever the plugin declares storage, required or
 optional; without it the command is a usage error saying to run `permissions` first. The approval
-records the declared quota. One more line:
+sets the approved quota to the declared one, smaller or larger than before. One more line:
 
 ```text
 approved local/update-counter 0.1.0
@@ -66,6 +67,7 @@ When the update fails, nothing it wrote is kept, and the error says so:
 
 ```text
 error: cpu-budget-exceeded: used the whole CPU budget of 500000000 fuel units (storage writes not kept, previous data kept)
+error: storage-failed: the store reached its file size of 393216 bytes; nothing this update wrote was kept (previous data kept)
 ```
 
 ## `runtime storage list [--grants <path>] [--data <dir>]`
@@ -80,7 +82,8 @@ local/store-probe  /tmp/old/store-probe.wasm  used 2048 bytes, not approved, no 
 - `of <n> bytes` is the approved quota when the grant record holds an approval of that id from that
   origin; otherwise `not approved`.
 - `no file` when the origin's file no longer exists.
-- A store that is damaged prints `damaged: <detail>` instead of its usage.
+- A store that is damaged, or whose file name is not the hash of the id and origin it holds,
+  prints `damaged: <detail>` instead of its usage.
 
 ## `runtime storage show <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]`
 
@@ -96,17 +99,19 @@ used 412 of 65536 bytes, 3 entries
 ```
 
 - One entry per line, sorted as the plugin's `list` sorts them.
-- Names and values that are UTF-8 are quoted and escaped as log messages are (feature 001), so no
-  entry can add a line or control the terminal; other values print as `bytes(<size>)` and
+- Names and values that are UTF-8 are printed in double quotes, escaped as log messages are
+  (feature 001) and, inside the quotes, `"` as `\"` and `\` as `\\`, so no entry can add a line,
+  control the terminal or pass for two fields; other values print as `bytes(<size>)` and
   hexadecimal.
 - Each value is cut at 1 KiB, ending with ` [truncated, <size> bytes]`.
 - No store yet: `no store yet`. A damaged store: `error: storage-failed: damaged: <detail>`, exit 1.
 
 ## `runtime storage clear <plugin> | --id <plugin-id> --origin <path> [--grants <path>] [--data <dir>]`
 
-Empties one store under an exclusive lock and compacts its file; other stores are untouched. With
-`--id` and `--origin` it reaches a store whose package file is gone; when that file no longer
-exists, the store's file is removed.
+Empties one store in one exclusive transaction (every entry deleted and overwritten, usage 0);
+other stores are untouched. The file keeps its size; later writes reuse its pages. With `--id` and
+`--origin` it reaches a store whose package file is gone. A store whose origin's file no longer
+exists, or that is damaged, is removed instead: its file is deleted.
 
 ```text
 cleared local/update-counter from /home/ada/dashboard/target/plugins/update-counter.wasm (412 bytes)

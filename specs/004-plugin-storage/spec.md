@@ -71,6 +71,10 @@ clears data explicitly until then); a file or blob API; the vault, OAuth and the
 - Q: How should the maintainer find and clear a store whose package file was moved or deleted?
   → A: The tool lists every store (id, origin, usage, quota, and whether the origin's file still
   exists) and clears one by id and origin, whether or not the file exists (FR-014).
+- Q: After a re-approval, which quota does the approval keep: the largest ever approved, or the
+  one last shown? (Asked after the independent review of the plan.) → A: The one last shown: an
+  approval records the quota it showed, smaller or larger than before, and a later version that
+  declares more than that needs a new approval (FR-008).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -363,18 +367,22 @@ declaring storage while built for 1.1.0 is refused naming 1.2.0.
   new version lowered it), deletes MUST succeed and a write MUST succeed only if usage after it is
   within the quota.
 - **FR-007**: The host MUST limit the length of a name, the size of a value, the number of
-  storage calls in each run of `update` or `render` (every call counted, refused ones included),
-  the bytes written in each update, the page size of a list, and the size of each store's file on
-  disk. A call over a limit MUST be refused, naming the limit; the file MUST never grow past its
-  cap, whatever sequence of writes and deletes a plugin makes.
+  storage calls in each run of `update` or `render` (every call of the granted capability
+  counted, refused ones included; the stand-in of an optional storage that is off reaches nothing
+  and answers every call "not granted"), the bytes written in each update, the page size of a
+  list, and the size of each store's file on disk. A call over a limit MUST be refused, naming the
+  limit; a write that reaches the file's size MUST also end the update's writes, none of them kept
+  (FR-010). The file MUST never grow past its cap, whatever sequence of writes and deletes a
+  plugin makes.
 - **FR-008**: Before approval, the host MUST show that the plugin declares storage, required or
   optional, and its quota; the quota is part of what is approved. In this phase, the tool MUST
   approve a plugin that declares storage, required or optional, only when given the digest of
   what it showed, quota included, and MUST refuse when anything changed since, granting
-  nothing, as for connectors (feature 003). A new version that declares a
-  larger quota MUST be refused until approved, naming the old and the new quota, with the grants
-  already given unchanged. A new version that declares the same or a smaller quota MUST NOT need a
-  new approval for it.
+  nothing, as for connectors (feature 003). The approved quota is the one the
+  last approval showed. A new version that declares a quota larger than the approved one MUST be
+  refused until approved, naming both quotas, with the grants already given unchanged. A new
+  version that declares the same or a smaller quota MUST NOT need a new approval for it, and does
+  not change the approved quota.
 - **FR-009**: Storage MUST be read-only during render: render MAY read and list, and MUST read one
   consistent view of the store for the whole run; a write or delete during render MUST be refused,
   naming that render only reads, and change nothing.
@@ -411,15 +419,18 @@ declaring storage while built for 1.1.0 is refused naming 1.2.0.
   1.2.0 or later, or be refused, naming the version needed.
 - **FR-016**: Every refusal and failure MUST name, in one message, the name, limit or field
   concerned and the rule that applied: not granted, render only reads, over quota, over a limit,
-  invalid name, store damaged, store busy, store unavailable; and, when a plugin loads or is
-  approved: invalid manifest (quota missing or outside its bounds), contract too old, missing
-  updater, needs a new approval (larger quota), approval changed (or no digest given).
+  invalid name, store damaged, store busy, store unavailable, run aborted (an earlier failure
+  ended the update's writes); and, when a plugin loads or is approved: invalid manifest (quota
+  missing or outside its bounds), contract too old, missing updater, needs a new approval (larger
+  quota), approval changed (or no digest given), storage failed (required storage unavailable).
+  An update whose storage could not be committed fails as storage failed, naming the cause.
 - **FR-017**: The hostile suite MUST gain one case per rule: another plugin's names
   (FR-002, FR-003), a file that copies an approved id (FR-002), names that look like paths or
   commands (FR-003, FR-004), opening the storage file through the file system (FR-002), a version
   that raises its quota (FR-008), filling the quota (FR-006), many tiny values and endless
-  rewrites (FR-005, FR-007), too many calls in one run (FR-007), a write in render (FR-009), a
-  crash, CPU, memory or time limit after writes (FR-010), optional storage off and turned off
+  rewrites (FR-005, FR-007), too many calls in one run (FR-007), a write that reaches the file
+  size limit (FR-007, FR-010), a write in render (FR-009), a crash, CPU, memory or time limit after
+  writes, and the host process killed during an update (FR-010), optional storage off and turned off
   during an update (FR-001, FR-011), a spoofed display of stored names and values (FR-014), and
   a white-box check that the store refuses attaching and extensions (FR-004). Every case MUST also
   leave the host's records and every other store unchanged (FR-013). The suite MUST run on
