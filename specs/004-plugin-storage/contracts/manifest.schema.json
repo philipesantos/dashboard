@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Plugin manifest",
+  "description": "Who a plugin is and what it needs. Carried in the plugin package's dashboard-manifest custom section (specs/002-plugin-permissions/contracts/package.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_version", "id", "version", "author", "permissions", "login_providers"],
+  "properties": {
+    "$schema": {
+      "description": "Lets editors find this schema; the host ignores it.",
+      "type": "string",
+      "maxLength": 2048
+    },
+    "manifest_version": {
+      "description": "The version of this format.",
+      "const": 1
+    },
+    "id": {
+      "description": "Where the plugin comes from: its repository, or local/<name> for a plugin that comes from no repository. Lowercase only.",
+      "type": "string",
+      "maxLength": 160,
+      "oneOf": [
+        {
+          "title": "Repository",
+          "pattern": "^github\\.com/[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/[a-z0-9_-][a-z0-9._-]{0,99}$"
+        },
+        {
+          "title": "Local",
+          "pattern": "^local/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+        }
+      ]
+    },
+    "version": {
+      "description": "The plugin's version, in Semantic Versioning 2.0.0.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "author": {
+      "description": "Who publishes the plugin, as shown to the user.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "permissions": {
+      "description": "Every capability the plugin may use. A permission the host does not know refuses the plugin; the same name twice counts once, unless one entry is required and the other optional. storage appears at most once (specs/004-plugin-storage/data-model.md).",
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "required"],
+        "properties": {
+          "name": {
+            "description": "The permission, such as log or storage.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "required": {
+            "description": "true: the user approves it with every other required permission, or the plugin does not run. false: optional; it starts off, and while off every use answers not-granted.",
+            "type": "boolean"
+          },
+          "quota_bytes": {
+            "description": "Only on storage, and required there: the most the plugin's store may hold, in usage bytes (the bytes of every name and value plus 64 per entry). Shown before approval; a later version that raises it needs a new approval. The host refuses a quota above its own cap.",
+            "type": "integer",
+            "minimum": 64,
+            "maximum": 8388608
+          }
+        },
+        "if": {
+          "properties": {
+            "name": { "const": "storage" }
+          },
+          "required": ["name"]
+        },
+        "then": {
+          "required": ["quota_bytes"]
+        },
+        "else": {
+          "not": {
+            "required": ["quota_bytes"]
+          }
+        }
+      },
+      "contains": {
+        "type": "object",
+        "properties": {
+          "name": { "const": "storage" }
+        },
+        "required": ["name"]
+      },
+      "minContains": 0,
+      "maxContains": 1
+    },
+    "login_providers": {
+      "description": "Accounts the plugin would ask the user to connect. Shown now; connecting arrives in feature 005.",
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["github"]
+      }
+    },
+    "connectors": {
+      "description": "The connectors the widget calls, each a permission of its own (specs/003-plugin-connectors/data-model.md). Absent means none. A widget that declares one is built for contract 1.1.0 or later and exports updater.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "major", "operations", "required"],
+        "properties": {
+          "id": {
+            "description": "catalog/<name>, local/<name> (development only), or a repository id, refused until installation (Phase 3).",
+            "type": "string",
+            "maxLength": 160,
+            "pattern": "^(catalog/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?|local/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?|github\\.com/[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/[a-z0-9_-][a-z0-9._-]{0,99})$"
+          },
+          "major": {
+            "description": "The connector's major version the widget is built for.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "operations": {
+            "description": "Every operation the widget calls; calling any other is refused.",
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            }
+          },
+          "required": {
+            "description": "true: approved with the other required permissions, or the widget does not run. false: optional; it starts off, and while off every call answers not-granted.",
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}
