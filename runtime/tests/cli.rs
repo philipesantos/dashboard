@@ -1749,11 +1749,11 @@ fn storage_clear_of_a_store_in_use_is_busy_and_changes_nothing() {
         .next()
         .unwrap();
     // Another process holds the store: an update in this one, which writes, then spins with no
-    // CPU budget for about 5 s
+    // CPU budget until its time limit stops it, 15 s later, rolling its writes back. A fixed
+    // hold, so a slow start of the CLI under load cannot outlast it
     let limits = runtime::Limits {
         fuel: u64::MAX,
-        time_limit: std::time::Duration::from_secs(30),
-        update_time_limit: std::time::Duration::from_secs(60),
+        update_time_limit: std::time::Duration::from_secs(15),
         ..runtime::Limits::default()
     };
     let holder = runtime::Runtime::new(limits, runtime::RuntimeOptions::new(stored.dir.path()))
@@ -1764,13 +1764,7 @@ fn storage_clear_of_a_store_in_use_is_busy_and_changes_nothing() {
             Arc::new(GrantStore::open(&stored.grants)),
         )
         .unwrap();
-    let probe = 200_000_000u64;
-    let started = std::time::Instant::now();
-    holder
-        .render(&json!({ "render_steps": [{ "op": "spin", "iterations": probe }] }).to_string())
-        .result
-        .unwrap();
-    let spin = (probe as f64 * 5.0 / started.elapsed().as_secs_f64().max(0.001)) as u64;
+    let spin = u64::MAX;
     let journal = store.with_extension("sqlite-journal");
     let output = std::thread::scope(|scope| {
         let running = scope.spawn(|| {
@@ -1788,10 +1782,12 @@ fn storage_clear_of_a_store_in_use_is_busy_and_changes_nothing() {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         let output = stored.run(&["storage", "clear", path_str(&stored.plugin)]);
-        assert!(
-            running.join().unwrap().result.is_ok(),
-            "the holder's update"
-        );
+        let held = running
+            .join()
+            .unwrap()
+            .result
+            .expect_err("stopped at its time limit");
+        assert_eq!(held.kind(), runtime::ErrorKind::TimeLimitExceeded, "{held}");
         output
     });
     assert_eq!(output.status.code(), Some(1), "stdout: {}", stdout(&output));
@@ -1800,10 +1796,10 @@ fn storage_clear_of_a_store_in_use_is_busy_and_changes_nothing() {
         "{}",
         stderr(&output)
     );
-    // The clear changed nothing: the holder's update is what the store holds
+    // The clear changed nothing, and the holder's update rolled back: the value from before
     let output = stored.run(&["storage", "show", path_str(&stored.plugin)]);
     assert!(
-        stdout(&output).contains("\"a\" = \"held\""),
+        stdout(&output).contains("\"a\" = \"b\""),
         "{}",
         stdout(&output)
     );
