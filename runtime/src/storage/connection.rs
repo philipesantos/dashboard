@@ -660,6 +660,45 @@ impl StoreConnection {
     }
 }
 
+/// What [`plant_foreign_store`] writes into a store.
+#[cfg(feature = "test-network")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Foreign {
+    /// A table the host never creates.
+    ExtraTable,
+    /// A trigger on the entries.
+    Trigger,
+    /// A view of the entries.
+    View,
+    /// Another plugin's id in the store's identity.
+    OtherId,
+}
+
+/// Changes the store at `file` as someone outside the host could, for the hostile case
+/// `foreign-store`, so no test opens a connection itself and `clippy.toml` keeps every SQLite
+/// connection in this module (research R15). `test-network` is the runtime's test-only feature,
+/// refused in release builds by its `compile_error!`; it gates every test hook, not only the
+/// network's.
+#[cfg(feature = "test-network")]
+pub fn plant_foreign_store(file: &Path, kind: Foreign) -> Result<(), String> {
+    let connection = Connection::open_with_flags(
+        file,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|error| error.to_string())?;
+    let sql = match kind {
+        Foreign::ExtraTable => "CREATE TABLE extra (x)",
+        Foreign::Trigger => {
+            "CREATE TRIGGER spy AFTER INSERT ON entries BEGIN DELETE FROM store; END"
+        }
+        Foreign::View => "CREATE VIEW peek AS SELECT * FROM entries",
+        Foreign::OtherId => "UPDATE store SET value = 'local/someone-else' WHERE key = 'id'",
+    };
+    connection
+        .execute_batch(sql)
+        .map_err(|error| error.to_string())
+}
+
 /// The shortest byte string greater than every string that starts with `prefix`, or `None` when
 /// there is none (an empty prefix, or one of only `0xFF` bytes).
 fn successor(prefix: &[u8]) -> Option<Vec<u8>> {

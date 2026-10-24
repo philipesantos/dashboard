@@ -352,3 +352,84 @@ fn name_injection() {
         assert_eq!(files, std::slice::from_ref(&store));
     });
 }
+
+#[test]
+fn storage_file() {
+    let vault = Vault::new();
+    let a_origin = vault.origin("store-a");
+    let a = vault.plugin(&Vault::probe("local/store-a", QUOTA), &a_origin);
+    update(&a, &[set("secret", "A's value")]);
+    let target = vault.store_file("local/store-a", &a_origin);
+    let package = fixture("storage-file");
+    let origin = vault.origin("storage-file");
+    vault.contained(&[], || {
+        // Refused at load, before it can run, whatever its approval
+        let error = vault
+            .world
+            .runtime
+            .check(&package)
+            .err()
+            .expect("a plugin importing wasi:filesystem is refused");
+        assert_eq!(error.kind(), ErrorKind::CapabilityRefused, "{error}");
+        assert!(
+            error
+                .names()
+                .iter()
+                .any(|name| name.starts_with("wasi:filesystem/")),
+            "{error}"
+        );
+        let error = vault
+            .world
+            .try_load_at(&package, &origin)
+            .err()
+            .expect("refused");
+        assert_eq!(error.kind(), ErrorKind::CapabilityRefused, "{error}");
+    });
+    assert!(target.is_file());
+    assert_eq!(render(&a, &[get("secret")]), [hex("A's value")]);
+}
+
+/// A store file somebody changed, or swapped for another plugin's, is damaged: the host runs
+/// nothing in it, changes nothing and deletes nothing, and other stores keep working.
+#[test]
+fn foreign_store() {
+    use runtime::storage::{Foreign, plant_foreign_store};
+
+    let vault = Vault::new();
+    let a_origin = vault.origin("store-a");
+    let a = vault.plugin(&Vault::probe("local/store-a", QUOTA), &a_origin);
+    update(&a, &[set("secret", "A's value")]);
+    let a_store = vault.store_file("local/store-a", &a_origin);
+    for kind in [
+        Some(Foreign::ExtraTable),
+        Some(Foreign::Trigger),
+        Some(Foreign::View),
+        Some(Foreign::OtherId),
+        // A's store copied over B's file: it is A's, not B's
+        None,
+    ] {
+        let b_origin = vault.origin(&format!("store-b-{kind:?}"));
+        let b = vault.plugin(&Vault::probe("local/store-b", QUOTA), &b_origin);
+        update(&b, &[set("mine", "B's value")]);
+        let b_store = vault.store_file("local/store-b", &b_origin);
+        match kind {
+            Some(kind) => plant_foreign_store(&b_store, kind).unwrap(),
+            None => {
+                std::fs::copy(&a_store, &b_store).unwrap();
+            }
+        }
+        // Only B's kept data may change: its failed update is recorded
+        let kept = vault.own("local/store-b", &b_origin).remove(1);
+        vault.contained(&[kept], || {
+            let found = render(&b, &[get("mine"), list("")]);
+            for answer in &found {
+                assert_eq!(answer["error"], "failed:damaged", "{kind:?}: {answer}");
+            }
+            let report = b.update(&steps(&[set("mine", "rewritten")], None));
+            let found = answers(&report.result.unwrap());
+            assert_eq!(found[0]["error"], "failed:damaged", "{kind:?}");
+        });
+        assert!(b_store.is_file(), "{kind:?}: the host deleted the file");
+        assert_eq!(render(&a, &[get("secret")]), [hex("A's value")]);
+    }
+}
