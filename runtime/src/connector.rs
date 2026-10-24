@@ -1010,6 +1010,10 @@ fn is_name(name: &str, max: usize, extra: char) -> bool {
 }
 
 /// The name in a placeholder, which is exactly `{<parameter>}`.
+pub(crate) fn placeholder_name(text: &str) -> Option<&str> {
+    placeholder(text)
+}
+
 fn placeholder(text: &str) -> Option<&str> {
     let name = text.strip_prefix('{')?.strip_suffix('}')?;
     is_name(name, MAX_PARAMETER_NAME_CHARS, '_').then_some(name)
