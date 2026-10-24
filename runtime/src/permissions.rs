@@ -17,18 +17,20 @@ use crate::manifest::Manifest;
 pub enum Contract {
     /// `dashboard:widget@0.1.0` (`wit/v0`): only `log`, which cannot answer "not granted".
     V0,
-    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.1.0: every
+    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.2.0: every
     /// capability can answer "not granted".
     V1,
 }
 
 /// The newest minor version of contract v1 this host runs; plugins built for any v1 minor up to
 /// it run, and newer ones are refused (FR-016).
-pub const V1_VERSION: semver::Version = semver::Version::new(1, 1, 0);
+pub const V1_VERSION: semver::Version = semver::Version::new(1, 2, 0);
 /// The only version of contract v0.
 const V0_VERSION: semver::Version = semver::Version::new(0, 1, 0);
 /// The minor version that brought connectors and `updater`.
 const CONNECTORS_SINCE: semver::Version = semver::Version::new(1, 1, 0);
+/// The minor version that brought `storage` (`specs/004-plugin-storage/research.md`, R13).
+const STORAGE_SINCE: semver::Version = semver::Version::new(1, 2, 0);
 
 /// The interface names of the contract, without their version.
 const RENDERER: &str = "dashboard:widget/renderer";
@@ -52,7 +54,7 @@ impl Contract {
     pub fn renderer(self) -> &'static str {
         match self {
             Contract::V0 => "dashboard:widget/renderer@0.1.0",
-            Contract::V1 => "dashboard:widget/renderer@1.1.0",
+            Contract::V1 => "dashboard:widget/renderer@1.2.0",
         }
     }
 
@@ -85,6 +87,11 @@ impl ContractVersion {
     /// Whether this version has connectors and `updater`.
     pub fn has_connectors(&self) -> bool {
         self.contract == Contract::V1 && self.version >= CONNECTORS_SINCE
+    }
+
+    /// Whether this version has `storage`.
+    pub fn has_storage(&self) -> bool {
+        self.contract == Contract::V1 && self.version >= STORAGE_SINCE
     }
 }
 
@@ -124,12 +131,22 @@ const CONTRACT_PREFIX: &str = "dashboard:widget/";
 /// Every permission this host knows by name. Each connector is a permission too, but it is
 /// declared under `connectors` in the manifest and carried by the one `connectors` interface
 /// (research R12), so it has no row here.
-const REGISTRY: &[Permission] = &[Permission {
-    name: "log",
-    v0: Some("dashboard:widget/log@0.1.0"),
-    v1: "dashboard:widget/log",
-    since: semver::Version::new(1, 0, 0),
-}];
+const REGISTRY: &[Permission] = &[
+    Permission {
+        name: "log",
+        v0: Some("dashboard:widget/log@0.1.0"),
+        v1: "dashboard:widget/log",
+        since: semver::Version::new(1, 0, 0),
+    },
+    // The plugin's own store, with its quota on the same manifest entry
+    // (specs/004-plugin-storage/research.md, R2, R9)
+    Permission {
+        name: "storage",
+        v0: None,
+        v1: "dashboard:widget/storage",
+        since: semver::Version::new(1, 2, 0),
+    },
+];
 
 /// The names a component imports and exports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -326,6 +343,30 @@ pub(crate) fn check_component(
                 ErrorKind::MissingUpdater,
                 ids,
                 Some("a widget that declares connectors must export updater, where it calls them"),
+            ));
+        }
+    }
+    // Storage arrived with 1.2.0, and is written only in `update`
+    // (specs/004-plugin-storage/spec.md, FR-012, FR-015)
+    if manifest.storage().is_some() {
+        let names = || vec!["storage".to_owned()];
+        if !contract.has_storage() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::ContractTooOld,
+                names(),
+                Some(&format!(
+                    "storage needs contract {STORAGE_SINCE} or later, and this plugin is built for {}",
+                    contract.version
+                )),
+            ));
+        }
+        if interfaces.updater().is_none() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::MissingUpdater,
+                names(),
+                Some(
+                    "a widget that declares storage must export updater: storage is written only in an update",
+                ),
             ));
         }
     }
@@ -598,7 +639,7 @@ mod tests {
     fn no_renderer_of_a_known_version_is_a_contract_mismatch() {
         for renderer in [
             None,
-            Some("dashboard:widget/renderer@1.2.0"),
+            Some("dashboard:widget/renderer@1.3.0"),
             Some("dashboard:widget/renderer@2.0.0"),
             Some("dashboard:widget/renderer@0.2.0"),
             Some("dashboard:other/renderer@1.0.0"),
@@ -858,7 +899,7 @@ mod tests {
     #[test]
     fn each_contract_has_its_renderer() {
         assert_eq!(Contract::V0.renderer(), "dashboard:widget/renderer@0.1.0");
-        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.1.0");
+        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.2.0");
         assert_eq!(
             Contract::from_renderer("dashboard:widget/renderer@0.1.0"),
             Some(Contract::V0)
@@ -876,7 +917,7 @@ mod tests {
     #[test]
     fn another_renderer_version_is_no_contract() {
         for export in [
-            "dashboard:widget/renderer@1.2.0",
+            "dashboard:widget/renderer@1.3.0",
             "dashboard:widget/renderer@2.0.0",
             "dashboard:widget/renderer@0.2.0",
             "dashboard:widget/renderer",
@@ -911,7 +952,7 @@ mod tests {
     fn an_import_from_the_other_contract_matches_nothing() {
         assert_eq!(by_import(Contract::V0, "dashboard:widget/log@1.0.0"), None);
         assert_eq!(by_import(Contract::V1, "dashboard:widget/log@0.1.0"), None);
-        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@1.2.0"), None);
+        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@1.3.0"), None);
         assert_eq!(by_import(Contract::V1, "dashboard:widget/log@2.0.0"), None);
     }
 
@@ -1002,15 +1043,15 @@ mod tests {
     fn a_plugin_built_for_a_newer_minor_is_a_contract_mismatch_naming_both() {
         let error = check_component(
             &component(
-                &["dashboard:widget/log@1.2.0"],
-                &["dashboard:widget/renderer@1.2.0"],
+                &["dashboard:widget/log@1.3.0"],
+                &["dashboard:widget/renderer@1.3.0"],
             ),
             &manifest(Some(true)),
         )
         .expect_err("refused");
         assert_eq!(error.kind(), ErrorKind::ContractMismatch);
+        assert!(error.detail().contains("1.3.0"), "{error}");
         assert!(error.detail().contains("1.2.0"), "{error}");
-        assert!(error.detail().contains("1.1.0"), "{error}");
     }
 
     #[test]
@@ -1120,5 +1161,123 @@ mod tests {
         )
         .unwrap();
         assert!(!decision.plan.connectors);
+    }
+
+    // Feature 004: contract 1.2.0 and storage (`specs/004-plugin-storage/data-model.md`)
+
+    const STORAGE_V1_2: &str = "dashboard:widget/storage@1.2.0";
+    const RENDERER_V1_2: &str = "dashboard:widget/renderer@1.2.0";
+    const UPDATER_V1_2: &str = "dashboard:widget/updater@1.2.0";
+
+    /// A manifest for `local/probe` declaring storage, required, with a quota.
+    fn stored_manifest() -> Manifest {
+        let manifest = json!({
+            "manifest_version": 1,
+            "id": "local/probe",
+            "version": "1.0.0",
+            "author": "A",
+            "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }],
+            "login_providers": []
+        });
+        Manifest::parse(&serde_json::to_vec(&manifest).expect("serializes")).expect("valid")
+    }
+
+    #[test]
+    fn a_v1_plugin_of_minor_2_runs_with_storage() {
+        let checked = check_component(
+            &component(&[STORAGE_V1_2], &[RENDERER_V1_2, UPDATER_V1_2]),
+            &stored_manifest(),
+        )
+        .unwrap();
+        assert_eq!(checked.version, semver::Version::new(1, 2, 0));
+        assert_eq!(checked.display(), "v1 (1.2.0)");
+        assert!(checked.has_connectors());
+        assert!(checked.has_storage());
+        let older = check_component(
+            &component(&[LOG_V1_1], &["dashboard:widget/renderer@1.1.0"]),
+            &manifest(Some(true)),
+        )
+        .unwrap();
+        assert!(!older.has_storage());
+        assert_eq!(V1_VERSION, semver::Version::new(1, 2, 0));
+        assert_eq!(Contract::V1.renderer(), RENDERER_V1_2);
+    }
+
+    #[test]
+    fn a_plugin_mixing_1_1_and_1_2_is_a_contract_mismatch_naming_both() {
+        let error = check_component(
+            &component(&[LOG_V1_1], &[RENDERER_V1_2]),
+            &manifest(Some(true)),
+        )
+        .expect_err("refused");
+        assert_eq!(error.kind(), ErrorKind::ContractMismatch, "{error}");
+        assert!(error.detail().contains("1.1.0"), "{error}");
+        assert!(error.detail().contains("1.2.0"), "{error}");
+    }
+
+    #[test]
+    fn storage_needs_contract_1_2() {
+        for interfaces in [
+            component(&[LOG_V1], &[RENDERER_V1_0]),
+            component(
+                &[LOG_V1_1],
+                &["dashboard:widget/renderer@1.1.0", UPDATER_V1_1],
+            ),
+            v0(&[LOG_V0]),
+        ] {
+            let error = check_component(&interfaces, &stored_manifest()).expect_err("refused");
+            assert_eq!(error.kind(), ErrorKind::ContractTooOld, "{error}");
+            assert!(error.detail().contains("1.2.0"), "{error}");
+            assert_eq!(error.names(), ["storage"]);
+        }
+    }
+
+    #[test]
+    fn storage_needs_an_updater() {
+        let error = check_component(
+            &component(&[STORAGE_V1_2], &[RENDERER_V1_2]),
+            &stored_manifest(),
+        )
+        .expect_err("refused");
+        assert_eq!(error.kind(), ErrorKind::MissingUpdater, "{error}");
+        assert!(error.detail().contains("update"), "{error}");
+        assert_eq!(error.names(), ["storage"]);
+        // Declared but never imported, as a plugin that never calls it: allowed
+        check_component(
+            &component(&[], &[RENDERER_V1_2, UPDATER_V1_2]),
+            &stored_manifest(),
+        )
+        .expect("allowed");
+    }
+
+    #[test]
+    fn importing_storage_without_declaring_it_is_not_declared() {
+        assert_eq!(
+            refusal(check_component(
+                &component(&[STORAGE_V1_2], &[RENDERER_V1_2, UPDATER_V1_2]),
+                &manifest(None),
+            )),
+            (ErrorKind::NotDeclared, vec!["storage".to_owned()])
+        );
+    }
+
+    #[test]
+    fn the_registry_has_storage_since_1_2() {
+        let storage = by_name("storage").expect("storage is registered");
+        assert_eq!(storage.v0, None);
+        assert_eq!(storage.v1, "dashboard:widget/storage");
+        assert_eq!(storage.since, semver::Version::new(1, 2, 0));
+        assert_eq!(
+            by_import(Contract::V1, STORAGE_V1_2).map(|p| p.name),
+            Some("storage")
+        );
+        assert_eq!(
+            by_import(Contract::V1, "dashboard:widget/storage@1.1.0"),
+            None
+        );
+        assert_eq!(
+            by_import(Contract::V1, "dashboard:widget/storage@1.3.0"),
+            None
+        );
     }
 }

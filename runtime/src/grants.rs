@@ -9,6 +9,9 @@
 //! Version 2 (`specs/003-plugin-connectors/data-model.md`) adds the connectors each approval
 //! covers: where each came from, its destinations and the digests of the operations the widget
 //! declares, so a change to any of them needs a new approval.
+//!
+//! Version 3 (`specs/004-plugin-storage/data-model.md`) adds the storage quota the last approval
+//! showed, so a later version that declares more needs the user again.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -25,17 +28,21 @@ use crate::error::{ErrorKind, RuntimeError};
 use crate::manifest::{Manifest, PluginId};
 use crate::permissions;
 
-/// The record format this host writes. It also reads version 1, as version 2 with no
-/// connectors, and writes it back as version 2.
-pub const RECORD_VERSION: u64 = 2;
+/// The record format this host writes. It also reads versions 1 and 2, as version 3 with no
+/// connectors (version 1) and no storage quota, and writes them back as version 3.
+pub const RECORD_VERSION: u64 = 3;
 /// The format of feature 002, still read.
 const RECORD_VERSION_1: u64 = 1;
+/// The format of feature 003, still read.
+const RECORD_VERSION_2: u64 = 2;
 
 /// The app's directory inside the system's data directory. Provisional: it moves with the
 /// project's final name, before the first release.
 pub(crate) const APP_DIR: &str = "dev.philsantos.dashboard";
 /// The development record's file name.
 const RECORD_FILE: &str = "development-grants.json";
+/// The permission whose approval carries a quota.
+const STORAGE: &str = "storage";
 
 /// One plugin's approval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +60,10 @@ pub struct Entry {
     /// One entry per connector the approved manifest declared (record version 2).
     #[serde(default)]
     pub connectors: BTreeMap<String, ConnectorGrant>,
+    /// The storage quota the last approval showed, in usage bytes; present only once an approved
+    /// manifest declared storage (record version 3, `specs/004-plugin-storage/data-model.md`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_quota_bytes: Option<u64>,
 }
 
 /// What an approval covers of one connector (`data-model.md`, Grant record, version 2).
@@ -82,6 +93,27 @@ impl Entry {
         self.connectors
             .get(id)
             .is_some_and(|connector| connector.granted)
+    }
+
+    /// What a load of `manifest` needs approved again about storage: when storage is required,
+    /// or optional and on, a declared quota above the approved one, or none approved yet.
+    /// `None` when the approval covers it.
+    pub fn storage_change(&self, manifest: &Manifest) -> Option<String> {
+        let declared = manifest.storage()?;
+        if !declared.required && !self.is_granted(STORAGE) {
+            return None;
+        }
+        match self.storage_quota_bytes {
+            Some(approved) if declared.quota_bytes <= approved => None,
+            Some(approved) => Some(format!(
+                "storage quota raised from {approved} to {} bytes",
+                declared.quota_bytes
+            )),
+            None => Some(format!(
+                "storage with a quota of {} bytes is not approved yet",
+                declared.quota_bytes
+            )),
+        }
     }
 
     /// What changed in `connectors` since this approval, for each required connector and each
@@ -145,8 +177,9 @@ pub struct ConnectorState {
 }
 
 /// The approval digest (`data-model.md`, Approval digest): `sha256:` and the hex SHA-256 of a
-/// canonical JSON of the package digest, the manifest's permissions and each declared
-/// connector's id, origin, version, `required`, destinations and operation digests. What
+/// canonical JSON of the package digest, the manifest's permissions, each declared connector's
+/// id, origin, version, `required`, destinations and operation digests, and the storage
+/// declaration when there is one. What
 /// `permissions` shows and `approve` grants carry the same one.
 pub fn approval_digest(
     package_digest: &str,
@@ -174,11 +207,19 @@ pub fn approval_digest(
             })
         })
         .collect();
-    let document = serde_json::json!({
+    let mut document = serde_json::json!({
         "package": package_digest,
         "permissions": permissions,
         "connectors": connectors,
     });
+    // Only when declared, so a widget without storage keeps the digest, and the kept data, it
+    // had (`specs/004-plugin-storage/data-model.md`, Approval digest)
+    if let Some(storage) = manifest.storage() {
+        document["storage"] = serde_json::json!({
+            "required": storage.required,
+            "quota_bytes": storage.quota_bytes,
+        });
+    }
     crate::connector::sha256(crate::connector::canonical(&document).as_bytes())
 }
 
@@ -237,7 +278,7 @@ impl GrantRecord {
             .get("record_version")
             .and_then(serde_json::Value::as_u64)
         {
-            Some(version @ (RECORD_VERSION_1 | RECORD_VERSION)) => version,
+            Some(version @ (RECORD_VERSION_1 | RECORD_VERSION_2 | RECORD_VERSION)) => version,
             Some(version) if version > RECORD_VERSION => {
                 return Err(format!(
                     "record_version {version} is newer than this host's {RECORD_VERSION}"
@@ -245,7 +286,7 @@ impl GrantRecord {
             }
             _ => {
                 return Err(format!(
-                    "record_version must be {RECORD_VERSION_1} or {RECORD_VERSION}"
+                    "record_version must be {RECORD_VERSION_1}, {RECORD_VERSION_2} or {RECORD_VERSION}"
                 ));
             }
         };
@@ -262,6 +303,11 @@ impl GrantRecord {
                     "{id} has connectors in a record of version {RECORD_VERSION_1}, which has none"
                 ));
             }
+            if version < RECORD_VERSION && entry.storage_quota_bytes.is_some() {
+                return Err(format!(
+                    "{id} has a storage quota in a record of version {version}, which has none"
+                ));
+            }
             for (connector, grant) in &entry.connectors {
                 if !grant.destinations.windows(2).all(|pair| pair[0] < pair[1]) {
                     return Err(format!(
@@ -270,7 +316,7 @@ impl GrantRecord {
                 }
             }
         }
-        // A version 1 record is version 2 with no connectors, and is written back as 2
+        // Older records are version 3 with no connectors or storage quota, written back as 3
         record.record_version = RECORD_VERSION;
         Ok(record)
     }
@@ -326,6 +372,55 @@ impl GrantStore {
         self.generation.load(Ordering::Acquire)
     }
 
+    /// Whether `permission` is granted to the plugin's approval from `origin`, read from the
+    /// record as it is now, under its lock: a change made by any process applies.
+    pub fn permission_granted(
+        &self,
+        plugin: &PluginId,
+        origin: &str,
+        permission: &str,
+    ) -> Result<bool, RuntimeError> {
+        Ok(self
+            .entry(plugin)?
+            .is_some_and(|entry| entry.origin == origin && entry.is_granted(permission)))
+    }
+
+    /// Runs `commit` only while the record, read under its shared lock, grants `permission` to
+    /// the plugin's approval from `origin`, and holds the lock until `commit` returns, so no
+    /// change to the grants falls between the check and what `commit` does (research R7).
+    /// `None` when the permission is not granted, and `commit` did not run.
+    pub fn while_granted<T>(
+        &self,
+        plugin: &PluginId,
+        origin: &str,
+        permission: &str,
+        commit: impl FnOnce() -> T,
+    ) -> Result<Option<T>, RuntimeError> {
+        let granted = |record: &GrantRecord| {
+            record
+                .plugins
+                .get(plugin.as_str())
+                .is_some_and(|entry| entry.origin == origin && entry.is_granted(permission))
+        };
+        match &self.backing {
+            Backing::Memory(record) => {
+                let record = record.lock().unwrap_or_else(PoisonError::into_inner);
+                Ok(granted(&record).then(commit))
+            }
+            Backing::File(path) => {
+                match fs::metadata(path) {
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                    Err(error) => return Err(damaged(path, error)),
+                    Ok(_) => {}
+                }
+                // Held until `commit` returns: a change to the record waits for it
+                let _lock = lock(path, false)?;
+                let record = load(path)?;
+                Ok(granted(&record).then(commit))
+            }
+        }
+    }
+
     /// The plugin's approval, if it has one, whatever its origin. Refused as `not-granted` when
     /// the record cannot be used.
     pub fn entry(&self, id: &PluginId) -> Result<Option<Entry>, RuntimeError> {
@@ -368,6 +463,12 @@ impl GrantStore {
         origin: &str,
         digest: &str,
     ) -> Result<Approval, RuntimeError> {
+        if manifest.storage().is_some() {
+            return Err(RuntimeError::new(
+                ErrorKind::ApprovalChanged,
+                "a plugin that declares storage is approved only with the approval digest of what was shown, its quota included",
+            ));
+        }
         let required: Vec<String> = manifest
             .permissions()
             .iter()
@@ -399,6 +500,7 @@ impl GrantStore {
                     approved_version: manifest.version().to_owned(),
                     approved_digest: digest.to_owned(),
                     connectors: BTreeMap::new(),
+                    storage_quota_bytes: None,
                 },
             );
             let approval = Approval {
@@ -414,7 +516,8 @@ impl GrantStore {
     /// now: anything that changed since it was shown is refused as `approval-changed`, granting
     /// nothing (FR-014). Each declared connector is recorded with its origin, destinations and
     /// operation digests; required ones are granted, and an optional one keeps its state when
-    /// nothing about it changed, and is off otherwise.
+    /// nothing about it changed, and is off otherwise. A plugin that declares storage is
+    /// approved here, with the quota shown recorded (feature 004).
     pub fn approve_connected(
         &self,
         manifest: &Manifest,
@@ -486,6 +589,8 @@ impl GrantStore {
                     approved_version: manifest.version().to_owned(),
                     approved_digest: digest.to_owned(),
                     connectors: grants,
+                    // The quota this approval showed, smaller or larger than before
+                    storage_quota_bytes: manifest.storage().map(|storage| storage.quota_bytes),
                 },
             );
             let replaced = previous
@@ -632,6 +737,27 @@ impl GrantStore {
             let entry = approved_entry(record, manifest.id(), origin)?;
             if entry.is_granted(permission) == on {
                 return Ok(((), false));
+            }
+            // Storage turned on with a quota the user did not approve needs the user again
+            if on
+                && permission == STORAGE
+                && let Some(declared) = manifest.storage()
+                && entry
+                    .storage_quota_bytes
+                    .is_none_or(|approved| declared.quota_bytes > approved)
+            {
+                let approved = entry.storage_quota_bytes.map_or_else(
+                    || "no storage quota is approved".to_owned(),
+                    |approved| format!("the approved quota is {approved} bytes"),
+                );
+                return Err(RuntimeError::with_names(
+                    ErrorKind::NeedsNewApproval,
+                    names(),
+                    Some(&format!(
+                        "it declares a quota of {} bytes and {approved}; approve the plugin again",
+                        declared.quota_bytes
+                    )),
+                ));
             }
             if on {
                 entry.granted.push(permission.to_owned());
@@ -918,7 +1044,7 @@ mod tests {
         assert_eq!(
             record,
             json!({
-                "record_version": 2,
+                "record_version": 3,
                 "plugins": {
                     "local/probe": {
                         "origin": ORIGIN,
@@ -977,7 +1103,7 @@ mod tests {
             ("not an object", "[]".to_owned()),
             (
                 "a newer record version",
-                r#"{"record_version":3,"plugins":{},"more":1}"#.to_owned(),
+                r#"{"record_version":4,"plugins":{},"more":1}"#.to_owned(),
             ),
             (
                 "an older record version",
@@ -1074,6 +1200,7 @@ mod tests {
                     approved_version: "1.0.0".to_owned(),
                     approved_digest: DIGEST.to_owned(),
                     connectors: BTreeMap::new(),
+                    storage_quota_bytes: None,
                 })
             );
         });
@@ -1461,7 +1588,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_1_record_reads_as_version_2_without_connectors_and_is_written_back_as_2() {
+    fn a_version_1_record_reads_as_version_3_without_connectors_and_is_written_back_as_3() {
         let (_dir, store, path) = store_with_text(&format!(
             r#"{{"record_version":1,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}"}}}}}}"#
         ));
@@ -1473,7 +1600,7 @@ mod tests {
             .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
             .expect("approved");
         let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(record["record_version"], 2);
+        assert_eq!(record["record_version"], 3);
         assert_eq!(record["plugins"]["local/probe"]["granted"], json!(["log"]));
         // A version 1 record never has connectors
         let (_dir, store, _) = store_with_text(&format!(
@@ -1839,5 +1966,320 @@ mod tests {
                 .connector_granted(&id(CONNECTED), ORIGIN, "catalog/github")
                 .unwrap()
         );
+    }
+
+    // Feature 004: grant record version 3 and storage (`specs/004-plugin-storage/data-model.md`)
+
+    /// A manifest for `local/update-counter` declaring storage with this quota.
+    fn stored_manifest(required: bool, quota_bytes: u64) -> Manifest {
+        let manifest = json!({
+            "manifest_version": 1,
+            "id": STORED,
+            "version": "0.1.0",
+            "author": "A",
+            "permissions": [{ "name": "storage", "required": required, "quota_bytes": quota_bytes }],
+            "login_providers": []
+        });
+        Manifest::parse(&serde_json::to_vec(&manifest).expect("serializes")).expect("valid")
+    }
+
+    const STORED: &str = "local/update-counter";
+
+    fn approve_stored(store: &GrantStore, manifest: &Manifest) {
+        let expected = approval_digest(DIGEST, manifest, &[]);
+        store
+            .approve_connected(manifest, ORIGIN, DIGEST, &[], &expected)
+            .expect("approved");
+    }
+
+    #[test]
+    fn a_version_2_record_reads_as_version_3_and_is_written_back_as_3() {
+        let (_dir, store, path) = store_with_text(&format!(
+            r#"{{"record_version":2,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{}}}}}}}}"#
+        ));
+        let entry = entry(&store, "local/probe").expect("an entry");
+        assert_eq!(entry.storage_quota_bytes, None);
+        store
+            .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
+            .expect("approved");
+        let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(record["record_version"], 3);
+        assert!(
+            record["plugins"]["local/probe"]
+                .get("storage_quota_bytes")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn only_a_version_3_record_holds_a_storage_quota() {
+        for version in [1, 2] {
+            let (_dir, store, _) = store_with_text(&format!(
+                r#"{{"record_version":{version},"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":[],"approved_version":"1.0.0","approved_digest":"{DIGEST}","storage_quota_bytes":4096}}}}}}"#
+            ));
+            assert_eq!(
+                store.entry(&id("local/probe")).unwrap_err().kind(),
+                ErrorKind::NotGranted,
+                "version {version}"
+            );
+        }
+        let (_dir, store, _) = store_with_text(&format!(
+            r#"{{"record_version":3,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["storage"],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{}},"storage_quota_bytes":4096}}}}}}"#
+        ));
+        assert_eq!(
+            entry(&store, "local/probe").unwrap().storage_quota_bytes,
+            Some(4096)
+        );
+    }
+
+    #[test]
+    fn an_approval_records_the_quota_it_showed() {
+        for_each_store(|store| {
+            approve_stored(store, &stored_manifest(true, 65536));
+            let approved = entry(store, STORED).expect("an entry");
+            assert_eq!(approved.storage_quota_bytes, Some(65536));
+            assert_eq!(approved.granted, ["storage"]);
+            // Smaller and larger alike: the approval keeps the quota it last showed
+            approve_stored(store, &stored_manifest(true, 4096));
+            assert_eq!(
+                entry(store, STORED).unwrap().storage_quota_bytes,
+                Some(4096)
+            );
+            approve_stored(store, &stored_manifest(true, 131072));
+            assert_eq!(
+                entry(store, STORED).unwrap().storage_quota_bytes,
+                Some(131072)
+            );
+        });
+        let (_dir, store) = file_store();
+        approve_stored(&store, &stored_manifest(false, 4096));
+        let record: Value =
+            serde_json::from_slice(&fs::read(store.path().unwrap()).unwrap()).unwrap();
+        assert_eq!(record["plugins"][STORED]["storage_quota_bytes"], 4096);
+        assert_eq!(record["plugins"][STORED]["granted"], json!([]));
+    }
+
+    #[test]
+    fn a_plugin_with_storage_is_approved_only_with_its_digest() {
+        for_each_store(|store| {
+            for required in [true, false] {
+                let manifest = stored_manifest(required, 65536);
+                let error = store.approve(&manifest, ORIGIN, DIGEST).unwrap_err();
+                assert_eq!(error.kind(), ErrorKind::ApprovalChanged, "{error}");
+                let shown = approval_digest(DIGEST, &stored_manifest(required, 4096), &[]);
+                let error = store
+                    .approve_connected(&manifest, ORIGIN, DIGEST, &[], &shown)
+                    .unwrap_err();
+                assert_eq!(error.kind(), ErrorKind::ApprovalChanged, "{error}");
+                assert!(entry(store, STORED).is_none());
+                assert_eq!(store.generation(), 0);
+            }
+        });
+    }
+
+    #[test]
+    fn the_approval_digest_without_storage_is_that_of_feature_003() {
+        // Computed with feature 003's code, before storage existed: widgets that declare no
+        // storage keep their digest, and so their kept data
+        assert_eq!(
+            approval_digest(
+                DIGEST,
+                &connected_manifest(&["forecast"]),
+                &[github_state(), weather_state()]
+            ),
+            "sha256:4f360db672279a9cded20d52055377ad8e2130dbf461f26765312ce83d74c930"
+        );
+        assert_eq!(
+            approval_digest(DIGEST, &manifest("local/probe", "1.0.0", Some(true)), &[]),
+            "sha256:c4941f3d75a062a58ab369ba0479a284ef5eca1e90abff96a4e6870782a3f139"
+        );
+    }
+
+    #[test]
+    fn the_approval_digest_covers_the_storage_declaration() {
+        let base = approval_digest(DIGEST, &stored_manifest(true, 65536), &[]);
+        assert_eq!(
+            base,
+            approval_digest(DIGEST, &stored_manifest(true, 65536), &[])
+        );
+        assert_ne!(
+            base,
+            approval_digest(DIGEST, &stored_manifest(false, 65536), &[])
+        );
+        assert_ne!(
+            base,
+            approval_digest(DIGEST, &stored_manifest(true, 65537), &[])
+        );
+        let without = {
+            let manifest = json!({
+                "manifest_version": 1, "id": STORED, "version": "0.1.0", "author": "A",
+                "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }],
+                "login_providers": []
+            });
+            let mut text = serde_json::to_string(&manifest).unwrap();
+            text = text.replace(r#","quota_bytes":65536"#, "");
+            text = text.replace(r#""name":"storage""#, r#""name":"log""#);
+            Manifest::parse(text.as_bytes()).unwrap()
+        };
+        assert_ne!(base, approval_digest(DIGEST, &without, &[]));
+    }
+
+    #[test]
+    fn a_larger_quota_than_approved_needs_a_new_approval() {
+        let store = GrantStore::in_memory();
+        approve_stored(&store, &stored_manifest(true, 65536));
+        let approved = entry(&store, STORED).unwrap();
+        assert_eq!(approved.storage_change(&stored_manifest(true, 65536)), None);
+        assert_eq!(approved.storage_change(&stored_manifest(true, 4096)), None);
+        let change = approved
+            .storage_change(&stored_manifest(true, 131072))
+            .expect("a larger quota");
+        assert!(
+            change.contains("65536") && change.contains("131072"),
+            "{change}"
+        );
+        // Never approved: the declared quota needs approval
+        let mut never = approved.clone();
+        never.storage_quota_bytes = None;
+        let change = never
+            .storage_change(&stored_manifest(true, 4096))
+            .expect("not approved yet");
+        assert!(change.contains("4096"), "{change}");
+        // Optional storage that is off needs nothing; turned on, it does. A fresh record: an
+        // approval from the same origin keeps what is still declared and on
+        let store = GrantStore::in_memory();
+        approve_stored(&store, &stored_manifest(false, 4096));
+        let off = entry(&store, STORED).unwrap();
+        assert!(!off.is_granted("storage"));
+        assert_eq!(off.storage_change(&stored_manifest(false, 131072)), None);
+        let mut on = off.clone();
+        on.granted = vec!["storage".to_owned()];
+        assert!(on.storage_change(&stored_manifest(false, 131072)).is_some());
+        // A manifest without storage
+        assert_eq!(
+            approved.storage_change(&manifest(STORED, "0.1.0", None)),
+            None
+        );
+    }
+
+    #[test]
+    fn turning_storage_on_checks_the_approved_quota() {
+        for_each_store(|store| {
+            approve_stored(store, &stored_manifest(false, 4096));
+            let error = store
+                .set_optional(&stored_manifest(false, 8192), ORIGIN, "storage", true)
+                .unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+            assert!(
+                error.to_string().contains("4096") && error.to_string().contains("8192"),
+                "{error}"
+            );
+            assert!(!entry(store, STORED).unwrap().is_granted("storage"));
+            store
+                .set_optional(&stored_manifest(false, 2048), ORIGIN, "storage", true)
+                .expect("within the approved quota");
+            assert!(entry(store, STORED).unwrap().is_granted("storage"));
+        });
+    }
+
+    #[test]
+    fn a_granted_permission_is_read_from_the_record_as_it_is_now() {
+        let (_dir, store) = file_store();
+        approve_stored(&store, &stored_manifest(false, 4096));
+        let plugin = id(STORED);
+        assert!(
+            !store
+                .permission_granted(&plugin, ORIGIN, "storage")
+                .unwrap()
+        );
+        // Another process's change, through another store on the same file
+        let other = GrantStore::open(store.path().unwrap());
+        other
+            .set_optional(&stored_manifest(false, 4096), ORIGIN, "storage", true)
+            .unwrap();
+        assert!(
+            store
+                .permission_granted(&plugin, ORIGIN, "storage")
+                .unwrap()
+        );
+        assert!(
+            !store
+                .permission_granted(&plugin, OTHER_ORIGIN, "storage")
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn while_granted_runs_only_while_the_permission_is_granted() {
+        for_each_store(|store| {
+            let plugin = id(STORED);
+            assert_eq!(
+                store
+                    .while_granted(&plugin, ORIGIN, "storage", || 1)
+                    .unwrap(),
+                None
+            );
+            approve_stored(store, &stored_manifest(true, 4096));
+            assert_eq!(
+                store
+                    .while_granted(&plugin, ORIGIN, "storage", || 2)
+                    .unwrap(),
+                Some(2)
+            );
+            assert_eq!(
+                store
+                    .while_granted(&plugin, OTHER_ORIGIN, "storage", || 3)
+                    .unwrap(),
+                None
+            );
+            assert_eq!(
+                store.while_granted(&plugin, ORIGIN, "log", || 4).unwrap(),
+                None
+            );
+        });
+    }
+
+    #[test]
+    fn a_grant_change_waits_until_while_granted_returns() {
+        use std::sync::atomic::AtomicBool;
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let (_dir, store) = file_store();
+        approve_stored(&store, &stored_manifest(true, 4096));
+        let path = store.path().unwrap().to_owned();
+        let committing = AtomicBool::new(false);
+        let committed_at = Mutex::new(None);
+        thread::scope(|scope| {
+            let remover = scope.spawn(|| {
+                let started = Instant::now();
+                while !committing.load(Ordering::Acquire) {
+                    // A test fails, never hangs, when the commit never runs
+                    assert!(
+                        started.elapsed() < Duration::from_secs(10),
+                        "the commit never ran"
+                    );
+                    thread::yield_now();
+                }
+                // Another process removing the approval while the commit runs
+                GrantStore::open(&path).remove(&id(STORED)).unwrap();
+                Instant::now()
+            });
+            let ran = store
+                .while_granted(&id(STORED), ORIGIN, "storage", || {
+                    committing.store(true, Ordering::Release);
+                    thread::sleep(Duration::from_millis(300));
+                    *committed_at.lock().unwrap() = Some(Instant::now());
+                })
+                .unwrap();
+            assert_eq!(ran, Some(()));
+            let removed_at = remover.join().unwrap();
+            let committed_at = committed_at.lock().unwrap().unwrap();
+            assert!(
+                removed_at >= committed_at,
+                "the removal did not wait for the commit"
+            );
+        });
+        assert_eq!(entry(&store, STORED), None);
     }
 }

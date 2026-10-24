@@ -4,19 +4,23 @@ The contracts between the host and plugins: WIT packages, one directory per vers
 manifest schema. Everything here is security core (constitution, Principle IX).
 
 - [`v1/widget.wit`](v1/widget.wit): plugin contract v1 at its newest minor,
-  `dashboard:widget@1.1.0`, from [feature 002](../specs/002-plugin-permissions/spec.md) and
-  [feature 003](../specs/003-plugin-connectors/spec.md), with two worlds: `widget`, which only
-  renders, and `connected-widget`, which also fetches data through connectors in `update`. New
-  plugins build against it.
+  `dashboard:widget@1.2.0`, from [feature 002](../specs/002-plugin-permissions/spec.md),
+  [feature 003](../specs/003-plugin-connectors/spec.md) and
+  [feature 004](../specs/004-plugin-storage/spec.md), with four worlds: `widget`, which only
+  renders; `connected-widget`, which also fetches data through connectors in `update`;
+  `stored-widget`, which writes its own store in `update` and reads it in `render`; and
+  `connected-stored-widget`, which does both, the world the host binds. New plugins build
+  against it.
 - [`v0/widget.wit`](v0/widget.wit): plugin contract v0 (`dashboard:widget@0.1.0`), from
   [feature 001](../specs/001-plugin-runtime/spec.md). The host keeps running v0 plugins, with
   `log` required.
-- [`history/`](history): published versions, one directory each, frozen and never edited.
-  Plugins that build against an older minor version, and the test that a new minor version only
-  adds (`runtime/tests/contract_v1.rs`), read them from here.
+- [`history/`](history): published versions, one directory each (`1.0.0`, `1.1.0`), frozen and
+  never edited; `runtime/tests/contract_v1.rs` pins each by its SHA-256. Plugins that build
+  against an older minor version, and the test that a new minor version only adds, read them
+  from here.
 - [`manifest.schema.json`](manifest.schema.json): the JSON Schema (draft 2020-12) of the plugin
-  manifest. The host's parser and this schema are tested to agree
-  (`runtime/tests/manifest_schema.rs`).
+  manifest, `quota_bytes` on `storage` included. The host's parser and this schema are tested to
+  agree (`runtime/tests/manifest_schema.rs`); the host also checks a quota against its own cap.
 - [`connector.schema.json`](connector.schema.json): the JSON Schema of a connector, the
   declaration of a service's operations that the host runs for widgets. The host's connector
   parser and this schema are tested to agree too, with the rules only the host can check listed
@@ -34,11 +38,13 @@ of an optional permission the user has not turned on. `runtime/tests/contract_v1
 build if a function breaks this rule.
 
 A minor version only adds: 1.1.0 holds every interface, function and type of 1.0.0 unchanged,
-which `runtime/tests/contract_v1.rs` checks against `history/1.0.0`. The host runs plugins built
-for any v1 minor up to its own and refuses newer ones, naming both versions. Feature 003 added
-`connectors`, which carries every connector a manifest declares, each a permission of its own,
-and the `updater` export; features 004 and 005 add storage and accounts, each in the next
-minor.
+and 1.2.0 every one of 1.1.0, which `runtime/tests/contract_v1.rs` checks against `history/`.
+The host runs plugins built for any v1 minor up to its own and refuses newer ones, naming both
+versions. Feature 003 added `connectors`, which carries every connector a manifest declares,
+each a permission of its own, and the `updater` export. Feature 004 added `storage`, carried by
+the `storage` permission with its quota: the plugin's own store of named values, which no call
+can point at another plugin's, read in `render` and written only in `update`, all or nothing.
+Feature 005 adds accounts in the next minor.
 
 ## The manifest in a package
 

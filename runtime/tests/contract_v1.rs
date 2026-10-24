@@ -65,6 +65,11 @@ fn every_capability_of_contract_v1_can_answer_not_granted() {
         }
     }
     assert!(capabilities > 0, "wit/v1 has no capability interface");
+    // storage among them (feature 004)
+    assert!(
+        resolve.packages[package].interfaces.contains_key("storage"),
+        "wit/v1 has no storage interface"
+    );
     assert!(broken.is_empty(), "{}", broken.join("\n"));
 }
 
@@ -106,31 +111,91 @@ fn the_check_refuses_a_capability_that_cannot_answer_not_granted() {
     }
 }
 
-/// research R11: a minor version only adds. 1.1.0 (`wit/v1`) holds every interface, function
-/// and type of the published 1.0.0 (`wit/history/1.0.0`) unchanged, compared as resolved
-/// definitions; doc comments, which 1.1.0 rewrites, are not part of them.
-#[test]
-fn contract_1_1_0_contains_everything_of_1_0_0_unchanged() {
-    let wit = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("wit");
-    let old = definitions(&wit.join("history").join("1.0.0"));
-    let new = definitions(&wit.join("v1"));
-    assert!(!old.is_empty());
+/// Fails unless the package in `new` holds every interface, function and type of the one in
+/// `old` unchanged, compared as resolved definitions; doc comments, which a minor may rewrite,
+/// are not part of them. Returns the definitions of `new`.
+fn assert_only_adds(old: &Path, new: &Path) -> std::collections::BTreeMap<String, String> {
+    let old_definitions = definitions(old);
+    let new_definitions = definitions(new);
+    assert!(!old_definitions.is_empty());
     let mut missing = Vec::new();
-    for (name, definition) in &old {
-        match new.get(name) {
+    for (name, definition) in &old_definitions {
+        match new_definitions.get(name) {
             None => missing.push(format!("{name} is gone")),
             Some(changed) if changed != definition => {
                 missing.push(format!(
-                    "{name} changed:\n  1.0.0: {definition}\n  1.1.0: {changed}"
+                    "{name} changed:\n  {}: {definition}\n  {}: {changed}",
+                    old.display(),
+                    new.display()
                 ));
             }
             Some(_) => {}
         }
     }
     assert!(missing.is_empty(), "{}", missing.join("\n"));
-    // And 1.1.0 adds connectors and updater
-    for added in ["connectors.call", "updater.update", "connectors.call-error"] {
-        assert!(new.contains_key(added), "{added}");
+    new_definitions
+}
+
+fn wit() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("wit")
+}
+
+/// research R11 of feature 003: a minor version only adds. The published 1.1.0
+/// (`wit/history/1.1.0`) holds every interface, function and type of 1.0.0 unchanged.
+#[test]
+fn contract_1_1_0_contains_everything_of_1_0_0_unchanged() {
+    let history = wit().join("history");
+    let added = assert_only_adds(&history.join("1.0.0"), &history.join("1.1.0"));
+    for name in ["connectors.call", "updater.update", "connectors.call-error"] {
+        assert!(added.contains_key(name), "{name}");
+    }
+}
+
+/// Feature 004, research R13: 1.2.0 (`wit/v1`) holds everything of the published 1.1.0
+/// unchanged, and adds storage.
+#[test]
+fn contract_1_2_0_contains_everything_of_1_1_0_unchanged() {
+    let added = assert_only_adds(&wit().join("history").join("1.1.0"), &wit().join("v1"));
+    for name in [
+        "storage.get",
+        "storage.set",
+        "storage.delete",
+        "storage.list",
+        "storage.usage",
+        "storage.storage-error",
+    ] {
+        assert!(added.contains_key(name), "{name}");
+    }
+}
+
+/// The published contracts are frozen: the comparisons above would follow an edit to them, so
+/// each is pinned by its SHA-256, line endings read as LF so a CRLF checkout matches.
+#[test]
+fn frozen_contracts() {
+    use sha2::{Digest, Sha256};
+
+    for (version, pinned) in [
+        (
+            "1.0.0",
+            "136af91f30f9dfe5033449df03bd72bb3d04da273004471801967182dad0bc43",
+        ),
+        (
+            "1.1.0",
+            "5985f969e1fef9a82bbf124f13c64f697b458b2866a6d46dbec705b915185aa2",
+        ),
+    ] {
+        let path = wit().join("history").join(version).join("widget.wit");
+        let text = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("\r\n", "\n");
+        let digest: String = Sha256::digest(text.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(
+            digest, pinned,
+            "wit/history/{version} changed; published contracts are never edited"
+        );
     }
 }
 

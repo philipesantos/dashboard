@@ -41,6 +41,45 @@ pub fn escape(text: &str) -> String {
     untrusted(text, usize::MAX)
 }
 
+/// A stored name or value, as `runtime storage show` prints it
+/// (`specs/004-plugin-storage/contracts/cli.md`): UTF-8 in double quotes, escaped as
+/// [`untrusted`] escapes, with `"` as `\"` and `\` as `\\` inside the quotes, so no entry can
+/// pass for two fields; other bytes as `bytes(<size>) <hexadecimal>`. Only the first `max_bytes`
+/// of `bytes` are shown, followed by ` [truncated, <size> bytes]`.
+pub fn quote_entry(bytes: &[u8], max_bytes: usize) -> String {
+    let mut shown = match std::str::from_utf8(bytes) {
+        Ok(text) => {
+            let mut cut = text.len().min(max_bytes);
+            while !text.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            let mut quoted = String::with_capacity(cut + 2);
+            quoted.push('"');
+            for c in text[..cut].chars() {
+                match c {
+                    '"' => quoted.push_str("\\\""),
+                    '\\' => quoted.push_str("\\\\"),
+                    c if needs_escape(c) => quoted.extend(c.escape_default()),
+                    c => quoted.push(c),
+                }
+            }
+            quoted.push('"');
+            quoted
+        }
+        Err(_) => {
+            let hex: String = bytes[..bytes.len().min(max_bytes)]
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            format!("bytes({}) {hex}", bytes.len())
+        }
+    };
+    if bytes.len() > max_bytes {
+        shown.push_str(&format!(" [truncated, {} bytes]", bytes.len()));
+    }
+    shown
+}
+
 /// Control characters, and the characters that change the direction of the text after them.
 fn needs_escape(c: char) -> bool {
     c.is_control()
@@ -103,6 +142,74 @@ mod tests {
     fn cuts_on_a_character_boundary() {
         // "€" takes 3 bytes: a cut at 4 bytes falls inside the second one
         assert_eq!(untrusted("€€€", 4), "€ [truncated]");
+    }
+
+    #[test]
+    fn quotes_text_entries() {
+        assert_eq!(quote_entry(b"count", 1024), r#""count""#);
+        assert_eq!(quote_entry(b"", 1024), r#""""#);
+        assert_eq!(
+            quote_entry("notes/0 olá".as_bytes(), 1024),
+            r#""notes/0 olá""#
+        );
+    }
+
+    #[test]
+    fn escapes_quotes_and_backslashes_inside_the_quotes() {
+        // Without the escapes this would read as two fields: "count" = "999"
+        assert_eq!(
+            quote_entry(br#"count" = "999"#, 1024),
+            r#""count\" = \"999""#
+        );
+        // A backslash and an n stay apart from a line break
+        assert_eq!(quote_entry(br"a\nb", 1024), r#""a\\nb""#);
+        assert_eq!(quote_entry(b"a\nb", 1024), r#""a\nb""#);
+    }
+
+    #[test]
+    fn never_lets_line_breaks_or_terminal_escapes_through() {
+        let quoted = quote_entry(b"x\r\n\x1b[2J\x1b]0;title\x07\x7f\xc2\x9b31m", 1024);
+        assert!(
+            !quoted.chars().any(needs_escape),
+            "a control character reached the output: {quoted:?}"
+        );
+        assert_eq!(
+            quoted,
+            r#""x\r\n\u{1b}[2J\u{1b}]0;title\u{7}\u{7f}\u{9b}31m""#
+        );
+        let bidi = quote_entry("\u{202e}evil".as_bytes(), 1024);
+        assert_eq!(bidi, r#""\u{202e}evil""#);
+    }
+
+    #[test]
+    fn shows_bytes_that_are_not_text_in_hexadecimal() {
+        assert_eq!(
+            quote_entry(&[0x00, 0xff, 0x10, 0xa0], 1024),
+            "bytes(4) 00ff10a0"
+        );
+        // A NUL is text, escaped; an invalid UTF-8 sequence is not
+        assert_eq!(quote_entry(b"\0", 1024), r#""\u{0}""#);
+        assert_eq!(quote_entry(b"ok\xff", 1024), "bytes(3) 6f6bff");
+    }
+
+    #[test]
+    fn cuts_long_entries_and_names_their_size() {
+        let long = "a".repeat(2000);
+        assert_eq!(
+            quote_entry(long.as_bytes(), 1024),
+            format!("\"{}\" [truncated, 2000 bytes]", "a".repeat(1024))
+        );
+        assert_eq!(
+            quote_entry(&[0xff; 1500], 4),
+            "bytes(1500) ffffffff [truncated, 1500 bytes]"
+        );
+        // On a character boundary: "€" takes 3 bytes
+        assert_eq!(
+            quote_entry("€€€".as_bytes(), 4),
+            r#""€" [truncated, 9 bytes]"#
+        );
+        // Exactly at the limit is whole
+        assert_eq!(quote_entry(b"abcd", 4), r#""abcd""#);
     }
 
     #[test]

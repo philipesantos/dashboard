@@ -4,18 +4,20 @@ A plugin is a WebAssembly component that renders one widget. It runs in a sandbo
 with no power at all: it gets a capability only when its manifest declares it and the user
 grants it. A plugin never touches the network: it reaches an external service only by calling
 the operations of a connector its manifest declares, and the host makes every request
-itself. This guide covers what a plugin needs today; storage and accounts arrive in later
-features.
+itself. It keeps data only in a store of its own, which the host binds to it. This guide covers
+what a plugin needs today; accounts arrive in a later feature.
 
 Start from [`plugins/examples/hello-widget`](../plugins/examples/hello-widget), a Rust plugin
-that only renders, or from [`plugins/examples/github-releases`](../plugins/examples/github-releases),
-one that fetches data through a connector. [`docs/connectors.md`](connectors.md) explains how
+that only renders, from [`plugins/examples/github-releases`](../plugins/examples/github-releases),
+one that fetches data through a connector, or from
+[`plugins/examples/update-counter`](../plugins/examples/update-counter), one that keeps its own
+data. [`docs/connectors.md`](connectors.md) explains how
 to write a connector.
 
 ## The contract
 
 The contract is the WIT interface between the host and a plugin. Build against
-[`wit/v1`](../wit/v1/widget.wit) (`dashboard:widget@1.1.0`), from one of its two worlds:
+[`wit/v1`](../wit/v1/widget.wit) (`dashboard:widget@1.2.0`), from one of its four worlds:
 
 - **`widget`**, a widget that only renders. It exports `renderer`, with
   `render(config: string) -> result<string, string>`: it receives its configuration as JSON
@@ -24,6 +26,10 @@ The contract is the WIT interface between the host and a plugin. Build against
 - **`connected-widget`**, a widget that fetches data. It exports `renderer` and `updater`, and
   may import `log` and `connectors`: `update` fetches the data through connectors, the host
   keeps what it returns, and `render` shows it (see [Connected widgets](#connected-widgets)).
+- **`stored-widget`**, a widget that keeps data of its own. It exports `renderer` and
+  `updater`, and may import `log` and `storage`: `update` writes its store, and `render` reads
+  it (see [Storage](#storage)).
+- **`connected-stored-widget`**, both: it may import `log`, `connectors` and `storage`.
 
 Every capability function returns `result<T, E>`, and the first case of `E` is `not-granted`.
 That is the answer when the capability is an optional permission the user has not turned on
@@ -31,9 +37,11 @@ That is the answer when the capability is an optional permission the user has no
 missing, inside its own widget.
 
 Each minor version of v1 only adds: 1.1.0 holds everything of 1.0.0 unchanged, plus connectors
-and `updater`. The host runs a plugin built for any v1 minor up to its own, so a plugin built
-against 1.0.0 ([`wit/history/1.0.0`](../wit/history/1.0.0/widget.wit)) keeps running, as
-`hello-widget` does. A plugin built against a newer version than the host runs is refused
+and `updater`, and 1.2.0 everything of 1.1.0, plus `storage`. The host runs a plugin built for
+any v1 minor up to its own, so a plugin built against 1.0.0
+([`wit/history/1.0.0`](../wit/history/1.0.0/widget.wit)) or 1.1.0
+([`wit/history/1.1.0`](../wit/history/1.1.0/widget.wit)) keeps running, as `hello-widget` and
+`github-releases` do. A plugin built against a newer version than the host runs is refused
 (`contract-mismatch`, naming both versions), because it may use what the host does not have.
 Every contract name a component uses must carry the one version it was built for.
 
@@ -71,7 +79,7 @@ it and your editor checks the file as you type.
 | `id` | Where the plugin comes from (see below), lowercase |
 | `version` | [SemVer 2.0.0](https://semver.org), at most 64 characters |
 | `author` | 1 to 100 characters, no control characters |
-| `permissions` | At most 32 entries of `{ "name": …, "required": true \| false }` |
+| `permissions` | At most 32 entries of `{ "name": …, "required": true \| false }`; `storage` also takes `quota_bytes` (see [Storage](#storage)) |
 | `login_providers` | Accounts the plugin would ask the user to connect: `github`. Shown now; connecting accounts arrives later |
 | `connectors` | Optional, at most 16: each connector the widget calls, its major version, the operations it calls, and whether it is required (see [Connected widgets](#connected-widgets)) |
 
@@ -98,6 +106,7 @@ allowed, but the user sees it.
 | Permission | Interface | What it gives |
 | --- | --- | --- |
 | `log` | `dashboard:widget/log` | Writing `debug`, `info`, `warn` or `error` messages: at most 100 per call, 1 KiB each, shown escaped |
+| `storage` | `dashboard:widget/storage` (1.2.0) | A store of named values of the plugin's own, up to the quota it declares (see [Storage](#storage)) |
 
 A permission is required or optional:
 
@@ -200,6 +209,73 @@ connector, the operation, the destination, the values sent and the outcome. Your
 neither read nor change it, and the user can read every line. Past 20 calls in one run, calls
 are refused and counted in one summary entry.
 
+## Storage
+
+A plugin keeps data across runs of the host only in its store: a set of named values that the
+host keeps for that plugin alone. Each call of `render` and `update` runs in a fresh instance,
+so nothing your plugin holds in memory survives the call.
+
+### Declaring storage
+
+Storage is a permission, declared with its quota on the same entry, and the plugin is built for
+contract 1.2.0 or later (an older one that declares it is `contract-too-old`):
+
+```json
+"permissions": [
+  { "name": "storage", "required": true, "quota_bytes": 65536 }
+]
+```
+
+- `quota_bytes` is the most your store may hold, from 64 to 8,388,608 (8 MiB), the host's cap.
+  `storage` appears at most once, and no other permission takes a quota.
+- The user sees the quota before approving it, and approves it with the plugin's approval
+  digest. A later version that declares a larger quota does not run until approved again; one
+  that declares the same or less runs, keeps what is stored, and accepts only writes that leave
+  usage within the new quota (deletes always pass).
+- A widget that declares storage exports `updater` (`missing-updater` otherwise): storage is
+  written only in an update. It needs no connector to do so.
+- The `storage` import follows your calls, not the world: a guest built on `stored-widget` that
+  never calls a storage function does not import it. Declare storage when your plugin calls it.
+
+### Names, values and usage
+
+The interface has five functions: `get(name)`, `set(name, value)`, `delete(name)`,
+`list(prefix, after)` and `usage()`.
+
+- A name is any non-empty text up to 256 bytes in UTF-8, kept and compared exactly as given, as
+  bytes: `../x`, `a/b`, a NUL or a quote are ordinary names. A value is bytes, up to 256 KiB.
+- `list` returns at most 100 names that start with `prefix` (empty: every name), in byte order,
+  after `after`, and `next`, the name to pass as `after` for the next page when more remain. A
+  prefix is never a pattern: `a%` lists only names that start with `a%`.
+- Usage is the bytes of every name and value plus 64 per entry, the same on every system;
+  `usage()` returns it with your quota. A `set` that would take usage past the quota is
+  `refused(over-quota)`, and nothing of it is kept.
+- Your plugin never names a store, a file or a place: the host binds the store to your plugin's
+  id and the file it was approved from. Another plugin, or a copy of yours at another path,
+  reaches its own store, never yours.
+
+### Render reads, update writes, all or nothing
+
+- `render` may `get`, `list` and `usage`; a `set` or `delete` there is
+  `refused(render-only-reads)`. Render reads one consistent view for its whole run.
+- An update's writes are kept together, and only when `update` returns `ok` with valid output.
+  When it returns an error, traps, runs out of a limit, or its storage is turned off or its
+  approval removed while it runs, none of them is kept. A write that fails, such as on a store
+  file that cannot be written, ends the update's writes: later calls answer
+  `failed(run-aborted)`, and the update fails as `storage-failed`.
+- Storage is kept across new versions of your plugin from the same file; the data the host kept
+  from your last update (feature 003) is not. Turning optional storage off, or removing the
+  approval, keeps the store; only the user clears it.
+
+Every call answers, besides its value, `not-granted` (optional storage that is off, or taken
+away during the run), `refused(<rule>)` (the host refused before changing anything:
+`render-only-reads`, `over-quota`, `over-limit`, `invalid-name`) or `failed(<rule>)` (the store
+could not do it: `damaged`, `busy`, `unavailable`, `over-limit` when the file reached its size
+limit or the disk is full, `run-aborted`), each with a detail for you.
+
+The store is not encrypted, and it is not for secrets: your plugin never receives a password or
+a token to keep (constitution Principle IV), and accounts arrive with the host's own vault.
+
 ## Building and packing
 
 The manifest travels inside the plugin, as a custom section named `dashboard-manifest` at the
@@ -246,14 +322,24 @@ rt requests                                          # the request log
 rt optional target/plugins/github-releases.wasm catalog/github off   # an optional connector
 ```
 
+For a widget with storage, `permissions` shows the quota it declares, the quota last approved
+and what its store uses, with the approval digest `approve --expect` needs; `update` says how
+many storage calls it made and how many writes were kept; and `storage` shows and clears stores:
+
+```bash
+rt storage show target/plugins/update-counter.wasm   # every name and value, escaped
+rt storage list                                      # every store, also those whose file is gone
+rt storage clear target/plugins/update-counter.wasm  # empties it
+```
+
 A new version of your widget, or of a connector, that adds a destination or changes an
 operation your widget calls needs a new approval (`needs-new-approval`, naming the change); one
 that only adds operations you do not call does not. Turning a connector off, or removing the
 approval, discards the data the host kept for your widget.
 
 The grants live in a development record in your data directory, or in the file you give with
-`--grants <path>`; kept data and the request log in the development data directory, or in
-`--data <dir>`; and your local connectors in `<data>/connectors/`, or in `--connectors <dir>`. An approval belongs to the file it was given for: rebuild in place and it
+`--grants <path>`; kept data, the request log and stores in the development data directory, or
+in `--data <dir>`; and your local connectors in `<data>/connectors/`, or in `--connectors <dir>`. An approval belongs to the file it was given for: rebuild in place and it
 stays; a copy elsewhere, even byte for byte the same, needs its own approval, which replaces
 the first one. So another file that claims your plugin's id gets none of its grants.
 
@@ -282,7 +368,12 @@ them.
 | Calls per minute | 30 per widget; 60 per destination host, all widgets together | `refused(over-limit)` |
 | Request | Address (path and query) 8 KiB, body 64 KiB, 16 arguments | `refused(over-limit)` |
 | Response | Body 1 MiB, headers 16 KiB; 4 MiB of bodies per update; 5 redirects | `failed(over-limit)`, `failed(redirect-not-allowed)` |
+| Storage quota | What the manifest declares, at most 8 MiB | `refused(over-quota)` |
+| Storage name and value | 256 bytes, 256 KiB | `refused(invalid-name)`, `refused(over-limit)` |
+| Storage calls per run | 1,000, refused ones included | `refused(over-limit)` |
+| Storage written per update | 1 MiB of names and values | `refused(over-limit)` |
+| Store file | 5 times the approved quota plus 64 KiB | `failed(over-limit)`, and the update keeps nothing |
 
 Each call runs in a fresh instance: nothing your plugin keeps in memory survives to the next
-call. Build Rust plugins for `wasm32-unknown-unknown`: for `wasm32-wasip2`, the standard library
+call; keep what must last in [storage](#storage). Build Rust plugins for `wasm32-unknown-unknown`: for `wasm32-wasip2`, the standard library
 imports WASI, which the host does not offer (`capability-refused`).

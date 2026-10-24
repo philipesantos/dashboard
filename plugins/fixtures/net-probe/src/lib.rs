@@ -8,7 +8,7 @@
 //! "repeat": n}], "fail": bool, "output": "not-json" | n, "bodies": "size"}`; `render` reads the
 //! same list from `config.render_calls` of the document the host gives it.
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "connected-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.1.0", world: "connected-widget" });
 
 use dashboard::widget::connectors::{Argument, CallError, Response, Rule, Value, call};
 use exports::dashboard::widget::renderer::Guest as Renderer;

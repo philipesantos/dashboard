@@ -1,0 +1,237 @@
+/// Plugin contract v1, minor version 2 (feature 004).
+///
+/// The host and every v1 plugin build from wit/v1. A minor version only adds: every interface,
+/// function and type of 1.1.0 (wit/history/1.1.0/widget.wit) is here unchanged, and
+/// runtime/tests/contract_v1.rs fails the build otherwise. The host runs plugins built for any
+/// v1 minor version up to its own.
+///
+/// Every function of a capability interface returns `result<T, E>`, where `E` is an enum or
+/// variant of that interface whose first case is `not-granted`: the answer of an optional
+/// capability the user has not turned on (constitution Principle II).
+package dashboard:widget@1.2.0;
+
+/// Writes log messages; carried by the `log` permission. Unchanged from 1.0.0.
+interface log {
+  enum level {
+    debug,
+    info,
+    warn,
+    error,
+  }
+
+  enum log-error {
+    /// `log` is an optional permission the user has not turned on: nothing was written.
+    not-granted,
+  }
+
+  /// Writes a message attributed to the calling plugin. The host keeps at most 100 messages
+  /// per call and truncates each to 1 KiB; the excess is dropped and reported, and the call
+  /// still returns `ok`.
+  write: func(level: level, message: string) -> result<_, log-error>;
+}
+
+/// Calls the operations of the connectors the plugin's manifest declares. Each connector is a
+/// permission of its own. The host makes every request; it checks the call against the
+/// connector and the manifest, and refuses it before sending anything when a rule says so.
+/// Calls work only while the host runs `update`.
+interface connectors {
+  /// A value for one parameter, of the type the operation declares for it.
+  variant value {
+    text(string),
+    integer(s64),
+    flag(bool),
+  }
+
+  /// One argument of a call: a parameter's name and its value.
+  record argument {
+    name: string,
+    value: value,
+  }
+
+  /// A response header the operation declares; `value` is `none` when the response did not
+  /// carry it. Headers the operation does not declare never reach the plugin.
+  record header {
+    name: string,
+    value: option<string>,
+  }
+
+  /// What the service answered. Any status is a normal answer, error statuses included.
+  record response {
+    status: u16,
+    /// The declared headers, in the order the operation declares them.
+    headers: list<header>,
+    /// The body as received, within the size limits; never partial.
+    body: list<u8>,
+  }
+
+  /// The rule behind a call that was refused or failed.
+  enum rule {
+    /// The manifest does not declare this operation for this connector.
+    operation-not-declared,
+    /// An argument is unknown, repeated, missing or outside its parameter's type.
+    value-outside-type,
+    /// The call came from `render`; connectors are called only in `update`.
+    called-outside-update,
+    /// The operation changes data; until user actions exist, `update` only reads.
+    change-needs-user-action,
+    /// A limit: calls per run, rate, request address or body size, response size, or time.
+    over-limit,
+    /// The destination's name led only to addresses that are not public.
+    non-public-address,
+    /// The service redirected to a destination the connector does not declare.
+    redirect-not-allowed,
+    /// The request could not complete: name resolution, connection or certificate.
+    unavailable,
+    /// The response is not in the format the operation declares.
+    invalid-response,
+  }
+
+  /// A rule and a message for the plugin's author.
+  record problem {
+    rule: rule,
+    detail: string,
+  }
+
+  variant call-error {
+    /// The connector is an optional permission the user has not turned on, its approval was
+    /// removed, or the manifest does not declare it: nothing was sent.
+    not-granted,
+    /// The host refused the call before sending anything.
+    refused(problem),
+    /// The request was attempted and produced no response for the plugin.
+    failed(problem),
+  }
+
+  /// Calls `operation` of `connector` (an id the manifest declares, such as
+  /// `catalog/github`) with `arguments`. One call at a time; the host follows allowed
+  /// redirects itself.
+  call: func(connector: string, operation: string, arguments: list<argument>)
+    -> result<response, call-error>;
+}
+
+/// The plugin's own store of named values, carried by the `storage` permission. The host chooses
+/// the store when it links the plugin, from the plugin's id and origin: no function names a store,
+/// a file or a place, and no plugin reaches another's. Names are any non-empty text up to 256
+/// bytes in UTF-8, compared and sorted as bytes; values are bytes, up to 256 KiB. Reads work in
+/// `render` and `update`; writes only in `update`, and they are kept together only when `update`
+/// returns `ok`. New in 1.2.0.
+interface storage {
+  /// The rule behind a call that was refused or failed.
+  enum rule {
+    /// A write or delete during `render`, which only reads.
+    render-only-reads,
+    /// The write would take the store's usage past the quota the manifest declares.
+    over-quota,
+    /// A limit: calls per run, bytes written per update, value size, or the store's file size.
+    /// A write that finds no room on disk, because the file reached its size or the disk is full
+    /// (the host cannot tell which), answers this too and ends the run, as `run-aborted` says.
+    over-limit,
+    /// The name is empty or longer than 256 bytes in UTF-8, or a `list` prefix or `after` is
+    /// longer than that.
+    invalid-name,
+    /// The store's file is not one the host wrote for this plugin; the host left it as it is.
+    damaged,
+    /// Another process is writing the store, past the time the call could wait.
+    busy,
+    /// The store could not be read or written: the data directory is unavailable, or the store
+    /// cannot be written, such as a read-only file. A full disk answers `over-limit`.
+    unavailable,
+    /// An earlier call of this run failed in a way that ended its transaction, such as reaching
+    /// the store's file size: nothing was done, and nothing this run wrote will be kept.
+    run-aborted,
+  }
+
+  /// A rule and a message for the plugin's author.
+  record problem {
+    rule: rule,
+    detail: string,
+  }
+
+  variant storage-error {
+    /// `storage` is an optional permission the user has not turned on, or it was turned off or
+    /// its approval removed during this run: nothing was read or written, and nothing this run
+    /// wrote will be kept.
+    not-granted,
+    /// The host refused the call before changing anything.
+    refused(problem),
+    /// The store could not do it.
+    failed(problem),
+  }
+
+  /// One page of names, in byte order.
+  record page {
+    names: list<string>,
+    /// The last name of this page when more remain: pass it as `after` for the next page.
+    next: option<string>,
+  }
+
+  /// The store's usage: the bytes of every name and value plus a fixed cost per entry, and the
+  /// quota the manifest declares.
+  record store-usage {
+    used-bytes: u64,
+    quota-bytes: u64,
+  }
+
+  /// The value stored under `name`, or `none` when there is none.
+  get: func(name: string) -> result<option<list<u8>>, storage-error>;
+  /// Stores `value` under `name`, replacing any value there. `update` only.
+  set: func(name: string, value: list<u8>) -> result<_, storage-error>;
+  /// Removes `name`; removing a name that is not there succeeds. `update` only.
+  delete: func(name: string) -> result<_, storage-error>;
+  /// The names that start with `prefix` (empty: every name) and come after `after`, at most 100.
+  %list: func(prefix: string, after: option<string>) -> result<page, storage-error>;
+  usage: func() -> result<store-usage, storage-error>;
+}
+
+/// The entry point every plugin implements. Unchanged from 1.0.0.
+interface renderer {
+  /// `config` is a JSON document chosen by the host. On success the plugin returns the widget
+  /// content as a JSON document of at most 64 KiB; on failure, a message for the maintainer.
+  ///
+  /// For a plugin that also exports `updater`, `config` is
+  /// `{"config": <the widget's configuration>, "data": <the last data update returned, or
+  /// null>, "fetched_at_ms": <when, or null>, "last_update": null | {"at_ms": …, "outcome":
+  /// "ok" | "failed", "error": "<kind>: <detail>"}}`. Render never waits on the network.
+  render: func(config: string) -> result<string, string>;
+}
+
+/// The entry point of plugins that fetch data through connectors or write their store.
+/// Unchanged from 1.1.0.
+interface updater {
+  /// `config` is the widget's configuration, chosen by the host. On success the plugin
+  /// returns its data as a JSON document of at most 256 KiB, which the host keeps and gives to
+  /// `render`; on failure, a message for the maintainer, and the host keeps the previous data.
+  update: func(config: string) -> result<string, string>;
+}
+
+/// A widget that only renders, as in 1.0.0.
+world widget {
+  import log;
+  export renderer;
+}
+
+/// A widget that fetches data through connectors in `update` and renders it. Unchanged from
+/// 1.1.0.
+world connected-widget {
+  import log;
+  import connectors;
+  export renderer;
+  export updater;
+}
+
+/// A widget that writes its own store in `update` and reads it in `render`.
+world stored-widget {
+  import log;
+  import storage;
+  export renderer;
+  export updater;
+}
+
+/// A widget with connectors and its own store; the world the host binds.
+world connected-stored-widget {
+  import log;
+  import connectors;
+  import storage;
+  export renderer;
+  export updater;
+}

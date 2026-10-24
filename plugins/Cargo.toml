@@ -7,6 +7,7 @@ resolver = "3"
 members = [
     "examples/hello-widget",
     "examples/github-releases",
+    "examples/update-counter",
     "hostile/infinite-loop",
     "hostile/huge-alloc",
     "hostile/deep-recursion",
@@ -18,10 +19,12 @@ members = [
     "hostile/state-leak",
     "hostile/out-of-bounds",
     "hostile/log-spoof",
+    "hostile/storage-file",
     "fixtures/hello-v0",
     "fixtures/probe",
     "fixtures/quiet",
     "fixtures/net-probe",
+    "fixtures/store-probe",
 ]
 
 [workspace.package]

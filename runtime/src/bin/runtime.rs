@@ -19,6 +19,13 @@
 //! connectors in `--connectors <dir>`, which only this tool reads: it runs the runtime in
 //! development mode.
 //!
+//! For widgets with storage (`specs/004-plugin-storage/contracts/cli.md`): `permissions` shows
+//! the quota declared, the quota approved and the store's usage, with the approval digest that
+//! `approve --expect` needs, and `update` says what the update did with its store. Stores live
+//! in `<data dir>/storage/`: `runtime storage list` lists them, `runtime storage show <plugin>`
+//! prints one, every text escaped, and `runtime storage clear` empties one, by package or by id
+//! and origin when the package file is gone.
+//!
 //! The tool is the host's control in this phase: it works in development mode only, on local
 //! package files, with the development grant record (`--grants <path>`, or the default one in
 //! the system's data directory). A package's origin is its file's canonical path, and an
@@ -47,6 +54,9 @@ const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-fil
        runtime optional <plugin> <permission | connector-id> on|off [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime remove <plugin-id> [--grants <path>] [--data <dir>]
        runtime requests [--plugin <plugin-id>] [--last <n>] [--data <dir>]
+       runtime storage list [--grants <path>] [--data <dir>]
+       runtime storage show <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime storage clear <plugin> | --id <plugin-id> --origin <path> [--grants <path>] [--data <dir>]
        runtime check-connector <file>
        runtime pack <component> --manifest <file> --output <file>";
 
@@ -76,6 +86,9 @@ enum Command {
     Optional,
     Remove,
     Pack,
+    StorageList,
+    StorageShow,
+    StorageClear,
 }
 
 fn main() -> ExitCode {
@@ -91,10 +104,26 @@ fn main() -> ExitCode {
         Some("optional") => Command::Optional,
         Some("remove") => Command::Remove,
         Some("pack") => Command::Pack,
+        Some("storage") => match args.get(1).map(String::as_str) {
+            Some("list") => Command::StorageList,
+            Some("show") => Command::StorageShow,
+            Some("clear") => Command::StorageClear,
+            Some(other) => return usage_error(&format!("unknown storage command `{other}`")),
+            None => return usage_error("storage needs list, show or clear"),
+        },
         Some(command) => return usage_error(&format!("unknown command `{command}`")),
         None => return usage_error("no command given"),
     };
-    let options = match parse(&args[1..], command) {
+    // A storage command's arguments start after its subcommand
+    let skip = if matches!(
+        command,
+        Command::StorageList | Command::StorageShow | Command::StorageClear
+    ) {
+        2
+    } else {
+        1
+    };
+    let options = match parse(&args[skip..], command) {
         Ok(options) => options,
         Err(message) => return usage_error(&message),
     };
@@ -109,6 +138,9 @@ fn main() -> ExitCode {
         Command::Optional => optional(&options),
         Command::Remove => remove(&options),
         Command::Pack => pack(&options),
+        Command::StorageList => storage_list(&options),
+        Command::StorageShow => storage_show(&options),
+        Command::StorageClear => storage_clear(&options),
     }
 }
 
@@ -137,6 +169,9 @@ struct Options {
     last: usize,
     /// Only for `bench`: a JSON document to render from as kept data.
     kept_data: Option<serde_json::Value>,
+    /// Only for `storage clear`: the store's plugin id and origin, for a package file that is
+    /// gone.
+    store: Option<(String, String)>,
 }
 
 fn parse(args: &[String], command: Command) -> Result<Options, String> {
@@ -145,7 +180,13 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
     let reads_files_only = matches!(command, Command::Pack | Command::CheckConnector);
     let uses_grants = !reads_files_only && command != Command::Requests;
     let uses_data = !reads_files_only;
-    let uses_connectors = uses_grants && command != Command::Remove;
+    let uses_connectors = uses_grants
+        && !matches!(
+            command,
+            Command::Remove | Command::StorageList | Command::StorageClear
+        );
+    let mut store_id = None;
+    let mut store_origin = None;
     let mut config = None;
     let mut data = None;
     let mut connectors = None;
@@ -237,6 +278,19 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
                 })?;
                 kept_data = Some(data);
             }
+            option @ ("--id" | "--origin") if command == Command::StorageClear => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("{option} needs a value"))?;
+                let slot = if option == "--id" {
+                    &mut store_id
+                } else {
+                    &mut store_origin
+                };
+                if slot.replace(value.clone()).is_some() {
+                    return Err(format!("give {option} only once"));
+                }
+            }
             "--iterations" if command == Command::Bench => {
                 iterations = args
                     .next()
@@ -250,8 +304,21 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
             argument => positional.push(argument.to_owned()),
         }
     }
+    let store = match (store_id, store_origin) {
+        (Some(id), Some(origin)) => {
+            PluginId::parse(&id)?;
+            Some((id, origin))
+        }
+        (None, None) => None,
+        _ => {
+            return Err("storage clear needs both --id <plugin-id> and --origin <path>".to_owned());
+        }
+    };
     let mut positional = positional.into_iter();
-    let plugin = if command == Command::Requests {
+    let plugin = if command == Command::Requests
+        || command == Command::StorageList
+        || (command == Command::StorageClear && store.is_some())
+    {
         String::new()
     } else {
         positional.next().ok_or(match command {
@@ -296,6 +363,7 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         plugin_filter,
         last,
         kept_data,
+        store,
     })
 }
 
@@ -347,15 +415,36 @@ fn update(options: &Options) -> ExitCode {
                 escape(manifest.id().as_str()),
                 escape(manifest.version())
             );
-            let calls = report.calls;
-            println!(
-                "calls: {} ({} not granted, {} refused, {} failed), {} bytes received",
-                calls.calls, calls.not_granted, calls.refused, calls.failed, calls.received_bytes
-            );
+            if !manifest.connectors().is_empty() {
+                let calls = report.calls;
+                println!(
+                    "calls: {} ({} not granted, {} refused, {} failed), {} bytes received",
+                    calls.calls,
+                    calls.not_granted,
+                    calls.refused,
+                    calls.failed,
+                    calls.received_bytes
+                );
+            }
+            if let Some(storage) = report.storage {
+                println!(
+                    "storage: {} calls, {} writes kept, used {} of {} bytes",
+                    storage.calls, storage.writes_kept, storage.used_bytes, storage.quota_bytes
+                );
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("error: {error} (previous data kept)");
+            // A storage failure already says nothing it wrote was kept; any other failure of a
+            // widget with storage says so here (specs/004-plugin-storage/contracts/cli.md)
+            let kept = if plugin.manifest().storage().is_some()
+                && error.kind() != runtime::ErrorKind::StorageFailed
+            {
+                "storage writes not kept, previous data kept"
+            } else {
+                "previous data kept"
+            };
+            eprintln!("error: {error} ({kept})");
             ExitCode::from(PLUGIN_FAILED)
         }
     }
@@ -533,7 +622,12 @@ fn permissions(options: &Options) -> ExitCode {
         Err(error) => return refused(&error),
     };
     let entry = status.approval.clone().filter(|_| status.this_origin);
-    print!("{}", describe(&checked, &status, entry.as_ref()));
+    let used = checked.manifest().storage().map(|_| {
+        target
+            .runtime
+            .storage_used_bytes(checked.manifest().id(), &target.origin)
+    });
+    print!("{}", describe(&checked, &status, entry.as_ref(), used));
     ExitCode::SUCCESS
 }
 
@@ -543,6 +637,7 @@ fn describe(
     checked: &CheckedPackage,
     status: &Status,
     entry: Option<&runtime::grants::Entry>,
+    used: Option<Result<u64, runtime::RuntimeError>>,
 ) -> String {
     let manifest = checked.manifest();
     let mut text = format!(
@@ -586,6 +681,9 @@ fn describe(
             ));
         }
     }
+    if let (Some(storage), Some(used)) = (manifest.storage(), used) {
+        text.push_str(&describe_storage(storage, entry, used));
+    }
     let declares_connectors = !manifest.connectors().is_empty();
     if declares_connectors {
         text.push_str(&describe_connectors(checked, entry));
@@ -601,10 +699,54 @@ fn describe(
         ));
     }
     // The digest of what `approve` would grant, only when it could grant it
-    if declares_connectors && checked.refused_connectors().is_empty() {
+    if (declares_connectors || manifest.storage().is_some())
+        && checked.refused_connectors().is_empty()
+    {
         text.push_str(&format!("approval digest: {}\n", checked.approval_digest()));
     }
     text
+}
+
+/// The `storage:` line of `permissions`: the quota declared, the one the last approval showed,
+/// and the store's usage (`specs/004-plugin-storage/contracts/cli.md`).
+fn describe_storage(
+    storage: runtime::manifest::StorageRequest,
+    entry: Option<&runtime::grants::Entry>,
+    used: Result<u64, runtime::RuntimeError>,
+) -> String {
+    let approved = entry.and_then(|entry| entry.storage_quota_bytes);
+    let approval = match approved {
+        Some(approved) => format!("approved up to {approved} bytes"),
+        None => "not approved".to_owned(),
+    };
+    let used = match used {
+        Ok(bytes) => format!("used {bytes} bytes"),
+        Err(error) => format!("usage unknown ({error})"),
+    };
+    let above = match approved {
+        Some(approved) if storage.quota_bytes > approved => {
+            " (above the approved quota: approve again)"
+        }
+        _ => "",
+    };
+    format!(
+        "storage: quota {} bytes{}, {approval}, {used}{above}\n",
+        storage.quota_bytes,
+        size_in_units(storage.quota_bytes)
+    )
+}
+
+/// ` (64 KiB)` or ` (8 MiB)` for a whole number of either, otherwise nothing.
+fn size_in_units(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    if bytes >= MIB && bytes.is_multiple_of(MIB) {
+        format!(" ({} MiB)", bytes / MIB)
+    } else if bytes >= KIB && bytes.is_multiple_of(KIB) {
+        format!(" ({} KiB)", bytes / KIB)
+    } else {
+        String::new()
+    }
 }
 
 /// The `connectors` section of `permissions` (contracts/cli.md): each connector, where it comes
@@ -824,9 +966,11 @@ fn approve(options: &Options) -> ExitCode {
         Err(status) => return status,
     };
     let manifest = checked.manifest();
-    if !manifest.connectors().is_empty() && options.expect.is_none() {
+    if (!manifest.connectors().is_empty() || manifest.storage().is_some())
+        && options.expect.is_none()
+    {
         return usage_error(&format!(
-            "approve needs --expect <digest> for a widget that declares connectors: run `runtime permissions {}` and give the approval digest it prints",
+            "approve needs --expect <digest> for a widget that declares connectors or storage: run `runtime permissions {}` and give the approval digest it prints",
             options.plugin
         ));
     }
@@ -845,6 +989,9 @@ fn approve(options: &Options) -> ExitCode {
     );
     for permission in &approval.required {
         println!("granted: {}", escape(permission));
+    }
+    if let Some(storage) = manifest.storage() {
+        println!("storage: quota {} bytes", storage.quota_bytes);
     }
     if !checked.connectors().is_empty() {
         let connectors: Vec<String> = checked
@@ -988,7 +1135,11 @@ fn optional(options: &Options) -> ExitCode {
     if let Err(error) = checked.set_optional(&target.grants, &target.origin, permission, *on) {
         return refused(&error);
     }
-    println!("{} {}", escape(permission), if *on { "on" } else { "off" });
+    match (permission.as_str(), on) {
+        // Turning storage off deletes nothing (specs/004-plugin-storage/spec.md, FR-011)
+        ("storage", false) => println!("storage off (data kept)"),
+        (permission, on) => println!("{} {}", escape(permission), if *on { "on" } else { "off" }),
+    }
     ExitCode::SUCCESS
 }
 
@@ -1050,11 +1201,165 @@ fn remove(options: &Options) -> ExitCode {
                 eprintln!("error: cannot discard the kept data of {id}: {error}");
                 return ExitCode::from(PLUGIN_FAILED);
             }
+            // The store is the plugin's own state: removing the approval keeps it (FR-011)
+            let has_store = runtime.list_stores().iter().any(|store| {
+                store
+                    .identity
+                    .as_ref()
+                    .is_some_and(|(store_id, _)| store_id == id.as_str())
+            });
+            if has_store {
+                println!("storage kept: run runtime storage clear to delete it");
+            }
         }
         Err(error) => {
             eprintln!("error: cannot start the runtime: {error:#}");
             return ExitCode::from(PLUGIN_FAILED);
         }
+    }
+    ExitCode::SUCCESS
+}
+
+/// Values longer than this are cut by `storage show`, with their size shown.
+const SHOWN_ENTRY_BYTES: usize = 1024;
+
+/// A runtime on the data directory of `options`, for the storage commands that need no package.
+fn storage_runtime(options: &Options) -> Result<Runtime, ExitCode> {
+    let data = data_dir(options).map_err(|message| usage_error(&message))?;
+    Runtime::new(Limits::default(), RuntimeOptions::new(data)).map_err(|error| {
+        eprintln!("error: cannot start the runtime: {error:#}");
+        ExitCode::from(PLUGIN_FAILED)
+    })
+}
+
+/// Lists every store in the data directory, sorted by id then origin, with the quota the grant
+/// record approved for it, if any. Changes nothing.
+fn storage_list(options: &Options) -> ExitCode {
+    let runtime = match storage_runtime(options) {
+        Ok(runtime) => runtime,
+        Err(status) => return status,
+    };
+    let grants = match grant_store(options.grants.as_ref()) {
+        Ok(grants) => grants,
+        Err(message) => return usage_error(&message),
+    };
+    let stores = runtime.list_stores();
+    if stores.is_empty() {
+        println!("no stores");
+    }
+    for store in stores {
+        let (name, origin) = match &store.identity {
+            Some((id, origin)) => (escape(id), escape(origin)),
+            None => (
+                escape(&store.file.file_name().unwrap_or_default().to_string_lossy()),
+                "-".to_owned(),
+            ),
+        };
+        let state = match &store.state {
+            runtime::storage::StoreState::Used(used) => {
+                let (id, store_origin) = store.identity.clone().unwrap_or_default();
+                let approved = PluginId::parse(&id)
+                    .ok()
+                    .and_then(|id| grants.entry(&id).ok().flatten())
+                    .filter(|entry| entry.origin == store_origin)
+                    .and_then(|entry| entry.storage_quota_bytes);
+                let mut state = match approved {
+                    Some(quota) => format!("used {used} of {quota} bytes"),
+                    None => format!("used {used} bytes, not approved"),
+                };
+                if !Path::new(&store_origin).exists() {
+                    state.push_str(", no file");
+                }
+                state
+            }
+            runtime::storage::StoreState::Damaged(detail) => format!("damaged: {}", escape(detail)),
+            runtime::storage::StoreState::Unreadable(detail) => escape(detail),
+        };
+        println!("{name}  {origin}  {state}");
+    }
+    ExitCode::SUCCESS
+}
+
+/// Prints the store of a package, every name and value quoted and escaped, one entry per line.
+/// Changes nothing and needs no approval.
+fn storage_show(options: &Options) -> ExitCode {
+    let target = match Target::open(options) {
+        Ok(target) => target,
+        Err(status) => return status,
+    };
+    let checked = match target.check() {
+        Ok(checked) => checked,
+        Err(status) => return status,
+    };
+    let manifest = checked.manifest();
+    println!(
+        "store: {} from {}",
+        escape(manifest.id().as_str()),
+        escape(&target.origin)
+    );
+    let view = match target.runtime.show_store(manifest.id(), &target.origin) {
+        Ok(Some(view)) => view,
+        Ok(None) => {
+            println!("no store yet");
+            return ExitCode::SUCCESS;
+        }
+        Err(error) => return refused(&error),
+    };
+    let quota = manifest.storage().map_or_else(String::new, |storage| {
+        format!(" of {}", storage.quota_bytes)
+    });
+    println!(
+        "used {}{quota} bytes, {} entries",
+        view.used_bytes,
+        view.entries.len()
+    );
+    for (name, value) in &view.entries {
+        println!(
+            "{} = {}",
+            runtime::quote_entry(name, SHOWN_ENTRY_BYTES),
+            runtime::quote_entry(value, SHOWN_ENTRY_BYTES)
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// Empties one store, by package or by id and origin; a store that is damaged, or whose package
+/// file is gone, is removed instead. No other store changes.
+fn storage_clear(options: &Options) -> ExitCode {
+    let (runtime, id, origin) = match &options.store {
+        Some((id, origin)) => match storage_runtime(options) {
+            Ok(runtime) => (runtime, id.clone(), origin.clone()),
+            Err(status) => return status,
+        },
+        None => {
+            let target = match Target::open(options) {
+                Ok(target) => target,
+                Err(status) => return status,
+            };
+            let checked = match target.check() {
+                Ok(checked) => checked,
+                Err(status) => return status,
+            };
+            let id = checked.manifest().id().to_string();
+            (target.runtime, id, target.origin)
+        }
+    };
+    match runtime.clear_store(&id, &origin) {
+        Ok(runtime::storage::Cleared::Emptied { used_bytes }) => println!(
+            "cleared {} from {} ({used_bytes} bytes)",
+            escape(&id),
+            escape(&origin)
+        ),
+        Ok(runtime::storage::Cleared::Removed { reason }) => println!(
+            "removed {} from {} ({})",
+            escape(&id),
+            escape(&origin),
+            escape(&reason)
+        ),
+        Ok(runtime::storage::Cleared::NoStore) => {
+            println!("no store of {} from {}", escape(&id), escape(&origin));
+        }
+        Err(error) => return refused(&error),
     }
     ExitCode::SUCCESS
 }

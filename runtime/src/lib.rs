@@ -1,7 +1,8 @@
 //! Plugin runtime: loads plugins packaged as WebAssembly components and runs them in a sandbox,
 //! under limits set by the host, with exactly the capabilities their manifest declares and the
 //! user granted (`specs/002-plugin-permissions/`), and reach external services only through
-//! the connectors they declare, which the host runs (`specs/003-plugin-connectors/`).
+//! the connectors they declare, which the host runs (`specs/003-plugin-connectors/`), and keep
+//! data only in a store of their own (`specs/004-plugin-storage/`).
 
 // The test seam replaces DNS and the trusted roots; it must never reach a build anyone runs
 // (specs/003-plugin-connectors/research.md, R15).
@@ -23,6 +24,7 @@ mod network;
 pub mod package;
 mod permissions;
 pub mod requests;
+pub mod storage;
 mod text;
 
 use std::path::{Path, PathBuf};
@@ -43,6 +45,7 @@ use limits::MemoryLimitExceeded;
 use manifest::Manifest;
 use permissions::Interfaces;
 use requests::RequestLog;
+use storage::StorageRun;
 
 pub use calls::CallCounts;
 pub use error::{ErrorKind, RuntimeError};
@@ -50,20 +53,21 @@ pub use limits::Limits;
 #[cfg(feature = "test-network")]
 pub use network::{Route, TestNetwork};
 pub use permissions::{Contract, ContractVersion};
-pub use text::escape;
+pub use storage::StorageCounts;
+pub use text::{escape, quote_entry};
 
 /// Bindings for the `widget` world of plugin contract v0 (`wit/v0`, `dashboard:widget@0.1.0`).
 pub(crate) mod v0 {
     wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
 }
 
-/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.1.0`), from its widest world,
-/// `connected-widget`, for the host side of every interface. Wasmtime matches the imports of
-/// plugins built for an older minor against them by compatible version. Exports are looked up
+/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.2.0`), from its widest world,
+/// `connected-stored-widget`, for the host side of every interface. Wasmtime matches the imports
+/// of plugins built for an older minor against them by compatible version. Exports are looked up
 /// one by one, by the exact names each plugin has, since a render-only widget has no `updater`
-/// (`specs/003-plugin-connectors/research.md`, R11).
+/// (`specs/003-plugin-connectors/research.md`, R11; `specs/004-plugin-storage/research.md`, R13).
 pub(crate) mod v1 {
-    wasmtime::component::bindgen!({ path: "../wit/v1", world: "connected-widget" });
+    wasmtime::component::bindgen!({ path: "../wit/v1", world: "connected-stored-widget" });
 }
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
@@ -108,6 +112,8 @@ pub struct RenderReport {
     pub logs: Vec<LogMessage>,
     /// Messages over the per-call cap, dropped instead of kept.
     pub dropped_logs: u32,
+    /// What the render did with storage, for a plugin granted it.
+    pub storage: Option<StorageCounts>,
 }
 
 /// The outcome of one update call (`specs/003-plugin-connectors/`, FR-010).
@@ -120,6 +126,9 @@ pub struct UpdateReport {
     pub dropped_logs: u32,
     /// How the update's connector calls went.
     pub calls: CallCounts,
+    /// What the update did with storage, for a plugin granted it, when its writes were kept or
+    /// it failed for another reason.
+    pub storage: Option<StorageCounts>,
 }
 
 /// What the host decides when it starts the runtime: where its data lives, and whether it runs
@@ -303,15 +312,16 @@ impl CheckedPackage {
     }
 
     /// The digest of everything an approval of this package covers (`data-model.md`, Approval
-    /// digest), which `approve` needs for a widget that declares a connector.
+    /// digest), which `approve` needs for a widget that declares a connector or storage.
     pub fn approval_digest(&self) -> String {
         grants::approval_digest(&self.digest, &self.manifest, &self.connector_states())
     }
 
     /// Approves this package from `origin`: its required permissions and, for a widget that
-    /// declares connectors, every connector, only when `expected` is its approval digest
-    /// (FR-014). A widget with connectors and no expected digest is refused as
-    /// `approval-changed`, granting nothing; the CLI asks for `--expect` before.
+    /// declares connectors or storage, every connector and the storage quota, only when
+    /// `expected` is its approval digest (FR-014; feature 004, FR-008). Such a widget with no
+    /// expected digest is refused as `approval-changed`, granting nothing; the CLI asks for
+    /// `--expect` before.
     pub fn approve(
         &self,
         grants: &GrantStore,
@@ -321,13 +331,13 @@ impl CheckedPackage {
         if let Some((_, error)) = self.refused_connectors.first() {
             return Err(error.clone());
         }
-        if self.connectors.is_empty() {
+        if self.connectors.is_empty() && self.manifest.storage().is_none() {
             return grants.approve(&self.manifest, origin, &self.digest);
         }
         let Some(expected) = expected else {
             return Err(RuntimeError::new(
                 ErrorKind::ApprovalChanged,
-                "a widget that declares connectors is approved only with the approval digest of what was shown",
+                "a widget that declares connectors or storage is approved only with the approval digest of what was shown",
             ));
         };
         grants.approve_connected(
@@ -411,6 +421,9 @@ struct V1Pre {
     /// The connectors granted when it was linked, for a plugin that imports `connectors`;
     /// `None` when it was linked to the stand-in, or imports nothing of them.
     table: Option<Arc<ConnectorTable>>,
+    /// The store bound when it was linked, for a plugin linked to the real `storage`, or why
+    /// storage is unavailable; `None` when it was linked to the stand-in, or imports no storage.
+    storage: Option<Result<Arc<storage::StoreBinding>, String>>,
 }
 
 /// The function `function` of the exported interface `interface`.
@@ -451,10 +464,15 @@ impl Runtime {
 
     fn start(
         limits: Limits,
-        options: RuntimeOptions,
+        mut options: RuntimeOptions,
         catalog: catalog::Catalog,
         network: network::Network,
     ) -> wasmtime::Result<Runtime> {
+        // A store's path is always absolute: a relative one could be read as a URI, or move
+        // with the working directory (specs/004-plugin-storage/research.md, R4)
+        if let Ok(absolute) = std::path::absolute(&options.data_dir) {
+            options.data_dir = absolute;
+        }
         let mut config = Config::new();
         // Turned off explicitly, so a Wasmtime upgrade that changes a default does not widen
         // what plugins can use. Function references, exceptions, threads and component-model
@@ -523,6 +541,39 @@ impl Runtime {
         RequestLog::new(self.options.data_dir(), &self.limits).read_last(n, plugin)
     }
 
+    /// The usage of the store of `id` from `origin`, in bytes: 0 when it has none yet. Reads
+    /// the store without changing or creating anything; refused as `storage-failed` when the
+    /// store cannot be read, naming why.
+    pub fn storage_used_bytes(
+        &self,
+        id: &manifest::PluginId,
+        origin: &str,
+    ) -> Result<u64, RuntimeError> {
+        storage::used_bytes(self.options.data_dir(), id.as_str(), origin, &self.limits)
+            .map_err(|reason| RuntimeError::new(ErrorKind::StorageFailed, reason))
+    }
+
+    /// Every store in the data directory, sorted by id then origin, for `runtime storage list`.
+    /// Changes nothing.
+    pub fn list_stores(&self) -> Vec<storage::StoreInfo> {
+        storage::list_stores(self.options.data_dir(), &self.limits)
+    }
+
+    /// What the store of `id` from `origin` holds, read-only; `None` when it has none yet.
+    pub fn show_store(
+        &self,
+        id: &manifest::PluginId,
+        origin: &str,
+    ) -> Result<Option<storage::StoreView>, RuntimeError> {
+        storage::show_store(self.options.data_dir(), id.as_str(), origin, &self.limits)
+    }
+
+    /// Empties the store of `id` from `origin`, or deletes its file when it is damaged or the
+    /// origin's file is gone. Only the host's own controls reach a store this way (spec FR-014).
+    pub fn clear_store(&self, id: &str, origin: &str) -> Result<storage::Cleared, RuntimeError> {
+        storage::clear_store(self.options.data_dir(), id, origin, &self.limits)
+    }
+
     /// Checks a plugin package without its grants: size, manifest, compilation, contract and
     /// imports (load steps 1–6). A failure stops at the first step that refuses the package,
     /// with that step's error kind.
@@ -557,6 +608,8 @@ impl Runtime {
         }
         // Steps 2 and 3: the one manifest, before the compile, which costs far more
         let manifest = Manifest::parse(package::manifest_section(bytes)?)?;
+        // Step 3a: a storage quota within this host's cap, which may be lower than the schema's
+        self.check_quota(&manifest)?;
         // Step 4: from_binary never accepts the text format, whatever Wasmtime features are
         // enabled.
         let component = Component::from_binary(&self.engine, bytes)
@@ -582,6 +635,29 @@ impl Runtime {
             connectors,
             refused_connectors,
         })
+    }
+
+    /// Load step 3a (`specs/004-plugin-storage/data-model.md`, Load decision).
+    fn check_quota(&self, manifest: &Manifest) -> Result<(), RuntimeError> {
+        let Some(storage) = manifest.storage() else {
+            return Ok(());
+        };
+        let cap = self.limits.max_storage_quota_bytes;
+        if storage.quota_bytes <= cap {
+            return Ok(());
+        }
+        let index = manifest
+            .permissions()
+            .iter()
+            .position(|permission| permission.name == "storage")
+            .unwrap_or_default();
+        Err(RuntimeError::new(
+            ErrorKind::InvalidManifest,
+            format!(
+                "permissions[{index}].quota_bytes: {} is over this host's cap; a quota is from {} to {cap} usage bytes",
+                storage.quota_bytes, self.limits.storage_entry_cost_bytes
+            ),
+        ))
     }
 
     /// Checks a connector file as this runtime would load it as `local/<name>` from
@@ -620,7 +696,7 @@ impl Runtime {
         let package = self.check(bytes)?;
         // Read before the grants, so a change made while linking is seen on the next call
         let generation = grants.generation();
-        let prepared = prepare(&package, origin, &grants)?;
+        let prepared = prepare(&package, origin, &grants, self.options.data_dir())?;
         let plugin = Plugin {
             package,
             origin: origin.to_owned(),
@@ -794,6 +870,7 @@ fn prepare(
     package: &CheckedPackage,
     origin: &str,
     grants: &GrantStore,
+    data_dir: &Path,
 ) -> Result<Prepared, RuntimeError> {
     let manifest = &package.manifest;
     let entry = grants.entry(manifest.id())?;
@@ -822,6 +899,18 @@ fn prepare(
             ));
         }
         grants.refresh_connector_versions(manifest, origin, &states)?;
+    }
+    // Step 7 for storage: required, or optional and on, with a quota the user approved
+    // (specs/004-plugin-storage/data-model.md, Load decision)
+    if let Some(change) = entry
+        .as_ref()
+        .and_then(|entry| entry.storage_change(manifest))
+    {
+        return Err(RuntimeError::with_names(
+            ErrorKind::NeedsNewApproval,
+            vec!["storage".to_owned()],
+            Some(&format!("{change}; approve {} again", manifest.id())),
+        ));
     }
     // Step 8: permissions and connectors this manifest no longer declares leave the approval
     let undeclared_connectors = entry.as_ref().is_some_and(|entry| {
@@ -868,6 +957,37 @@ fn prepare(
     } else {
         None
     };
+    // Steps 8a and 9 for storage: the store binding, from the plugin's id and origin, for a
+    // plugin linked to the real interface; never from anything a call says (research R3)
+    let storage = if plan.real.contains(&"storage") {
+        let declared = manifest
+            .storage()
+            .expect("storage is linked only when the manifest declares it");
+        let approved = entry
+            .as_ref()
+            .and_then(|entry| entry.storage_quota_bytes)
+            .unwrap_or(declared.quota_bytes);
+        match storage::storage_dir(data_dir) {
+            Ok(dir) => Some(Ok(Arc::new(storage::StoreBinding::new(
+                &dir,
+                manifest.id().as_str(),
+                origin,
+                declared.quota_bytes,
+                approved,
+            )))),
+            Err(reason) if declared.required => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::StorageFailed,
+                    vec!["storage".to_owned()],
+                    Some(&format!("its required storage is unavailable: {reason}")),
+                ));
+            }
+            // Optional storage that is on: linked, and its calls fail as unavailable
+            Err(reason) => Some(Err(reason)),
+        }
+    } else {
+        None
+    };
     let pre = linker
         .instantiate_pre(&package.component)
         .map_err(mismatch)?;
@@ -889,6 +1009,7 @@ fn prepare(
                 render,
                 update,
                 table,
+                storage,
             })
         }
     })
@@ -928,6 +1049,7 @@ impl Plugin {
                     result: Err(error),
                     logs: Vec::new(),
                     dropped_logs: 0,
+                    storage: None,
                 };
             }
         };
@@ -948,6 +1070,7 @@ impl Plugin {
                 result: Err(error),
                 logs: Vec::new(),
                 dropped_logs: 0,
+                storage: None,
             },
         }
     }
@@ -959,10 +1082,13 @@ impl Plugin {
             .and_then(|()| self.call(prepared, &mut store, config));
         let mut state = store.into_data();
         state.run.finish();
+        // A render keeps nothing: its read transaction just ends
+        let storage = state.storage.take().and_then(|run| run.finish(true).ok());
         RenderReport {
             result,
             logs: state.logs,
             dropped_logs: state.dropped_logs,
+            storage,
         }
     }
 
@@ -976,6 +1102,7 @@ impl Plugin {
             logs: Vec::new(),
             dropped_logs: 0,
             calls: CallCounts::default(),
+            storage: None,
         };
         let prepared = match self.current() {
             Ok(prepared) => prepared,
@@ -1002,6 +1129,16 @@ impl Plugin {
             .and_then(|()| self.call_update(&prepared, &mut store, update, config));
         let mut state = store.into_data();
         state.run.finish();
+        // The store first: its writes are committed only when the update succeeded, and a
+        // commit that fails fails the update, before the kept data is recorded
+        // (specs/004-plugin-storage/research.md, R7)
+        let (result, storage) = match state.storage.take() {
+            None => (result, None),
+            Some(run) => match run.finish(result.is_ok()) {
+                Ok(counts) => (result, Some(counts)),
+                Err(error) => (Err(error), None),
+            },
+        };
         let now = calls::now_ms();
         if let Some(key) = self.kept_key() {
             // The kept data is the host's record of the update: a write that fails leaves the
@@ -1016,6 +1153,7 @@ impl Plugin {
             logs: state.logs,
             dropped_logs: state.dropped_logs,
             calls: state.run.counts,
+            storage,
         }
     }
 
@@ -1028,6 +1166,20 @@ impl Plugin {
             Prepared::V1(V1Pre {
                 table: Some(table), ..
             }) => Some(table.keys()),
+            _ => None,
+        }
+    }
+
+    /// The file of the store the plugin is linked with, or `None` when it is linked to the
+    /// stand-in or imports no storage. For the white-box hostile case `store-binding`, which no
+    /// plugin can observe (Principle VIII).
+    #[cfg(feature = "test-network")]
+    pub fn store_binding(&self) -> Option<PathBuf> {
+        match &*self.current().ok()? {
+            Prepared::V1(V1Pre {
+                storage: Some(Ok(binding)),
+                ..
+            }) => Some(binding.file.clone()),
             _ => None,
         }
     }
@@ -1054,10 +1206,25 @@ impl Plugin {
             limits: self.limits.clone(),
             rates: Arc::clone(&self.rates),
         });
-        let mut store = Store::new(
-            self.package.component.engine(),
-            HostState::new(&self.limits, run, calls),
-        );
+        let mut state = HostState::new(&self.limits, run, calls);
+        if let Prepared::V1(V1Pre {
+            storage: Some(binding),
+            ..
+        }) = prepared
+        {
+            let time_limit = match phase {
+                Phase::Render => self.limits.time_limit,
+                Phase::Update => self.limits.update_time_limit,
+            };
+            state.storage = Some(StorageRun::new(
+                binding.clone(),
+                phase,
+                Arc::clone(&self.grants),
+                &self.limits,
+                Instant::now() + time_limit,
+            ));
+        }
+        let mut store = Store::new(self.package.component.engine(), state);
         store.limiter(|state| &mut state.limiter);
         store
     }
@@ -1169,7 +1336,13 @@ impl Plugin {
     pub fn relink(&self) -> Result<(), RuntimeError> {
         let mut linked = self.linked.lock().unwrap_or_else(PoisonError::into_inner);
         linked.generation = self.grants.generation();
-        linked.prepared = prepare(&self.package, &self.origin, &self.grants).map(Arc::new);
+        linked.prepared = prepare(
+            &self.package,
+            &self.origin,
+            &self.grants,
+            self.options.data_dir(),
+        )
+        .map(Arc::new);
         linked.prepared.as_ref().map(drop).map_err(Clone::clone)
     }
 
@@ -1179,7 +1352,13 @@ impl Plugin {
         let mut linked = self.linked.lock().unwrap_or_else(PoisonError::into_inner);
         let generation = self.grants.generation();
         if linked.generation != generation {
-            linked.prepared = prepare(&self.package, &self.origin, &self.grants).map(Arc::new);
+            linked.prepared = prepare(
+                &self.package,
+                &self.origin,
+                &self.grants,
+                self.options.data_dir(),
+            )
+            .map(Arc::new);
             linked.generation = generation;
         }
         linked.prepared.clone()

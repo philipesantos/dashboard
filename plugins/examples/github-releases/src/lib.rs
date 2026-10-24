@@ -2,7 +2,7 @@
 //! configuration. `update` fetches them through the catalog's GitHub connector, and `render`
 //! shows what the host kept, without waiting on the network.
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "connected-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.1.0", world: "connected-widget" });
 
 use dashboard::widget::connectors::{Argument, CallError, Value, call};
 use exports::dashboard::widget::renderer::Guest as Renderer;

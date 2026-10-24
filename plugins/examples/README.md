@@ -6,7 +6,11 @@ Example plugins, one folder each.
   configuration; the starting point for a new plugin. It builds from the frozen contract 1.0.0
   (`wit/history/1.0.0`), to show that plugins built for an older v1 minor keep running.
 - [github-releases](github-releases/README.md): Rust, contract 1.1.0. Shows the latest releases
-  of a GitHub repository, fetched through the catalog's GitHub connector in `update`.
+  of a GitHub repository, fetched through the catalog's GitHub connector in `update`. It builds
+  from the frozen contract 1.1.0 (`wit/history/1.1.0`).
+- [update-counter](update-counter/README.md): Rust, contract 1.2.0. Counts its updates and keeps
+  the last notes its configuration gives it, in its own storage: `update` writes, `render`
+  reads.
 
 Each example has a `manifest.json` beside its `Cargo.toml`: who the plugin is and the
 permissions it needs. [`docs/plugin-authors.md`](../../docs/plugin-authors.md) explains the

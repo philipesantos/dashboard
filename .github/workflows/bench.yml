@@ -6,7 +6,8 @@ name: Bench
 # each job; specs/001-plugin-runtime/performance.md records the load and render times,
 # specs/002-plugin-permissions/performance.md the permission checks (checks_us, relink_us), and
 # specs/003-plugin-connectors/performance.md the connector checks and the render of a connected
-# widget from kept data (render_with_data_us). Nothing reaches the network.
+# widget from kept data (render_with_data_us), and specs/004-plugin-storage/performance.md what
+# storage costs and the files stores take (storage_cost). Nothing reaches the network.
 #
 # Two ways to run it: from the Actions tab once the workflow is on master, or by adding the
 # "bench" label to a pull request, which also works before the workflow reaches master.
@@ -84,6 +85,11 @@ jobs:
             --kept-data plugins/examples/github-releases/bench-data.json --grants "$GRANTS" --data "$DATA" \
             | tee connected.txt
 
+      # Storage calls, an update with storage and stores filled to the host cap, on this
+      # system's disk (specs/004-plugin-storage/research.md, R16)
+      - name: Storage costs
+        run: cargo run -p dashboard-bench --release --locked --bin storage_cost | tee storage.txt
+
       # Compiling runs outside every per-call limit (docs/threat-model.md)
       - name: Load packages near the size cap
         run: |
@@ -104,9 +110,11 @@ jobs:
             cat bench.txt
             echo 'github-releases, rendered from kept data:'
             cat connected.txt compile.txt
+            echo 'storage (store-probe):'
+            cat storage.txt
             echo '```'
             echo 'Recorded in specs/001-plugin-runtime/performance.md (load, render, compile),'
             echo 'specs/002-plugin-permissions/performance.md (checks_us, relink_us) and'
             echo 'specs/003-plugin-connectors/performance.md (checks_us and render_with_data_us of'
-            echo 'github-releases).'
+            echo 'github-releases) and specs/004-plugin-storage/performance.md (storage_cost).'
           } >> "$GITHUB_STEP_SUMMARY"

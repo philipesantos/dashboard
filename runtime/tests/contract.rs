@@ -60,6 +60,23 @@ fn a_contract_1_0_0_plugin_runs_on_the_1_1_0_host() {
     assert_eq!(report.logs.len(), 1);
 }
 
+/// Feature 004, SC-007: plugins built from the frozen 1.0.0 and 1.1.0 contracts load, link and
+/// run as before on the 1.2.0 host.
+#[test]
+fn contract_1_0_0_and_1_1_0_plugins_run_on_the_1_2_0_host() {
+    let world = common::World::production(false);
+    let hello = world.approve_and_load(&fixture("hello-widget"));
+    assert_eq!(hello.contract_version().display(), "v1 (1.0.0)");
+    assert!(hello.render(r#"{"name":"Ada"}"#).result.is_ok());
+    let releases = world.approve_and_load(&fixture("github-releases"));
+    assert_eq!(releases.contract_version().display(), "v1 (1.1.0)");
+    let content = releases
+        .render(r#"{"owner":"rust-lang","repo":"rust"}"#)
+        .result
+        .expect("github-releases renders before its first update");
+    assert_eq!(content["text"], "No data yet");
+}
+
 #[test]
 fn hello_widget_renders_its_greeting_and_one_log() {
     let runtime = runtime();
@@ -232,13 +249,13 @@ fn component_with(exports: &[&str], manifest: &str) -> Vec<u8> {
 #[test]
 fn a_component_built_for_a_newer_minor_is_a_contract_mismatch_naming_both_versions() {
     let package = component_with(
-        &["dashboard:widget/renderer@1.2.0"],
+        &["dashboard:widget/renderer@1.3.0"],
         &manifest("local/newer", "0.1.0", &[]),
     );
     let (kind, detail) = load_error(&runtime(), &package);
     assert_eq!(kind, ErrorKind::ContractMismatch);
     assert!(
-        detail.contains("1.2.0") && detail.contains("1.1.0"),
+        detail.contains("1.3.0") && detail.contains("1.2.0"),
         "{detail}"
     );
 }
@@ -295,5 +312,38 @@ fn a_local_connector_on_this_machine_runs_only_in_development_mode() {
         development.write_connector("here", &other);
         let error = development.runtime.check(&package).err().expect("refused");
         assert_eq!(error.kind(), kind, "{destination}: {error}");
+    }
+}
+
+// Feature 004: contract 1.2.0 (FR-015)
+
+/// A plugin built for 1.1.0 whose manifest declares storage is refused, naming 1.2.0.
+#[test]
+fn a_1_1_0_plugin_that_declares_storage_is_contract_too_old() {
+    let package = repack(
+        &fixture("net-probe"),
+        &common::stored_manifest("local/net-probe", "0.1.0", true, 65536),
+    );
+    let (kind, detail) = load_error(&runtime(), &package);
+    assert_eq!(kind, ErrorKind::ContractTooOld, "{detail}");
+    assert!(
+        detail.contains("1.2.0") && detail.contains("1.1.0"),
+        "{detail}"
+    );
+}
+
+/// Every plugin of the repository built for 1.0.0 or 1.1.0 still runs on the 1.2.0 host
+/// (SC-007): the fixtures `probe` and `quiet` as well as the examples.
+#[test]
+fn every_older_minor_fixture_still_renders() {
+    let runtime = runtime();
+    for (name, manifest) in [
+        ("probe", manifest("local/probe", "0.1.0", &[("log", true)])),
+        ("quiet", manifest("local/quiet", "0.1.0", &[])),
+    ] {
+        let package = repack(&fixture(name), &manifest);
+        let plugin = load(&runtime, &package);
+        assert_eq!(plugin.contract_version().display(), "v1 (1.0.0)", "{name}");
+        assert!(plugin.render("{}").result.is_ok(), "{name}");
     }
 }

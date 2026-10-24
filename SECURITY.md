@@ -21,6 +21,8 @@ in scope, especially:
   reached, or traffic that bypasses the host's network proxy
 - a connector outside the official catalog that claims a catalog service or its reserved
   domains
+- a plugin reading or changing another plugin's storage, reaching anything outside its own
+  store through it, writing past its approved quota, or keeping part of an update that failed
 - a plugin reading passwords, tokens or AI provider keys
 - a plugin drawing outside its frame or imitating a host dialog
 - AI output triggering an action without confirmation in a host dialog
