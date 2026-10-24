@@ -77,7 +77,7 @@ code, which the host runs, with a fixed destination and typed parameters the hos
 
 | ID | Boundary | What crosses it | Controls |
 | --- | --- | --- | --- |
-| B1 | Plugin ↔ host (Wasm sandbox, WIT interface) | Host function calls, widget render data | WebAssembly only (I); no capabilities until granted, only granted imports linked (II); CPU, memory and time limits |
+| B1 | Plugin ↔ host (Wasm sandbox, WIT interface) | Host function calls, widget render data, named values the plugin stores | WebAssembly only (I); no capabilities until granted, only granted imports linked (II); CPU, memory and time limits; storage bound at link time to the plugin's id and origin, run by the host's own statements on a hardened SQLite connection, within a quota the user approved, read-only in render and all or nothing in update |
 | B2 | Host ↔ network | Connector calls a plugin makes | No generic network: only declared operations of connectors, run by the host (III); destinations from the catalog, whose domains are reserved, or local in development; HTTPS with Mozilla's roots, public addresses only at every connection, redirects only to the connector's origins, no system proxy, no cookies; size, time, call and rate limits; a request log no plugin can read or flood; calls only in `update`, never in render |
 | B3 | Host ↔ secrets | Tokens and keys | Never handed to plugins; the host injects them into requests (IV) |
 | B4 | Plugin UI ↔ user | Widget content | Declarative UI inside the host frame, no password fields, no windows or dialogs (V); personal visual secret on every host dialog |
@@ -112,7 +112,16 @@ suite grows with every phase and never shrinks.
 | Approval covers something else than what was shown (the connector changed in between) | T1 | A4 | B2 | `approve` grants only the digest `permissions` printed; a connector change that widens what the widget reaches needs a new approval (II, VII) | Phase 2 |
 | Waits on the network in render to stall the dashboard | T1 | A3 | B1, B2 | Connectors are called only in `update`, with its own time limit; render shows the data the host kept (III) | Phase 2 |
 | Connector reaches a credential or hides one in a fixed value | T1 | A2 | B3 | Connectors with credentials refused until feature 005; fixed values are public, shown before approval (IV) | Phase 2 |
-| Reads another plugin's storage | T1 | A1 | B1 | One database per plugin, II | Phase 2 |
+| Reads or changes another plugin's storage, by using its names or by claiming its id from another file | T1 | A1 | B1 | One database per plugin, chosen by the host at link time from the plugin's id and origin; no call names a store, file or place (II) | Phase 2 (`other-plugin`, `same-id-other-origin`, `store-binding`) |
+| Stored names that look like paths, SQL or `ATTACH` reach outside the plugin's store | T1 | A1, A3 | B1 | Names are opaque bytes bound as parameters to the host's own statements; no attached databases, no extensions, defensive mode, triggers and views off, and an authorizer that allows only the host's statements | Phase 2 (`name-injection`, `store-hardened`) |
+| Opens the store file directly through the file system | T1 | A1 | B1 | No file system capability (I, II) | Phase 2 (`storage-file`) |
+| A store file changed outside the host (an extra table, a trigger, a view, another plugin's file) runs code or passes for another store | T1, T4 | A1 | B1 | The schema and identity checked at every open; a file that differs is damaged, and nothing in it runs or changes | Phase 2 (`foreign-store`) |
+| Fills the user's disk, or slows the host with endless tiny writes | T1 | A3 | B1 | A quota the user approves, counted the same on every system; limits on names, values, calls and bytes per update; a file cap SQLite enforces | Phase 2 (`quota-fill`, `many-entries`, `churn`, `file-cap-hit`, `over-limits`) |
+| A new version raises its quota without the user | T1, T4 | A3, A4 | B1 | The approval digest covers the quota; a larger quota needs a new approval (II) | Phase 2 (`quota-raised`, `approval-digest`) |
+| An update killed or failing halfway leaves half-written data | T1 | A1 | B1 | Each update is one transaction, committed only when it returned `ok`; any failed write, a full file or a killed process ends it with nothing kept | Phase 2 (`crash-after-writes`, `killed-mid-update`, `unwritable-store`) |
+| Writes from render, which the host may run at any time | T1 | A1 | B1 | Render's connection is read-only and its writes refused | Phase 2 (`write-in-render`) |
+| Keeps writing after the user turned storage off or removed the approval | T1 | A1, A4 | B1 | The grant record read again on every call and at the commit, under its lock (II) | Phase 2 (`optional-off`, `taken-away-mid-update`) |
+| Stored names and values imitate the CLI's output when shown | T1 | A4 | B1 | Every text quoted and escaped, `"` and `\` included, one entry per line | Phase 2 (`show-spoof`) |
 | Obtains an OAuth token or AI key | T1 | A2 | B3 | IV | Phase 2 |
 | Update adds a permission without approval | T1, T4 | A4 | B1 | Re-approval on new permissions (II) | Phase 2 |
 | Uses an optional capability the user left off | T1 | A1, A2 | B1 | A stand-in that gives nothing and answers "not granted" (II) | Phase 2 |
