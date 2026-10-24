@@ -314,3 +314,36 @@ fn a_local_connector_on_this_machine_runs_only_in_development_mode() {
         assert_eq!(error.kind(), kind, "{destination}: {error}");
     }
 }
+
+// Feature 004: contract 1.2.0 (FR-015)
+
+/// A plugin built for 1.1.0 whose manifest declares storage is refused, naming 1.2.0.
+#[test]
+fn a_1_1_0_plugin_that_declares_storage_is_contract_too_old() {
+    let package = repack(
+        &fixture("net-probe"),
+        &common::stored_manifest("local/net-probe", "0.1.0", true, 65536),
+    );
+    let (kind, detail) = load_error(&runtime(), &package);
+    assert_eq!(kind, ErrorKind::ContractTooOld, "{detail}");
+    assert!(
+        detail.contains("1.2.0") && detail.contains("1.1.0"),
+        "{detail}"
+    );
+}
+
+/// Every plugin of the repository built for 1.0.0 or 1.1.0 still runs on the 1.2.0 host
+/// (SC-007): the fixtures `probe` and `quiet` as well as the examples.
+#[test]
+fn every_older_minor_fixture_still_renders() {
+    let runtime = runtime();
+    for (name, manifest) in [
+        ("probe", manifest("local/probe", "0.1.0", &[("log", true)])),
+        ("quiet", manifest("local/quiet", "0.1.0", &[])),
+    ] {
+        let package = repack(&fixture(name), &manifest);
+        let plugin = load(&runtime, &package);
+        assert_eq!(plugin.contract_version().display(), "v1 (1.0.0)", "{name}");
+        assert!(plugin.render("{}").result.is_ok(), "{name}");
+    }
+}

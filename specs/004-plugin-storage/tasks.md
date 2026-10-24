@@ -208,7 +208,7 @@ agree
 ### Tests for User Story 6
 
 - [X] T051 [P] [US6] Extend `runtime/tests/contract_v1.rs`: the capability rule covers `storage` (its error's first case is `not-granted`; `renderer` and `updater` stay excluded); 1.2.0 contains every interface, function and type of 1.1.0 unchanged, and 1.1.0 every one of 1.0.0, comparing the resolved definitions and ignoring doc comments; add `frozen_contracts`: `wit/history/1.0.0/widget.wit` and `wit/history/1.1.0/widget.wit` match SHA-256 values pinned in the test
-- [ ] T052 [P] [US6] Add to `runtime/tests/contract.rs`: a component claiming contract 1.3.0 is `contract-mismatch` naming both versions; a 1.1.0 component (`net-probe` repacked) whose manifest declares storage is `contract-too-old` naming 1.2.0; every plugin built for 1.0.0 and 1.1.0 in `plugins/` renders as before (SC-007)
+- [X] T052 [P] [US6] Add to `runtime/tests/contract.rs`: a component claiming contract 1.3.0 is `contract-mismatch` naming both versions; a 1.1.0 component (`net-probe` repacked) whose manifest declares storage is `contract-too-old` naming 1.2.0; every plugin built for 1.0.0 and 1.1.0 in `plugins/` renders as before (SC-007)
 - [ ] T053 [P] [US6] Extend `runtime/tests/manifest_schema.rs`: for a corpus of manifests covering every rule of T012 (`quota_bytes` missing, on another permission, 63, 64, 8388608, 8388609, a fraction, a string, two `storage` entries), the schema of `wit/manifest.schema.json` and `Manifest::parse` agree, with the host-only rule listed apart (a quota above a lower host cap); `plugins/examples/update-counter/manifest.json` validates and parses (SC-008)
 
 ### Implementation for User Story 6
