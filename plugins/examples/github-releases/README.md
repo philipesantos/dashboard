@@ -27,8 +27,21 @@ rt permissions target/plugins/github-releases.wasm     # shows catalog/github an
 rt approve target/plugins/github-releases.wasm --expect <the approval digest>
 rt update target/plugins/github-releases.wasm --config '{"owner":"rust-lang","repo":"rust"}'
 rt run target/plugins/github-releases.wasm --config '{"owner":"rust-lang","repo":"rust"}'
+rt requests
 ```
 
-`permissions` shows every destination the connector reaches, `https://api.github.com`, and the
-operation the widget calls, with the parameters it sends. `approve` grants exactly what was
-shown: if anything changed since, it refuses.
+- `permissions` shows every destination the connector reaches, `https://api.github.com`, and
+  the operation the widget calls, with the parameters it sends and the values the connector
+  fixes. It ends with the approval digest of all of it.
+- `approve --expect <digest>` grants exactly what was shown: if anything changed since, it
+  refuses as `approval-changed`, granting nothing.
+- `update` calls the widget's `update`: the host makes the one request, the widget returns the
+  releases, and the host keeps them, with the time.
+- `run` renders from what the host kept, even with the network down, and shows when it was
+  fetched and how the last update went.
+- `requests` prints the request log: every call, allowed or refused, with its destination and
+  outcome.
+
+Each command also takes `--grants <path>` and `--data <dir>`, to keep the approval, the data and
+the log out of your own development directory. Updates run only when you ask, in this phase; the
+host app updates on load and on a schedule (Phase 3).

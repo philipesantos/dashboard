@@ -117,7 +117,7 @@ nothing sent
 ### Implementation for User Story 1
 
 - [X] T039 [US1] Add to `runtime/src/bin/runtime.rs` exactly as in `contracts/cli.md`: `--data <dir>` (default `<data dir>/dev.philsantos.dashboard/development/`) and `--connectors <dir>` (default `<data>/connectors/`) on every command that needs them; the runtime built with development mode on; `permissions` with the contract line of T025 and, only for widgets that declare a connector, the `connectors` section, `fixed:`, the `data flow:` line and the approval digest of T028; `approve [--expect <digest>]`: without it, a widget that declares a connector is a usage error (exit 2) saying to run `permissions`, and with it the library refuses a mismatch as `approval-changed`; `update <plugin>`; `run` rendering connected widgets from kept data; `requests [--plugin <id>] [--last <n>]` (default 50, oldest first, the time in UTC formatted by the host from milliseconds, one line per entry, every text a plugin or a connector wrote escaped, the summary line); update the usage text and the module comment
-- [ ] T040 [US1] Make `plugins/examples/github-releases/README.md` and `plugins/examples/README.md` show the whole flow (`permissions`, `approve --expect`, `update`, `run`, `requests`) and say that `hello-widget` is built from the frozen 1.0.0 contract to show that older minors keep running
+- [X] T040 [US1] Make `plugins/examples/github-releases/README.md` and `plugins/examples/README.md` show the whole flow (`permissions`, `approve --expect`, `update`, `run`, `requests`) and say that `hello-widget` is built from the frozen 1.0.0 contract to show that older minors keep running
 
 **Checkpoint**: quickstart step 2 works offline in the tests and online by hand; User Story 1
 is complete
