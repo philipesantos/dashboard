@@ -2,18 +2,30 @@
 //! under limits set by the host, with exactly the capabilities their manifest declares and the
 //! user granted (`specs/002-plugin-permissions/`).
 
+// Unused until loading runs connectors (specs/003-plugin-connectors/tasks.md, T035)
+#[allow(dead_code)]
 mod calls;
+// Unused until loading runs connectors (specs/003-plugin-connectors/tasks.md, T035)
+#[allow(dead_code)]
 mod catalog;
+// Unused until loading runs connectors (specs/003-plugin-connectors/tasks.md, T035)
+#[allow(dead_code)]
 mod connector;
 mod error;
 pub mod grants;
 mod host;
+// Unused until loading runs connectors (specs/003-plugin-connectors/tasks.md, T035)
+#[allow(dead_code)]
 mod kept;
 mod limits;
 pub mod manifest;
+// Unused until loading runs connectors (specs/003-plugin-connectors/tasks.md, T035)
+#[allow(dead_code)]
 mod network;
 pub mod package;
 mod permissions;
+// Unused until loading runs connectors (specs/003-plugin-connectors/tasks.md, T035)
+#[allow(dead_code)]
 mod requests;
 mod text;
 

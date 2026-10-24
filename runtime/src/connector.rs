@@ -9,10 +9,16 @@
 //! a connector outside the catalog may not set. `tests/manifest_schema.rs` keeps the schema and
 //! this parser in agreement.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+
 use crate::error::{ErrorKind, RuntimeError};
+use crate::manifest::{self, Object};
 
 /// Largest connector file accepted, checked before parsing.
 pub(crate) const MAX_CONNECTOR_BYTES: usize = 64 * 1024;
@@ -144,11 +150,28 @@ impl Connector {
     /// Parses and checks a connector file. Refuses it as `invalid-connector`, naming the field
     /// path and the problem, or as `credentials-not-supported` when it declares a credential.
     pub(crate) fn parse(bytes: &[u8], source: Source) -> Result<Connector, RuntimeError> {
-        let _ = (bytes, source);
-        Err(RuntimeError::new(
-            ErrorKind::InvalidConnector,
-            "not implemented",
-        ))
+        if bytes.len() > MAX_CONNECTOR_BYTES {
+            return Err(invalid(format!(
+                "the connector is {} bytes, over the limit of {MAX_CONNECTOR_BYTES}",
+                bytes.len()
+            )));
+        }
+        let text = std::str::from_utf8(bytes)
+            .map_err(|error| invalid(format!("the connector is not UTF-8: {error}")))?;
+
+        // First as plain JSON, refusing a key given twice at any depth (which a typed map would
+        // keep the last of, unlike what a reviewer reads), and any credential field.
+        let mut deserializer = serde_json::Deserializer::from_str(text);
+        let Strict(document) = serde_path_to_error::deserialize(&mut deserializer)
+            .map_err(|error| field_error(&error.path().to_string(), error.inner()))?;
+        deserializer
+            .end()
+            .map_err(|error| invalid(format!("the connector is not one JSON document: {error}")))?;
+        refuse_credentials(&document, "")?;
+
+        let Object(raw): Object<RawConnector> = serde_path_to_error::deserialize(document)
+            .map_err(|error| field_error(&error.path().to_string(), error.inner()))?;
+        raw.check(source)
     }
 
     pub fn id(&self) -> &str {
@@ -200,8 +223,11 @@ impl Connector {
     /// destination replaced by the destination's origin: it changes when any field of the
     /// operation or that origin changes, and not when another operation is added (research R13).
     pub fn operation_digest(&self, name: &str) -> Option<String> {
-        let _ = name;
-        None
+        let operation = self.operations.get(name)?;
+        let origin = self.destinations.get(&operation.destination)?;
+        let mut declaration = operation.raw.clone();
+        declaration["destination"] = Value::String(origin.serialization());
+        Some(sha256(canonical(&declaration).as_bytes()))
     }
 }
 
@@ -291,8 +317,36 @@ impl Operation {
         arguments: &[(String, ArgValue)],
         max_arguments: usize,
     ) -> Result<BTreeMap<String, ArgValue>, String> {
-        let _ = (arguments, max_arguments);
-        Err("not implemented".to_owned())
+        if arguments.len() > max_arguments {
+            return Err(format!(
+                "{} arguments, more than the {max_arguments} a call may pass",
+                arguments.len()
+            ));
+        }
+        let mut checked = BTreeMap::new();
+        for (name, value) in arguments {
+            let Some(parameter) = self.parameters.get(name) else {
+                return Err(format!("`{name}`: unknown parameter"));
+            };
+            if checked.contains_key(name) {
+                return Err(format!("`{name}`: given twice"));
+            }
+            check_value(name, parameter, value, self.in_path(name))?;
+            checked.insert(name.clone(), value.clone());
+        }
+        for (name, parameter) in &self.parameters {
+            if parameter.required && !checked.contains_key(name) {
+                return Err(format!("`{name}`: missing, and it is required"));
+            }
+        }
+        Ok(checked)
+    }
+
+    /// Whether the parameter fills a path segment.
+    fn in_path(&self, name: &str) -> bool {
+        self.path
+            .iter()
+            .any(|segment| matches!(segment, Template::Parameter(parameter) if parameter == name))
     }
 }
 
@@ -318,9 +372,1097 @@ impl Method {
     }
 }
 
+/// One argument's value against its parameter's type.
+fn check_value(
+    name: &str,
+    parameter: &Parameter,
+    value: &ArgValue,
+    in_path: bool,
+) -> Result<(), String> {
+    match (&parameter.kind, value) {
+        (
+            ParameterType::Text {
+                max_length,
+                pattern,
+                values,
+            },
+            ArgValue::Text(text),
+        ) => {
+            let length = text.chars().count();
+            if length > *max_length {
+                return Err(format!(
+                    "`{name}`: longer than {max_length} characters ({length})"
+                ));
+            }
+            if let Some((_, pattern)) = pattern
+                && !pattern.is_match(text)
+            {
+                return Err(format!("`{name}`: does not match its pattern"));
+            }
+            if let Some(values) = values
+                && !values.contains(text)
+            {
+                return Err(format!("`{name}`: not one of the allowed values"));
+            }
+            if in_path && matches!(text.as_str(), "" | "." | "..") {
+                return Err(format!(
+                    "`{name}`: fills a path segment, which cannot be empty, `.` or `..`"
+                ));
+            }
+            Ok(())
+        }
+        (ParameterType::Integer { minimum, maximum }, ArgValue::Integer(number)) => {
+            if (*minimum..=*maximum).contains(number) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "`{name}`: {number} is outside {minimum} to {maximum}"
+                ))
+            }
+        }
+        (ParameterType::Flag, ArgValue::Flag(_)) => Ok(()),
+        (ParameterType::Text { .. }, _) => Err(format!("`{name}`: must be text")),
+        (ParameterType::Integer { .. }, _) => Err(format!("`{name}`: must be an integer")),
+        (ParameterType::Flag, _) => Err(format!("`{name}`: must be a flag, true or false")),
+    }
+}
+
+/// The limits of `wit/connector.schema.json`, in characters (Unicode scalar values), as JSON
+/// Schema counts them, or in entries.
+const MAX_SCHEMA_CHARS: usize = 2048;
+const MAX_ID_CHARS: usize = 160;
+const MAX_VERSION_CHARS: usize = 64;
+const MAX_AUTHOR_CHARS: usize = 100;
+const MAX_DESCRIPTION_CHARS: usize = 200;
+const MAX_RESERVES: usize = 8;
+const MAX_DOMAIN_CHARS: usize = 253;
+const MAX_DESTINATIONS: usize = 8;
+const MAX_ORIGIN_CHARS: usize = 260;
+const MAX_OPERATIONS: usize = 64;
+const MAX_PATH_CHARS: usize = 512;
+const MAX_QUERY_PAIRS: usize = 16;
+const MAX_QUERY_NAME_CHARS: usize = 64;
+const MAX_FIXED_VALUE_CHARS: usize = 256;
+const MAX_HEADERS: usize = 8;
+const MAX_HEADER_SUFFIX_CHARS: usize = 60;
+const MAX_BODY_BYTES: usize = 4 * 1024;
+const MAX_PARAMETERS: usize = 16;
+const MAX_TEXT_LENGTH: u64 = 2048;
+const MAX_PATTERN_CHARS: usize = 512;
+const MAX_PATTERN_COMPILED_BYTES: usize = 64 * 1024;
+const MAX_VALUES: usize = 64;
+const MAX_VALUE_CHARS: usize = 2048;
+const MAX_RESPONSE_HEADERS: usize = 8;
+const MAX_RESPONSE_HEADER_CHARS: usize = 64;
+/// `[a-z][a-z0-9-]{0,31}` and `[a-z][a-z0-9-]{0,63}`.
+const MAX_DESTINATION_NAME_CHARS: usize = 32;
+const MAX_OPERATION_NAME_CHARS: usize = 64;
+/// `[a-z][a-z0-9_]{0,31}`
+const MAX_PARAMETER_NAME_CHARS: usize = 32;
+
+/// Field names that declare a credential, refused anywhere until feature 005 (FR-017).
+const CREDENTIAL_FIELDS: &[&str] = &["credential", "credentials", "auth"];
+
+const CATALOG_PREFIX: &str = "catalog/";
+const LOCAL_PREFIX: &str = "local/";
+
+/// The connector as written, before the checks that types cannot express.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawConnector {
+    /// Lets editors find the schema; ignored. A string when present: `null` is not accepted.
+    #[serde(rename = "$schema", default, deserialize_with = "present")]
+    schema: Option<String>,
+    /// Any JSON number: the schema compares it with 1 by value, so `1.0` is 1.
+    connector_version: serde_json::Number,
+    id: String,
+    version: String,
+    author: String,
+    description: String,
+    #[serde(default, deserialize_with = "present")]
+    reserves: Option<Vec<String>>,
+    destinations: BTreeMap<String, String>,
+    /// Read as JSON first, so each operation keeps its declaration as written for its digest.
+    operations: BTreeMap<String, Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawOperation {
+    kind: RawKind,
+    method: RawMethod,
+    destination: String,
+    path: String,
+    #[serde(default, deserialize_with = "present")]
+    query: Option<BTreeMap<String, String>>,
+    #[serde(default, deserialize_with = "present")]
+    headers: Option<BTreeMap<String, String>>,
+    #[serde(default, deserialize_with = "present")]
+    body: Option<Value>,
+    #[serde(default, deserialize_with = "present")]
+    parameters: Option<BTreeMap<String, Object<RawParameter>>>,
+    response: Object<RawResponse>,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum RawKind {
+    Read,
+    Change,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "UPPERCASE")]
+enum RawMethod {
+    Get,
+    Head,
+    Post,
+    Put,
+    Patch,
+    Delete,
+}
+
+/// Every field any type may have; which ones a type allows is checked after.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawParameter {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default, deserialize_with = "present")]
+    required: Option<bool>,
+    #[serde(default, deserialize_with = "present")]
+    max_length: Option<u64>,
+    #[serde(default, deserialize_with = "present")]
+    pattern: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    values: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "present")]
+    minimum: Option<i64>,
+    #[serde(default, deserialize_with = "present")]
+    maximum: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawResponse {
+    format: RawFormat,
+    #[serde(default, deserialize_with = "present")]
+    headers: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum RawFormat {
+    Json,
+    Text,
+}
+
+/// An optional field that, when present, is never `null`.
+fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
+}
+
+impl RawConnector {
+    fn check(self, source: Source) -> Result<Connector, RuntimeError> {
+        if let Some(schema) = &self.schema
+            && schema.chars().count() > MAX_SCHEMA_CHARS
+        {
+            return Err(field(
+                "$schema",
+                format!("longer than {MAX_SCHEMA_CHARS} characters"),
+            ));
+        }
+        if self.connector_version.as_f64() != Some(1.0) {
+            return Err(field(
+                "connector_version",
+                format!("must be 1, found {}", self.connector_version),
+            ));
+        }
+        check_id(&self.id, source)?;
+        let version = check_version(&self.version)?;
+        check_shown_text("author", &self.author, MAX_AUTHOR_CHARS)?;
+        check_shown_text("description", &self.description, MAX_DESCRIPTION_CHARS)?;
+        let reserves = check_reserves(self.reserves, source)?;
+
+        if !(1..=MAX_DESTINATIONS).contains(&self.destinations.len()) {
+            return Err(field(
+                "destinations",
+                format!("must have 1 to {MAX_DESTINATIONS} entries"),
+            ));
+        }
+        let mut destinations = BTreeMap::new();
+        for (name, origin) in &self.destinations {
+            if !is_name(name, MAX_DESTINATION_NAME_CHARS, '-') {
+                return Err(field(
+                    "destinations",
+                    format!(
+                        "`{name}` must be a lowercase letter, then up to 31 lowercase letters, digits or hyphens"
+                    ),
+                ));
+            }
+            let origin = Origin::parse(origin, source)
+                .map_err(|problem| field(&format!("destinations.{name}"), problem))?;
+            destinations.insert(name.clone(), origin);
+        }
+
+        if source == Source::Catalog {
+            for origin in destinations.values() {
+                if !reserves.iter().any(|domain| is_under(&origin.host, domain)) {
+                    return Err(field(
+                        "reserves",
+                        format!(
+                            "no reserved domain covers {}, a host the connector declares",
+                            origin.host
+                        ),
+                    ));
+                }
+            }
+        }
+
+        if !(1..=MAX_OPERATIONS).contains(&self.operations.len()) {
+            return Err(field(
+                "operations",
+                format!("must have 1 to {MAX_OPERATIONS} entries"),
+            ));
+        }
+        let mut operations = BTreeMap::new();
+        for (name, declaration) in self.operations {
+            if !is_name(&name, MAX_OPERATION_NAME_CHARS, '-') {
+                return Err(field(
+                    "operations",
+                    format!(
+                        "`{name}` must be a lowercase letter, then up to 63 lowercase letters, digits or hyphens"
+                    ),
+                ));
+            }
+            let Object(raw): Object<RawOperation> =
+                serde_path_to_error::deserialize(declaration.clone()).map_err(|error| {
+                    let path = error.path().to_string();
+                    let at = if path == "." {
+                        format!("operations.{name}")
+                    } else {
+                        format!("operations.{name}.{path}")
+                    };
+                    field(&at, error.inner())
+                })?;
+            let mut operation = raw.check(&name, &destinations, source)?;
+            operation.raw = declaration;
+            operations.insert(name, operation);
+        }
+
+        Ok(Connector {
+            id: self.id,
+            version,
+            author: self.author,
+            description: self.description,
+            reserves,
+            destinations,
+            operations,
+        })
+    }
+}
+
+impl RawOperation {
+    fn check(
+        self,
+        name: &str,
+        destinations: &BTreeMap<String, Origin>,
+        source: Source,
+    ) -> Result<Operation, RuntimeError> {
+        let at = |field_name: &str| format!("operations.{name}.{field_name}");
+        let kind = match self.kind {
+            RawKind::Read => Kind::Read,
+            RawKind::Change => Kind::Change,
+        };
+        let method = match self.method {
+            RawMethod::Get => Method::Get,
+            RawMethod::Head => Method::Head,
+            RawMethod::Post => Method::Post,
+            RawMethod::Put => Method::Put,
+            RawMethod::Patch => Method::Patch,
+            RawMethod::Delete => Method::Delete,
+        };
+        // Outside the catalog the host can check a read only by its shape (research R4)
+        if source != Source::Catalog
+            && kind == Kind::Read
+            && (!matches!(method, Method::Get | Method::Head) || self.body.is_some())
+        {
+            return Err(field(
+                &format!("operations.{name}"),
+                "outside the catalog, a read is a GET or HEAD request without a body; declare this operation as a change",
+            ));
+        }
+        if !destinations.contains_key(&self.destination) {
+            return Err(field(
+                &at("destination"),
+                format!("`{}` is not a key of destinations", self.destination),
+            ));
+        }
+        let path = check_path(&self.path).map_err(|problem| field(&at("path"), problem))?;
+        let query = check_query(self.query.unwrap_or_default(), &at("query"))?;
+        let headers = check_headers(self.headers.unwrap_or_default(), &at("headers"), source)?;
+        let body = match self.body {
+            None => None,
+            Some(body) => Some(check_body(body).map_err(|problem| field(&at("body"), problem))?),
+        };
+        let parameters = check_parameters(self.parameters.unwrap_or_default(), &at("parameters"))?;
+        let Object(response) = self.response;
+        let response = check_response(response, &at("response"))?;
+
+        let operation = Operation {
+            kind,
+            method,
+            destination: self.destination,
+            path,
+            query,
+            headers,
+            body,
+            parameters,
+            response,
+            raw: Value::Null,
+        };
+        operation
+            .check_placeholders()
+            .map_err(|problem| field(&format!("operations.{name}"), problem))?;
+        Ok(operation)
+    }
+}
+
+impl Operation {
+    /// Every placeholder names a declared parameter, every parameter appears in exactly one
+    /// place, and an optional one never fills a path segment.
+    fn check_placeholders(&self) -> Result<(), String> {
+        let mut uses: Vec<&str> = Vec::new();
+        for segment in &self.path {
+            if let Template::Parameter(name) = segment {
+                if self
+                    .parameters
+                    .get(name)
+                    .is_some_and(|parameter| !parameter.required)
+                {
+                    return Err(format!(
+                        "`{name}` is optional, and an optional parameter cannot fill a path segment"
+                    ));
+                }
+                uses.push(name);
+            }
+        }
+        for (_, value) in &self.query {
+            if let Template::Parameter(name) = value {
+                uses.push(name);
+            }
+        }
+        if let Some(body) = &self.body {
+            body_placeholders(body, &mut uses);
+        }
+        for name in &uses {
+            if !self.parameters.contains_key(*name) {
+                return Err(format!("`{{{name}}}` names no declared parameter"));
+            }
+        }
+        for name in self.parameters.keys() {
+            match uses.iter().filter(|used| **used == name.as_str()).count() {
+                0 => return Err(format!("parameter `{name}` appears nowhere in the request")),
+                1 => {}
+                _ => return Err(format!("parameter `{name}` appears in more than one place")),
+            }
+        }
+        Ok(())
+    }
+}
+
+fn body_placeholders<'a>(value: &'a Value, uses: &mut Vec<&'a str>) {
+    match value {
+        Value::String(text) => {
+            if let Some(name) = placeholder(text) {
+                uses.push(name);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                body_placeholders(item, uses);
+            }
+        }
+        Value::Object(fields) => {
+            for item in fields.values() {
+                body_placeholders(item, uses);
+            }
+        }
+        _ => {}
+    }
+}
+
+impl Origin {
+    /// `https://<domain>[:<port>]`, or for a local connector `http://localhost:<port>`,
+    /// `http://127.0.0.1:<port>` or `http://[::1]:<port>`, with nothing after the port but an
+    /// optional `/`.
+    fn parse(raw: &str, source: Source) -> Result<Origin, String> {
+        if raw.chars().count() > MAX_ORIGIN_CHARS {
+            return Err(format!("longer than {MAX_ORIGIN_CHARS} characters"));
+        }
+        let rest = raw.strip_suffix('/').unwrap_or(raw);
+        let https = if let Some(authority) = rest.strip_prefix("https://") {
+            if authority.is_empty()
+                || authority.chars().any(|c| {
+                    matches!(c, '/' | '?' | '#' | '@') || c.is_whitespace() || c.is_control()
+                })
+            {
+                return Err(format!(
+                    "`{raw}` must be https://<domain>[:<port>], with no path, query, fragment, user or password"
+                ));
+            }
+            true
+        } else if let Some(authority) = rest.strip_prefix("http://") {
+            let loopback = ["localhost:", "127.0.0.1:", "[::1]:"].iter().any(|host| {
+                authority.strip_prefix(host).is_some_and(|port| {
+                    (1..=5).contains(&port.len()) && port.bytes().all(|b| b.is_ascii_digit())
+                })
+            });
+            if !loopback {
+                return Err(format!(
+                    "`{raw}` uses plain HTTP, allowed only for a local connector on this machine: http://localhost:<port>, http://127.0.0.1:<port> or http://[::1]:<port>"
+                ));
+            }
+            if source != Source::Local {
+                return Err(format!(
+                    "`{raw}` uses plain HTTP, which only a local connector may, in development"
+                ));
+            }
+            false
+        } else {
+            return Err(format!("`{raw}` must start with https://"));
+        };
+
+        let url = url::Url::parse(raw).map_err(|error| format!("`{raw}` is not a URL: {error}"))?;
+        let port = url
+            .port_or_known_default()
+            .ok_or_else(|| format!("`{raw}` has no port"))?;
+        if port == 0 {
+            return Err(format!("`{raw}` has port 0"));
+        }
+        let host = match url.host() {
+            Some(url::Host::Domain(domain)) if https => {
+                if domain.ends_with('.') {
+                    return Err(format!(
+                        "`{raw}` ends with a dot; write the host without it"
+                    ));
+                }
+                domain.to_owned()
+            }
+            Some(url::Host::Domain(domain)) if domain == "localhost" => domain.to_owned(),
+            Some(url::Host::Ipv4(address)) if !https && address.is_loopback() => {
+                address.to_string()
+            }
+            Some(url::Host::Ipv6(address)) if !https && address.is_loopback() => {
+                format!("[{address}]")
+            }
+            Some(url::Host::Ipv4(_) | url::Host::Ipv6(_)) => {
+                return Err(format!(
+                    "`{raw}` is an IP address; a destination is a DNS name"
+                ));
+            }
+            _ => return Err(format!("`{raw}` has no host")),
+        };
+        Ok(Origin { https, host, port })
+    }
+}
+
+/// Whether `host` is `domain` or a host under it.
+pub(crate) fn is_under(host: &str, domain: &str) -> bool {
+    host == domain
+        || host
+            .strip_suffix(domain)
+            .is_some_and(|prefix| prefix.ends_with('.'))
+}
+
+fn check_id(id: &str, source: Source) -> Result<(), RuntimeError> {
+    if id.chars().count() > MAX_ID_CHARS {
+        return Err(field(
+            "id",
+            format!("longer than {MAX_ID_CHARS} characters"),
+        ));
+    }
+    let catalog = id
+        .strip_prefix(CATALOG_PREFIX)
+        .is_some_and(manifest::is_local_name);
+    let local = id
+        .strip_prefix(LOCAL_PREFIX)
+        .is_some_and(manifest::is_local_name);
+    let repository = manifest::is_repository_id(id);
+    match source {
+        Source::Catalog if catalog => Ok(()),
+        Source::Catalog => Err(field(
+            "id",
+            format!("`{id}`: a catalog connector's id is {CATALOG_PREFIX}<name>, in lowercase"),
+        )),
+        _ if catalog => Err(RuntimeError::new(
+            ErrorKind::DestinationReserved,
+            format!(
+                "id: `{id}` is a catalog id, which only the catalog built into the host may use"
+            ),
+        )),
+        Source::Local if local => Ok(()),
+        Source::Local => Err(field(
+            "id",
+            format!("`{id}`: a local connector's id is {LOCAL_PREFIX}<name>, in lowercase"),
+        )),
+        Source::Repository if repository => Ok(()),
+        Source::Repository => Err(field(
+            "id",
+            format!(
+                "`{id}`: a repository connector's id is github.com/<owner>/<repository>, in lowercase"
+            ),
+        )),
+    }
+}
+
+fn check_version(version: &str) -> Result<semver::Version, RuntimeError> {
+    if version.chars().count() > MAX_VERSION_CHARS {
+        return Err(field(
+            "version",
+            format!("longer than {MAX_VERSION_CHARS} characters"),
+        ));
+    }
+    semver::Version::parse(version).map_err(|error| {
+        field(
+            "version",
+            format!("`{version}` is not SemVer 2.0.0: {error}"),
+        )
+    })
+}
+
+/// 1 to `max` characters, none of them a control character, as the schema's `shown_text`.
+fn check_shown_text(name: &str, text: &str, max: usize) -> Result<(), RuntimeError> {
+    let length = text.chars().count();
+    if !(1..=max).contains(&length) {
+        return Err(field(
+            name,
+            format!("must have 1 to {max} characters, found {length}"),
+        ));
+    }
+    if text.chars().any(char::is_control) {
+        return Err(field(name, "contains a control character"));
+    }
+    Ok(())
+}
+
+fn check_reserves(
+    reserves: Option<Vec<String>>,
+    source: Source,
+) -> Result<Vec<String>, RuntimeError> {
+    match (source, reserves) {
+        (Source::Catalog, None) => Err(field(
+            "reserves",
+            "a catalog connector lists the domains it reserves",
+        )),
+        (Source::Catalog, Some(reserves)) => {
+            if !(1..=MAX_RESERVES).contains(&reserves.len()) {
+                return Err(field(
+                    "reserves",
+                    format!("must have 1 to {MAX_RESERVES} entries"),
+                ));
+            }
+            for (index, domain) in reserves.iter().enumerate() {
+                if !is_domain(domain) {
+                    return Err(field(
+                        &format!("reserves[{index}]"),
+                        format!("`{domain}` is not a domain in lowercase, such as github.com"),
+                    ));
+                }
+                if reserves[..index].contains(domain) {
+                    return Err(field("reserves", format!("`{domain}` is listed twice")));
+                }
+            }
+            Ok(reserves)
+        }
+        (_, Some(_)) => Err(field("reserves", "only catalog connectors reserve domains")),
+        (_, None) => Ok(Vec::new()),
+    }
+}
+
+/// `(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]`, at most 253
+/// characters: two labels or more, the last starting with a letter.
+fn is_domain(domain: &str) -> bool {
+    let labels: Vec<&str> = domain.split('.').collect();
+    let label = |label: &str| {
+        let alphanumeric = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+        (1..=63).contains(&label.len())
+            && label.chars().all(|c| alphanumeric(c) || c == '-')
+            && label.starts_with(alphanumeric)
+            && label.ends_with(alphanumeric)
+    };
+    domain.len() <= MAX_DOMAIN_CHARS
+        && labels.len() >= 2
+        && labels.iter().all(|part| label(part))
+        && labels.last().is_some_and(|last| {
+            last.len() >= 2 && last.starts_with(|c: char| c.is_ascii_lowercase())
+        })
+}
+
+/// `[a-z]` then up to `max - 1` of `[a-z0-9]` and `extra`.
+fn is_name(name: &str, max: usize, extra: char) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && name.len() <= max
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == extra)
+}
+
+/// The name in a placeholder, which is exactly `{<parameter>}`.
+fn placeholder(text: &str) -> Option<&str> {
+    let name = text.strip_prefix('{')?.strip_suffix('}')?;
+    is_name(name, MAX_PARAMETER_NAME_CHARS, '_').then_some(name)
+}
+
+fn template(text: &str) -> Template {
+    match placeholder(text) {
+        Some(name) => Template::Parameter(name.to_owned()),
+        None => Template::Literal(text.to_owned()),
+    }
+}
+
+/// RFC 3986 `pchar`s, without `{` and `}`.
+fn is_path_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || "._~!$&'()*+,;=:@%-".contains(c)
+}
+
+fn check_path(path: &str) -> Result<Vec<Template>, String> {
+    if path.chars().count() > MAX_PATH_CHARS {
+        return Err(format!("longer than {MAX_PATH_CHARS} characters"));
+    }
+    let Some(rest) = path.strip_prefix('/') else {
+        return Err(format!("`{path}` must start with /"));
+    };
+    rest.split('/')
+        .map(|segment| match placeholder(segment) {
+            Some(name) => Ok(Template::Parameter(name.to_owned())),
+            None if segment.chars().all(is_path_char) => Ok(Template::Literal(segment.to_owned())),
+            None => Err(format!(
+                "`{segment}` is neither a literal segment (letters, digits and . _ ~ ! $ & ' ( ) * + , ; = : @ % -) nor exactly {{<parameter>}}"
+            )),
+        })
+        .collect()
+}
+
+fn check_query(
+    query: BTreeMap<String, String>,
+    at: &str,
+) -> Result<Vec<(String, Template)>, RuntimeError> {
+    if query.len() > MAX_QUERY_PAIRS {
+        return Err(field(at, format!("more than {MAX_QUERY_PAIRS} pairs")));
+    }
+    let mut pairs = Vec::new();
+    for (name, value) in query {
+        let valid_name = (1..=MAX_QUERY_NAME_CHARS).contains(&name.chars().count())
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._~-".contains(c));
+        if !valid_name {
+            return Err(field(
+                at,
+                format!(
+                    "`{name}` must have 1 to {MAX_QUERY_NAME_CHARS} letters, digits or . _ ~ -"
+                ),
+            ));
+        }
+        if value.chars().count() > MAX_FIXED_VALUE_CHARS {
+            return Err(field(
+                &format!("{at}.{name}"),
+                format!("longer than {MAX_FIXED_VALUE_CHARS} characters"),
+            ));
+        }
+        let value = template(&value);
+        pairs.push((name, value));
+    }
+    Ok(pairs)
+}
+
+fn check_headers(
+    headers: BTreeMap<String, String>,
+    at: &str,
+    source: Source,
+) -> Result<Vec<(String, String)>, RuntimeError> {
+    if headers.len() > MAX_HEADERS {
+        return Err(field(at, format!("more than {MAX_HEADERS} headers")));
+    }
+    for (name, value) in &headers {
+        let x_header = name.strip_prefix("X-").is_some_and(|suffix| {
+            (1..=MAX_HEADER_SUFFIX_CHARS).contains(&suffix.len())
+                && suffix
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        });
+        if x_header && source != Source::Catalog {
+            return Err(field(
+                at,
+                format!(
+                    "`{name}`: only catalog connectors fix X- headers, since some servers read them to change a request's method or path"
+                ),
+            ));
+        }
+        if !x_header && name != "Accept" && name != "Accept-Language" {
+            return Err(field(
+                at,
+                format!(
+                    "`{name}`: a connector fixes only Accept, Accept-Language and, in the catalog, X- headers; the host sets or forbids the others"
+                ),
+            ));
+        }
+        if value.chars().count() > MAX_FIXED_VALUE_CHARS {
+            return Err(field(
+                &format!("{at}.{name}"),
+                format!("longer than {MAX_FIXED_VALUE_CHARS} characters"),
+            ));
+        }
+        if !value.chars().all(|c| (' '..='~').contains(&c)) {
+            return Err(field(
+                &format!("{at}.{name}"),
+                "only printable ASCII characters",
+            ));
+        }
+    }
+    Ok(headers.into_iter().collect())
+}
+
+fn check_body(body: Value) -> Result<Value, String> {
+    if !body.is_object() {
+        return Err("must be a JSON object".to_owned());
+    }
+    let written = body.to_string().len();
+    if written > MAX_BODY_BYTES {
+        return Err(format!(
+            "{written} bytes as written, over the limit of {MAX_BODY_BYTES}"
+        ));
+    }
+    Ok(body)
+}
+
+fn check_parameters(
+    parameters: BTreeMap<String, Object<RawParameter>>,
+    at: &str,
+) -> Result<BTreeMap<String, Parameter>, RuntimeError> {
+    if parameters.len() > MAX_PARAMETERS {
+        return Err(field(at, format!("more than {MAX_PARAMETERS} parameters")));
+    }
+    let mut checked = BTreeMap::new();
+    for (name, Object(raw)) in parameters {
+        if !is_name(&name, MAX_PARAMETER_NAME_CHARS, '_') {
+            return Err(field(
+                at,
+                format!(
+                    "`{name}` must be a lowercase letter, then up to 31 lowercase letters, digits or underscores"
+                ),
+            ));
+        }
+        let parameter = raw
+            .check()
+            .map_err(|problem| field(&format!("{at}.{name}"), problem))?;
+        checked.insert(name, parameter);
+    }
+    Ok(checked)
+}
+
+impl RawParameter {
+    fn check(self) -> Result<Parameter, String> {
+        let required = self.required.unwrap_or(true);
+        let only = |allowed: &[&str]| -> Result<(), String> {
+            let given = [
+                ("max_length", self.max_length.is_some()),
+                ("pattern", self.pattern.is_some()),
+                ("values", self.values.is_some()),
+                ("minimum", self.minimum.is_some()),
+                ("maximum", self.maximum.is_some()),
+            ];
+            match given
+                .iter()
+                .find(|(name, present)| *present && !allowed.contains(name))
+            {
+                Some((name, _)) => Err(format!("a {} parameter has no `{name}`", self.kind)),
+                None => Ok(()),
+            }
+        };
+        let kind = match self.kind.as_str() {
+            "text" => {
+                only(&["max_length", "pattern", "values"])?;
+                let max_length = self
+                    .max_length
+                    .ok_or("a text parameter needs `max_length`")?;
+                if !(1..=MAX_TEXT_LENGTH).contains(&max_length) {
+                    return Err(format!("`max_length` must be 1 to {MAX_TEXT_LENGTH}"));
+                }
+                if self.pattern.is_some() && self.values.is_some() {
+                    return Err("a text parameter has `pattern` or `values`, not both".to_owned());
+                }
+                let pattern = match self.pattern {
+                    None => None,
+                    Some(pattern) => Some(compile_pattern(pattern)?),
+                };
+                let values = match self.values {
+                    None => None,
+                    Some(values) => Some(check_values(values)?),
+                };
+                ParameterType::Text {
+                    max_length: max_length as usize,
+                    pattern,
+                    values,
+                }
+            }
+            "integer" => {
+                only(&["minimum", "maximum"])?;
+                let (Some(minimum), Some(maximum)) = (self.minimum, self.maximum) else {
+                    return Err("an integer parameter needs `minimum` and `maximum`".to_owned());
+                };
+                if minimum > maximum {
+                    return Err(format!(
+                        "`minimum` {minimum} is greater than `maximum` {maximum}"
+                    ));
+                }
+                ParameterType::Integer { minimum, maximum }
+            }
+            "flag" => {
+                only(&[])?;
+                ParameterType::Flag
+            }
+            other => {
+                return Err(format!(
+                    "`type` is `{other}`; it must be text, integer or flag"
+                ));
+            }
+        };
+        Ok(Parameter { kind, required })
+    }
+}
+
+/// A pattern matches a whole value; the `regex` crate runs in linear time, and the compiled
+/// pattern is capped (research R3).
+fn compile_pattern(pattern: String) -> Result<(String, regex::Regex), String> {
+    let length = pattern.chars().count();
+    if !(1..=MAX_PATTERN_CHARS).contains(&length) {
+        return Err(format!(
+            "`pattern` must have 1 to {MAX_PATTERN_CHARS} characters"
+        ));
+    }
+    let compiled = regex::RegexBuilder::new(&format!("^(?:{pattern})$"))
+        .size_limit(MAX_PATTERN_COMPILED_BYTES)
+        .dfa_size_limit(MAX_PATTERN_COMPILED_BYTES)
+        .build()
+        .map_err(|error| format!("`pattern` is not a valid pattern: {error}"))?;
+    Ok((pattern, compiled))
+}
+
+fn check_values(values: Vec<String>) -> Result<Vec<String>, String> {
+    if !(1..=MAX_VALUES).contains(&values.len()) {
+        return Err(format!("`values` must have 1 to {MAX_VALUES} entries"));
+    }
+    for (index, value) in values.iter().enumerate() {
+        if value.chars().count() > MAX_VALUE_CHARS {
+            return Err(format!(
+                "`values[{index}]` is longer than {MAX_VALUE_CHARS} characters"
+            ));
+        }
+        if values[..index].contains(value) {
+            return Err(format!("`values` lists `{value}` twice"));
+        }
+    }
+    Ok(values)
+}
+
+fn check_response(response: RawResponse, at: &str) -> Result<ResponseSpec, RuntimeError> {
+    let format = match response.format {
+        RawFormat::Json => Format::Json,
+        RawFormat::Text => Format::Text,
+    };
+    let headers = response.headers.unwrap_or_default();
+    let at = format!("{at}.headers");
+    if headers.len() > MAX_RESPONSE_HEADERS {
+        return Err(field(
+            &at,
+            format!("more than {MAX_RESPONSE_HEADERS} names"),
+        ));
+    }
+    for (index, name) in headers.iter().enumerate() {
+        let valid = (1..=MAX_RESPONSE_HEADER_CHARS).contains(&name.len())
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+        if !valid {
+            return Err(field(
+                &at,
+                format!(
+                    "`{name}` must have 1 to {MAX_RESPONSE_HEADER_CHARS} letters, digits or hyphens"
+                ),
+            ));
+        }
+        if name.eq_ignore_ascii_case("set-cookie") || name.eq_ignore_ascii_case("cookie") {
+            return Err(field(
+                &at,
+                format!("`{name}`: cookies never reach a widget"),
+            ));
+        }
+        if headers[..index].contains(name) {
+            return Err(field(&at, format!("`{name}` is listed twice")));
+        }
+    }
+    Ok(ResponseSpec { format, headers })
+}
+
+/// A credential field anywhere, at `path` or under it.
+fn refuse_credentials(value: &Value, path: &str) -> Result<(), RuntimeError> {
+    match value {
+        Value::Object(fields) => {
+            for (name, item) in fields {
+                let here = if path.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{path}.{name}")
+                };
+                if CREDENTIAL_FIELDS.contains(&name.as_str()) {
+                    return Err(RuntimeError::new(
+                        ErrorKind::CredentialsNotSupported,
+                        format!(
+                            "{here}: connectors with credentials arrive with feature 005; this one cannot be used yet"
+                        ),
+                    ));
+                }
+                refuse_credentials(item, &here)?;
+            }
+            Ok(())
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                refuse_credentials(item, &format!("{path}[{index}]"))?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// JSON with every object's keys sorted and no whitespace, whatever order a map keeps.
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Object(fields) => {
+            let mut names: Vec<&String> = fields.keys().collect();
+            names.sort();
+            let items: Vec<String> = names
+                .into_iter()
+                .map(|name| {
+                    format!(
+                        "{}:{}",
+                        Value::String(name.clone()),
+                        canonical(&fields[name])
+                    )
+                })
+                .collect();
+            format!("{{{}}}", items.join(","))
+        }
+        Value::Array(items) => {
+            let items: Vec<String> = items.iter().map(canonical).collect();
+            format!("[{}]", items.join(","))
+        }
+        other => other.to_string(),
+    }
+}
+
+/// `sha256:` and the lowercase hex SHA-256 of `bytes`.
+pub(crate) fn sha256(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut text = String::with_capacity("sha256:".len() + 64);
+    text.push_str("sha256:");
+    for byte in digest {
+        text.push_str(&format!("{byte:02x}"));
+    }
+    text
+}
+
+/// JSON read into a [`Value`], refusing a key given twice in any object.
+struct Strict(Value);
+
+impl<'de> Deserialize<'de> for Strict {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(StrictVisitor).map(Strict)
+    }
+}
+
+struct StrictVisitor;
+
+impl<'de> Visitor<'de> for StrictVisitor {
+    type Value = Value;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("JSON")
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Value, E> {
+        Ok(Value::Bool(value))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Value, E> {
+        Ok(Value::from(value))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Value, E> {
+        Ok(Value::from(value))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Value, E> {
+        Ok(serde_json::Number::from_f64(value).map_or(Value::Null, Value::Number))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Value, E> {
+        Ok(Value::String(value.to_owned()))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Value, E> {
+        Ok(Value::String(value))
+    }
+
+    fn visit_unit<E>(self) -> Result<Value, E> {
+        Ok(Value::Null)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
+        let mut items = Vec::new();
+        while let Some(Strict(item)) = seq.next_element()? {
+            items.push(item);
+        }
+        Ok(Value::Array(items))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
+        let mut fields = serde_json::Map::new();
+        let mut seen = BTreeSet::new();
+        while let Some(name) = map.next_key::<String>()? {
+            if !seen.insert(name.clone()) {
+                return Err(de::Error::custom(format!("`{name}` is given twice")));
+            }
+            let Strict(item) = map.next_value()?;
+            fields.insert(name, item);
+        }
+        Ok(Value::Object(fields))
+    }
+}
+
+fn invalid(detail: impl AsRef<str>) -> RuntimeError {
+    RuntimeError::new(ErrorKind::InvalidConnector, detail)
+}
+
+/// An `invalid-connector` error naming the field path and the problem.
+fn field(path: &str, problem: impl fmt::Display) -> RuntimeError {
+    invalid(format!("{path}: {problem}"))
+}
+
+/// A parse error at `path`, which is `.` for the whole document.
+fn field_error(path: &str, error: &serde_json::Error) -> RuntimeError {
+    if path == "." {
+        invalid(error.to_string())
+    } else {
+        field(path, error)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     use super::*;
 
@@ -506,8 +1648,9 @@ mod tests {
         ] {
             assert_invalid_local(|c| c["id"] = json!(id), &["id"]);
         }
-        let long = format!("local/{}", "a".repeat(64));
+        let long = format!("local/{}", "a".repeat(65));
         assert_invalid_local(|c| c["id"] = json!(long), &["id"]);
+        assert!(parse_local(|c| c["id"] = json!(format!("local/{}", "a".repeat(64)))).is_ok());
         assert_invalid(
             Connector::parse(&local_with(|_| {}), Source::Catalog),
             &["id"],
@@ -627,6 +1770,7 @@ mod tests {
             "https://[2001:db8::1]",
             "https://127.0.0.1:8443",
             "https://api.weather.test:0",
+            "HTTPS://api.weather.test",
             " https://api.weather.test",
             "http://api.weather.test",
             "http://localhost",
@@ -651,7 +1795,7 @@ mod tests {
     #[test]
     fn hosts_are_compared_in_one_normal_form() {
         let connector = parse_local(|c| {
-            c["destinations"]["api"] = json!("HTTPS://API.Weather.TEST:443");
+            c["destinations"]["api"] = json!("https://API.Weather.TEST:443");
         })
         .unwrap();
         let origin = connector.destination("api").unwrap();

@@ -116,9 +116,8 @@ impl Manifest {
 impl PluginId {
     /// Checks a plugin id; the error says which form it must take.
     pub fn parse(id: &str) -> Result<PluginId, String> {
-        let valid = if let Some(path) = id.strip_prefix(REPOSITORY_PREFIX) {
-            path.split_once('/')
-                .is_some_and(|(owner, repository)| is_owner(owner) && is_repository(repository))
+        let valid = if id.starts_with(REPOSITORY_PREFIX) {
+            is_repository_id(id)
         } else if let Some(name) = id.strip_prefix(LOCAL_PREFIX) {
             is_local_name(name)
         } else {
@@ -169,7 +168,7 @@ struct RawPermission {
 
 /// A struct read only from a JSON object. A derived `Deserialize` also reads a struct from an
 /// array of its fields in order, which the schema does not allow.
-struct Object<T>(T);
+pub(crate) struct Object<T>(pub(crate) T);
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -357,8 +356,16 @@ fn is_owner(owner: &str) -> bool {
     is_hyphenated(owner, MAX_OWNER_CHARS)
 }
 
+/// `github.com/<owner>/<repository>`, the form of a repository id.
+pub(crate) fn is_repository_id(id: &str) -> bool {
+    id.strip_prefix(REPOSITORY_PREFIX).is_some_and(|path| {
+        path.split_once('/')
+            .is_some_and(|(owner, repository)| is_owner(owner) && is_repository(repository))
+    })
+}
+
 /// `[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?`: 1–64 characters, hyphens only inside.
-fn is_local_name(name: &str) -> bool {
+pub(crate) fn is_local_name(name: &str) -> bool {
     is_hyphenated(name, MAX_LOCAL_NAME_CHARS)
 }
 
