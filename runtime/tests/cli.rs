@@ -236,7 +236,7 @@ fn permissions_shows_what_is_requested_and_granted_and_changes_nothing() {
         stdout(&output),
         "plugin: local/hello-widget 0.2.0
 author: Dashboard contributors
-contract: v1
+contract: v1 (1.0.0)
 approved: no
 permissions:
   log  required  not granted
@@ -255,7 +255,7 @@ login providers: none
         format!(
             "plugin: local/hello-widget 0.2.0
 author: Dashboard contributors
-contract: v1
+contract: v1 (1.0.0)
 approved: version 0.2.0 ({digest}) from {}
 permissions:
   log  required  granted

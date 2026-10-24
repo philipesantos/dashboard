@@ -56,7 +56,7 @@ pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
 #[cfg(feature = "test-network")]
 pub use network::{Route, TestNetwork};
-pub use permissions::Contract;
+pub use permissions::{Contract, ContractVersion};
 pub use text::escape;
 
 /// Bindings for the `widget` world of plugin contract v0 (`wit/v0`, `dashboard:widget@0.1.0`).
@@ -189,7 +189,7 @@ pub struct CheckedPackage {
     component: Component,
     interfaces: Interfaces,
     manifest: Manifest,
-    contract: Contract,
+    contract: ContractVersion,
 }
 
 impl CheckedPackage {
@@ -198,7 +198,12 @@ impl CheckedPackage {
     }
 
     pub fn contract(&self) -> Contract {
-        self.contract
+        self.contract.contract
+    }
+
+    /// The exact contract version the plugin is built for (`v1 (1.0.0)`).
+    pub fn contract_version(&self) -> &ContractVersion {
+        &self.contract
     }
 
     /// Turns one optional permission of this package on or off, for packages from `origin`
@@ -211,7 +216,7 @@ impl CheckedPackage {
         permission: &str,
         on: bool,
     ) -> Result<(), RuntimeError> {
-        if self.contract == Contract::V0 {
+        if self.contract.contract == Contract::V0 {
             return Err(RuntimeError::with_names(
                 ErrorKind::OptionalNeedsV1,
                 vec![permission.to_owned()],
@@ -399,7 +404,7 @@ fn prepare(
     let manifest = &package.manifest;
     let entry = grants.entry(manifest.id())?;
     let decision = permissions::decide(
-        package.contract,
+        package.contract.contract,
         &package.interfaces,
         manifest,
         origin,
@@ -438,7 +443,12 @@ impl Plugin {
 
     /// The contract version the plugin implements.
     pub fn contract(&self) -> Contract {
-        self.package.contract
+        self.package.contract.contract
+    }
+
+    /// The exact contract version the plugin is built for.
+    pub fn contract_version(&self) -> &ContractVersion {
+        &self.package.contract
     }
 
     /// Calls the plugin's `render` with a JSON configuration, in a fresh instance that is
@@ -482,7 +492,7 @@ impl Plugin {
         let contract = permissions::check_component(&self.package.interfaces, &manifest)?;
         let entry = self.grants.entry(manifest.id())?;
         permissions::decide(
-            contract,
+            contract.contract,
             &self.package.interfaces,
             &manifest,
             &self.origin,

@@ -253,7 +253,7 @@ fn describe(checked: &CheckedPackage, status: &Status) -> String {
         escape(manifest.id().as_str()),
         escape(manifest.version()),
         escape(manifest.author()),
-        checked.contract().as_str()
+        checked.contract_version().display()
     );
     let approved = match &status.approval {
         None => "no".to_owned(),
