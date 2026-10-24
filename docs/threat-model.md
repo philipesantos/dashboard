@@ -1,7 +1,7 @@
 # Threat model v0
 
-Status: draft, 2026-10-21. It describes the planned architecture; most components do not exist
-yet. Revisit it at every phase gate and whenever a new component crosses a trust boundary.
+Status: draft, 2026-10-21, revised 2026-10-23 for connectors (feature 003). It describes the
+planned architecture; many components do not exist yet. Revisit it at every phase gate and whenever a new component crosses a trust boundary.
 
 The rules referenced as I–IX are the principles of the
 [project constitution](../.specify/memory/constitution.md).
@@ -22,7 +22,8 @@ flowchart TB
             perm["Permission engine"]
             vault["Secrets vault"]
             db[("Per-plugin SQLite")]
-            proxy["Network proxy (domain allowlist)"]
+            connectors["Connector engine and network proxy (declared operations only)"]
+            catalog[("Official connector catalog, built into the host")]
             ailayer["AI layer (taint tracking)"]
             installer["Installer and updater (signature checks)"]
         end
@@ -38,17 +39,20 @@ flowchart TB
     plugin -- "WIT host functions" --> perm
     generated -- "WIT host functions" --> perm
     perm --> db
-    perm --> proxy
+    perm --> connectors
     perm --> ailayer
-    vault -. "injects secrets" .-> proxy
+    catalog --> connectors
+    vault -. "injects secrets" .-> connectors
     vault --- keychain
-    proxy --> ext
+    connectors -- "HTTPS, public addresses only" --> ext
     ailayer --> llm
     installer -- "fetches signed packages" --> dist
 ```
 
 Plugins never talk to the network, the keychain or the user directly: every effect goes
-through a host function that the permission engine has granted.
+through a host function that the permission engine has granted. A plugin reaches an external
+service only by calling an operation of a connector its manifest declares: a declaration, never
+code, which the host runs, with a fixed destination and typed parameters the host checks.
 
 ## Assets
 
@@ -74,7 +78,7 @@ through a host function that the permission engine has granted.
 | ID | Boundary | What crosses it | Controls |
 | --- | --- | --- | --- |
 | B1 | Plugin ↔ host (Wasm sandbox, WIT interface) | Host function calls, widget render data | WebAssembly only (I); no capabilities until granted, only granted imports linked (II); CPU, memory and time limits |
-| B2 | Host ↔ network | Plugin HTTP requests | Host proxy with per-domain allowlist (III); HTTPS only; size and rate limits; request log |
+| B2 | Host ↔ network | Connector calls a plugin makes | No generic network: only declared operations of connectors, run by the host (III); destinations from the catalog, whose domains are reserved, or local in development; HTTPS with Mozilla's roots, public addresses only at every connection, redirects only to the connector's origins, no system proxy, no cookies; size, time, call and rate limits; a request log no plugin can read or flood; calls only in `update`, never in render |
 | B3 | Host ↔ secrets | Tokens and keys | Never handed to plugins; the host injects them into requests (IV) |
 | B4 | Plugin UI ↔ user | Widget content | Declarative UI inside the host frame, no password fields, no windows or dialogs (V); personal visual secret on every host dialog |
 | B5 | AI ↔ host | Prompts out, model output in | Output treated as untrusted: safe rendering, taint tracking, human confirmation of actions (VI); trust decisions only in host dialogs (VII) |
@@ -96,7 +100,18 @@ suite grows with every phase and never shrinks.
 | Returns malformed or oversized widget content | T1 | A3 | B1 | JSON check and output size cap | Phase 1 |
 | Floods the host with log messages | T1 | A3 | B1 | Per-call log caps | Phase 1 |
 | Log or error text imitates the host's own output | T1 | A4 | B1 | Plugin text escaped before display | Phase 1 |
-| Requests a domain outside the allowlist | T1, T3 | A1 | B2 | III | Phase 2 |
+| Sends data to a destination of its choosing (generic network, `wasi:http`, sockets) | T1, T3 | A1 | B1, B2 | No such capability: only declared connector operations (III) | Phase 2 |
+| Calls an operation its manifest does not declare, or with a value outside its type to reach another path or host | T1 | A1 | B2 | The host checks every call against the declaration, and encodes each value in its own place (III) | Phase 2 |
+| Connector hides a change as a read (a `POST` read, or `X-HTTP-Method-Override` on a `GET`) | T1 | A1 | B2 | Outside the catalog a read is a body-less `GET` or `HEAD`, and no `X-` header is fixed; the catalog's kinds are reviewed by hand (III, IX) | Phase 2 |
+| Impostor connector claims a catalog service (`api.github.com`, `catalog/github`, a case or trailing-dot variant) | T1, T4 | A1, A4 | B2 | The catalog is built into the host and its domains, with every host under them, are reserved; hosts compared in one normal form (III) | Phase 2 |
+| Connector from a repository reaches a domain its owner never authorized | T1 | A1 | B2 | Refused until installation verifies the owner's authorization (Phase 3) | Phase 2 |
+| Destination or redirect leads to the user's machine, local network or a cloud metadata address (also through DNS rebinding) | T1, T2 | A1, A3 | B2 | Only public addresses, checked at every connection; IP destinations refused; redirects only to the connector's own origins, exact port included (III) | Phase 2 |
+| Certificate makes the operating system fetch revocation or root data outside the host proxy | T1, T2 | A1 | B2 | rustls' own verifier over Mozilla's roots, the same on every system; the system verifiers are banned from the build (III) | Phase 2 |
+| System network proxy hides which address a request reaches | T2 | A1 | B2 | System proxies are never used; requests go straight to their checked destination (III) | Phase 2 |
+| Floods the request log to push earlier entries out, or forges entries | T1 | A4 | B2 | Past a run's call limit, one summary entry; names and values cut before writing and escaped when shown (III) | Phase 2 |
+| Approval covers something else than what was shown (the connector changed in between) | T1 | A4 | B2 | `approve` grants only the digest `permissions` printed; a connector change that widens what the widget reaches needs a new approval (II, VII) | Phase 2 |
+| Waits on the network in render to stall the dashboard | T1 | A3 | B1, B2 | Connectors are called only in `update`, with its own time limit; render shows the data the host kept (III) | Phase 2 |
+| Connector reaches a credential or hides one in a fixed value | T1 | A2 | B3 | Connectors with credentials refused until feature 005; fixed values are public, shown before approval (IV) | Phase 2 |
 | Reads another plugin's storage | T1 | A1 | B1 | One database per plugin, II | Phase 2 |
 | Obtains an OAuth token or AI key | T1 | A2 | B3 | IV | Phase 2 |
 | Update adds a permission without approval | T1, T4 | A4 | B1 | Re-approval on new permissions (II) | Phase 2 |
@@ -112,7 +127,8 @@ suite grows with every phase and never shrinks.
 | Asks for little at install, then presses the user to turn on optional permissions one at a time | T1 | A1, A4 | B4 | Only host controls turn a permission on (VII); the dangerous-combination warning runs on every grant change, judged on the permissions the plugin will hold afterwards | Phase 3 |
 | Hidden instruction in content read by AI (prompt injection) | T2, T3 | A1, A4 | B5 | VI, taint tracking | Phase 4 |
 | Remote image with data in its URL in AI output | T2, T3 | A1 | B5 | Safe rendering without remote resources | Phase 4 |
-| Generated module requests a domain the user did not mention | T3 | A1 | B1, B2 | Permissions derived from the user's request | Phase 5 |
+| Generated module calls a connector the user did not mention | T3 | A1 | B1, B2 | Permissions derived from the user's request | Phase 5 |
+| Data read from one connected account or from the local network reaches another destination | T1 | A1 | B2 | `permissions` already says when data read from this machine can reach another destination; the cross-account warning arrives in the host dialogs (III) | Phase 3 |
 | Package with an invalid or revoked signature | T4 | A5 | B6 | Signature, hash and revocation checks | Phase 6 |
 
 ## Assumptions and out of scope
