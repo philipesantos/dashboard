@@ -5,6 +5,14 @@ members = ["app/src-tauri", "bench", "runtime", "xtask"]
 exclude = ["plugins"]
 
 # Profiles only take effect in the workspace root manifest.
+# Debug builds (and tests, which inherit them) keep only line tables for workspace crates, enough
+# for backtraces with file and line, and no debug info for dependencies: smaller and faster builds.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1
