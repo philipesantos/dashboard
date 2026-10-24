@@ -287,3 +287,153 @@ fn data_dir_is_absolute() {
 fn bundled_sqlite() {
     runtime::storage::engine_check().expect("the linked SQLite is 3.54.0 with defensive mode");
 }
+
+// User Story 4: writes are all or nothing (`specs/004-plugin-storage/spec.md`)
+
+/// Limits for runs that spin: no CPU budget, and time for another run to act meanwhile.
+fn spinning() -> Limits {
+    Limits {
+        fuel: u64::MAX,
+        time_limit: std::time::Duration::from_secs(10),
+        update_time_limit: std::time::Duration::from_secs(30),
+        ..Limits::default()
+    }
+}
+
+/// A second runtime on `world`'s data directory and grant record, as another process would be.
+fn another_process(world: &World, limits: Limits) -> (Runtime, Arc<GrantStore>) {
+    (
+        Runtime::new(limits, RuntimeOptions::new(world.data.path())).unwrap(),
+        Arc::new(GrantStore::open(world.data.path().join("grants.json"))),
+    )
+}
+
+/// Loop iterations of the probe's `spin` that take about `seconds` here.
+fn spin_for(plugin: &runtime::Plugin, seconds: f64) -> u64 {
+    let probe = 200_000_000u64;
+    let started = std::time::Instant::now();
+    plugin
+        .render(&render_steps(&[
+            json!({ "op": "spin", "iterations": probe }),
+        ]))
+        .result
+        .unwrap();
+    (probe as f64 * seconds / started.elapsed().as_secs_f64().max(0.001)) as u64
+}
+
+#[test]
+fn a_widget_with_storage_and_no_connector_updates_and_keeps_every_write_together() {
+    let world = World::production(false);
+    let plugin = world.approve_and_load(&probe(true));
+    assert!(plugin.manifest().connectors().is_empty());
+    update(&plugin, &[set("a", "1"), set("b", "2"), set("c", "3")]);
+    assert_eq!(
+        render(&plugin, &[get("a"), get("b"), get("c")]),
+        [hex("1"), hex("2"), hex("3")]
+    );
+}
+
+#[test]
+fn a_render_during_an_update_sees_it_before_or_after_never_in_part() {
+    let world = World::production_with(spinning(), false);
+    let plugin = world.approve_and_load(&probe(true));
+    update(&plugin, &[set("a", "before"), set("b", "before")]);
+    let spin = spin_for(&plugin, 2.0);
+    let (other, grants) = another_process(&world, spinning());
+    let reader = other.load(&probe(true), TEST_ORIGIN, grants).unwrap();
+    std::thread::scope(|scope| {
+        let writer = scope.spawn(|| {
+            update(
+                &plugin,
+                &[
+                    set("a", "after"),
+                    json!({ "op": "spin", "iterations": spin }),
+                    set("b", "after"),
+                ],
+            )
+        });
+        // Reads while the update holds its writes, in another runtime on the same store
+        for _ in 0..5 {
+            let found = render(&reader, &[get("a"), get("b")]);
+            assert!(
+                found == [hex("before"), hex("before")] || found == [hex("after"), hex("after")],
+                "a render saw part of an update: {found:?}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        writer.join().unwrap();
+    });
+    assert_eq!(
+        render(&reader, &[get("a"), get("b")]),
+        [hex("after"), hex("after")]
+    );
+}
+
+#[test]
+fn an_update_that_cannot_take_its_store_fails_as_busy_and_keeps_nothing() {
+    let world = World::production_with(spinning(), false);
+    let plugin = world.approve_and_load(&probe(true));
+    update(&plugin, &[set("a", "before")]);
+    let previous =
+        plugin.render(&render_steps(&[])).result.unwrap()["render_config"]["data"].clone();
+    let spin = spin_for(&plugin, 4.0);
+    let (other, grants) = another_process(&world, Limits::default());
+    let second = other.load(&probe(true), TEST_ORIGIN, grants).unwrap();
+    std::thread::scope(|scope| {
+        // The first update holds the store's write lock while it spins
+        let holder = scope.spawn(|| {
+            update(
+                &plugin,
+                &[
+                    set("held", "yes"),
+                    json!({ "op": "spin", "iterations": spin }),
+                ],
+            )
+        });
+        let journal = std::fs::canonicalize(world.data.path())
+            .unwrap()
+            .join("storage")
+            .read_dir()
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "sqlite")
+            })
+            .unwrap()
+            .with_extension("sqlite-journal");
+        let started = std::time::Instant::now();
+        while !journal.exists() {
+            assert!(started.elapsed() < std::time::Duration::from_secs(20));
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        // The second waits at most 2 s, then fails as busy
+        let report = second.update(&steps(&[set("a", "second"), set("b", "second")], None));
+        let error = report.result.expect_err("busy");
+        assert_eq!(error.kind(), ErrorKind::StorageFailed, "{error}");
+        assert!(error.to_string().contains("busy"), "{error}");
+        holder.join().unwrap();
+    });
+    let content = second
+        .render(&render_steps(&[get("a"), get("b")]))
+        .result
+        .unwrap();
+    assert_eq!(answers(&content), [hex("before"), json!({ "ok": null })]);
+    // The second runtime's view of the previous kept data is the first one's
+    assert_eq!(content["render_config"]["data"], previous);
+}
+
+/// A widget built for a contract without storage that declares it; a 1.2.0 widget that
+/// declares storage without `updater` is `missing-updater`, checked by the permission engine's
+/// own tests (`storage_needs_an_updater`).
+#[test]
+fn an_older_widget_that_declares_storage_is_refused() {
+    let world = World::production(false);
+    let package = repack(
+        &fixture("hello-widget"),
+        &stored_manifest("local/hello-widget", "0.1.0", true, QUOTA),
+    );
+    let error = world.runtime.check(&package).err().expect("refused");
+    // hello-widget is built for 1.0.0, which has no storage: contract-too-old comes first
+    assert_eq!(error.kind(), ErrorKind::ContractTooOld, "{error}");
+}
