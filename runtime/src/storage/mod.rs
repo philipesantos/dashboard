@@ -33,6 +33,26 @@ pub use connection::engine_check;
 /// The directory of the stores, inside the data directory.
 pub(crate) const STORAGE_DIR: &str = "storage";
 
+/// Load step 8a (`data-model.md`, Load decision): `<data dir>/storage/`, created when missing,
+/// canonical, and a directory the host can write, on the SQLite this host was reviewed with.
+/// Otherwise why not, for `storage-failed` or `failed(unavailable)`.
+pub(crate) fn storage_dir(data_dir: &Path) -> Result<PathBuf, String> {
+    engine_check()?;
+    let dir = data_dir.join(STORAGE_DIR);
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("{} cannot be created: {error}", dir.display()))?;
+    let dir = std::fs::canonicalize(&dir)
+        .map_err(|error| format!("{} has no canonical path: {error}", dir.display()))?;
+    if !dir.is_dir() {
+        return Err(format!("{} is not a directory", dir.display()));
+    }
+    // A file created and removed at once: the directory can hold a store
+    tempfile::NamedTempFile::new_in(&dir)
+        .map(drop)
+        .map_err(|error| format!("{} cannot be written: {error}", dir.display()))?;
+    Ok(dir)
+}
+
 /// Which store a linked plugin reaches, computed at link time and never from a call
 /// (`data-model.md`, Store binding).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -661,7 +681,7 @@ mod tests {
 
     /// A data directory, a grant record file approving storage, and the plugin's binding.
     struct Setup {
-        dir: TempDir,
+        _dir: TempDir,
         grants: Arc<GrantStore>,
         binding: Arc<StoreBinding>,
         limits: Limits,
@@ -684,7 +704,7 @@ mod tests {
             fs::create_dir(&storage).unwrap();
             let binding = Arc::new(StoreBinding::new(&storage, ID, ORIGIN, quota, quota));
             Setup {
-                dir,
+                _dir: dir,
                 grants,
                 binding,
                 limits,

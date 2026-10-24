@@ -24,8 +24,6 @@ mod network;
 pub mod package;
 mod permissions;
 pub mod requests;
-// Until loading links storage (tasks T024 and T025)
-#[allow(dead_code)]
 pub mod storage;
 mod text;
 
@@ -47,6 +45,7 @@ use limits::MemoryLimitExceeded;
 use manifest::Manifest;
 use permissions::Interfaces;
 use requests::RequestLog;
+use storage::StorageRun;
 
 pub use calls::CallCounts;
 pub use error::{ErrorKind, RuntimeError};
@@ -54,6 +53,7 @@ pub use limits::Limits;
 #[cfg(feature = "test-network")]
 pub use network::{Route, TestNetwork};
 pub use permissions::{Contract, ContractVersion};
+pub use storage::StorageCounts;
 pub use text::{escape, quote_entry};
 
 /// Bindings for the `widget` world of plugin contract v0 (`wit/v0`, `dashboard:widget@0.1.0`).
@@ -112,6 +112,8 @@ pub struct RenderReport {
     pub logs: Vec<LogMessage>,
     /// Messages over the per-call cap, dropped instead of kept.
     pub dropped_logs: u32,
+    /// What the render did with storage, for a plugin granted it.
+    pub storage: Option<StorageCounts>,
 }
 
 /// The outcome of one update call (`specs/003-plugin-connectors/`, FR-010).
@@ -124,6 +126,9 @@ pub struct UpdateReport {
     pub dropped_logs: u32,
     /// How the update's connector calls went.
     pub calls: CallCounts,
+    /// What the update did with storage, for a plugin granted it, when its writes were kept or
+    /// it failed for another reason.
+    pub storage: Option<StorageCounts>,
 }
 
 /// What the host decides when it starts the runtime: where its data lives, and whether it runs
@@ -416,6 +421,9 @@ struct V1Pre {
     /// The connectors granted when it was linked, for a plugin that imports `connectors`;
     /// `None` when it was linked to the stand-in, or imports nothing of them.
     table: Option<Arc<ConnectorTable>>,
+    /// The store bound when it was linked, for a plugin linked to the real `storage`, or why
+    /// storage is unavailable; `None` when it was linked to the stand-in, or imports no storage.
+    storage: Option<Result<Arc<storage::StoreBinding>, String>>,
 }
 
 /// The function `function` of the exported interface `interface`.
@@ -456,10 +464,15 @@ impl Runtime {
 
     fn start(
         limits: Limits,
-        options: RuntimeOptions,
+        mut options: RuntimeOptions,
         catalog: catalog::Catalog,
         network: network::Network,
     ) -> wasmtime::Result<Runtime> {
+        // A store's path is always absolute: a relative one could be read as a URI, or move
+        // with the working directory (specs/004-plugin-storage/research.md, R4)
+        if let Ok(absolute) = std::path::absolute(&options.data_dir) {
+            options.data_dir = absolute;
+        }
         let mut config = Config::new();
         // Turned off explicitly, so a Wasmtime upgrade that changes a default does not widen
         // what plugins can use. Function references, exceptions, threads and component-model
@@ -562,6 +575,8 @@ impl Runtime {
         }
         // Steps 2 and 3: the one manifest, before the compile, which costs far more
         let manifest = Manifest::parse(package::manifest_section(bytes)?)?;
+        // Step 3a: a storage quota within this host's cap, which may be lower than the schema's
+        self.check_quota(&manifest)?;
         // Step 4: from_binary never accepts the text format, whatever Wasmtime features are
         // enabled.
         let component = Component::from_binary(&self.engine, bytes)
@@ -587,6 +602,29 @@ impl Runtime {
             connectors,
             refused_connectors,
         })
+    }
+
+    /// Load step 3a (`specs/004-plugin-storage/data-model.md`, Load decision).
+    fn check_quota(&self, manifest: &Manifest) -> Result<(), RuntimeError> {
+        let Some(storage) = manifest.storage() else {
+            return Ok(());
+        };
+        let cap = self.limits.max_storage_quota_bytes;
+        if storage.quota_bytes <= cap {
+            return Ok(());
+        }
+        let index = manifest
+            .permissions()
+            .iter()
+            .position(|permission| permission.name == "storage")
+            .unwrap_or_default();
+        Err(RuntimeError::new(
+            ErrorKind::InvalidManifest,
+            format!(
+                "permissions[{index}].quota_bytes: {} is over this host's cap; a quota is from {} to {cap} usage bytes",
+                storage.quota_bytes, self.limits.storage_entry_cost_bytes
+            ),
+        ))
     }
 
     /// Checks a connector file as this runtime would load it as `local/<name>` from
@@ -625,7 +663,7 @@ impl Runtime {
         let package = self.check(bytes)?;
         // Read before the grants, so a change made while linking is seen on the next call
         let generation = grants.generation();
-        let prepared = prepare(&package, origin, &grants)?;
+        let prepared = prepare(&package, origin, &grants, self.options.data_dir())?;
         let plugin = Plugin {
             package,
             origin: origin.to_owned(),
@@ -799,6 +837,7 @@ fn prepare(
     package: &CheckedPackage,
     origin: &str,
     grants: &GrantStore,
+    data_dir: &Path,
 ) -> Result<Prepared, RuntimeError> {
     let manifest = &package.manifest;
     let entry = grants.entry(manifest.id())?;
@@ -827,6 +866,18 @@ fn prepare(
             ));
         }
         grants.refresh_connector_versions(manifest, origin, &states)?;
+    }
+    // Step 7 for storage: required, or optional and on, with a quota the user approved
+    // (specs/004-plugin-storage/data-model.md, Load decision)
+    if let Some(change) = entry
+        .as_ref()
+        .and_then(|entry| entry.storage_change(manifest))
+    {
+        return Err(RuntimeError::with_names(
+            ErrorKind::NeedsNewApproval,
+            vec!["storage".to_owned()],
+            Some(&format!("{change}; approve {} again", manifest.id())),
+        ));
     }
     // Step 8: permissions and connectors this manifest no longer declares leave the approval
     let undeclared_connectors = entry.as_ref().is_some_and(|entry| {
@@ -873,6 +924,37 @@ fn prepare(
     } else {
         None
     };
+    // Steps 8a and 9 for storage: the store binding, from the plugin's id and origin, for a
+    // plugin linked to the real interface; never from anything a call says (research R3)
+    let storage = if plan.real.contains(&"storage") {
+        let declared = manifest
+            .storage()
+            .expect("storage is linked only when the manifest declares it");
+        let approved = entry
+            .as_ref()
+            .and_then(|entry| entry.storage_quota_bytes)
+            .unwrap_or(declared.quota_bytes);
+        match storage::storage_dir(data_dir) {
+            Ok(dir) => Some(Ok(Arc::new(storage::StoreBinding::new(
+                &dir,
+                manifest.id().as_str(),
+                origin,
+                declared.quota_bytes,
+                approved,
+            )))),
+            Err(reason) if declared.required => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::StorageFailed,
+                    vec!["storage".to_owned()],
+                    Some(&format!("its required storage is unavailable: {reason}")),
+                ));
+            }
+            // Optional storage that is on: linked, and its calls fail as unavailable
+            Err(reason) => Some(Err(reason)),
+        }
+    } else {
+        None
+    };
     let pre = linker
         .instantiate_pre(&package.component)
         .map_err(mismatch)?;
@@ -894,6 +976,7 @@ fn prepare(
                 render,
                 update,
                 table,
+                storage,
             })
         }
     })
@@ -933,6 +1016,7 @@ impl Plugin {
                     result: Err(error),
                     logs: Vec::new(),
                     dropped_logs: 0,
+                    storage: None,
                 };
             }
         };
@@ -953,6 +1037,7 @@ impl Plugin {
                 result: Err(error),
                 logs: Vec::new(),
                 dropped_logs: 0,
+                storage: None,
             },
         }
     }
@@ -964,10 +1049,13 @@ impl Plugin {
             .and_then(|()| self.call(prepared, &mut store, config));
         let mut state = store.into_data();
         state.run.finish();
+        // A render keeps nothing: its read transaction just ends
+        let storage = state.storage.take().and_then(|run| run.finish(true).ok());
         RenderReport {
             result,
             logs: state.logs,
             dropped_logs: state.dropped_logs,
+            storage,
         }
     }
 
@@ -981,6 +1069,7 @@ impl Plugin {
             logs: Vec::new(),
             dropped_logs: 0,
             calls: CallCounts::default(),
+            storage: None,
         };
         let prepared = match self.current() {
             Ok(prepared) => prepared,
@@ -1007,6 +1096,16 @@ impl Plugin {
             .and_then(|()| self.call_update(&prepared, &mut store, update, config));
         let mut state = store.into_data();
         state.run.finish();
+        // The store first: its writes are committed only when the update succeeded, and a
+        // commit that fails fails the update, before the kept data is recorded
+        // (specs/004-plugin-storage/research.md, R7)
+        let (result, storage) = match state.storage.take() {
+            None => (result, None),
+            Some(run) => match run.finish(result.is_ok()) {
+                Ok(counts) => (result, Some(counts)),
+                Err(error) => (Err(error), None),
+            },
+        };
         let now = calls::now_ms();
         if let Some(key) = self.kept_key() {
             // The kept data is the host's record of the update: a write that fails leaves the
@@ -1021,6 +1120,7 @@ impl Plugin {
             logs: state.logs,
             dropped_logs: state.dropped_logs,
             calls: state.run.counts,
+            storage,
         }
     }
 
@@ -1059,10 +1159,25 @@ impl Plugin {
             limits: self.limits.clone(),
             rates: Arc::clone(&self.rates),
         });
-        let mut store = Store::new(
-            self.package.component.engine(),
-            HostState::new(&self.limits, run, calls),
-        );
+        let mut state = HostState::new(&self.limits, run, calls);
+        if let Prepared::V1(V1Pre {
+            storage: Some(binding),
+            ..
+        }) = prepared
+        {
+            let time_limit = match phase {
+                Phase::Render => self.limits.time_limit,
+                Phase::Update => self.limits.update_time_limit,
+            };
+            state.storage = Some(StorageRun::new(
+                binding.clone(),
+                phase,
+                Arc::clone(&self.grants),
+                &self.limits,
+                Instant::now() + time_limit,
+            ));
+        }
+        let mut store = Store::new(self.package.component.engine(), state);
         store.limiter(|state| &mut state.limiter);
         store
     }
@@ -1174,7 +1289,13 @@ impl Plugin {
     pub fn relink(&self) -> Result<(), RuntimeError> {
         let mut linked = self.linked.lock().unwrap_or_else(PoisonError::into_inner);
         linked.generation = self.grants.generation();
-        linked.prepared = prepare(&self.package, &self.origin, &self.grants).map(Arc::new);
+        linked.prepared = prepare(
+            &self.package,
+            &self.origin,
+            &self.grants,
+            self.options.data_dir(),
+        )
+        .map(Arc::new);
         linked.prepared.as_ref().map(drop).map_err(Clone::clone)
     }
 
@@ -1184,7 +1305,13 @@ impl Plugin {
         let mut linked = self.linked.lock().unwrap_or_else(PoisonError::into_inner);
         let generation = self.grants.generation();
         if linked.generation != generation {
-            linked.prepared = prepare(&self.package, &self.origin, &self.grants).map(Arc::new);
+            linked.prepared = prepare(
+                &self.package,
+                &self.origin,
+                &self.grants,
+                self.options.data_dir(),
+            )
+            .map(Arc::new);
             linked.generation = generation;
         }
         linked.prepared.clone()
