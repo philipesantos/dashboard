@@ -1,4 +1,5 @@
-//! Host-defined resource limits (FR-005, FR-006 of feature 001; FR-008, FR-010 of feature 003).
+//! Host-defined resource limits (FR-005, FR-006 of feature 001; FR-008, FR-010 of feature 003;
+//! FR-005, FR-007 of feature 004).
 //! A plugin can neither read nor change them.
 
 use std::fmt;
@@ -14,7 +15,9 @@ const MIB: usize = 1024 * KIB;
 /// User Story 4 of feature 001 measured the runtime on all three systems and confirmed the render
 /// defaults (`specs/001-plugin-runtime/performance.md`). The update and network limits are
 /// provisional values of `specs/003-plugin-connectors/research.md` (R10), measured before the
-/// feature closes. An update runs with the same fuel and memory caps as a render.
+/// feature closes. An update runs with the same fuel and memory caps as a render. The storage
+/// limits are provisional values of `specs/004-plugin-storage/research.md` (R10), measured the
+/// same way.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Limits {
     /// Larger packages are refused as `invalid-package`.
@@ -68,6 +71,32 @@ pub struct Limits {
     pub max_logged_value_chars: usize,
     /// Longest connector or operation name written to the request log, in characters.
     pub max_logged_name_chars: usize,
+    /// The host cap: the largest storage quota a manifest may declare, in usage bytes. A larger
+    /// one is `invalid-manifest`.
+    pub max_storage_quota_bytes: u64,
+    /// What each stored entry counts in usage on top of its name and value, the same on every
+    /// system.
+    pub storage_entry_cost_bytes: u64,
+    /// Longest storage name, in bytes of UTF-8; also the longest `prefix` and `after` of `list`.
+    pub max_storage_name_bytes: usize,
+    /// Largest stored value.
+    pub max_storage_value_bytes: usize,
+    /// Storage calls per run of `update` or `render`, every call counted, refused ones
+    /// included; past it, calls are refused.
+    pub max_storage_calls_per_run: usize,
+    /// Names and values of every `set` of one update together, replaced ones included.
+    pub max_storage_written_bytes_per_update: u64,
+    /// Names in one page of `list`, fixed by the host.
+    pub storage_list_page: usize,
+    /// The store's file may reach this many times the approved quota, plus
+    /// `storage_file_cap_extra_bytes`, rounded up to whole pages and never below the file's
+    /// current size. Usage is logical, and a file can reach several times its usage.
+    pub storage_file_cap_factor: u64,
+    /// Added to the file cap, for the file's own pages.
+    pub storage_file_cap_extra_bytes: u64,
+    /// The longest a storage call waits for another process writing the store, cut to what is
+    /// left of the run's time limit.
+    pub max_storage_busy_wait: Duration,
 }
 
 impl Default for Limits {
@@ -97,6 +126,16 @@ impl Default for Limits {
             max_request_log_bytes: 2 * MIB,
             max_logged_value_chars: 256,
             max_logged_name_chars: 160,
+            max_storage_quota_bytes: 8 * MIB as u64,
+            storage_entry_cost_bytes: 64,
+            max_storage_name_bytes: 256,
+            max_storage_value_bytes: 256 * KIB,
+            max_storage_calls_per_run: 1000,
+            max_storage_written_bytes_per_update: MIB as u64,
+            storage_list_page: 100,
+            storage_file_cap_factor: 5,
+            storage_file_cap_extra_bytes: 64 * KIB as u64,
+            max_storage_busy_wait: Duration::from_secs(2),
         }
     }
 }
@@ -214,6 +253,24 @@ mod tests {
         assert_eq!(limits.max_request_log_bytes, 2 * MIB);
         assert_eq!(limits.max_logged_value_chars, 256);
         assert_eq!(limits.max_logged_name_chars, 160);
+    }
+
+    /// The defaults of research R10 (`specs/004-plugin-storage/research.md`).
+    #[test]
+    fn storage_defaults_are_those_of_the_plan() {
+        let limits = Limits::default();
+        assert_eq!(limits.max_storage_quota_bytes, 8 * MIB as u64);
+        assert_eq!(limits.storage_entry_cost_bytes, 64);
+        assert_eq!(limits.max_storage_name_bytes, 256);
+        assert_eq!(limits.max_storage_value_bytes, 256 * KIB);
+        assert_eq!(limits.max_storage_calls_per_run, 1000);
+        assert_eq!(limits.max_storage_written_bytes_per_update, MIB as u64);
+        assert_eq!(limits.storage_list_page, 100);
+        assert_eq!(limits.storage_file_cap_factor, 5);
+        assert_eq!(limits.storage_file_cap_extra_bytes, 64 * KIB as u64);
+        assert_eq!(limits.max_storage_busy_wait, Duration::from_secs(2));
+        // The smallest quota holds one empty entry
+        assert!(limits.storage_entry_cost_bytes <= limits.max_storage_quota_bytes);
     }
 
     #[test]
