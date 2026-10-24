@@ -922,3 +922,104 @@ fn the_schema_and_the_parser_agree_on_connectors() {
     assert!(valid_for_schema(&schema, &twice));
     assert_eq!(parse(&twice), Err(ErrorKind::InvalidManifest));
 }
+
+/// Feature 004: `quota_bytes` on `storage`. The schema and the parser agree on every rule of
+/// the field; the host's own cap, which may be lower than the schema's maximum, is checked at
+/// load instead (`runtime/tests/permissions.rs`, the host cap case).
+#[test]
+fn the_schema_and_the_parser_agree_on_the_storage_quota() {
+    let schema = schema();
+    let storage = |entry: Value| {
+        set(
+            "permissions",
+            json!([{ "name": "log", "required": true }, entry]),
+        )
+    };
+    let valid = [
+        (
+            "the smallest quota",
+            storage(json!({ "name": "storage", "required": true, "quota_bytes": 64 })),
+        ),
+        (
+            "a quota of 64 KiB",
+            storage(json!({ "name": "storage", "required": false, "quota_bytes": 65536 })),
+        ),
+        (
+            "the largest quota",
+            storage(json!({ "name": "storage", "required": true, "quota_bytes": 8_388_608 })),
+        ),
+        (
+            "a quota written 4096.0",
+            storage(json!({ "name": "storage", "required": true, "quota_bytes": 4096.0 })),
+        ),
+    ];
+    for (case, manifest) in valid {
+        assert!(
+            valid_for_schema(&schema, &manifest),
+            "the schema refused {case}"
+        );
+        assert_eq!(parse(&manifest), Ok(()), "the parser refused {case}");
+    }
+    let invalid = [
+        (
+            "storage without a quota",
+            storage(json!({ "name": "storage", "required": true })),
+        ),
+        (
+            "a quota on another permission",
+            set(
+                "permissions",
+                json!([{ "name": "log", "required": true, "quota_bytes": 4096 }]),
+            ),
+        ),
+        (
+            "a quota of 63",
+            storage(json!({ "name": "storage", "required": true, "quota_bytes": 63 })),
+        ),
+        (
+            "a quota of 8388609",
+            storage(json!({ "name": "storage", "required": true, "quota_bytes": 8_388_609 })),
+        ),
+        (
+            "a fraction",
+            storage(json!({ "name": "storage", "required": true, "quota_bytes": 64.5 })),
+        ),
+        (
+            "a string",
+            storage(json!({ "name": "storage", "required": true, "quota_bytes": "65536" })),
+        ),
+        (
+            "null",
+            storage(json!({ "name": "storage", "required": true, "quota_bytes": null })),
+        ),
+        (
+            "two storage entries",
+            set(
+                "permissions",
+                json!([
+                    { "name": "storage", "required": true, "quota_bytes": 4096 },
+                    { "name": "storage", "required": false, "quota_bytes": 4096 }
+                ]),
+            ),
+        ),
+    ];
+    for (case, manifest) in invalid {
+        assert!(
+            !valid_for_schema(&schema, &manifest),
+            "the schema accepted {case}"
+        );
+        assert_eq!(
+            parse(&manifest),
+            Err(ErrorKind::InvalidManifest),
+            "the parser's verdict on {case}"
+        );
+    }
+    // The example declares storage as authors are told to, and both accept it (SC-008)
+    let example: Value = serde_json::from_slice(
+        &std::fs::read(repository().join("plugins/examples/update-counter/manifest.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(valid_for_schema(&schema, &example));
+    assert_eq!(parse(&example), Ok(()));
+    assert_eq!(example["permissions"][0]["name"], "storage");
+}
