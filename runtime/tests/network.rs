@@ -657,3 +657,31 @@ fn an_error_status_is_a_normal_answer() {
     assert_eq!(answer["status"], 410, "{answer}");
     assert_eq!(answer["body"], r#"{"message":"gone"}"#);
 }
+
+#[test]
+fn an_error_page_in_another_format_still_reaches_the_widget_with_its_status() {
+    let pki = TestPki::new();
+    let server = Server::https(&pki.leaf(&["api.echo.test"]));
+    server.route(
+        "/down",
+        Reply::status(503)
+            .header("Content-Type", "text/html")
+            .body(b"<html><body>Service unavailable</body></html>".to_vec()),
+    );
+    let echo = Echo::new(
+        &pki,
+        catalog_echo(
+            json!({ "api": "https://api.echo.test" }),
+            json!({ "down": get("/down", json!({}), json!({}), &[]) }),
+        ),
+        vec![route("api.echo.test", 443, server.address())],
+        vec![server.address()],
+        &["down"],
+    );
+    let answer = one(echo.update(&calls(&[("catalog/echo", "down", json!([]))])));
+    assert_eq!(answer["status"], 503, "{answer}");
+    assert_eq!(
+        answer["body"],
+        "<html><body>Service unavailable</body></html>"
+    );
+}

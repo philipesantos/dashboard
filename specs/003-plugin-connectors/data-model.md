@@ -277,7 +277,8 @@ and every call is logged:
    the call's limit — else `failed(over-limit)`; the widget gets none of the body.
 10. A redirect: follow it under R7, as a new request with its own log entry — else
     `failed(redirect-not-allowed)`.
-11. The media type matches `response.format` — else `failed(invalid-response)`.
+11. A success (2xx) with a body has the media type of `response.format` — else
+    `failed(invalid-response)`. An error status passes on whatever its body is.
 12. The grant record, read again, still grants it — else `not-granted`, and the response is
     dropped.
 13. `ok(response)`: status, the declared headers, the body.

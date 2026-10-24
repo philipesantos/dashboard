@@ -282,8 +282,8 @@ machine in development mode.
   approval say what leaves.
 - A widget declares a connector it never calls: allowed; a required connector still needs
   approval, as every required permission does (feature 002).
-- A response larger than the limit, or in a format other than the operation declares: the call
-  fails naming the limit or the format, and the widget gets nothing of it.
+- A response larger than the limit, or a successful one in a format other than the operation
+  declares: the call fails naming the limit or the format, and the widget gets nothing of it.
 - The service answers with an error status: the widget receives the status, the body and the
   declared headers, within the limits; it is a normal answer, not a refusal.
 - A declared header is missing from a response: the widget is told it is absent. Headers the

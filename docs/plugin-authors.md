@@ -187,7 +187,8 @@ destination. It answers:
   (until user actions arrive in Phase 3, an update only reads), or a limit.
 - `err(failed(problem))`: the request was attempted and gave nothing for your widget: the
   destination unreachable or not public, a redirect to anywhere the connector does not declare,
-  a certificate that is not valid, a response over a limit or in another format than declared.
+  a certificate that is not valid, a response over a limit, or a success in another format
+  than declared. An error status is no failure: it comes as `ok(response)`, whatever its body.
 
 `problem.rule` names the rule and `problem.detail` explains it for you, never for the user:
 show your user what is missing in your own words.

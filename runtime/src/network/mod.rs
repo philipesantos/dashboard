@@ -677,13 +677,16 @@ fn follow(
 }
 
 /// The response, if its media type is the operation's format (`json`: `application/json` or
-/// `…+json`; `text`: `text/…` or `…+xml`). An empty body has no format to check.
+/// `…+json`; `text`: `text/…` or `…+xml`). Only a success (2xx) with a body is checked: an empty
+/// body has no format, and an error status is passed on as it is.
 fn check_format(
     format: Format,
     content_type: Option<&str>,
     response: Response,
 ) -> Result<Response, Failure> {
-    if response.body.is_empty() {
+    // An error status is a normal answer whatever its body is, often an HTML page from a proxy
+    // or the service itself: the widget gets its status and decides (edge cases of the spec)
+    if response.body.is_empty() || !(200..300).contains(&response.status) {
         return Ok(response);
     }
     let media = content_type
@@ -1007,6 +1010,17 @@ mod tests {
         assert!(check_format(Format::Text, Some("application/json"), response("x")).is_err());
         // An empty body has no format to check
         assert!(check_format(Format::Json, Some("text/html"), response("")).is_ok());
+        // An error status passes on whatever its body is
+        for status in [301, 404, 500, 502, 503] {
+            let page = Response {
+                status,
+                headers: Vec::new(),
+                body: b"<html>Bad gateway</html>".to_vec(),
+            };
+            let passed = check_format(Format::Json, Some("text/html"), page).unwrap();
+            assert_eq!(passed.status, status);
+            assert_eq!(passed.body, b"<html>Bad gateway</html>");
+        }
     }
 
     #[test]

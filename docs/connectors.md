@@ -81,7 +81,7 @@ same on every system.
 | `headers` | At most 8: `Accept`, `Accept-Language` and, in the catalog only, `X-…` names; values printable ASCII, at most 256 characters |
 | `body` | A JSON object of at most 4 KiB; a string exactly `{<parameter>}` becomes that value. Only for changes, and for reads in the catalog |
 | `parameters` | At most 16: a name (a lowercase letter, then lowercase letters, digits and underscores) and its type |
-| `response.format` | `json` (`application/json` or `…+json`) or `text` (`text/…` or `…+xml`); a response in another media type fails |
+| `response.format` | `json` (`application/json` or `…+json`) or `text` (`text/…` or `…+xml`); a success (2xx) in another media type fails, while an error status reaches the widget whatever its body, such as an HTML error page |
 | `response.headers` | At most 8 header names passed to the widget, never `Set-Cookie` or `Cookie`. No other header reaches it |
 
 Every placeholder names a declared parameter, and every parameter appears in exactly one place.
