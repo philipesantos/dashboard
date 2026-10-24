@@ -433,3 +433,57 @@ fn foreign_store() {
         assert_eq!(render(&a, &[get("secret")]), [hex("A's value")]);
     }
 }
+
+/// White box (FR-004): every layer of the production setup, read back, and one attempt past
+/// each, on an update's connection and on a render's.
+#[test]
+fn store_hardened() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let file = std::fs::canonicalize(dir.path())
+        .unwrap()
+        .join("store.sqlite");
+    let cap = 5 * QUOTA + 64 * 1024;
+    for render in [false, true] {
+        let report = runtime::storage::hardening_report(&file, render, cap).unwrap();
+        assert_eq!(
+            report.attached_limit, 0,
+            "no other database can be attached"
+        );
+        assert_eq!(report.length_limit, 256 + 256 * 1024 + 4096);
+        assert_eq!(report.sql_length_limit as usize, report.longest_statement);
+        assert!(report.defensive, "defensive mode");
+        assert!(!report.triggers, "triggers off");
+        assert!(!report.views, "views off");
+        assert!(!report.trusted_schema, "untrusted schema");
+        assert_eq!(report.max_page_count as u64, cap.div_ceil(4096));
+        assert_eq!(report.secure_delete, 1, "secure_delete = ON");
+        assert_eq!(report.cache_size, -256);
+        assert_eq!(report.journal_mode, "delete");
+        for (attempt, refused) in &report.attempts {
+            assert!(refused, "{attempt} was allowed (render: {render})");
+        }
+        assert_eq!(report.attempts.len(), if render { 10 } else { 9 });
+    }
+}
+
+/// White box (FR-002): the store a plugin is linked with is the file of its own id and origin,
+/// and the stand-in of storage that is off has none.
+#[test]
+fn store_binding() {
+    let vault = Vault::new();
+    let origin = vault.origin("bound");
+    let plugin = vault.plugin(&Vault::probe("local/store-probe", QUOTA), &origin);
+    assert_eq!(
+        plugin.store_binding(),
+        Some(vault.store_file("local/store-probe", &origin))
+    );
+    let optional = repack(
+        &fixture("store-probe"),
+        &stored_manifest("local/optional-probe", "0.1.0", false, QUOTA),
+    );
+    let optional_origin = vault.origin("optional");
+    let off = vault.plugin(&optional, &optional_origin);
+    assert_eq!(off.store_binding(), None, "the stand-in reaches no store");
+    let hello = vault.world.approve_and_load(&fixture("hello-widget"));
+    assert_eq!(hello.store_binding(), None);
+}

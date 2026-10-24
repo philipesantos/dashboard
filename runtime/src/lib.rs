@@ -1149,6 +1149,20 @@ impl Plugin {
         }
     }
 
+    /// The file of the store the plugin is linked with, or `None` when it is linked to the
+    /// stand-in or imports no storage. For the white-box hostile case `store-binding`, which no
+    /// plugin can observe (Principle VIII).
+    #[cfg(feature = "test-network")]
+    pub fn store_binding(&self) -> Option<PathBuf> {
+        match &*self.current().ok()? {
+            Prepared::V1(V1Pre {
+                storage: Some(Ok(binding)),
+                ..
+            }) => Some(binding.file.clone()),
+            _ => None,
+        }
+    }
+
     /// A store for one call, with the state its connector calls need.
     fn store(&self, prepared: &Prepared, phase: Phase) -> Store<HostState> {
         let table = match prepared {

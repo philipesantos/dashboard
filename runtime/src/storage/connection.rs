@@ -699,6 +699,136 @@ pub fn plant_foreign_store(file: &Path, kind: Foreign) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+/// Each hardening layer of a connection, read back from the production setup, and what every
+/// attempt to get past one did: the white-box hostile case `store-hardened` (research R4,
+/// Testing each layer). No plugin can observe these, so the test reads them (Principle VIII).
+#[cfg(feature = "test-network")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HardeningReport {
+    pub attached_limit: i32,
+    pub length_limit: i32,
+    pub sql_length_limit: i32,
+    pub defensive: bool,
+    pub triggers: bool,
+    pub views: bool,
+    pub trusted_schema: bool,
+    pub max_page_count: i64,
+    pub secure_delete: i64,
+    pub cache_size: i64,
+    pub journal_mode: String,
+    /// The longest statement the host runs.
+    pub longest_statement: usize,
+    /// Each attempt on the finished connection, and whether SQLite refused it.
+    pub attempts: Vec<(String, bool)>,
+}
+
+/// Opens the store at `file` for an update, or for a render when `render`, with `configure`,
+/// then `check_schema` and `authorize`, as [`open`] does, with no switch that production does
+/// not use: the pragmas are read between `configure` and `authorize`, the limits and the
+/// configuration after, and then one attempt is made per layer. The store is created first when
+/// it does not exist. `test-network` is the runtime's test-only feature, refused in release
+/// builds; it gates every test hook, not only the network's.
+#[cfg(feature = "test-network")]
+pub fn hardening_report(
+    file: &Path,
+    render: bool,
+    file_cap_bytes: u64,
+) -> Result<HardeningReport, String> {
+    let limits = crate::limits::Limits::default();
+    let settings = Settings {
+        max_name_bytes: limits.max_storage_name_bytes,
+        max_value_bytes: limits.max_storage_value_bytes,
+        file_cap_bytes,
+        busy_timeout: Duration::from_secs(1),
+    };
+    let identity = Identity {
+        id: "local/hardening".to_owned(),
+        origin: file.to_string_lossy().into_owned(),
+    };
+    let failed = |failure: Failure| match failure {
+        Failure::Store(error) => format!("{error:?}"),
+        Failure::HotJournal => "a hot journal".to_owned(),
+    };
+    if render {
+        let store = open(file, Mode::Update, Some(&identity), &settings)
+            .map_err(|error| format!("{error:?}"))?
+            .ok_or("no store")?;
+        store.commit().map_err(|error| format!("{error:?}"))?;
+    }
+    let mode = if render { Mode::Render } else { Mode::Update };
+    let mut connection = configure(file, mode, &settings).map_err(failed)?;
+    let read = |connection: &Connection, sql: &str| -> Result<i64, String> {
+        connection
+            .query_row(sql, [], |row| row.get(0))
+            .map_err(|error| error.to_string())
+    };
+    let max_page_count = read(&connection, "PRAGMA max_page_count")?;
+    let secure_delete = read(&connection, "PRAGMA secure_delete")?;
+    let cache_size = read(&connection, "PRAGMA cache_size")?;
+    let journal_mode: String = connection
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    if !check_schema(&connection, mode, Some(&identity)).map_err(failed)? {
+        return Err("no store".to_owned());
+    }
+    authorize(&mut connection).map_err(failed)?;
+    let limit = |limit| connection.limit(limit).map_err(|error| error.to_string());
+    let config = |config| {
+        connection
+            .db_config(config)
+            .map_err(|error| error.to_string())
+    };
+    let length_limit = limit(Limit::SQLITE_LIMIT_LENGTH)?;
+    let sql_length_limit = limit(Limit::SQLITE_LIMIT_SQL_LENGTH)?;
+    let mut attempts: Vec<(String, bool)> = [
+        "ATTACH DATABASE ':memory:' AS other",
+        "SELECT load_extension('x')",
+        "SELECT length(x'00')",
+        "PRAGMA writable_schema = ON",
+        "PRAGMA journal_mode = WAL",
+        "CREATE TABLE extra (x)",
+        "SELECT sql FROM sqlite_schema",
+    ]
+    .iter()
+    .map(|sql| ((*sql).to_owned(), connection.execute_batch(sql).is_err()))
+    .collect();
+    let too_long = format!("SELECT 1{}", " ".repeat(sql_length_limit.max(0) as usize));
+    attempts.push((
+        "a statement over the SQL length limit".to_owned(),
+        connection.execute_batch(&too_long).is_err(),
+    ));
+    let too_big = vec![0u8; length_limit.max(0) as usize + 1];
+    attempts.push((
+        "a value over the length limit".to_owned(),
+        connection
+            .execute(PUT, params![b"n".as_slice(), too_big])
+            .is_err(),
+    ));
+    if render {
+        attempts.push((
+            "a write on the render connection".to_owned(),
+            connection
+                .execute(PUT, params![b"n".as_slice(), b"v".as_slice()])
+                .is_err(),
+        ));
+    }
+    Ok(HardeningReport {
+        attached_limit: limit(Limit::SQLITE_LIMIT_ATTACHED)?,
+        length_limit,
+        sql_length_limit,
+        defensive: config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE)?,
+        triggers: config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER)?,
+        views: config(DbConfig::SQLITE_DBCONFIG_ENABLE_VIEW)?,
+        trusted_schema: config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA)?,
+        max_page_count,
+        secure_delete,
+        cache_size,
+        journal_mode,
+        longest_statement: STATEMENTS.iter().map(|sql| sql.len()).max().unwrap_or(0),
+        attempts,
+    })
+}
+
 /// The shortest byte string greater than every string that starts with `prefix`, or `None` when
 /// there is none (an empty prefix, or one of only `0xFF` bytes).
 fn successor(prefix: &[u8]) -> Option<Vec<u8>> {

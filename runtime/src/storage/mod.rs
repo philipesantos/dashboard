@@ -30,7 +30,7 @@ use connection::{Identity, Mode, Settings, StoreConnection, StoreError};
 
 pub use connection::engine_check;
 #[cfg(feature = "test-network")]
-pub use connection::{Foreign, plant_foreign_store};
+pub use connection::{Foreign, HardeningReport, hardening_report, plant_foreign_store};
 
 /// The directory of the stores, inside the data directory.
 pub(crate) const STORAGE_DIR: &str = "storage";
