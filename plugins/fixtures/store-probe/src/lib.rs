@@ -4,6 +4,10 @@
 //! error or a trap after the calls, return output that is not JSON or is of a given size, and
 //! spin between calls so a test can change the grants while it runs.
 //!
+//! It returns `{"answers": [...], "more", "errors", "first_error", "last_error"}`: the first 32
+//! answers, how many more there were, and the count, first and last of the error answers, so a
+//! case that makes thousands of calls still sees every refusal.
+//!
 //! `update` reads `{"steps": [...], "end": "ok" | "error" | "panic" | "fuel" | "loop" | "memory",
 //! "output": "not-json" | n}`; `render` reads `render_steps` and `render_end` from `config` of the
 //! document the host gives it. A step is `{"op": "get" | "set" | "delete" | "list" | "usage",
@@ -29,13 +33,19 @@ struct StoreProbe;
 struct Answers {
     kept: Vec<Json>,
     more: u64,
-    first_error: Option<String>,
+    first_error: Option<Json>,
+    last_error: Option<Json>,
+    errors: u64,
 }
 
 impl Answers {
     fn push(&mut self, answer: Json) {
-        if self.first_error.is_none() && answer.get("error").is_some() {
-            self.first_error = Some(answer.to_string());
+        if answer.get("error").is_some() {
+            self.errors += 1;
+            if self.first_error.is_none() {
+                self.first_error = Some(answer.clone());
+            }
+            self.last_error = Some(answer.clone());
         }
         if self.kept.len() < KEPT_ANSWERS {
             self.kept.push(answer);
@@ -169,7 +179,10 @@ fn finish(end: Option<&str>, answers: &Answers, output: Json) -> Result<String, 
         "ok" => Ok(output.to_string()),
         "error" => Err(format!(
             "ending with an error as asked; first error answer: {}",
-            answers.first_error.as_deref().unwrap_or("none")
+            answers
+                .first_error
+                .as_ref()
+                .map_or_else(|| "none".to_owned(), Json::to_string)
         )),
         "panic" => panic!("ending with a panic as asked"),
         "fuel" | "loop" => loop {
@@ -188,7 +201,13 @@ impl Updater for StoreProbe {
         let config: Json =
             serde_json::from_str(&config).map_err(|error| format!("configuration: {error}"))?;
         let answers = run_steps(config.get("steps"))?;
-        let output = json!({ "answers": answers.kept, "more": answers.more });
+        let output = json!({
+            "answers": answers.kept,
+            "more": answers.more,
+            "errors": answers.errors,
+            "first_error": answers.first_error,
+            "last_error": answers.last_error,
+        });
         let end = config.get("end").and_then(Json::as_str);
         let result = finish(end, &answers, output)?;
         match config.get("output") {
@@ -208,6 +227,9 @@ impl Renderer for StoreProbe {
         let output = json!({
             "answers": answers.kept,
             "more": answers.more,
+            "errors": answers.errors,
+            "first_error": answers.first_error,
+            "last_error": answers.last_error,
             "render_config": document,
         });
         let end = widget

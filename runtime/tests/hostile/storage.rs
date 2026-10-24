@@ -653,3 +653,263 @@ fn quota_lowered() {
         .unwrap();
     assert_eq!(entry.storage_quota_bytes, Some(1000));
 }
+
+/// An update of `plugin` that makes `step_list`, ends as `end` says, and returns what it
+/// reported, error or content.
+fn update_report(plugin: &Plugin, step_list: &[Value], end: Option<&str>) -> runtime::UpdateReport {
+    plugin.update(&steps(step_list, end))
+}
+
+/// Fills a fresh store of `quota` with values of `value_size` bytes, as many per update as the
+/// limits allow, until a write is refused as over quota: the quota, never the file cap, is what
+/// stops it, and the file stays under its cap. Returns the file size.
+fn fill(vault: &Vault, value_size: u64, quota: u64) -> u64 {
+    let id = format!("local/fill-{value_size}");
+    let origin = vault.origin(&format!("fill-{value_size}"));
+    let plugin = vault.plugin(&Vault::probe(&id, quota), &origin);
+    let store = vault.store_file(&id, &origin);
+    let cap = 5 * quota + 64 * 1024;
+    let per_update = ((1024 * 1024) / (value_size + 16)).clamp(1, 999);
+    for batch in 0.. {
+        let report = update_report(
+            &plugin,
+            &[json!({
+                "op": "set",
+                "name": format!("b{batch}-{{i}}"),
+                "value_size": value_size,
+                "repeat": per_update,
+            })],
+            None,
+        );
+        let content = report
+            .result
+            .unwrap_or_else(|error| panic!("{value_size} B: {error}"));
+        let size = std::fs::metadata(&store).unwrap().len();
+        assert!(
+            size <= cap,
+            "{value_size} B: the file is {size} bytes, over {cap}"
+        );
+        if let Some(first) = content["first_error"].as_object() {
+            assert_eq!(
+                first["error"], "refused:over-quota",
+                "{value_size} B: the quota must come first, not {first:?}"
+            );
+            assert_eq!(content["last_error"]["error"], "refused:over-quota");
+            break;
+        }
+        assert!(batch < 10_000, "{value_size} B: the quota never came");
+    }
+    let usage = render(&plugin, &[json!({ "op": "usage" })]).remove(0);
+    let used = usage["ok"]["used"].as_u64().unwrap();
+    assert!(
+        used <= quota,
+        "{value_size} B: usage {used} over the quota {quota}"
+    );
+    std::fs::metadata(&store).unwrap().len()
+}
+
+#[test]
+fn many_entries() {
+    let vault = Vault::new();
+    vault.contained(&[], || {});
+    // Every entry counts its cost: thousands of empty values fill a quota of 64 B per entry
+    let origin = vault.origin("empty");
+    let plugin = vault.plugin(&Vault::probe("local/empty-values", 64 * 1024), &origin);
+    let content = update_report(
+        &plugin,
+        &[
+            json!({ "op": "set", "name": "{i}", "value": "", "repeat": 999 }),
+            json!({ "op": "usage" }),
+        ],
+        None,
+    )
+    .result
+    .unwrap();
+    // 999 names of 1 to 3 digits and 64 B each, until the quota refuses
+    assert_eq!(content["first_error"]["error"], "refused:over-quota");
+    let used = render(&plugin, &[json!({ "op": "usage" })]).remove(0)["ok"]["used"]
+        .as_u64()
+        .unwrap();
+    assert!(used <= 64 * 1024 && used > 60 * 1024, "{used}");
+    // Values from 32 B to 4 KiB, 1,000 B among them, the worst measured (research R6), up to
+    // the host cap
+    for value_size in [32, 500, 1000, 1500, 4096] {
+        let size = fill(&vault, value_size, 8 * 1024 * 1024);
+        eprintln!("many-entries: {value_size} B values fill 8 MiB of quota in a {size}-byte file");
+    }
+    vault.assert_well_behaved();
+}
+
+#[test]
+fn churn() {
+    let vault = Vault::new();
+    let origin = vault.origin("churn");
+    let quota = 64 * 1024;
+    let plugin = vault.plugin(&Vault::probe("local/store-probe", quota), &origin);
+    let store = vault.store_file("local/store-probe", &origin);
+    let cap = 5 * quota + 64 * 1024;
+    let sizes = [32, 500, 1000, 1500, 4096];
+    for round in 0..200usize {
+        let size = sizes[round % sizes.len()];
+        // Delete what the last round wrote, then fill the quota again with another size
+        let count = (quota / (size + 70)).saturating_sub(1).max(1);
+        let report = update_report(
+            &plugin,
+            &[
+                json!({ "op": "delete", "name": "v{i}", "repeat": 64 }),
+                json!({ "op": "set", "name": "v{i}", "value_size": size, "repeat": count }),
+            ],
+            None,
+        );
+        let content = report.result.unwrap();
+        assert!(
+            content["first_error"].is_null()
+                || content["first_error"]["error"] == "refused:over-quota",
+            "round {round}: {}",
+            content["first_error"]
+        );
+        let file = std::fs::metadata(&store).unwrap().len();
+        assert!(
+            file <= cap,
+            "round {round}: the file is {file} bytes, over {cap}"
+        );
+    }
+    vault.assert_well_behaved();
+}
+
+#[test]
+fn file_cap_hit() {
+    let limits = Limits {
+        storage_file_cap_factor: 1,
+        storage_file_cap_extra_bytes: 0,
+        ..Limits::default()
+    };
+    let vault = Vault::with_limits(limits);
+    let origin = vault.origin("file-cap");
+    let plugin = vault.plugin(&Vault::probe("local/store-probe", QUOTA), &origin);
+    update(&plugin, &[set("kept", "before")]);
+    let kept = vault.own("local/store-probe", &origin).remove(1);
+    for end in ["ok", "panic"] {
+        vault.contained(std::slice::from_ref(&kept), || {
+            let report = update_report(
+                &plugin,
+                &[
+                    json!({ "op": "set", "name": "v{i}", "value_size": 900, "repeat": 70 }),
+                    get("kept"),
+                ],
+                Some(end),
+            );
+            let error = report.result.expect_err("the update fails");
+            assert_eq!(error.kind(), ErrorKind::StorageFailed, "{end}: {error}");
+            assert!(
+                error
+                    .to_string()
+                    .contains("nothing this update wrote was kept"),
+                "{error}"
+            );
+        });
+        assert_eq!(
+            render(&plugin, &[get("kept"), get("v0")]),
+            [hex("before"), json!({ "ok": null })]
+        );
+    }
+    // The update's failure names the first failure, the file reaching its size; the answers
+    // the plugin got (`failed(over-limit)`, then `failed(run-aborted)`) are checked in
+    // runtime/src/storage/mod.rs, a_write_that_reaches_the_file_cap_ends_the_run
+    let report = update_report(
+        &plugin,
+        &[json!({ "op": "set", "name": "w{i}", "value_size": 900, "repeat": 70 })],
+        Some("error"),
+    );
+    let message = report.result.err().unwrap().to_string();
+    assert!(message.starts_with("storage-failed: "), "{message}");
+    assert!(message.contains("size limit"), "{message}");
+}
+
+#[test]
+fn unwritable_store() {
+    let vault = Vault::new();
+    let origin = vault.origin("unwritable");
+    let plugin = vault.plugin(&Vault::probe("local/store-probe", QUOTA), &origin);
+    update(&plugin, &[set("kept", "before")]);
+    let store = vault.store_file("local/store-probe", &origin);
+    let read_only = |on: bool| {
+        let mut permissions = std::fs::metadata(&store).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(on);
+        std::fs::set_permissions(&store, permissions).unwrap();
+    };
+    read_only(true);
+    let kept = vault.own("local/store-probe", &origin).remove(1);
+    vault.contained(&[kept], || {
+        let report = update_report(&plugin, &[set("new", "value"), get("kept")], None);
+        let error = report.result.expect_err("the update fails");
+        assert_eq!(error.kind(), ErrorKind::StorageFailed, "{error}");
+        assert!(error.to_string().contains("unavailable"), "{error}");
+    });
+    read_only(false);
+    assert_eq!(
+        render(&plugin, &[get("kept"), get("new")]),
+        [hex("before"), json!({ "ok": null })]
+    );
+}
+
+#[test]
+fn over_limits() {
+    let vault = Vault::new();
+    let origin = vault.origin("limits");
+    let plugin = vault.plugin(&Vault::probe("local/store-probe", 8 * 1024 * 1024), &origin);
+    let name = "n".repeat(256);
+    vault.contained(&vault.own("local/store-probe", &origin), || {
+        let found = update(
+            &plugin,
+            &[
+                json!({ "op": "set", "name": name, "value_size": 256 * 1024 }),
+                json!({ "op": "set", "name": "n".repeat(257), "value": "" }),
+                json!({ "op": "set", "name": "v", "value_size": 256 * 1024 + 1 }),
+                json!({ "op": "list", "prefix": "p".repeat(257) }),
+                json!({ "op": "list", "prefix": "", "after": "a".repeat(257) }),
+                json!({ "op": "get", "name": "" }),
+            ],
+        );
+        assert_eq!(found[0], json!({ "ok": null }), "the largest entry is kept");
+        assert_eq!(found[1]["error"], "refused:invalid-name");
+        assert_eq!(found[2]["error"], "refused:over-limit");
+        assert!(found[2]["detail"].as_str().unwrap().contains("262144"));
+        assert_eq!(found[3]["error"], "refused:invalid-name");
+        assert_eq!(found[4]["error"], "refused:invalid-name");
+        assert_eq!(found[5]["error"], "refused:invalid-name");
+        // Call 1,001 of a run, whatever it is
+        let content = update_report(
+            &plugin,
+            &[json!({ "op": "get", "name": "x", "repeat": 1001 })],
+            None,
+        )
+        .result
+        .unwrap();
+        assert_eq!(content["errors"], 1);
+        assert_eq!(content["last_error"]["error"], "refused:over-limit");
+        assert!(
+            content["last_error"]["detail"]
+                .as_str()
+                .unwrap()
+                .contains("1000"),
+            "{}",
+            content["last_error"]
+        );
+        // More than 1 MiB of names and values in one update
+        let content = update_report(
+            &plugin,
+            &[json!({ "op": "set", "name": "big{i}", "value_size": 256 * 1024, "repeat": 4 })],
+            None,
+        )
+        .result
+        .unwrap();
+        assert_eq!(content["errors"], 1);
+        assert_eq!(content["first_error"]["error"], "refused:over-limit");
+    });
+    assert_eq!(
+        render(&plugin, &[json!({ "op": "get", "name": "big3" })]),
+        [json!({ "ok": null })]
+    );
+}
