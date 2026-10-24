@@ -1477,3 +1477,173 @@ fn system_proxy() {
         proxy.received()
     );
 }
+
+// T044: the request log cases
+
+/// `log-flood` (FR-009): thousands of calls in one run cannot push earlier entries out: past
+/// the run's limit they are counted in one summary entry, in an update and in a render.
+#[test]
+fn log_flood() {
+    let gate = Gate::new();
+    gate.assert_well_behaved();
+    let earlier = gate.world.runtime.read_requests(1000, None).unwrap();
+    assert_eq!(earlier.len(), 1, "the well-behaved update's entry");
+
+    gate.connector("echo", &local("echo", "https://api.echo.test", |_| {}));
+    let plugin = gate.world.approve_and_load(&probe_of("echo", &["get"]));
+    let flood = json!({ "calls": [
+        { "connector": "local/echo", "operation": "undeclared", "arguments": [], "repeat": 5000 },
+        { "connector": "local/nothing", "operation": "x", "arguments": [], "repeat": 5000 }
+    ] })
+    .to_string();
+    let report = plugin.update(&flood);
+    assert!(report.result.is_ok());
+    assert_eq!(report.calls.calls, 10_000);
+    let render = json!({ "render_calls": [
+        { "connector": "local/echo", "operation": "get", "arguments": [], "repeat": 5000 },
+        { "connector": "local/nothing", "operation": "x", "arguments": [], "repeat": 5000 }
+    ] })
+    .to_string();
+    let rendered = plugin.render(&render);
+    assert!(rendered.result.is_ok(), "{:?}", rendered.result);
+
+    let log = gate.world.runtime.read_requests(100_000, None).unwrap();
+    assert_eq!(log.len(), 1 + 20 + 1 + 20 + 1);
+    assert_eq!(log[0], earlier[0], "the earlier entry is still there");
+    let summaries: Vec<_> = log
+        .iter()
+        .filter_map(|entry| entry.summary.clone())
+        .collect();
+    assert_eq!(summaries.len(), 2);
+    assert_eq!(
+        (
+            summaries[0].calls,
+            summaries[0].not_granted,
+            summaries[0].refused
+        ),
+        (9980, 5000, 4980)
+    );
+    assert_eq!(
+        (
+            summaries[1].calls,
+            summaries[1].not_granted,
+            summaries[1].refused
+        ),
+        (9980, 5000, 4980)
+    );
+    gate.assert_well_behaved();
+}
+
+/// `log-spoof` (FR-009): connector, operation and argument texts a plugin chose cannot add
+/// lines to the printed log or drive the terminal.
+#[test]
+fn log_spoof() {
+    let gate = Gate::new();
+    let server = Server::http();
+    server.route("/", Reply::json("{}"));
+    gate.connector(
+        "echo",
+        &local("echo", &server.http_origin(), |c| {
+            c["operations"]["get"]["query"] = json!({ "q": "{q}" });
+            c["operations"]["get"]["parameters"] =
+                json!({ "q": { "type": "text", "max_length": 64 } });
+        }),
+    );
+    let plugin = gate.world.approve_and_load(&probe_of("echo", &["get"]));
+    let forged = "\n2026-01-01T00:00:00.000Z local/github-releases catalog/github list-releases GET api.github.com / 200 1B 1ms\u{1b}[2J\u{202e}";
+    update(
+        &plugin,
+        &calls(&[
+            (forged, forged, json!([[forged, forged]])),
+            ("local/echo", "get", json!([["q", forged]])),
+        ]),
+    );
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_runtime"))
+        .args([
+            "requests",
+            "--data",
+            gate.world.data.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(text.lines().count(), 2, "{text}");
+    assert!(
+        !text.contains('\u{1b}') && !text.contains('\u{202e}'),
+        "{text:?}"
+    );
+    assert!(text.contains(r"\n2026-01-01T00:00:00.000Z"), "{text}");
+    assert!(text.contains(r"\u{1b}[2J"), "{text}");
+    gate.assert_well_behaved();
+}
+
+/// `log-complete` (FR-009, SC-008): every call, allowed or refused, and every redirect the host
+/// followed, has an entry of its own or is counted in its run's summary; rotation keeps the
+/// newest.
+#[test]
+fn log_complete() {
+    let echo = echo_gate(
+        Limits::default(),
+        json!({ "api": "https://api.echo.test" }),
+        json!({ "root": read("/"), "hop": read("/hop1") }),
+        |pki| {
+            let server = api(pki);
+            server.route("/hop1", Reply::redirect(302, "/hop2"));
+            server.route("/hop2", Reply::redirect(302, "/"));
+            let routes = vec![route("api.echo.test", 443, server.address())];
+            (vec![server], routes, Vec::new())
+        },
+    );
+    let report = echo.plugin.update(&calls(&[
+        ("catalog/echo", "root", json!([])),
+        ("catalog/echo", "hop", json!([])),
+        ("catalog/echo", "nope", json!([])),
+        ("catalog/echo", "root", json!([["x", 1]])),
+        ("catalog/nothing", "root", json!([])),
+    ]));
+    assert_eq!(report.calls.calls, 5);
+    let log = echo.gate.world.runtime.read_requests(1000, None).unwrap();
+    // 5 calls, the second with two redirects followed
+    assert_eq!(log.len(), 7, "{log:#?}");
+    let redirects: Vec<Option<u32>> = log.iter().map(|entry| entry.redirect_of).collect();
+    assert_eq!(redirects, [None, None, Some(1), Some(2), None, None, None]);
+    assert_eq!(
+        echo.servers[0].received().len(),
+        4,
+        "one request per entry that has a host"
+    );
+    assert_eq!(log.iter().filter(|entry| entry.host.is_some()).count(), 4);
+
+    // Rotation: the log keeps a bounded size and the newest entries
+    let small = Gate::with(|_| Extra {
+        limits: Some(Limits {
+            max_request_log_bytes: 4096,
+            max_calls_per_run: 1000,
+            ..Limits::default()
+        }),
+        ..Extra::default()
+    });
+    small.connector("echo", &local("echo", "https://api.echo.test", |_| {}));
+    let plugin = small.world.approve_and_load(&probe_of("echo", &["get"]));
+    for _ in 0..3 {
+        update(
+            &plugin,
+            &json!({ "calls": [{ "connector": "local/echo", "operation": "undeclared", "arguments": [], "repeat": 40 }] }).to_string(),
+        );
+    }
+    let current = std::fs::metadata(small.world.data.path().join("requests.jsonl"))
+        .unwrap()
+        .len();
+    let previous = std::fs::metadata(small.world.data.path().join("requests.1.jsonl"))
+        .unwrap()
+        .len();
+    assert!(current <= 4096 && previous <= 4096, "{current} {previous}");
+    let entries = small.world.runtime.read_requests(10_000, None).unwrap();
+    assert!(entries.len() < 120, "the oldest went first");
+    assert!(
+        entries
+            .windows(2)
+            .all(|pair| pair[0].at_ms <= pair[1].at_ms)
+    );
+    small.assert_well_behaved();
+}
