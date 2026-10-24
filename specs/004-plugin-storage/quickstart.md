@@ -63,7 +63,7 @@ and turned on:
 
 ```sh
 rt optional <copy>.wasm storage off      # storage off (data kept)
-rt run <copy>.wasm                        # renders; storage answers not-granted
+rt run <copy>.wasm                        # renders "Storage is off": storage answers not-granted
 rt optional <copy>.wasm storage on
 rt run <copy>.wasm                        # the earlier values again
 rt storage list

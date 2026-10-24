@@ -68,6 +68,14 @@ impl Updater for UpdateCounter {
 
 impl Renderer for UpdateCounter {
     fn render(_config: String) -> Result<String, String> {
+        // Storage that the user turned off answers not-granted: say so instead of failing
+        if let Err(StorageError::NotGranted) = get("count") {
+            return Ok(json!({
+                "title": "Update counter",
+                "text": "Storage is off: turn it on to keep a count"
+            })
+            .to_string());
+        }
         let Some(count) = read_text("count")? else {
             return Ok(json!({ "title": "Update counter", "text": "Not updated yet" }).to_string());
         };
