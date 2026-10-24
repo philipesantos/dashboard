@@ -913,3 +913,152 @@ fn over_limits() {
         [json!({ "ok": null })]
     );
 }
+
+// User Story 4: writes are all or nothing, and render only reads
+
+#[test]
+fn write_in_render() {
+    let vault = Vault::new();
+    let origin = vault.origin("render");
+    let plugin = vault.plugin(&Vault::probe("local/store-probe", QUOTA), &origin);
+    update(&plugin, &[set("a", "1")]);
+    vault.contained(&[], || {
+        let found = render(
+            &plugin,
+            &[
+                set("a", "2"),
+                json!({ "op": "delete", "name": "a" }),
+                get("a"),
+            ],
+        );
+        assert_eq!(found[0]["error"], "refused:render-only-reads");
+        assert_eq!(found[1]["error"], "refused:render-only-reads");
+        assert_eq!(found[2], hex("1"));
+    });
+}
+
+#[test]
+fn crash_after_writes() {
+    let vault = Vault::new();
+    let origin = vault.origin("crash");
+    let plugin = vault.plugin(&Vault::probe("local/store-probe", QUOTA), &origin);
+    let first = update(&plugin, &[set("a", "before")]);
+    let kept = vault.own("local/store-probe", &origin).remove(1);
+    let writes = [set("a", "during"), set("b", "new")];
+    let cases: [(&str, Option<&str>, Option<Value>, ErrorKind); 6] = [
+        ("panic", Some("panic"), None, ErrorKind::PluginCrashed),
+        (
+            "out of fuel",
+            Some("fuel"),
+            None,
+            ErrorKind::CpuBudgetExceeded,
+        ),
+        (
+            "out of memory",
+            Some("memory"),
+            None,
+            ErrorKind::MemoryLimitExceeded,
+        ),
+        ("an error", Some("error"), None, ErrorKind::PluginError),
+        (
+            "output that is not JSON",
+            None,
+            Some(json!("not-json")),
+            ErrorKind::InvalidOutput,
+        ),
+        (
+            "output over 256 KiB",
+            None,
+            Some(json!(256 * 1024 + 1)),
+            ErrorKind::OutputTooLarge,
+        ),
+    ];
+    for (case, end, output, kind) in cases {
+        vault.contained(std::slice::from_ref(&kept), || {
+            let mut config = json!({ "steps": writes, "end": end.unwrap_or("ok") });
+            if let Some(output) = &output {
+                config["output"] = output.clone();
+            }
+            let report = plugin.update(&config.to_string());
+            let error = report.result.expect_err(case);
+            assert_eq!(error.kind(), kind, "{case}: {error}");
+        });
+        let content = plugin
+            .render(&render_steps(&[get("a"), get("b")]))
+            .result
+            .unwrap();
+        assert_eq!(
+            answers(&content),
+            [hex("before"), json!({ "ok": null })],
+            "{case}"
+        );
+        // The previous kept data stays
+        assert_eq!(
+            content["render_config"]["data"]["answers"],
+            json!(first),
+            "{case}"
+        );
+    }
+    // The time limit, with the CPU budget out of the way
+    let vault = Vault::with_limits(Limits {
+        fuel: u64::MAX,
+        update_time_limit: std::time::Duration::from_secs(2),
+        ..Limits::default()
+    });
+    let origin = vault.origin("crash");
+    let plugin = vault.plugin(&Vault::probe("local/store-probe", QUOTA), &origin);
+    update(&plugin, &[set("a", "before")]);
+    let kept = vault.own("local/store-probe", &origin).remove(1);
+    vault.contained(&[kept], || {
+        let report = plugin.update(&steps(&writes, Some("loop")));
+        let error = report.result.expect_err("the time limit");
+        assert_eq!(error.kind(), ErrorKind::TimeLimitExceeded, "{error}");
+    });
+    assert_eq!(
+        render(&plugin, &[get("a"), get("b")]),
+        [hex("before"), json!({ "ok": null })]
+    );
+}
+
+#[test]
+fn optional_off() {
+    let vault = Vault::new();
+    let origin = vault.origin("optional");
+    let package = repack(
+        &fixture("store-probe"),
+        &stored_manifest("local/store-probe", "0.1.0", false, QUOTA),
+    );
+    let plugin = vault.plugin(&package, &origin);
+    let checked = vault.world.runtime.check(&package).unwrap();
+    let turn = |on: bool| {
+        checked
+            .set_optional(&vault.world.grants, &origin, "storage", on)
+            .unwrap();
+    };
+    let store = vault.store_file("local/store-probe", &origin);
+    // Off from the start: nothing is created
+    let kept = vault.own("local/store-probe", &origin).remove(1);
+    vault.contained(std::slice::from_ref(&kept), || {
+        let found = update(
+            &plugin,
+            &[set("a", "1"), get("a"), list(""), json!({ "op": "usage" })],
+        );
+        for answer in &found {
+            assert_eq!(answer["error"], "not-granted", "{answer}");
+        }
+        assert!(!store.exists(), "the stand-in created a store");
+    });
+    // On, a write; off again, every call not granted and the store untouched
+    turn(true);
+    update(&plugin, &[set("a", "kept while off")]);
+    turn(false);
+    vault.contained(std::slice::from_ref(&kept), || {
+        let found = update(&plugin, &[get("a"), set("a", "overwritten")]);
+        assert_eq!(found[0]["error"], "not-granted");
+        assert_eq!(found[1]["error"], "not-granted");
+        assert_eq!(render(&plugin, &[get("a")])[0]["error"], "not-granted");
+    });
+    // On again: the data is there
+    turn(true);
+    assert_eq!(render(&plugin, &[get("a")]), [hex("kept while off")]);
+}
