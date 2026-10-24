@@ -96,7 +96,8 @@ You do not need Spec Kit to read or edit a spec: specs are plain Markdown.
 - A change that adds or touches a security rule comes with an automated test that fails when
   the rule is broken. The security test suite only grows: do not delete or weaken its tests.
 - Changes to the security core (plugin runtime, permission engine, connector engine and
-  network proxy, secrets vault, and the official connector catalog in `connectors/`) get
+  network proxy, plugin storage in `runtime/src/storage/`, secrets vault, and the official
+  connector catalog in `connectors/`) get
   line-by-line human review before merge, including code written with AI help.
   They always go through a pull request, even when a maintainer could push to `master`
   directly, and the pull request records who reviewed them.
