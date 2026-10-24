@@ -4,9 +4,13 @@
 //! well-behaved plugin must render normally right after it, on the same runtime. The cases of
 //! feature 001 come first (`specs/001-plugin-runtime/data-model.md`, Hostile-plugin case), then
 //! those of feature 002, one per rule of its FR-016 (`specs/002-plugin-permissions/data-model.md`,
-//! Hostile-plugin cases).
+//! Hostile-plugin cases), then the connector cases of feature 003 in the `connectors` module
+//! (`specs/003-plugin-connectors/data-model.md`, Hostile cases).
 
 mod common;
+// Feature 003: the connector cases, in runtime/tests/hostile/
+#[path = "hostile/connectors.rs"]
+mod connectors;
 
 use std::sync::{Arc, mpsc};
 use std::thread;
