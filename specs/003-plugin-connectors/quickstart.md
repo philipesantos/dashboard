@@ -46,7 +46,8 @@ marked `read (reviewed)`, the parameters and fixed values it sends, and an appro
 
 ## 3. Offline, render still shows the last data
 
-Turn the network off (or point the machine at no route), then:
+Turn the network off (or point the machine at no route; on Linux, `unshare -rn` runs one
+command without any network), then:
 
 ```sh
 rt update target/plugins/github-releases.wasm --config '{"owner":"rust-lang","repo":"rust"}'
@@ -132,6 +133,7 @@ Expected: the greeting, as in feature 002, and `contract: v1 (1.0.0)`.
 
 ```sh
 rt bench target/plugins/github-releases.wasm --iterations 100 \
+  --config '{"owner":"rust-lang","repo":"rust"}' \
   --kept-data plugins/examples/github-releases/bench-data.json
 ```
 
