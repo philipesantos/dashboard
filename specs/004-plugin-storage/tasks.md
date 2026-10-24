@@ -105,7 +105,7 @@ the widget writes in update and reads in render, across runs of the host and new
 ### Implementation for User Story 1
 
 - [X] T029 [US1] Add to `runtime/src/bin/runtime.rs` exactly as in `contracts/cli.md`: the `storage:` line of `permissions` and the approval digest for widgets that declare storage; `approve --expect` required whenever storage is declared, required or optional, and the `storage: quota …` line; the `storage:` line of `update`; update the usage text and the module comment
-- [ ] T030 [US1] Write `plugins/examples/update-counter/README.md` (`permissions`, `approve --expect`, `update --config`, `run`, and what render shows) and update `plugins/examples/README.md`: `update-counter` is the storage example; `github-releases` and `net-probe` are built from the frozen 1.1.0 contract to show that older minors keep running
+- [X] T030 [US1] Write `plugins/examples/update-counter/README.md` (`permissions`, `approve --expect`, `update --config`, `run`, and what render shows) and update `plugins/examples/README.md`: `update-counter` is the storage example; `github-releases` and `net-probe` are built from the frozen 1.1.0 contract to show that older minors keep running
 
 **Checkpoint**: quickstart step 2 works; User Story 1 is complete
 
