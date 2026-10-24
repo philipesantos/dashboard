@@ -488,8 +488,9 @@ record, R9), writes 100 values in a warm-up update, and runs each shape 100 time
 are differences of medians between runs that differ only in their storage calls, so no timing
 code enters the host: `storage_open_us` (a render with one `get` minus one with none),
 `storage_get_us` and `storage_set_us` (100 calls minus one, divided by 99; grant check included),
-`storage_commit_us` (an update of 100 sets that returns `ok` minus one that returns an error and
-rolls back), and `render_reading_100_us` (a whole render that reads 100 values). It also prints
+`storage_update_100_us` (an update of 100 sets that commits, minus the same update with no
+storage calls: the open, the writes and the commit; a commit cannot be measured against a
+rollback, which costs about the same, as the first runs showed), and `render_reading_100_us` (a whole render that reads 100 values). It also prints
 the file size of a store filled to its quota with values of 32 B, 1,000 B and 4 KiB. `bench.yml`
 runs it on the three systems; `performance.md` records the numbers, the entry cost and the file
 sizes measured, and confirms or changes R10 (spec SC-006).

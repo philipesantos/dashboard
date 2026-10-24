@@ -12,3 +12,7 @@ publish = false
 runtime = { path = "../runtime" }
 # Turns the generated WebAssembly text into the large packages compile_cost loads
 wat = "1"
+# The configurations of the store-probe fixture that storage_cost runs
+serde_json = "1"
+# The data directory and grant record of storage_cost's runs, removed when it ends
+tempfile = "3"
