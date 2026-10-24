@@ -1067,8 +1067,7 @@ fn turning_a_connector_off_in_another_process_drops_a_response_in_flight() {
     let server = Server::http();
     server.route(
         "/hello.json",
-        // Under the 5 s call limit, with room for `optional … off`, another debug process, to
-        // start and change the record while the response waits
+        // Under the 5 s call limit, with room to change the record while the response waits
         Reply::json(r#"{"late":true}"#).delay(std::time::Duration::from_secs(4)),
     );
     let connected = Connected::new(&server, &[("local/hello", 0, &["get"], false)]);
@@ -1105,7 +1104,16 @@ fn turning_a_connector_off_in_another_process_drops_a_response_in_flight() {
         );
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    connected.run(&["optional", &plugin, "local/hello", "off"]);
+    // Off in the record from this process, which is another process to the update's. Not with
+    // `runtime optional`: a debug build of it compiles the package first, which on Windows
+    // under load outlasted the service's delay
+    let package = std::fs::read(&connected.plugin).unwrap();
+    let manifest = runtime::package::manifest_section(&package)
+        .and_then(runtime::manifest::Manifest::parse)
+        .unwrap();
+    GrantStore::open(&connected.grants)
+        .set_connector(&manifest, &origin(&connected.plugin), "local/hello", false)
+        .unwrap();
     let output = updating.wait_with_output().unwrap();
     assert!(output.status.success());
     assert_eq!(server.received().len(), 1, "it was sent");
