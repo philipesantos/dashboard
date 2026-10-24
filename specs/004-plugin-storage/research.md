@@ -513,8 +513,10 @@ sizes measured, and confirms or changes R10 (spec SC-006).
   render time limit of 10 s, starts a render that reads, spins for about 3 s and reads again, and
   changes the grants 1 s after the start; the second read must answer `not-granted`. A run of the
   host taking longer than 1 s to reach its first read would fail the test, never pass it wrongly.
-- `killed-mid-update`: the test starts `runtime update` as a child process with the probe writing
-  more than SQLite's page cache holds and then spinning, waits for the journal, kills the process,
-  and checks that `render` and `storage show` read the state from before the update (R8).
+- `killed-mid-update`: the test starts a child process, the test binary itself running an
+  ignored half of the case (not `runtime update`, whose CPU budget would end the update before
+  the test could kill it), with the probe writing more than SQLite's page cache holds and then
+  spinning; it waits until the store file has grown by those pages, kills the process, and checks
+  that `render` and `storage show` read the state from before the update (R8).
 - `plugins/hostile/storage-file`: `wasm32-wasip2`, opens a path its configuration gives with
   `std::fs`; refused at load as `capability-refused`, listing `wasi:filesystem/*`.
