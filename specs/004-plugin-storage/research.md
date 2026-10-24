@@ -425,9 +425,14 @@ the user last saw smaller would run without asking; the maintainer chose the las
   `contract-too-old`, naming 1.2.0. Every plugin of the repository built for 1.0.0 and 1.1.0 keeps
   building from `wit/history/` and runs unchanged (spec SC-007).
 
-**Spike needed at the start of implementation**: a guest built against `stored-widget` that never
-calls a `storage` function: whether wit-component keeps the import (then its manifest must
-declare storage). The author guide says to declare what the world imports either way.
+**Spike** (T003, Linux, wit-bindgen 0.63 and wit-component 0.262, as `cargo xtask plugins`
+uses): a guest built with `generate!` on `wit/v1`, world `stored-widget`, whose `render` and
+`update` never call a `storage` function, encodes to a component that imports nothing, in a
+release and in a debug build; the same guest calling `storage::get` once imports
+`dashboard:widget/storage@1.2.0`. So the import follows the calls, not the world: a plugin that
+never calls storage need not declare it, and one that declares it without importing it loads, as
+any declared permission it does not use (spec edge case). The author guide says to declare
+storage when the plugin calls it.
 
 ## R14. CLI
 

@@ -82,5 +82,5 @@
   `configure` and `authorize`, so the white-box case reads the pragmas between them; a new case,
   `unwritable-store`, for a store that cannot be written (23 cases); the reverse of
   `same-id-other-origin` (same path, another id); exact sizes for `killed-mid-update`.
-  - Still open, as a spike at the start of implementation: whether a guest built against
-    `stored-widget` that never calls storage keeps the import (R13).
+  - Settled by the spike of T003: a guest built against `stored-widget` that never calls storage
+    does not import it (R13).
