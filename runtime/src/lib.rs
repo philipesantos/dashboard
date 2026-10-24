@@ -1,7 +1,8 @@
 //! Plugin runtime: loads plugins packaged as WebAssembly components and runs them in a sandbox,
 //! under limits set by the host, with exactly the capabilities their manifest declares and the
 //! user granted (`specs/002-plugin-permissions/`), and reach external services only through
-//! the connectors they declare, which the host runs (`specs/003-plugin-connectors/`).
+//! the connectors they declare, which the host runs (`specs/003-plugin-connectors/`), and keep
+//! data only in a store of their own (`specs/004-plugin-storage/`).
 
 // The test seam replaces DNS and the trusted roots; it must never reach a build anyone runs
 // (specs/003-plugin-connectors/research.md, R15).
@@ -23,6 +24,7 @@ mod network;
 pub mod package;
 mod permissions;
 pub mod requests;
+pub mod storage;
 mod text;
 
 use std::path::{Path, PathBuf};

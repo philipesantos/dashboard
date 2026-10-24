@@ -64,13 +64,17 @@ pub enum ErrorKind {
     /// A declared connector is not found, has another major version, or lacks an operation the
     /// widget declares.
     ConnectorUnavailable,
-    /// A widget declares a connector but is built for a contract older than 1.1.0.
+    /// A widget declares a connector or storage but is built for a contract older than the one
+    /// that added it (1.1.0 and 1.2.0).
     ContractTooOld,
-    /// A widget declares a connector but exports no `updater`, or `update` was asked of a
-    /// widget without one.
+    /// A widget declares a connector or storage but exports no `updater`, or `update` was asked
+    /// of a widget without one.
     MissingUpdater,
     /// An approval was given the digest of something other than what it would approve now.
     ApprovalChanged,
+    /// An update's storage could not be committed (busy, damaged, unavailable, the file cap, or
+    /// a run an earlier failure ended), or required storage is unavailable at load.
+    StorageFailed,
 }
 
 impl ErrorKind {
@@ -104,6 +108,7 @@ impl ErrorKind {
             ErrorKind::ContractTooOld => "contract-too-old",
             ErrorKind::MissingUpdater => "missing-updater",
             ErrorKind::ApprovalChanged => "approval-changed",
+            ErrorKind::StorageFailed => "storage-failed",
         }
     }
 }
@@ -228,6 +233,7 @@ mod tests {
             (ErrorKind::ContractTooOld, "contract-too-old"),
             (ErrorKind::MissingUpdater, "missing-updater"),
             (ErrorKind::ApprovalChanged, "approval-changed"),
+            (ErrorKind::StorageFailed, "storage-failed"),
         ];
         for (kind, name) in kinds {
             assert_eq!(kind.as_str(), name);
