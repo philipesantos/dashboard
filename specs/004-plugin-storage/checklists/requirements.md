@@ -74,5 +74,13 @@
   - Decided with the maintainer: the file cap is five times the approved quota plus 64 KiB, usage
     staying logical (R6, R10); an approval keeps the quota it showed, not the largest ever approved
     (spec clarification 4, R12).
+- `/speckit-analyze` on 2026-10-24, after `/speckit-tasks`: no constitution conflict; fixed in
+  tasks, research R4 and the data model: `storage-file` builds on `stored-widget` with `updater`,
+  since load step 5 (`missing-updater`, `contract-too-old`) runs before the import check that must
+  refuse it; `foreign-store` plants its files through a test-only function of the storage module,
+  keeping the Clippy rule without exceptions; the hardened setup is two production functions,
+  `configure` and `authorize`, so the white-box case reads the pragmas between them; a new case,
+  `unwritable-store`, for a store that cannot be written (23 cases); the reverse of
+  `same-id-other-origin` (same path, another id); exact sizes for `killed-mid-update`.
   - Still open, as a spike at the start of implementation: whether a guest built against
     `stored-widget` that never calls storage keeps the import (R13).

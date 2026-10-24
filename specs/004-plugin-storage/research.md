@@ -146,14 +146,17 @@ attached databases - max 0"); with nothing set, `ATTACH` succeeds, as the contro
 `PRAGMA`, `CREATE`, `length()` and `load_extension()` all fail as "not authorized". A name holding
 NUL, `../`, quotes and `'; DROP TABLE entries; --` round-trips byte for byte.
 
-**Testing each layer** (the white-box case `store-hardened`): the test calls the production setup
-function, with no switch that production code does not use, then reads each layer's state back
+**Testing each layer** (the white-box case `store-hardened`): the setup is two production
+functions that every open calls in sequence, `configure` (steps 1–8) and `authorize` (step 9). The
+test calls them as `open` does, with no switch that production code does not use, and reads each
+layer's state back
 (`SQLITE_LIMIT_ATTACHED`, `LENGTH` and `SQL_LENGTH` queried with `-1`; the `db_config` getters for
-`DEFENSIVE`, `ENABLE_TRIGGER`, `ENABLE_VIEW`, `TRUSTED_SCHEMA`; `PRAGMA max_page_count` and
-`secure_delete` read before the authorizer is installed) and makes one attempt per layer on the
+`DEFENSIVE`, `ENABLE_TRIGGER`, `ENABLE_VIEW`, `TRUSTED_SCHEMA`; `PRAGMA max_page_count`,
+`secure_delete` and `cache_size` read between `configure` and `authorize`) and makes one attempt per layer on the
 finished connection: `ATTACH`, `load_extension()`, any other function, `PRAGMA`, `CREATE`, a
 statement longer than the SQL limit, a value past the length limit, a write on the render
-connection. A store file with a trigger or a view planted in it is the case `foreign-store`.
+connection. A store file with a trigger or a view planted in it is the case `foreign-store`, whose files a
+test-only function of the storage module writes, so no test opens a connection itself (R15).
 
 **Rationale**: plugins never send SQL, so these layers protect against a mistake in the host's
 own statements and against a store file someone changed outside the host (triggers and views in

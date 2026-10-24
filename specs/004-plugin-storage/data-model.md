@@ -204,7 +204,7 @@ successful update, its grants when the case changes them).
 | Case | Rule | Expected outcome |
 | --- | --- | --- |
 | `other-plugin` | FR-002, FR-003 | B reads, lists and writes with A's names: only its own store; A's store unchanged |
-| `same-id-other-origin` | FR-002 | `not-granted`; approved, its own empty store |
+| `same-id-other-origin` | FR-002 | `not-granted`; approved, its own empty store; and a plugin with another id at an approved plugin's path: its own empty store once approved |
 | `name-injection` | FR-003, FR-004 | Names with `../`, `/`, `\`, NUL, quotes, line breaks, SQL, `ATTACH …`, `%` and `_` round-trip exactly; a prefix `a%` lists no `ab` |
 | `storage-file` | FR-002 | `capability-refused`, listing `wasi:filesystem/*` |
 | `quota-raised` | FR-008 | `needs-new-approval`, naming both quotas; the approval unchanged; and after a re-approval at a smaller quota, a version back at the earlier larger one is refused again |
@@ -214,6 +214,7 @@ successful update, its grants when the case changes them).
 | `many-entries` | FR-005, FR-007 | Thousands of empty values, then values of 32 B, 500 B, 1,000 B, 1,500 B and 4 KiB up to the quota: each counts the entry cost; `over-quota` comes before the file cap; the file stays under its cap |
 | `churn` | FR-007 | Rewrites and deletes over many updates, with the same value sizes: the file never passes its cap |
 | `file-cap-hit` | FR-007, FR-010 | With test limits, a write reaches the file cap: `failed(over-limit)`; later calls `failed(run-aborted)`; then the update (a) returns `ok` and (b) traps: in both, the store exactly as before and the update failed as `storage-failed` |
+| `unwritable-store` | FR-007, FR-010 | The store file or `storage/` made read-only after the store exists: the first write `failed(unavailable)`, the update `storage-failed`, the store as before |
 | `over-limits` | FR-007 | A name of exactly 256 B with a value of exactly 256 KiB is kept; one byte more of either, a prefix or `after` over 256 B, calls per run, bytes per update: each `invalid-name` or `refused(over-limit)` |
 | `write-in-render` | FR-009 | `refused(render-only-reads)`; store unchanged |
 | `crash-after-writes` | FR-010 | Writes, then a panic, out of fuel, out of memory, the time limit, an error, invalid or oversized output: store as before |

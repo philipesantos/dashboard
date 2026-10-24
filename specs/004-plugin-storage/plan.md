@@ -49,7 +49,7 @@ grants change only through the development CLI (Principle VII); everything under
 
 **Scale/Scope**: one storage module, contract 1.2.0 with 2 new worlds, grant record v3, 1 new
 error kind and 8 call rules, 3 new CLI subcommands (`storage list|show|clear`) and storage in
-`permissions`, `approve`, `optional`, `update` and `remove`, a `storage_cost` bench binary, 22 hostile cases (2 white
+`permissions`, `approve`, `optional`, `update` and `remove`, a `storage_cost` bench binary, 23 hostile cases (2 white
 box) and 8 other named tests, 1 example, 1 fixture and 1 hostile crate
 
 ## Constitution Check
@@ -68,7 +68,7 @@ Checked against constitution v2.3.1, after an independent review (findings in
 | V. Plugins stay inside the host frame | Pass (N/A) | No UI |
 | VI. Human confirmation for AI actions | Pass (N/A) | No AI |
 | VII. Trust decisions only in host dialogs | Pass | Approvals, quotas and turning storage on or off go through the development CLI, on local files and the development record; no plugin can read or change its grants, its quota or another store (R3, R12) |
-| VIII. Every security rule has a breaking test | Pass | 22 hostile cases, two of them white box (hardening layers read back and tried on the production setup, binding), and 8 other named tests, on three systems; mid-run grant changes are tested without a race, the commit-time check included (R17); the cases of features 001 to 003 keep running, 1.0.0 and 1.1.0 plugins on the 1.2.0 host |
+| VIII. Every security rule has a breaking test | Pass | 23 hostile cases, two of them white box (hardening layers read back and tried on the production setup, binding), and 8 other named tests, on three systems; mid-run grant changes are tested without a race, the commit-time check included (R17); the cases of features 001 to 003 keep running, 1.0.0 and 1.1.0 plugins on the 1.2.0 host |
 | IX. Human review of the security core | Pass | The storage module, the engine and record changes live in `runtime/`, the contract and schema in `wit/`; Clippy keeps `rusqlite` inside `runtime/src/storage/`; `rusqlite` and `libsqlite3-sys` are pinned exactly in `runtime/Cargo.toml`, so the bundled SQLite moves only there, and the PR template lists both under `Cargo.lock` and names the new fixture (R1, R15) |
 | Fixed decisions: host app, UI | Pass (N/A) | No change to the Tauri shell or the UI |
 | Fixed decisions: Wasmtime + Component Model (WIT) | Pass | Contract 1.2.0 is WIT; minors only add, checked by a test, and the frozen versions are pinned by hash (R13) |
@@ -142,7 +142,7 @@ runtime/                        # Security core
     ├── manifest_schema.rs      # + quota_bytes agreement
     ├── cli.rs                  # + storage commands and output
     ├── hostile.rs              # + mod storage
-    └── hostile/storage.rs      # The 22 cases of FR-017
+    └── hostile/storage.rs      # The 23 cases of FR-017
 
 bench/src/bin/storage_cost.rs   # New: storage call costs and file sizes (R16)
 
