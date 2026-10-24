@@ -5,11 +5,6 @@ description = "Example plugin for contract 1.1.0: the latest releases of a GitHu
 edition.workspace = true
 publish.workspace = true
 
-# Packed without a manifest until the runtime's manifest parser learns `connectors`
-# (specs/003-plugin-connectors/tasks.md, T017)
-[package.metadata.dashboard]
-manifest = false
-
 [lib]
 crate-type = ["cdylib"]
 

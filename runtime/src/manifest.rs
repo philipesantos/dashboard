@@ -27,6 +27,11 @@ const MAX_PERMISSIONS: usize = 32;
 const MAX_PERMISSION_NAME_CHARS: usize = 32;
 const MAX_LOGIN_PROVIDERS: usize = 8;
 const LOGIN_PROVIDERS: &[&str] = &["github"];
+const MAX_CONNECTORS: usize = 16;
+const MAX_CONNECTOR_ID_CHARS: usize = 160;
+const MAX_CONNECTOR_OPERATIONS: usize = 32;
+const MAX_OPERATION_NAME_CHARS: usize = 64;
+const CATALOG_PREFIX: &str = "catalog/";
 
 /// Repository ids: the only host plugins are installed from, for now (research R3).
 const REPOSITORY_PREFIX: &str = "github.com/";
@@ -184,6 +189,19 @@ struct RawManifest {
     author: String,
     permissions: Vec<Object<RawPermission>>,
     login_providers: Vec<String>,
+    /// Absent means none (feature 003). An array when present: `null` is not accepted.
+    #[serde(default, deserialize_with = "present")]
+    connectors: Option<Vec<Object<RawConnectorRequest>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawConnectorRequest {
+    id: String,
+    /// Read wide, so a value over 65535 is refused by the check, naming the limit.
+    major: u64,
+    operations: Vec<String>,
+    required: bool,
 }
 
 #[derive(Deserialize)]
@@ -221,6 +239,13 @@ fn present_string<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<S
     String::deserialize(deserializer).map(Some)
 }
 
+/// An optional field that, when present, is never `null`.
+fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
+}
+
 impl RawManifest {
     fn check(self) -> Result<Manifest, RuntimeError> {
         if let Some(schema) = &self.schema
@@ -242,6 +267,7 @@ impl RawManifest {
         check_author(&self.author)?;
         let permissions = check_permissions(self.permissions)?;
         check_login_providers(&self.login_providers)?;
+        let connectors = check_connectors(self.connectors.unwrap_or_default())?;
 
         // Only after every rule of the schema: an unknown permission is a host's limit, not a
         // malformed manifest (FR-008).
@@ -264,7 +290,7 @@ impl RawManifest {
             author: self.author,
             permissions,
             login_providers: self.login_providers,
-            connectors: Vec::new(),
+            connectors,
         })
     }
 }
@@ -344,6 +370,74 @@ fn check_permissions(
     Ok(permissions)
 }
 
+fn check_connectors(
+    raw: Vec<Object<RawConnectorRequest>>,
+) -> Result<Vec<ConnectorRequest>, RuntimeError> {
+    if raw.len() > MAX_CONNECTORS {
+        return Err(field(
+            "connectors",
+            format!("more than {MAX_CONNECTORS} entries"),
+        ));
+    }
+    let mut connectors: Vec<ConnectorRequest> = Vec::new();
+    for (index, Object(entry)) in raw.into_iter().enumerate() {
+        let at = |name: &str| format!("connectors[{index}].{name}");
+        let id_form = entry
+            .id
+            .strip_prefix(CATALOG_PREFIX)
+            .or_else(|| entry.id.strip_prefix(LOCAL_PREFIX))
+            .is_some_and(is_local_name)
+            || is_repository_id(&entry.id);
+        if entry.id.chars().count() > MAX_CONNECTOR_ID_CHARS || !id_form {
+            return Err(field(
+                &at("id"),
+                format!(
+                    "`{}` is not {CATALOG_PREFIX}<name>, {LOCAL_PREFIX}<name> or {REPOSITORY_PREFIX}<owner>/<repository>, in lowercase",
+                    entry.id
+                ),
+            ));
+        }
+        let major = u16::try_from(entry.major)
+            .map_err(|_| field(&at("major"), format!("{} is over 65535", entry.major)))?;
+        if !(1..=MAX_CONNECTOR_OPERATIONS).contains(&entry.operations.len()) {
+            return Err(field(
+                &at("operations"),
+                format!("must have 1 to {MAX_CONNECTOR_OPERATIONS} entries"),
+            ));
+        }
+        for (position, operation) in entry.operations.iter().enumerate() {
+            if !is_operation_name(operation) {
+                return Err(field(
+                    &format!("connectors[{index}].operations[{position}]"),
+                    format!(
+                        "`{operation}` must be a lowercase letter, then up to {} lowercase letters, digits or hyphens",
+                        MAX_OPERATION_NAME_CHARS - 1
+                    ),
+                ));
+            }
+            if entry.operations[..position].contains(operation) {
+                return Err(field(
+                    &at("operations"),
+                    format!("`{operation}` is listed twice"),
+                ));
+            }
+        }
+        if connectors.iter().any(|kept| kept.id == entry.id) {
+            return Err(field(
+                "connectors",
+                format!("`{}` is declared twice", entry.id),
+            ));
+        }
+        connectors.push(ConnectorRequest {
+            id: entry.id,
+            major,
+            operations: entry.operations,
+            required: entry.required,
+        });
+    }
+    Ok(connectors)
+}
+
 fn check_login_providers(providers: &[String]) -> Result<(), RuntimeError> {
     if providers.len() > MAX_LOGIN_PROVIDERS {
         return Err(field(
@@ -369,6 +463,14 @@ fn check_login_providers(providers: &[String]) -> Result<(), RuntimeError> {
         }
     }
     Ok(())
+}
+
+/// `[a-z][a-z0-9-]{0,63}`
+fn is_operation_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && name.len() <= MAX_OPERATION_NAME_CHARS
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// `[a-z][a-z0-9-]{0,31}`
