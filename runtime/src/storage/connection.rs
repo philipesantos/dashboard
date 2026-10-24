@@ -922,6 +922,9 @@ mod tests {
         engine_check().expect("SQLite 3.54.0 with defensive mode");
     }
 
+    /// Unix only: `:` cannot appear in a Windows file name, so no data directory there can be
+    /// read as a `file:` URI.
+    #[cfg(unix)]
     #[test]
     fn a_file_named_like_a_uri_is_a_plain_file() {
         let dir = TempDir::new().unwrap();
