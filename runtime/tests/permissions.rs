@@ -578,3 +578,218 @@ mod connected {
         );
     }
 }
+
+// Feature 004: storage as a permission (`specs/004-plugin-storage/data-model.md`, Combinations).
+// One test per row of the table; the hostile cases of `runtime/tests/hostile/storage.rs` cover
+// several rows in depth, as each test says.
+mod storage {
+    use std::sync::Arc;
+
+    use runtime::grants::GrantStore;
+    use runtime::manifest::PluginId;
+    use runtime::{ErrorKind, Limits, Runtime, RuntimeOptions};
+    use serde_json::{Value, json};
+    use tempfile::TempDir;
+
+    use crate::common::{
+        TEST_ORIGIN, World, fixture, manifest, render_steps, repack, steps, stored_manifest,
+    };
+
+    const ID: &str = "local/store-probe";
+
+    fn probe(required: bool, quota: u64) -> Vec<u8> {
+        repack(
+            &fixture("store-probe"),
+            &stored_manifest(ID, "0.1.0", required, quota),
+        )
+    }
+
+    fn first_answer(content: &Value) -> Value {
+        content["answers"][0].clone()
+    }
+
+    fn set_step() -> Value {
+        json!({ "op": "set", "name": "a", "value": "b" })
+    }
+
+    fn get_step() -> Value {
+        json!({ "op": "get", "name": "a" })
+    }
+
+    /// Row 1, and the test `storage_needs_its_declaration`: a component that imports storage
+    /// without its manifest declaring it.
+    #[test]
+    fn storage_needs_its_declaration() {
+        let world = World::production(false);
+        let package = repack(&fixture("store-probe"), &manifest(ID, "0.1.0", &[]));
+        let error = world
+            .runtime
+            .check(&package)
+            .err()
+            .expect("an undeclared import is refused");
+        assert_eq!(error.kind(), ErrorKind::NotDeclared, "{error}");
+        assert_eq!(error.names(), ["storage"]);
+    }
+
+    /// Row 2, and the test `required_storage_needs_approval`.
+    #[test]
+    fn required_storage_needs_approval() {
+        let world = World::production(false);
+        let error = world
+            .try_load_at(&probe(true, 4096), TEST_ORIGIN)
+            .err()
+            .expect("not approved");
+        assert_eq!(error.kind(), ErrorKind::NotGranted, "{error}");
+        assert_eq!(error.names(), ["storage"]);
+    }
+
+    /// Rows 3 and 4: approved and required, render reads and update writes its own store
+    /// (the hostile case `write-in-render` covers a write from render in depth).
+    #[test]
+    fn approved_storage_reads_in_render_and_writes_in_update() {
+        let world = World::production(false);
+        let plugin = world.approve_and_load(&probe(true, 4096));
+        let report = plugin.update(&steps(&[set_step()], None));
+        assert_eq!(first_answer(&report.result.unwrap()), json!({ "ok": null }));
+        let content = plugin
+            .render(&render_steps(&[get_step(), set_step()]))
+            .result
+            .unwrap();
+        assert_eq!(content["answers"][0], json!({ "ok": { "hex": "62" } }));
+        assert_eq!(content["answers"][1]["error"], "refused:render-only-reads");
+    }
+
+    /// Row 5: approved at a smaller quota than declared (the hostile case `quota-raised`).
+    #[test]
+    fn a_quota_above_the_approval_needs_a_new_one() {
+        let world = World::production(false);
+        world.approve(&probe(true, 4096));
+        let larger = repack(
+            &fixture("store-probe"),
+            &stored_manifest(ID, "0.2.0", true, 8192),
+        );
+        let error = world
+            .try_load_at(&larger, TEST_ORIGIN)
+            .err()
+            .expect("refused");
+        assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+    }
+
+    /// Row 6: optional and off, the stand-in (the hostile case `optional-off`).
+    #[test]
+    fn optional_storage_that_is_off_answers_not_granted() {
+        let world = World::production(false);
+        let plugin = world.approve_and_load(&probe(false, 4096));
+        let report = plugin.update(&steps(&[set_step(), get_step()], None));
+        let content = report.result.unwrap();
+        assert_eq!(content["answers"][0]["error"], "not-granted");
+        assert_eq!(content["answers"][1]["error"], "not-granted");
+        assert!(
+            !world.data.path().join("storage").exists(),
+            "nothing was created"
+        );
+    }
+
+    /// Row 7, and the test `turning_storage_on_checks_the_quota`.
+    #[test]
+    fn turning_storage_on_checks_the_quota() {
+        let world = World::production(false);
+        world.approve(&probe(false, 4096));
+        let larger = repack(
+            &fixture("store-probe"),
+            &stored_manifest(ID, "0.2.0", false, 8192),
+        );
+        let checked = world.runtime.check(&larger).unwrap();
+        let error = checked
+            .set_optional(&world.grants, TEST_ORIGIN, "storage", true)
+            .expect_err("above the approved quota");
+        assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+        assert!(error.to_string().contains("4096") && error.to_string().contains("8192"));
+    }
+
+    /// Row 8: optional and on, as required.
+    #[test]
+    fn optional_storage_that_is_on_works_as_required() {
+        let world = World::production(false);
+        let package = probe(false, 4096);
+        world.approve(&package);
+        world
+            .runtime
+            .check(&package)
+            .unwrap()
+            .set_optional(&world.grants, TEST_ORIGIN, "storage", true)
+            .unwrap();
+        let plugin = world.load(&package);
+        let report = plugin.update(&steps(&[set_step()], None));
+        assert_eq!(first_answer(&report.result.unwrap()), json!({ "ok": null }));
+        let content = plugin.render(&render_steps(&[get_step()])).result.unwrap();
+        assert_eq!(first_answer(&content), json!({ "ok": { "hex": "62" } }));
+    }
+
+    /// Row 9: approved from another origin (the hostile case `same-id-other-origin`).
+    #[test]
+    fn an_approval_from_another_origin_grants_nothing() {
+        let world = World::production(false);
+        let package = probe(true, 4096);
+        world.approve_at(&package, "/elsewhere/store-probe.wasm");
+        let error = world
+            .try_load_at(&package, TEST_ORIGIN)
+            .err()
+            .expect("refused");
+        assert_eq!(error.kind(), ErrorKind::NotGranted, "{error}");
+    }
+
+    /// The test `approval_records_the_quota_shown`: re-approving at a smaller quota lowers the
+    /// approved quota.
+    #[test]
+    fn approval_records_the_quota_shown() {
+        let world = World::production(false);
+        world.approve(&probe(true, 8192));
+        world.approve(&repack(
+            &fixture("store-probe"),
+            &stored_manifest(ID, "0.2.0", true, 4096),
+        ));
+        let entry = world
+            .grants
+            .entry(&PluginId::parse(ID).unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(entry.storage_quota_bytes, Some(4096));
+    }
+
+    /// A later host whose cap is below a quota already approved: the plugin is refused, naming
+    /// the field and both bounds, and its data is kept (spec edge case).
+    #[test]
+    fn a_host_cap_below_an_approved_quota_refuses_the_plugin_and_keeps_its_data() {
+        let data = TempDir::new().unwrap();
+        let grants = Arc::new(GrantStore::open(data.path().join("grants.json")));
+        let package = probe(true, 1024 * 1024);
+        let runtime = Runtime::new(Limits::default(), RuntimeOptions::new(data.path())).unwrap();
+        crate::common::approve(&grants, &package, TEST_ORIGIN);
+        let plugin = runtime
+            .load(&package, TEST_ORIGIN, Arc::clone(&grants))
+            .unwrap();
+        assert!(plugin.update(&steps(&[set_step()], None)).result.is_ok());
+        let lower = Limits {
+            max_storage_quota_bytes: 512 * 1024,
+            ..Limits::default()
+        };
+        let runtime = Runtime::new(lower, RuntimeOptions::new(data.path())).unwrap();
+        let error = runtime
+            .load(&package, TEST_ORIGIN, Arc::clone(&grants))
+            .err()
+            .expect("over this host's cap");
+        assert_eq!(error.kind(), ErrorKind::InvalidManifest, "{error}");
+        let detail = error.to_string();
+        assert!(detail.contains("permissions[0].quota_bytes"), "{detail}");
+        assert!(
+            detail.contains("64") && detail.contains("524288"),
+            "{detail}"
+        );
+        // Back on a host with the default cap, the data is there
+        let runtime = Runtime::new(Limits::default(), RuntimeOptions::new(data.path())).unwrap();
+        let plugin = runtime.load(&package, TEST_ORIGIN, grants).unwrap();
+        let content = plugin.render(&render_steps(&[get_step()])).result.unwrap();
+        assert_eq!(first_answer(&content), json!({ "ok": { "hex": "62" } }));
+    }
+}
