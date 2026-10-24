@@ -17,18 +17,20 @@ use crate::manifest::Manifest;
 pub enum Contract {
     /// `dashboard:widget@0.1.0` (`wit/v0`): only `log`, which cannot answer "not granted".
     V0,
-    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.1.0: every
+    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.2.0: every
     /// capability can answer "not granted".
     V1,
 }
 
 /// The newest minor version of contract v1 this host runs; plugins built for any v1 minor up to
 /// it run, and newer ones are refused (FR-016).
-pub const V1_VERSION: semver::Version = semver::Version::new(1, 1, 0);
+pub const V1_VERSION: semver::Version = semver::Version::new(1, 2, 0);
 /// The only version of contract v0.
 const V0_VERSION: semver::Version = semver::Version::new(0, 1, 0);
 /// The minor version that brought connectors and `updater`.
 const CONNECTORS_SINCE: semver::Version = semver::Version::new(1, 1, 0);
+/// The minor version that brought `storage` (`specs/004-plugin-storage/research.md`, R13).
+const STORAGE_SINCE: semver::Version = semver::Version::new(1, 2, 0);
 
 /// The interface names of the contract, without their version.
 const RENDERER: &str = "dashboard:widget/renderer";
@@ -52,7 +54,7 @@ impl Contract {
     pub fn renderer(self) -> &'static str {
         match self {
             Contract::V0 => "dashboard:widget/renderer@0.1.0",
-            Contract::V1 => "dashboard:widget/renderer@1.1.0",
+            Contract::V1 => "dashboard:widget/renderer@1.2.0",
         }
     }
 
@@ -89,7 +91,7 @@ impl ContractVersion {
 
     /// Whether this version has `storage`.
     pub fn has_storage(&self) -> bool {
-        false
+        self.contract == Contract::V1 && self.version >= STORAGE_SINCE
     }
 }
 
@@ -341,6 +343,30 @@ pub(crate) fn check_component(
                 ErrorKind::MissingUpdater,
                 ids,
                 Some("a widget that declares connectors must export updater, where it calls them"),
+            ));
+        }
+    }
+    // Storage arrived with 1.2.0, and is written only in `update`
+    // (specs/004-plugin-storage/spec.md, FR-012, FR-015)
+    if manifest.storage().is_some() {
+        let names = || vec!["storage".to_owned()];
+        if !contract.has_storage() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::ContractTooOld,
+                names(),
+                Some(&format!(
+                    "storage needs contract {STORAGE_SINCE} or later, and this plugin is built for {}",
+                    contract.version
+                )),
+            ));
+        }
+        if interfaces.updater().is_none() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::MissingUpdater,
+                names(),
+                Some(
+                    "a widget that declares storage must export updater: storage is written only in an update",
+                ),
             ));
         }
     }
@@ -613,7 +639,7 @@ mod tests {
     fn no_renderer_of_a_known_version_is_a_contract_mismatch() {
         for renderer in [
             None,
-            Some("dashboard:widget/renderer@1.2.0"),
+            Some("dashboard:widget/renderer@1.3.0"),
             Some("dashboard:widget/renderer@2.0.0"),
             Some("dashboard:widget/renderer@0.2.0"),
             Some("dashboard:other/renderer@1.0.0"),
@@ -873,7 +899,7 @@ mod tests {
     #[test]
     fn each_contract_has_its_renderer() {
         assert_eq!(Contract::V0.renderer(), "dashboard:widget/renderer@0.1.0");
-        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.1.0");
+        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.2.0");
         assert_eq!(
             Contract::from_renderer("dashboard:widget/renderer@0.1.0"),
             Some(Contract::V0)
@@ -1139,7 +1165,6 @@ mod tests {
 
     // Feature 004: contract 1.2.0 and storage (`specs/004-plugin-storage/data-model.md`)
 
-    const LOG_V1_2: &str = "dashboard:widget/log@1.2.0";
     const STORAGE_V1_2: &str = "dashboard:widget/storage@1.2.0";
     const RENDERER_V1_2: &str = "dashboard:widget/renderer@1.2.0";
     const UPDATER_V1_2: &str = "dashboard:widget/updater@1.2.0";
@@ -1160,7 +1185,7 @@ mod tests {
     #[test]
     fn a_v1_plugin_of_minor_2_runs_with_storage() {
         let checked = check_component(
-            &component(&[LOG_V1_2, STORAGE_V1_2], &[RENDERER_V1_2, UPDATER_V1_2]),
+            &component(&[STORAGE_V1_2], &[RENDERER_V1_2, UPDATER_V1_2]),
             &stored_manifest(),
         )
         .unwrap();
