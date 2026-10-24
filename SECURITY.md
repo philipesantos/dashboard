@@ -16,7 +16,11 @@ Anything that breaks a rule of the [project constitution](.specify/memory/consti
 in scope, especially:
 
 - plugin code running outside WebAssembly, or using a capability the user did not grant
-- plugin network access that bypasses the host proxy or its domain allowlist
+- plugin network access outside the operations of the connectors it declares: a request the
+  host did not check, a destination a connector does not declare, a private or local address
+  reached, or traffic that bypasses the host's network proxy
+- a connector outside the official catalog that claims a catalog service or its reserved
+  domains
 - a plugin reading passwords, tokens or AI provider keys
 - a plugin drawing outside its frame or imitating a host dialog
 - AI output triggering an action without confirmation in a host dialog

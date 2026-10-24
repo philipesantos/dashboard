@@ -5,8 +5,11 @@ and writes one log message. Start a new plugin from a copy of this folder.
 
 ## Contract v1
 
-The contract is [`wit/v1/widget.wit`](../../../wit/v1/widget.wit), the only copy, shared by the
-host and every v1 plugin.
+This example builds from [`wit/history/1.0.0/widget.wit`](../../../wit/history/1.0.0/widget.wit),
+the published contract 1.0.0, frozen: the host runs plugins built for any v1 minor up to its
+own, so this one keeps running as the contract grows. A new plugin builds from
+[`wit/v1/widget.wit`](../../../wit/v1/widget.wit), the current minor; the
+[github-releases](../github-releases/README.md) example shows what 1.1.0 adds.
 
 - The plugin exports `render(config: string) -> result<string, string>`. It receives the
   configuration as JSON text and returns the widget content as JSON text. An `err` reaches the

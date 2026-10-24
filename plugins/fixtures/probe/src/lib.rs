@@ -1,7 +1,7 @@
 //! Test fixture: a contract v1 plugin that calls `log` once and puts what it answered in its
 //! output, so a test sees whether the real capability or the stand-in was linked.
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.0.0", world: "widget" });
 
 use dashboard::widget::log::{Level, LogError, write};
 use exports::dashboard::widget::renderer::Guest;

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["app/src-tauri", "runtime", "xtask"]
+members = ["app/src-tauri", "bench", "runtime", "xtask"]
 # Guest crates build for WebAssembly in their own workspace (cargo xtask plugins)
 exclude = ["plugins"]
 

@@ -1,7 +1,7 @@
 //! Test fixture: a contract v1 plugin that never calls `log`, so its component imports nothing
 //! (wit-component drops imports a plugin does not use).
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.0.0", world: "widget" });
 
 use exports::dashboard::widget::renderer::Guest;
 

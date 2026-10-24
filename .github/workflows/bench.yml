@@ -3,8 +3,10 @@ name: Bench
 # Measures the plugin runtime on all three systems, with the release profile (User Story 4).
 # Run by hand: shared CI runners are too noisy for benchmarks to gate every change, and the
 # release build with LTO would add minutes to every CI run. The results go to the summary of
-# each job; specs/001-plugin-runtime/performance.md records the load and render times, and
-# specs/002-plugin-permissions/performance.md the permission checks (checks_us, relink_us).
+# each job; specs/001-plugin-runtime/performance.md records the load and render times,
+# specs/002-plugin-permissions/performance.md the permission checks (checks_us, relink_us), and
+# specs/003-plugin-connectors/performance.md the connector checks and the render of a connected
+# widget from kept data (render_with_data_us). Nothing reaches the network.
 #
 # Two ways to run it: from the Actions tab once the workflow is on master, or by adding the
 # "bench" label to a pull request, which also works before the workflow reaches master.
@@ -55,18 +57,38 @@ jobs:
         env:
           ITERATIONS: ${{ inputs.iterations || '1000' }}
           GRANTS: ${{ runner.temp }}/bench-grants.json
+          DATA: ${{ runner.temp }}/bench-data
         run: |
           cargo run -p runtime --release --locked -- \
-            approve target/plugins/hello-widget.wasm --grants "$GRANTS"
+            approve target/plugins/hello-widget.wasm --grants "$GRANTS" --data "$DATA"
           cargo run -p runtime --release --locked -- \
-            bench target/plugins/hello-widget.wasm --iterations "$ITERATIONS" --grants "$GRANTS" \
+            bench target/plugins/hello-widget.wasm --iterations "$ITERATIONS" --grants "$GRANTS" --data "$DATA" \
             | tee bench.txt
+
+      # A connected widget: approved with the digest permissions prints, then rendered from kept
+      # data held in memory, so no update runs and nothing reaches the network
+      - name: Load and render github-releases from kept data
+        env:
+          ITERATIONS: ${{ inputs.iterations || '1000' }}
+          GRANTS: ${{ runner.temp }}/bench-grants.json
+          DATA: ${{ runner.temp }}/bench-data
+          CONFIG: '{"owner":"rust-lang","repo":"rust"}'
+        run: |
+          plugin=target/plugins/github-releases.wasm
+          digest=$(cargo run -q -p runtime --release --locked -- \
+            permissions "$plugin" --grants "$GRANTS" --data "$DATA" | sed -n 's/^approval digest: //p')
+          cargo run -p runtime --release --locked -- \
+            approve "$plugin" --expect "$digest" --grants "$GRANTS" --data "$DATA"
+          cargo run -p runtime --release --locked -- \
+            bench "$plugin" --iterations "$ITERATIONS" --config "$CONFIG" \
+            --kept-data plugins/examples/github-releases/bench-data.json --grants "$GRANTS" --data "$DATA" \
+            | tee connected.txt
 
       # Compiling runs outside every per-call limit (docs/threat-model.md)
       - name: Load packages near the size cap
         run: |
           for shape in many huge; do
-            cargo run -p runtime --release --locked --example compile_cost -- "$shape" | tee -a compile.txt
+            cargo run -p dashboard-bench --release --locked --bin compile_cost -- "$shape" | tee -a compile.txt
           done
 
       - name: Summary
@@ -78,8 +100,13 @@ jobs:
           {
             echo "### $OS at ${COMMIT::7}, $cores cores"
             echo '```text'
-            cat bench.txt compile.txt
+            echo 'hello-widget:'
+            cat bench.txt
+            echo 'github-releases, rendered from kept data:'
+            cat connected.txt compile.txt
             echo '```'
-            echo 'Recorded in specs/001-plugin-runtime/performance.md (load, render, compile) and'
-            echo 'specs/002-plugin-permissions/performance.md (checks_us, relink_us).'
+            echo 'Recorded in specs/001-plugin-runtime/performance.md (load, render, compile),'
+            echo 'specs/002-plugin-permissions/performance.md (checks_us, relink_us) and'
+            echo 'specs/003-plugin-connectors/performance.md (checks_us and render_with_data_us of'
+            echo 'github-releases).'
           } >> "$GITHUB_STEP_SUMMARY"

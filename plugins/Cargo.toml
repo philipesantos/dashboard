@@ -6,6 +6,7 @@ resolver = "3"
 # Listed one by one: a glob such as "examples/*" would also match examples/README.md.
 members = [
     "examples/hello-widget",
+    "examples/github-releases",
     "hostile/infinite-loop",
     "hostile/huge-alloc",
     "hostile/deep-recursion",
@@ -20,6 +21,7 @@ members = [
     "fixtures/hello-v0",
     "fixtures/probe",
     "fixtures/quiet",
+    "fixtures/net-probe",
 ]
 
 [workspace.package]

@@ -32,7 +32,7 @@ restart it and pass logs back.
 Compiling is the exception to the limits above. It happens when a plugin loads, before any
 call, so no CPU budget, time limit or memory cap applies; only the 10 MiB package cap does, and
 compilation uses every core. A package near that cap took 0.33–0.49 s and up to about 590 MB on
-the reference machine (`runtime/examples/compile_cost.rs`).
+the reference machine (`bench/src/bin/compile_cost.rs`).
 
 ## Decision
 

@@ -12,7 +12,8 @@ use runtime::{Contract, ErrorKind, Limits, LogLevel, LogMessage, Plugin, Runtime
 use serde_json::json;
 
 fn runtime() -> Runtime {
-    Runtime::new(Limits::default()).expect("the runtime starts with the default limits")
+    Runtime::new(Limits::default(), common::options())
+        .expect("the runtime starts with the default limits")
 }
 
 /// Loads `bytes` with its required permissions approved.
@@ -36,6 +37,27 @@ fn load_error(runtime: &Runtime, bytes: &[u8]) -> (ErrorKind, String) {
 fn packed(wat: &str) -> Vec<u8> {
     let component = wat::parse_str(wat).unwrap();
     pack(&component, manifest("local/test", "0.1.0", &[]).as_bytes()).unwrap()
+}
+
+/// SC-006, research R11: a plugin built from the frozen 1.0.0 contract loads, links and renders
+/// exactly as before on the 1.1.0 host, its imports matched by compatible version and its
+/// renderer found by the name it exports.
+#[test]
+fn a_contract_1_0_0_plugin_runs_on_the_1_1_0_host() {
+    let runtime = runtime();
+    let plugin = load(&runtime, &fixture("hello-widget"));
+    assert_eq!(plugin.contract(), Contract::V1);
+    assert_eq!(
+        plugin.contract_version().version,
+        semver::Version::new(1, 0, 0)
+    );
+    assert_eq!(plugin.contract_version().display(), "v1 (1.0.0)");
+    let report = plugin.render(r#"{"name":"Ada"}"#);
+    assert_eq!(
+        report.result.expect("hello-widget renders"),
+        json!({"title": "Hello", "text": "Hello, Ada!"})
+    );
+    assert_eq!(report.logs.len(), 1);
 }
 
 #[test]
@@ -148,10 +170,13 @@ fn a_core_module_is_not_a_component() {
 #[test]
 fn a_package_over_the_size_limit_is_refused_before_anything_else() {
     let bytes = fixture("hello-widget");
-    let runtime = Runtime::new(Limits {
-        max_package_bytes: bytes.len() - 1,
-        ..Limits::default()
-    })
+    let runtime = Runtime::new(
+        Limits {
+            max_package_bytes: bytes.len() - 1,
+            ..Limits::default()
+        },
+        common::options(),
+    )
     .unwrap();
     assert_eq!(load_error(&runtime, &bytes).0, ErrorKind::InvalidPackage);
 }
@@ -188,4 +213,87 @@ fn a_component_using_a_turned_off_proposal_is_refused() {
         load_error(&runtime(), &component).0,
         ErrorKind::InvalidPackage
     );
+}
+
+// Feature 003: contract 1.1.0 and older minors (FR-016), and local connectors (FR-018)
+
+/// A WAT component exporting `exports`, packed with `manifest`.
+fn component_with(exports: &[&str], manifest: &str) -> Vec<u8> {
+    let mut wat = String::from("(component");
+    for (index, export) in exports.iter().enumerate() {
+        wat.push_str(&format!(
+            " (instance $e{index}) (export \"{export}\" (instance $e{index}))"
+        ));
+    }
+    wat.push(')');
+    pack(&wat::parse_str(&wat).unwrap(), manifest.as_bytes()).unwrap()
+}
+
+#[test]
+fn a_component_built_for_a_newer_minor_is_a_contract_mismatch_naming_both_versions() {
+    let package = component_with(
+        &["dashboard:widget/renderer@1.2.0"],
+        &manifest("local/newer", "0.1.0", &[]),
+    );
+    let (kind, detail) = load_error(&runtime(), &package);
+    assert_eq!(kind, ErrorKind::ContractMismatch);
+    assert!(
+        detail.contains("1.2.0") && detail.contains("1.1.0"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_1_0_0_component_that_declares_a_connector_is_contract_too_old() {
+    let package = component_with(
+        &["dashboard:widget/renderer@1.0.0"],
+        &common::connected_manifest(
+            "local/old",
+            &[("catalog/github", 1, &["list-releases"], true)],
+        ),
+    );
+    let (kind, detail) = load_error(&runtime(), &package);
+    assert_eq!(kind, ErrorKind::ContractTooOld);
+    assert!(detail.contains("1.1.0"), "{detail}");
+}
+
+#[test]
+fn a_local_connector_on_this_machine_runs_only_in_development_mode() {
+    use common::servers::{Reply, Server};
+
+    let server = Server::http();
+    server.route("/", Reply::json(r#"{"here":true}"#));
+    let connector = json!({
+        "connector_version": 1, "id": "local/here", "version": "0.1.0", "author": "You",
+        "description": "This machine", "destinations": { "api": server.http_origin() },
+        "operations": { "get": { "kind": "read", "method": "GET", "destination": "api",
+            "path": "/", "response": { "format": "json" } } }
+    });
+    let package = common::probe(&common::connected_manifest(
+        "local/net-probe",
+        &[("local/here", 0, &["get"], true)],
+    ));
+
+    let development = common::World::production(true);
+    development.write_connector("here", &connector);
+    let plugin = development.approve_and_load(&package);
+    let report = plugin.update(&common::calls(&[("local/here", "get", json!([]))]));
+    assert_eq!(common::answers(&report.result.unwrap())[0]["status"], 200);
+
+    let production = common::World::production(false);
+    production.write_connector("here", &connector);
+    let error = production.runtime.check(&package).err().expect("refused");
+    assert_eq!(error.kind(), ErrorKind::DestinationNotVerified, "{error}");
+
+    // Even in development: the local network and the catalog's hosts
+    for (destination, kind) in [
+        ("http://192.168.1.10:8765", ErrorKind::InvalidConnector),
+        ("https://api.github.com", ErrorKind::DestinationReserved),
+    ] {
+        let mut other = connector.clone();
+        other["destinations"]["api"] = json!(destination);
+        development.write_connector("here", &other);
+        let error = development.runtime.check(&package).err().expect("refused");
+        assert_eq!(error.kind(), kind, "{destination}: {error}");
+    }
 }

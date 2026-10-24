@@ -9,3 +9,9 @@ a plugin from [`examples/hello-widget`](../examples/hello-widget) instead.
   packs it with its own.
 - `quiet`: a contract v1 plugin that never calls `log`, so its component imports nothing. Built
   without a manifest; each test packs it with its own.
+- `net-probe`: a contract 1.1.0 widget (`connected-widget`) that makes, in `update`, the
+  connector calls its configuration lists and returns every answer; it can also call from
+  `render`, fail its update, return output that is not JSON or of a given size, and report body
+  sizes instead of bodies. Built without a manifest; each test packs it with its own.
+  The connector cases of the hostile suite run on it
+  ([`plugins/hostile/README.md`](../hostile/README.md#connector-cases)).

@@ -1,0 +1,9 @@
+{
+  "releases": [
+    {"name": "Rust 1.97.0", "tag": "1.97.0", "published_at": "2026-10-01T00:00:00Z", "url": "https://github.com/rust-lang/rust/releases/tag/1.97.0"},
+    {"name": "Rust 1.96.0", "tag": "1.96.0", "published_at": "2026-08-20T00:00:00Z", "url": "https://github.com/rust-lang/rust/releases/tag/1.96.0"},
+    {"name": "Rust 1.95.0", "tag": "1.95.0", "published_at": "2026-07-09T00:00:00Z", "url": "https://github.com/rust-lang/rust/releases/tag/1.95.0"},
+    {"name": "Rust 1.94.0", "tag": "1.94.0", "published_at": "2026-05-28T00:00:00Z", "url": "https://github.com/rust-lang/rust/releases/tag/1.94.0"},
+    {"name": "Rust 1.93.0", "tag": "1.93.0", "published_at": "2026-04-16T00:00:00Z", "url": "https://github.com/rust-lang/rust/releases/tag/1.93.0"}
+  ]
+}

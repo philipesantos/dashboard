@@ -49,6 +49,53 @@ So they need no crate of their own: `runtime/tests/hostile.rs` packs the bare fi
 | `same-id-other-origin` | FR-020 | `not-granted`, naming the file approved; the approval unchanged |
 | `grant-record-untouched` | FR-009, FR-010 | Every case above, and a probe using `log`, leaves the record in its file unchanged |
 
+## Connector cases
+
+The cases of [feature 003](../../specs/003-plugin-connectors/data-model.md#hostile-cases-fr-020)
+are the gate case of Phase 2: no request leaves the machine outside what a widget declared and
+the user approved. They live in
+[`runtime/tests/hostile/connectors.rs`](../../runtime/tests/hostile/connectors.rs), part of the
+same suite, and need no crate of their own either: each packs the fixture
+[`net-probe`](../fixtures/net-probe), which makes the connector calls its configuration lists,
+with the case's manifest, and writes the connectors the case needs. Requests go through the
+runtime's test seam to HTTPS and HTTP test services on this machine, which record everything
+they receive; a refused case leaves them empty. After each case, the example
+[`github-releases`](../examples/github-releases) updates and renders normally on the same
+runtime. Nothing reaches the internet.
+
+| Case | Rule | Expected outcome |
+| --- | --- | --- |
+| `generic-http` | FR-001 | `capability-refused` for `wasi:http` 0.2 and 0.3 |
+| `read-with-body` | FR-002 | `invalid-connector`: outside the catalog a read is a body-less `GET` or `HEAD` |
+| `fixed-headers` | FR-002 | `invalid-connector` for `X-` headers outside the catalog and the headers the host owns |
+| `credentials` | FR-017 | `credentials-not-supported` |
+| `value-outside-type` | FR-003 | `refused(value-outside-type)`, nothing sent |
+| `value-encoding` | FR-003 | Values stay in their own path segment, query value or body field |
+| `repository-connector` | FR-004 | `destination-not-verified` |
+| `local-outside-development` | FR-018 | `destination-not-verified` |
+| `reserved-host` | FR-005 | `destination-reserved` (a trailing dot: `invalid-connector`) |
+| `other-file` | FR-018 | `needs-new-approval`: another file inherits nothing |
+| `connector-changed` | FR-014 | `needs-new-approval`, naming the change |
+| `pruned-connector` | FR-014 | `needs-new-approval` |
+| `approval-changed` | FR-014 | `approval-changed`, nothing granted |
+| `undeclared-operation` | FR-006 | `refused(operation-not-declared)`; an undeclared connector: `not-granted` |
+| `private-address` | FR-007 | `failed(non-public-address)`; IP destinations and plain HTTP never load |
+| `rebinding` | FR-007 | The second lookup, now private, is refused |
+| `exact-port` | FR-007 | `failed(redirect-not-allowed)` |
+| `redirect-escape` | FR-007 | `failed(redirect-not-allowed)`, the target reached by nothing |
+| `tls` | FR-007 | `failed(unavailable)`, nothing past the handshake, nothing fetched |
+| `system-proxy` | FR-007 | Requests go straight to their destination; the proxy receives nothing |
+| `cookie` | FR-007 | No `Cookie` is ever sent |
+| `over-limits` | FR-008 | `over-limit` for every size, time, call and rate limit |
+| `log-flood` | FR-009 | One summary entry per run past its limit; earlier entries kept |
+| `log-spoof` | FR-009 | `runtime requests` prints every text escaped, one line per entry |
+| `log-complete` | FR-009 | Every call and redirect has its entry or count; rotation keeps the newest |
+| `call-in-render` | FR-010 | `refused(called-outside-update)`, nothing sent |
+| `change-in-update` | FR-013 | `refused(change-needs-user-action)` |
+| `optional-off` | FR-015 | `not-granted`; turning it off or removing the approval drops a response in flight |
+| `connector-table` (white box) | FR-015 | The table holds exactly the granted connectors; the stand-in when none |
+| `catalog-reserves` (white box) | FR-005 | A catalog connector outside its reserves is refused |
+
 ## How they are built
 
 Like any plugin, from source, by `cargo xtask plugins`, into `target/plugins/<crate>.wasm`;

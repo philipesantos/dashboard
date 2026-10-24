@@ -1,0 +1,82 @@
+{
+  "$schema": "../../../wit/connector.schema.json",
+  "connector_version": 1,
+  "id": "catalog/github",
+  "version": "1.0.0",
+  "author": "Dashboard contributors",
+  "description": "Public data of GitHub repositories, read without an account",
+  "reserves": ["github.com"],
+  "destinations": {
+    "api": "https://api.github.com"
+  },
+  "operations": {
+    "get-repository": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "api",
+      "path": "/repos/{owner}/{repo}",
+      "headers": {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      "parameters": {
+        "owner": { "type": "text", "max_length": 39, "pattern": "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?" },
+        "repo": { "type": "text", "max_length": 100, "pattern": "[A-Za-z0-9._-]+" }
+      },
+      "response": {
+        "format": "json",
+        "headers": ["ETag", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
+      }
+    },
+    "list-releases": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "api",
+      "path": "/repos/{owner}/{repo}/releases",
+      "query": {
+        "per_page": "{per_page}",
+        "page": "{page}"
+      },
+      "headers": {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      "parameters": {
+        "owner": { "type": "text", "max_length": 39, "pattern": "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?" },
+        "repo": { "type": "text", "max_length": 100, "pattern": "[A-Za-z0-9._-]+" },
+        "per_page": { "type": "integer", "minimum": 1, "maximum": 100, "required": false },
+        "page": { "type": "integer", "minimum": 1, "maximum": 1000, "required": false }
+      },
+      "response": {
+        "format": "json",
+        "headers": ["Link", "ETag", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
+      }
+    },
+    "list-issues": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "api",
+      "path": "/repos/{owner}/{repo}/issues",
+      "query": {
+        "state": "{state}",
+        "per_page": "{per_page}",
+        "page": "{page}"
+      },
+      "headers": {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      "parameters": {
+        "owner": { "type": "text", "max_length": 39, "pattern": "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?" },
+        "repo": { "type": "text", "max_length": 100, "pattern": "[A-Za-z0-9._-]+" },
+        "state": { "type": "text", "max_length": 6, "values": ["open", "closed", "all"], "required": false },
+        "per_page": { "type": "integer", "minimum": 1, "maximum": 100, "required": false },
+        "page": { "type": "integer", "minimum": 1, "maximum": 1000, "required": false }
+      },
+      "response": {
+        "format": "json",
+        "headers": ["Link", "ETag", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
+      }
+    }
+  }
+}

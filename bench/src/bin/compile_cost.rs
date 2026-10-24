@@ -2,7 +2,7 @@
 //! limit and bounded only by the package cap (`docs/threat-model.md`), so this measures what a
 //! package near that cap costs.
 //!
-//! Run with `cargo run -p runtime --release --example compile_cost -- <shape> [<MiB of code>]`,
+//! Run with `cargo run -p dashboard-bench --release --bin compile_cost -- <shape> [<MiB of code>]`,
 //! where the shape is `many` (many functions of about 1.2 KiB, like a large ordinary program) or
 //! `huge` (one function, as large as validation allows, with thousands of locals in use at
 //! once, which strains register allocation). It prints the package size, the load time and the
@@ -17,7 +17,7 @@ use std::time::Instant;
 use runtime::grants::GrantStore;
 use runtime::manifest::Manifest;
 use runtime::package;
-use runtime::{Limits, Runtime};
+use runtime::{Limits, Runtime, RuntimeOptions};
 
 const MANIFEST: &str = r#"{"manifest_version":1,"id":"local/compile-cost","version":"0.1.0","author":"Dashboard contributors","permissions":[],"login_providers":[]}"#;
 const ORIGIN: &str = "compile-cost";
@@ -103,7 +103,9 @@ fn main() {
         .approve(&manifest, ORIGIN, &package::digest(&package))
         .expect("approved");
 
-    let runtime = Runtime::new(Limits::default()).expect("the runtime starts");
+    // Loading these packages writes nothing: they declare no connector
+    let options = RuntimeOptions::new(std::env::temp_dir().join("dashboard-compile-cost"));
+    let runtime = Runtime::new(Limits::default(), options).expect("the runtime starts");
     reset_peak_memory();
     let start = Instant::now();
     let outcome = match runtime.load(&package, ORIGIN, Arc::new(grants)) {

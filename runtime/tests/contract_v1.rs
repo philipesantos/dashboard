@@ -7,8 +7,9 @@ use std::path::Path;
 
 use wit_parser::{Resolve, Type, TypeDefKind, TypeOwner};
 
-/// The interface every plugin implements, which carries no capability.
+/// The interfaces a plugin exports, which carry no capability.
 const RENDERER: &str = "renderer";
+const UPDATER: &str = "updater";
 const NOT_GRANTED: &str = "not-granted";
 
 /// Why a function breaks the rule, if it does.
@@ -49,7 +50,7 @@ fn every_capability_of_contract_v1_can_answer_not_granted() {
     let mut capabilities = 0;
     let mut broken = Vec::new();
     for (name, &interface) in &resolve.packages[package].interfaces {
-        if name == RENDERER {
+        if name == RENDERER || name == UPDATER {
             continue;
         }
         capabilities += 1;
@@ -102,5 +103,152 @@ fn the_check_refuses_a_capability_that_cannot_answer_not_granted() {
                 .is_some()
             });
         assert!(found, "the check accepted: {source}");
+    }
+}
+
+/// research R11: a minor version only adds. 1.1.0 (`wit/v1`) holds every interface, function
+/// and type of the published 1.0.0 (`wit/history/1.0.0`) unchanged, compared as resolved
+/// definitions; doc comments, which 1.1.0 rewrites, are not part of them.
+#[test]
+fn contract_1_1_0_contains_everything_of_1_0_0_unchanged() {
+    let wit = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("wit");
+    let old = definitions(&wit.join("history").join("1.0.0"));
+    let new = definitions(&wit.join("v1"));
+    assert!(!old.is_empty());
+    let mut missing = Vec::new();
+    for (name, definition) in &old {
+        match new.get(name) {
+            None => missing.push(format!("{name} is gone")),
+            Some(changed) if changed != definition => {
+                missing.push(format!(
+                    "{name} changed:\n  1.0.0: {definition}\n  1.1.0: {changed}"
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+    assert!(missing.is_empty(), "{}", missing.join("\n"));
+    // And 1.1.0 adds connectors and updater
+    for added in ["connectors.call", "updater.update", "connectors.call-error"] {
+        assert!(new.contains_key(added), "{added}");
+    }
+}
+
+/// Every function and named type of the package in `dir`, as `interface.name` → its resolved
+/// definition, docs left out.
+fn definitions(dir: &Path) -> std::collections::BTreeMap<String, String> {
+    let mut resolve = Resolve::new();
+    let (package, _) = resolve
+        .push_dir(dir)
+        .unwrap_or_else(|error| panic!("{} parses: {error:#}", dir.display()));
+    let mut definitions = std::collections::BTreeMap::new();
+    for (interface_name, &interface) in &resolve.packages[package].interfaces {
+        let interface = &resolve.interfaces[interface];
+        for (name, function) in &interface.functions {
+            let params: Vec<String> = function
+                .params
+                .iter()
+                .map(|param| format!("{}: {}", param.name, render(&resolve, &param.ty)))
+                .collect();
+            let result = function
+                .result
+                .as_ref()
+                .map(|result| render(&resolve, result))
+                .unwrap_or_default();
+            definitions.insert(
+                format!("{interface_name}.{name}"),
+                format!("func({}) -> {result}", params.join(", ")),
+            );
+        }
+        for (name, &id) in &interface.types {
+            definitions.insert(
+                format!("{interface_name}.{name}"),
+                define(&resolve, &resolve.types[id].kind),
+            );
+        }
+    }
+    for (world_name, &world) in &resolve.packages[package].worlds {
+        let world = &resolve.worlds[world];
+        let mut items: Vec<String> = world
+            .imports
+            .keys()
+            .map(|key| format!("import {}", resolve.name_world_key(key)))
+            .chain(
+                world
+                    .exports
+                    .keys()
+                    .map(|key| format!("export {}", resolve.name_world_key(key))),
+            )
+            .map(|item| item.split('@').next().unwrap().to_owned())
+            .collect();
+        items.sort();
+        definitions.insert(format!("world {world_name}"), items.join("; "));
+    }
+    definitions
+}
+
+/// A type where it is used: a named type by its name, an anonymous one by its structure.
+fn render(resolve: &Resolve, ty: &Type) -> String {
+    match ty {
+        Type::Id(id) => {
+            let def = &resolve.types[*id];
+            match &def.name {
+                Some(name) => name.clone(),
+                None => define(resolve, &def.kind),
+            }
+        }
+        other => format!("{other:?}").to_lowercase(),
+    }
+}
+
+/// A type's whole definition.
+fn define(resolve: &Resolve, kind: &TypeDefKind) -> String {
+    let optional = |ty: &Option<Type>| {
+        ty.as_ref()
+            .map(|ty| render(resolve, ty))
+            .unwrap_or("_".to_owned())
+    };
+    match kind {
+        TypeDefKind::Record(record) => {
+            let fields: Vec<String> = record
+                .fields
+                .iter()
+                .map(|field| format!("{}: {}", field.name, render(resolve, &field.ty)))
+                .collect();
+            format!("record {{ {} }}", fields.join(", "))
+        }
+        TypeDefKind::Enum(enumeration) => {
+            let cases: Vec<&str> = enumeration
+                .cases
+                .iter()
+                .map(|case| case.name.as_str())
+                .collect();
+            format!("enum {{ {} }}", cases.join(", "))
+        }
+        TypeDefKind::Variant(variant) => {
+            let cases: Vec<String> = variant
+                .cases
+                .iter()
+                .map(|case| format!("{}({})", case.name, optional(&case.ty)))
+                .collect();
+            format!("variant {{ {} }}", cases.join(", "))
+        }
+        TypeDefKind::Flags(flags) => {
+            let names: Vec<&str> = flags.flags.iter().map(|flag| flag.name.as_str()).collect();
+            format!("flags {{ {} }}", names.join(", "))
+        }
+        TypeDefKind::Tuple(tuple) => {
+            let types: Vec<String> = tuple.types.iter().map(|ty| render(resolve, ty)).collect();
+            format!("tuple<{}>", types.join(", "))
+        }
+        TypeDefKind::Option(ty) => format!("option<{}>", render(resolve, ty)),
+        TypeDefKind::Result(result) => format!(
+            "result<{}, {}>",
+            optional(&result.ok),
+            optional(&result.err)
+        ),
+        TypeDefKind::List(ty) => format!("list<{}>", render(resolve, ty)),
+        TypeDefKind::Type(ty) => format!("type = {}", render(resolve, ty)),
+        other => format!("{other:?}"),
     }
 }

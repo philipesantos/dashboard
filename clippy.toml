@@ -1,0 +1,33 @@
+# Only runtime/src/network/ opens connections, and it is the only user of ureq: the review of
+# that module then covers every byte a connector sends (constitution Principle III,
+# specs/003-plugin-connectors/research.md, R20). The network module and the test servers
+# allow these with an inner #![allow(clippy::disallowed_types, clippy::disallowed_methods)].
+
+disallowed-types = [
+    { path = "ureq::Agent", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::config::Config", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::RequestBuilder", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    # with_default_agent builds an agent that reads the proxy variables
+    { path = "ureq::RequestExt", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "std::net::TcpStream", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "std::net::UdpSocket", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+]
+
+disallowed-methods = [
+    # Every free function of ureq 3.5.0; run sends with a default agent that reads the proxy
+    # variables
+    { path = "ureq::run", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::agent", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::get", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::post", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::put", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::patch", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::delete", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::head", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::options", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::connect", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "ureq::trace", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "std::net::TcpStream::connect", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "std::net::TcpStream::connect_timeout", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "std::net::UdpSocket::bind", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+]

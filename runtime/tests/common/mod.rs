@@ -3,9 +3,12 @@
 // Each test file compiles this module on its own and uses only some of the helpers.
 #![allow(dead_code)]
 
+pub mod servers;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use runtime::RuntimeOptions;
 use runtime::grants::GrantStore;
 use runtime::manifest::Manifest;
 use tempfile::TempDir;
@@ -144,4 +147,134 @@ pub fn append_manifest_section(package: &[u8], payload: &[u8]) -> Vec<u8> {
     leb128(contents.len(), &mut appended);
     appended.extend_from_slice(&contents);
     appended
+}
+
+/// Runtime options for tests whose plugins declare no connector: development mode off, and a
+/// data directory of this test binary's own, which such plugins never write to.
+pub fn options() -> RuntimeOptions {
+    static DATA: std::sync::OnceLock<TempDir> = std::sync::OnceLock::new();
+    let data = DATA.get_or_init(|| TempDir::new().expect("a temporary data directory"));
+    RuntimeOptions::new(data.path())
+}
+
+/// A manifest for `id` that declares `connectors` as (id, major, operations, required).
+pub fn connected_manifest(id: &str, connectors: &[(&str, u16, &[&str], bool)]) -> String {
+    let connectors: Vec<serde_json::Value> = connectors
+        .iter()
+        .map(|(id, major, operations, required)| {
+            serde_json::json!({ "id": id, "major": major, "operations": operations, "required": required })
+        })
+        .collect();
+    serde_json::json!({
+        "manifest_version": 1,
+        "id": id,
+        "version": "0.1.0",
+        "author": "Dashboard contributors",
+        "permissions": [],
+        "login_providers": [],
+        "connectors": connectors
+    })
+    .to_string()
+}
+
+/// `net-probe` packed with `manifest`.
+pub fn probe(manifest: &str) -> Vec<u8> {
+    repack(&fixture("net-probe"), manifest)
+}
+
+/// A runtime with a data directory of its own, a grant record on disk beside it, and the
+/// development connectors directory `<data>/connectors/`.
+pub struct World {
+    pub data: TempDir,
+    pub runtime: runtime::Runtime,
+    pub grants: Arc<GrantStore>,
+}
+
+impl World {
+    /// Requests go through the test seam `test`; development mode as given.
+    pub fn seam(test: runtime::TestNetwork, development: bool) -> World {
+        World::seam_with(runtime::Limits::default(), test, development)
+    }
+
+    pub fn seam_with(
+        limits: runtime::Limits,
+        test: runtime::TestNetwork,
+        development: bool,
+    ) -> World {
+        let data = TempDir::new().expect("a temporary data directory");
+        let options = RuntimeOptions::new(data.path()).development(development);
+        let runtime =
+            runtime::Runtime::with_test_network(limits, options, test).expect("the runtime starts");
+        World::with(data, runtime)
+    }
+
+    /// Requests go to the real network (local connectors on loopback); development mode as given.
+    pub fn production(development: bool) -> World {
+        let data = TempDir::new().expect("a temporary data directory");
+        let options = RuntimeOptions::new(data.path()).development(development);
+        let runtime =
+            runtime::Runtime::new(runtime::Limits::default(), options).expect("the runtime starts");
+        World::with(data, runtime)
+    }
+
+    fn with(data: TempDir, runtime: runtime::Runtime) -> World {
+        let grants = Arc::new(GrantStore::open(data.path().join("grants.json")));
+        World {
+            data,
+            runtime,
+            grants,
+        }
+    }
+
+    /// Writes `connector` as the local connector `<data>/connectors/<name>.json`.
+    pub fn write_connector(&self, name: &str, connector: &serde_json::Value) -> PathBuf {
+        let dir = self.data.path().join("connectors");
+        std::fs::create_dir_all(&dir).expect("the connectors directory");
+        let path = dir.join(format!("{name}.json"));
+        std::fs::write(&path, connector.to_string()).expect("the connector is written");
+        path
+    }
+
+    /// Approves `package` from [`TEST_ORIGIN`] with the approval digest of what it is now.
+    pub fn approve(&self, package: &[u8]) {
+        let checked = self
+            .runtime
+            .check(package)
+            .unwrap_or_else(|error| panic!("the package checks: {error}"));
+        let digest = checked.approval_digest();
+        checked
+            .approve(&self.grants, TEST_ORIGIN, Some(&digest))
+            .unwrap_or_else(|error| panic!("approving: {error}"));
+    }
+
+    pub fn load(&self, package: &[u8]) -> runtime::Plugin {
+        self.runtime
+            .load(package, TEST_ORIGIN, Arc::clone(&self.grants))
+            .unwrap_or_else(|error| panic!("the package loads: {error}"))
+    }
+
+    /// Approves and loads `package`.
+    pub fn approve_and_load(&self, package: &[u8]) -> runtime::Plugin {
+        self.approve(package);
+        self.load(package)
+    }
+}
+
+/// The answers of a `net-probe` update or render.
+pub fn answers(content: &serde_json::Value) -> Vec<serde_json::Value> {
+    content["answers"]
+        .as_array()
+        .unwrap_or_else(|| panic!("net-probe answered {content}"))
+        .clone()
+}
+
+/// A `net-probe` configuration that makes `calls`, each `(connector, operation, arguments)`.
+pub fn calls(calls: &[(&str, &str, serde_json::Value)]) -> String {
+    let calls: Vec<serde_json::Value> = calls
+        .iter()
+        .map(|(connector, operation, arguments)| {
+            serde_json::json!({ "connector": connector, "operation": operation, "arguments": arguments })
+        })
+        .collect();
+    serde_json::json!({ "calls": calls }).to_string()
 }

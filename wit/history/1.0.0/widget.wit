@@ -1,0 +1,42 @@
+/// Plugin contract v1.
+///
+/// The host and every v1 plugin build from wit/v1. Features 003–005 each add one capability
+/// interface here and bump the package to the next minor version. Every function of a
+/// capability interface returns `result<T, E>`, where `E` is an enum or variant of that
+/// interface whose first case is `not-granted`: the answer of an optional capability the user
+/// has not turned on (constitution Principle II). runtime/tests/contract_v1.rs enforces it.
+package dashboard:widget@1.0.0;
+
+/// Writes log messages; carried by the `log` permission.
+interface log {
+  enum level {
+    debug,
+    info,
+    warn,
+    error,
+  }
+
+  enum log-error {
+    /// `log` is an optional permission the user has not turned on: nothing was written.
+    not-granted,
+  }
+
+  /// Writes a message attributed to the calling plugin. The host keeps at most 100 messages
+  /// per render call and truncates each to 1 KiB; the excess is dropped and reported, and the
+  /// call still returns `ok`.
+  write: func(level: level, message: string) -> result<_, log-error>;
+}
+
+/// The single entry point a plugin implements, unchanged from v0.
+interface renderer {
+  /// `config` is a JSON document chosen by the host. On success the plugin returns the widget
+  /// content as a JSON document of at most 64 KiB; on failure, a message for the maintainer.
+  render: func(config: string) -> result<string, string>;
+}
+
+/// Imports every capability of this version; a plugin's component imports only those it uses,
+/// and its manifest must declare each of them.
+world widget {
+  import log;
+  export renderer;
+}

@@ -122,6 +122,22 @@ jobs:
 
       - run: cargo test --workspace --locked
 
+      # The connectors' test seam replaces DNS and the trusted roots; the runtime refuses to
+      # compile with it outside debug builds, so no build anyone runs can include it
+      # (specs/003-plugin-connectors/research.md, R15). This fails unless that refusal happens.
+      - name: The test seam never builds in release
+        shell: bash
+        run: |
+          if cargo check -p runtime --release --features test-network --locked 2> seam.txt; then
+            echo "the runtime built in release with the test-network feature" >&2
+            exit 1
+          fi
+          grep -q "the test-network feature is only for the runtime's own tests" seam.txt || {
+            cat seam.txt >&2
+            echo "the release build failed, but not because of the test seam" >&2
+            exit 1
+          }
+
   audit:
     name: cargo audit
     needs: changes

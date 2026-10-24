@@ -17,9 +17,24 @@ use crate::manifest::Manifest;
 pub enum Contract {
     /// `dashboard:widget@0.1.0` (`wit/v0`): only `log`, which cannot answer "not granted".
     V0,
-    /// `dashboard:widget@1.0.0` (`wit/v1`): every capability can answer "not granted".
+    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.1.0: every
+    /// capability can answer "not granted".
     V1,
 }
+
+/// The newest minor version of contract v1 this host runs; plugins built for any v1 minor up to
+/// it run, and newer ones are refused (FR-016).
+pub const V1_VERSION: semver::Version = semver::Version::new(1, 1, 0);
+/// The only version of contract v0.
+const V0_VERSION: semver::Version = semver::Version::new(0, 1, 0);
+/// The minor version that brought connectors and `updater`.
+const CONNECTORS_SINCE: semver::Version = semver::Version::new(1, 1, 0);
+
+/// The interface names of the contract, without their version.
+const RENDERER: &str = "dashboard:widget/renderer";
+const UPDATER: &str = "dashboard:widget/updater";
+/// The interface that carries every connector a manifest declares (research R12).
+const CONNECTORS: &str = "dashboard:widget/connectors";
 
 impl Contract {
     /// Every version, oldest first.
@@ -33,29 +48,61 @@ impl Contract {
         }
     }
 
-    /// The interface every plugin of this version exports.
+    /// The `renderer` export of the newest version of this contract the host runs.
     pub fn renderer(self) -> &'static str {
         match self {
             Contract::V0 => "dashboard:widget/renderer@0.1.0",
-            Contract::V1 => "dashboard:widget/renderer@1.0.0",
+            Contract::V1 => "dashboard:widget/renderer@1.1.0",
         }
     }
 
-    /// The version of the `dashboard:widget` package, which ends every interface name of this
-    /// contract (`dashboard:widget/log@1.0.0`).
-    fn package_version(self) -> &'static str {
-        match self {
-            Contract::V0 => "0.1.0",
-            Contract::V1 => "1.0.0",
-        }
-    }
-
-    /// The version whose `renderer` is `export`, matched exactly.
+    /// The version whose `renderer` is `export`: v0 at exactly 0.1.0, v1 at any minor up to
+    /// the host's own.
     pub fn from_renderer(export: &str) -> Option<Contract> {
-        Contract::ALL
-            .into_iter()
-            .find(|contract| contract.renderer() == export)
+        let (base, version) = split(export)?;
+        (base == RENDERER).then_some(())?;
+        contract_of(&version).filter(|_| version.major != 1 || version <= V1_VERSION)
     }
+}
+
+/// The contract version a plugin is built for: its major, and the exact version every one of
+/// its contract names carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractVersion {
+    pub contract: Contract,
+    pub version: semver::Version,
+}
+
+impl ContractVersion {
+    /// `v0`, or `v1 (1.0.0)`: how the CLI prints it.
+    pub fn display(&self) -> String {
+        match self.contract {
+            Contract::V0 => self.contract.as_str().to_owned(),
+            Contract::V1 => format!("{} ({})", self.contract.as_str(), self.version),
+        }
+    }
+
+    /// Whether this version has connectors and `updater`.
+    pub fn has_connectors(&self) -> bool {
+        self.contract == Contract::V1 && self.version >= CONNECTORS_SINCE
+    }
+}
+
+/// The contract a version belongs to, before checking it is one the host runs.
+fn contract_of(version: &semver::Version) -> Option<Contract> {
+    if *version == V0_VERSION {
+        Some(Contract::V0)
+    } else if version.major == 1 && version.pre.is_empty() && version.build.is_empty() {
+        Some(Contract::V1)
+    } else {
+        None
+    }
+}
+
+/// `dashboard:widget/log@1.0.0` as `("dashboard:widget/log", 1.0.0)`.
+fn split(name: &str) -> Option<(&str, semver::Version)> {
+    let (base, version) = name.rsplit_once('@')?;
+    Some((base, semver::Version::parse(version).ok()?))
 }
 
 /// A permission the host knows.
@@ -65,28 +112,23 @@ pub(crate) struct Permission {
     pub(crate) name: &'static str,
     /// The interface that carries it in contract v0, if v0 has it.
     v0: Option<&'static str>,
-    /// The interface that carries it in contract v1.
+    /// The interface that carries it in contract v1, without its version.
     v1: &'static str,
-}
-
-impl Permission {
-    /// The interface that carries this permission in `contract`, if that version has it.
-    pub(crate) fn interface(&self, contract: Contract) -> Option<&'static str> {
-        match contract {
-            Contract::V0 => self.v0,
-            Contract::V1 => Some(self.v1),
-        }
-    }
+    /// The v1 minor version that brought it.
+    since: semver::Version,
 }
 
 /// The start of every interface name of the plugin contract, whatever its version.
 const CONTRACT_PREFIX: &str = "dashboard:widget/";
 
-/// Every permission this host knows. Features 003–005 add one row each, for contract v1 only.
+/// Every permission this host knows by name. Each connector is a permission too, but it is
+/// declared under `connectors` in the manifest and carried by the one `connectors` interface
+/// (research R12), so it has no row here.
 const REGISTRY: &[Permission] = &[Permission {
     name: "log",
     v0: Some("dashboard:widget/log@0.1.0"),
-    v1: "dashboard:widget/log@1.0.0",
+    v1: "dashboard:widget/log",
+    since: semver::Version::new(1, 0, 0),
 }];
 
 /// The names a component imports and exports.
@@ -110,6 +152,27 @@ impl Interfaces {
                 .collect(),
         }
     }
+
+    /// The `renderer` and `updater` exports, by the exact names the component has.
+    pub(crate) fn export(&self, base: &str) -> Option<&str> {
+        self.exports
+            .iter()
+            .find(|export| split(export).is_some_and(|(name, _)| name == base))
+            .map(String::as_str)
+    }
+
+    pub(crate) fn renderer(&self) -> Option<&str> {
+        self.export(RENDERER)
+    }
+
+    pub(crate) fn updater(&self) -> Option<&str> {
+        self.export(UPDATER)
+    }
+}
+
+/// Whether `import` is the `connectors` interface of some v1 version.
+fn is_connectors(import: &str) -> bool {
+    split(import).is_some_and(|(base, _)| base == CONNECTORS)
 }
 
 /// What a plugin is linked with: for each permission it imports, the real interface or the
@@ -122,6 +185,9 @@ pub(crate) struct LinkPlan {
     /// Optional permissions that are off and that the component imports, linked to the
     /// stand-in that answers `not-granted` (FR-019).
     pub(crate) stand_in: Vec<&'static str>,
+    /// Whether the component imports `connectors`, linked over the table of granted connectors
+    /// or to the stand-in (research R12).
+    pub(crate) connectors: bool,
 }
 
 /// The outcome of load steps 7–9.
@@ -138,19 +204,15 @@ pub(crate) struct Decision {
 pub(crate) fn check_component(
     interfaces: &Interfaces,
     manifest: &Manifest,
-) -> Result<Contract, RuntimeError> {
-    // Step 5: the contract the plugin implements, and nothing from another version of it
-    let implemented: Vec<Contract> = Contract::ALL
-        .into_iter()
-        .filter(|contract| {
-            interfaces
-                .exports
-                .iter()
-                .any(|export| export == contract.renderer())
-        })
+) -> Result<ContractVersion, RuntimeError> {
+    // Step 5: the contract the plugin implements, by its renderer
+    let renderers: Vec<&String> = interfaces
+        .exports
+        .iter()
+        .filter(|export| split(export).is_some_and(|(base, _)| base == RENDERER))
         .collect();
-    let contract = match implemented[..] {
-        [contract] => contract,
+    let renderer = match renderers[..] {
+        [renderer] => renderer,
         [] => {
             // Imports from a version of the contract the host does not run say which one the
             // plugin was built for
@@ -159,9 +221,8 @@ pub(crate) fn check_component(
                 .iter()
                 .filter(|import| {
                     import.starts_with(CONTRACT_PREFIX)
-                        && !Contract::ALL.into_iter().any(|contract| {
-                            import.rsplit_once('@').map(|(_, version)| version)
-                                == Some(contract.package_version())
+                        && !split(import).is_some_and(|(_, version)| {
+                            contract_of(&version).is_some() && version <= V1_VERSION
                         })
                 })
                 .cloned()
@@ -171,7 +232,7 @@ pub(crate) fn check_component(
                 ErrorKind::ContractMismatch,
                 unknown,
                 Some(&format!(
-                    "exports no renderer of a contract this host runs ({}, {})",
+                    "exports no renderer of a contract this host runs ({}, or v1 up to {})",
                     Contract::V0.renderer(),
                     Contract::V1.renderer()
                 )),
@@ -184,13 +245,33 @@ pub(crate) fn check_component(
             ));
         }
     };
+    let (_, version) = split(renderer).expect("a renderer export has a version");
+    let Some(contract) = contract_of(&version) else {
+        return Err(RuntimeError::with_names(
+            ErrorKind::ContractMismatch,
+            vec![renderer.clone()],
+            Some(&format!(
+                "is built for contract {version}, which this host does not run (v0 0.1.0, or v1 up to {V1_VERSION})"
+            )),
+        ));
+    };
+    if contract == Contract::V1 && version > V1_VERSION {
+        return Err(RuntimeError::with_names(
+            ErrorKind::ContractMismatch,
+            vec![renderer.clone()],
+            Some(&format!(
+                "is built for contract {version}, newer than {V1_VERSION}, the newest this host runs; update the host"
+            )),
+        ));
+    }
+    // Every contract name of the component carries that one version
     let mut foreign: Vec<String> = interfaces
         .imports
         .iter()
-        .filter(|import| {
-            import.starts_with(CONTRACT_PREFIX)
-                && import.rsplit_once('@').map(|(_, version)| version)
-                    != Some(contract.package_version())
+        .chain(&interfaces.exports)
+        .filter(|name| {
+            name.starts_with(CONTRACT_PREFIX)
+                && split(name).map(|(_, other)| other) != Some(version.clone())
         })
         .cloned()
         .collect();
@@ -200,12 +281,13 @@ pub(crate) fn check_component(
             ErrorKind::ContractMismatch,
             foreign,
             Some(&format!(
-                "implements contract {} but imports from another version of it",
+                "implements contract {} {version} but uses another version of it; every contract name must carry {version}",
                 contract.as_str()
             )),
         ));
     }
-    if contract == Contract::V0 {
+    let contract = ContractVersion { contract, version };
+    if contract.contract == Contract::V0 {
         let optional: Vec<String> = manifest
             .permissions()
             .iter()
@@ -222,12 +304,43 @@ pub(crate) fn check_component(
             ));
         }
     }
+    // A widget with connectors fetches its data in `update`, which arrived with 1.1.0
+    if !manifest.connectors().is_empty() {
+        let ids: Vec<String> = manifest
+            .connectors()
+            .iter()
+            .map(|connector| connector.id.clone())
+            .collect();
+        if !contract.has_connectors() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::ContractTooOld,
+                ids,
+                Some(&format!(
+                    "connectors need contract {CONNECTORS_SINCE} or later, and this plugin is built for {}",
+                    contract.version
+                )),
+            ));
+        }
+        if interfaces.updater().is_none() {
+            return Err(RuntimeError::with_names(
+                ErrorKind::MissingUpdater,
+                ids,
+                Some("a widget that declares connectors must export updater, where it calls them"),
+            ));
+        }
+    }
 
     // Step 6: every import is a capability the host offers, through a declared permission
     let mut refused = Vec::new();
     let mut undeclared = Vec::new();
     for import in &interfaces.imports {
-        match by_import(contract, import) {
+        if contract.has_connectors() && is_connectors(import) {
+            if manifest.connectors().is_empty() {
+                undeclared.push("connectors".to_owned());
+            }
+            continue;
+        }
+        match by_import(contract.contract, import) {
             None => refused.push(import.clone()),
             Some(permission) if manifest.permission(permission.name).is_none() => {
                 undeclared.push(permission.name.to_owned());
@@ -321,8 +434,14 @@ pub(crate) fn decide(
         contract,
         real: Vec::new(),
         stand_in: Vec::new(),
+        connectors: false,
     };
     for import in &interfaces.imports {
+        // Step 6 let it through only for a 1.1 plugin that declares connectors
+        if is_connectors(import) {
+            plan.connectors = true;
+            continue;
+        }
         let permission = by_import(contract, import);
         let request = permission.and_then(|permission| manifest.permission(permission.name));
         match (permission, request) {
@@ -349,11 +468,18 @@ pub(crate) fn by_name(name: &str) -> Option<&'static Permission> {
     REGISTRY.iter().find(|permission| permission.name == name)
 }
 
-/// The permission whose interface in `contract` is `import`, matched exactly.
+/// The permission whose interface in `contract` is `import`: in v0 matched exactly; in v1 by
+/// name, at a version that has it. Step 5 already checked the version is one the host runs.
 pub(crate) fn by_import(contract: Contract, import: &str) -> Option<&'static Permission> {
-    REGISTRY
-        .iter()
-        .find(|permission| permission.interface(contract) == Some(import))
+    REGISTRY.iter().find(|permission| match contract {
+        Contract::V0 => permission.v0 == Some(import),
+        Contract::V1 => split(import).is_some_and(|(base, version)| {
+            base == permission.v1
+                && version.major == 1
+                && version >= permission.since
+                && version <= V1_VERSION
+        }),
+    })
 }
 
 #[cfg(test)]
@@ -388,9 +514,12 @@ mod tests {
         interfaces(imports, Some(Contract::V0.renderer()))
     }
 
+    /// A contract 1.0.0 component: the suite of feature 002 keeps checking the oldest v1.
     fn v1(imports: &[&str]) -> Interfaces {
-        interfaces(imports, Some(Contract::V1.renderer()))
+        interfaces(imports, Some(RENDERER_V1_0))
     }
+
+    const RENDERER_V1_0: &str = "dashboard:widget/renderer@1.0.0";
 
     const LOG_V0: &str = "dashboard:widget/log@0.1.0";
     const LOG_V1: &str = "dashboard:widget/log@1.0.0";
@@ -445,7 +574,7 @@ mod tests {
     ) -> Result<Decision, RuntimeError> {
         let contract = check_component(interfaces, manifest)?;
         decide(
-            contract,
+            contract.contract,
             interfaces,
             manifest,
             origin,
@@ -455,16 +584,23 @@ mod tests {
 
     #[test]
     fn the_renderer_export_sets_the_contract() {
-        assert_eq!(check_component(&v0(&[]), &manifest(None)), Ok(Contract::V0));
-        assert_eq!(check_component(&v1(&[]), &manifest(None)), Ok(Contract::V1));
+        assert_eq!(
+            check_component(&v0(&[]), &manifest(None)).map(|c| c.contract),
+            Ok(Contract::V0)
+        );
+        assert_eq!(
+            check_component(&v1(&[]), &manifest(None)).map(|c| c.contract),
+            Ok(Contract::V1)
+        );
     }
 
     #[test]
     fn no_renderer_of_a_known_version_is_a_contract_mismatch() {
         for renderer in [
             None,
-            Some("dashboard:widget/renderer@1.1.0"),
+            Some("dashboard:widget/renderer@1.2.0"),
             Some("dashboard:widget/renderer@2.0.0"),
+            Some("dashboard:widget/renderer@0.2.0"),
             Some("dashboard:other/renderer@1.0.0"),
         ] {
             let error =
@@ -510,7 +646,7 @@ mod tests {
             ErrorKind::OptionalNeedsV1
         );
         assert_eq!(
-            check_component(&v1(&[LOG_V1]), &manifest(Some(false))),
+            check_component(&v1(&[LOG_V1]), &manifest(Some(false))).map(|c| c.contract),
             Ok(Contract::V1)
         );
     }
@@ -637,7 +773,8 @@ mod tests {
             LinkPlan {
                 contract: Contract::V1,
                 real: vec!["log"],
-                stand_in: vec![]
+                stand_in: vec![],
+                connectors: false,
             }
         );
 
@@ -721,15 +858,17 @@ mod tests {
     #[test]
     fn each_contract_has_its_renderer() {
         assert_eq!(Contract::V0.renderer(), "dashboard:widget/renderer@0.1.0");
-        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.0.0");
+        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.1.0");
         assert_eq!(
             Contract::from_renderer("dashboard:widget/renderer@0.1.0"),
             Some(Contract::V0)
         );
-        assert_eq!(
-            Contract::from_renderer("dashboard:widget/renderer@1.0.0"),
-            Some(Contract::V1)
-        );
+        for v1 in [
+            "dashboard:widget/renderer@1.0.0",
+            "dashboard:widget/renderer@1.1.0",
+        ] {
+            assert_eq!(Contract::from_renderer(v1), Some(Contract::V1));
+        }
         assert_eq!(Contract::V0.as_str(), "v0");
         assert_eq!(Contract::V1.as_str(), "v1");
     }
@@ -737,7 +876,8 @@ mod tests {
     #[test]
     fn another_renderer_version_is_no_contract() {
         for export in [
-            "dashboard:widget/renderer@1.1.0",
+            "dashboard:widget/renderer@1.2.0",
+            "dashboard:widget/renderer@2.0.0",
             "dashboard:widget/renderer@0.2.0",
             "dashboard:widget/renderer",
             "dashboard:widget/log@1.0.0",
@@ -750,14 +890,9 @@ mod tests {
     fn finds_log_by_name() {
         let log = by_name("log").expect("log is registered");
         assert_eq!(log.name, "log");
-        assert_eq!(
-            log.interface(Contract::V0),
-            Some("dashboard:widget/log@0.1.0")
-        );
-        assert_eq!(
-            log.interface(Contract::V1),
-            Some("dashboard:widget/log@1.0.0")
-        );
+        assert_eq!(log.v0, Some("dashboard:widget/log@0.1.0"));
+        assert_eq!(log.v1, "dashboard:widget/log");
+        assert_eq!(log.since, semver::Version::new(1, 0, 0));
     }
 
     #[test]
@@ -776,7 +911,8 @@ mod tests {
     fn an_import_from_the_other_contract_matches_nothing() {
         assert_eq!(by_import(Contract::V0, "dashboard:widget/log@1.0.0"), None);
         assert_eq!(by_import(Contract::V1, "dashboard:widget/log@0.1.0"), None);
-        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@1.1.0"), None);
+        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@1.2.0"), None);
+        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@2.0.0"), None);
     }
 
     #[test]
@@ -785,5 +921,204 @@ mod tests {
         assert_eq!(by_name("Log"), None);
         assert_eq!(by_name(""), None);
         assert_eq!(by_import(Contract::V1, "wasi:filesystem/types@0.2.0"), None);
+    }
+
+    const CONNECTORS_V1_1: &str = "dashboard:widget/connectors@1.1.0";
+    const LOG_V1_1: &str = "dashboard:widget/log@1.1.0";
+    const UPDATER_V1_1: &str = "dashboard:widget/updater@1.1.0";
+
+    /// A WAT component with these `imports` and `exports` (each an empty instance).
+    fn component(imports: &[&str], exports: &[&str]) -> Interfaces {
+        let mut wat = String::from("(component");
+        for import in imports {
+            wat.push_str(&format!(" (import \"{import}\" (instance))"));
+        }
+        for (index, export) in exports.iter().enumerate() {
+            wat.push_str(&format!(
+                " (instance $e{index}) (export \"{export}\" (instance $e{index}))"
+            ));
+        }
+        wat.push(')');
+        let engine = Engine::default();
+        let component = Component::new(&engine, wat).expect("the test component compiles");
+        Interfaces::of(&engine, &component)
+    }
+
+    /// A manifest declaring `catalog/github` and `log` required.
+    fn connected_manifest() -> Manifest {
+        let manifest = json!({
+            "manifest_version": 1,
+            "id": "local/probe",
+            "version": "1.0.0",
+            "author": "A",
+            "permissions": [{ "name": "log", "required": true }],
+            "login_providers": [],
+            "connectors": [{ "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true }]
+        });
+        Manifest::parse(&serde_json::to_vec(&manifest).expect("serializes")).expect("valid")
+    }
+
+    #[test]
+    fn a_v1_plugin_of_any_minor_up_to_the_hosts_runs_at_its_version() {
+        let old = check_component(
+            &component(&[LOG_V1], &[RENDERER_V1_0]),
+            &manifest(Some(true)),
+        )
+        .unwrap();
+        assert_eq!(old.contract, Contract::V1);
+        assert_eq!(old.version, semver::Version::new(1, 0, 0));
+        assert_eq!(old.display(), "v1 (1.0.0)");
+        assert!(!old.has_connectors());
+
+        let new = check_component(
+            &component(&[LOG_V1_1], &["dashboard:widget/renderer@1.1.0"]),
+            &manifest(Some(true)),
+        )
+        .unwrap();
+        assert_eq!(new.version, semver::Version::new(1, 1, 0));
+        assert_eq!(new.display(), "v1 (1.1.0)");
+        assert!(new.has_connectors());
+
+        let v0 = check_component(&v0(&[LOG_V0]), &manifest(Some(true))).unwrap();
+        assert_eq!(v0.display(), "v0");
+    }
+
+    #[test]
+    fn a_plugin_mixing_minor_versions_is_a_contract_mismatch_naming_both() {
+        for (imports, exports) in [
+            (&[LOG_V1_1][..], &[RENDERER_V1_0][..]),
+            (&[LOG_V1][..], &["dashboard:widget/renderer@1.1.0"][..]),
+            (&[][..], &[RENDERER_V1_0, UPDATER_V1_1][..]),
+        ] {
+            let error = check_component(&component(imports, exports), &manifest(Some(true)))
+                .expect_err("refused");
+            assert_eq!(error.kind(), ErrorKind::ContractMismatch, "{error}");
+            assert!(error.detail().contains("1.0.0"), "{error}");
+            assert!(error.detail().contains("1.1.0"), "{error}");
+        }
+    }
+
+    #[test]
+    fn a_plugin_built_for_a_newer_minor_is_a_contract_mismatch_naming_both() {
+        let error = check_component(
+            &component(
+                &["dashboard:widget/log@1.2.0"],
+                &["dashboard:widget/renderer@1.2.0"],
+            ),
+            &manifest(Some(true)),
+        )
+        .expect_err("refused");
+        assert_eq!(error.kind(), ErrorKind::ContractMismatch);
+        assert!(error.detail().contains("1.2.0"), "{error}");
+        assert!(error.detail().contains("1.1.0"), "{error}");
+    }
+
+    #[test]
+    fn connectors_need_contract_1_1_and_an_updater() {
+        // Built for 1.0.0
+        let error = check_component(
+            &component(&[LOG_V1], &[RENDERER_V1_0]),
+            &connected_manifest(),
+        )
+        .expect_err("refused");
+        assert_eq!(error.kind(), ErrorKind::ContractTooOld, "{error}");
+        assert!(error.detail().contains("1.1.0"), "{error}");
+        assert_eq!(error.names(), ["catalog/github"]);
+        // Built for v0
+        let error = check_component(&v0(&[LOG_V0]), &connected_manifest()).expect_err("refused");
+        assert_eq!(error.kind(), ErrorKind::ContractTooOld, "{error}");
+        // 1.1.0 without updater
+        let error = check_component(
+            &component(&[CONNECTORS_V1_1], &["dashboard:widget/renderer@1.1.0"]),
+            &connected_manifest(),
+        )
+        .expect_err("refused");
+        assert_eq!(error.kind(), ErrorKind::MissingUpdater, "{error}");
+        // 1.1.0 with updater
+        let checked = check_component(
+            &component(
+                &[LOG_V1_1, CONNECTORS_V1_1],
+                &["dashboard:widget/renderer@1.1.0", UPDATER_V1_1],
+            ),
+            &connected_manifest(),
+        )
+        .unwrap();
+        assert!(checked.has_connectors());
+    }
+
+    #[test]
+    fn importing_connectors_without_declaring_one_is_not_declared() {
+        assert_eq!(
+            refusal(check_component(
+                &component(
+                    &[CONNECTORS_V1_1],
+                    &["dashboard:widget/renderer@1.1.0", UPDATER_V1_1]
+                ),
+                &manifest(None),
+            )),
+            (ErrorKind::NotDeclared, vec!["connectors".to_owned()])
+        );
+        // A 1.0.0 component cannot import connectors at all
+        let error = check_component(
+            &component(&["dashboard:widget/connectors@1.0.0"], &[RENDERER_V1_0]),
+            &manifest(None),
+        )
+        .expect_err("refused");
+        assert_eq!(error.kind(), ErrorKind::CapabilityRefused, "{error}");
+    }
+
+    #[test]
+    fn generic_http_from_wasi_is_refused() {
+        for import in [
+            "wasi:http/outgoing-handler@0.2.0",
+            "wasi:http/outgoing-handler@0.2.6",
+            "wasi:http/types@0.2.0",
+            "wasi:http/handler@0.3.0",
+            "wasi:http/client@0.3.0",
+            "wasi:http/types@0.3.0",
+            "wasi:sockets/tcp@0.3.0",
+        ] {
+            assert_eq!(
+                refusal(check_component(
+                    &component(&[import], &["dashboard:widget/renderer@1.1.0"]),
+                    &manifest(None),
+                )),
+                (ErrorKind::CapabilityRefused, vec![import.to_owned()]),
+                "{import}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_registry_has_log_since_1_0_and_connectors_since_1_1() {
+        for import in ["dashboard:widget/log@1.0.0", LOG_V1_1] {
+            assert_eq!(by_import(Contract::V1, import).map(|p| p.name), Some("log"));
+        }
+        // Connectors are no permission by name: the manifest declares them under `connectors`
+        assert_eq!(by_name("connectors"), None);
+        assert_eq!(by_import(Contract::V1, CONNECTORS_V1_1), None);
+        assert_eq!(CONNECTORS_SINCE, semver::Version::new(1, 1, 0));
+        assert!(is_connectors(CONNECTORS_V1_1));
+    }
+
+    #[test]
+    fn the_link_plan_says_whether_connectors_are_imported() {
+        let interfaces = component(
+            &[LOG_V1_1, CONNECTORS_V1_1],
+            &["dashboard:widget/renderer@1.1.0", UPDATER_V1_1],
+        );
+        let manifest = connected_manifest();
+        let store = approved(&manifest, false);
+        let decision = load(&interfaces, &manifest, &store, ORIGIN).unwrap();
+        assert!(decision.plan.connectors);
+        assert_eq!(decision.plan.real, ["log"]);
+        let decision = load(
+            &v1(&[LOG_V1]),
+            &self::manifest(Some(true)),
+            &approved(&self::manifest(Some(true)), false),
+            ORIGIN,
+        )
+        .unwrap();
+        assert!(!decision.plan.connectors);
     }
 }

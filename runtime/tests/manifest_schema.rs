@@ -388,3 +388,537 @@ fn every_manifest_in_the_repository_is_valid_and_local() {
         "the example's manifest was not found: {found:?}"
     );
 }
+
+// Feature 003: the connector schema, `wit/connector.schema.json`, and the host's connector
+// parser agree on every connector of the corpus below; the rules only the host checks are
+// listed apart (`specs/003-plugin-connectors/tasks.md`, T052).
+
+mod connectors {
+    use boon::{Compiler, SchemaIndex, Schemas};
+    use runtime::connector::{Connector, Source};
+    use serde_json::{Value, json};
+
+    use super::repository;
+
+    fn schema() -> (Schemas, SchemaIndex) {
+        let path = repository().join("wit").join("connector.schema.json");
+        let mut schemas = Schemas::new();
+        let index = Compiler::new()
+            .compile(path.to_str().expect("a UTF-8 path"), &mut schemas)
+            .unwrap_or_else(|error| panic!("the connector schema compiles: {error:#}"));
+        (schemas, index)
+    }
+
+    fn valid_for_schema(schema: &(Schemas, SchemaIndex), connector: &Value) -> bool {
+        schema.0.validate(connector, schema.1).is_ok()
+    }
+
+    fn parses(connector: &Value, source: Source) -> bool {
+        Connector::parse(&serde_json::to_vec(connector).unwrap(), source).is_ok()
+    }
+
+    /// A valid local connector, edited.
+    fn local(edit: impl FnOnce(&mut Value)) -> Value {
+        let mut connector = json!({
+            "connector_version": 1,
+            "id": "local/weather",
+            "version": "0.1.0",
+            "author": "Ada Lovelace",
+            "description": "Weather forecasts",
+            "destinations": { "api": "https://api.weather.test" },
+            "operations": {
+                "forecast": {
+                    "kind": "read", "method": "GET", "destination": "api",
+                    "path": "/v1/{city}/forecast",
+                    "query": { "days": "{days}", "units": "metric" },
+                    "headers": { "Accept": "application/json" },
+                    "parameters": {
+                        "city": { "type": "text", "max_length": 64, "pattern": "[a-z]+" },
+                        "days": { "type": "integer", "minimum": 1, "maximum": 7, "required": false }
+                    },
+                    "response": { "format": "json", "headers": ["ETag"] }
+                }
+            }
+        });
+        edit(&mut connector);
+        connector
+    }
+
+    fn catalog(edit: impl FnOnce(&mut Value)) -> Value {
+        local(|c| {
+            c["id"] = json!("catalog/weather");
+            c["reserves"] = json!(["weather.test"]);
+            edit(c);
+        })
+    }
+
+    fn op(c: &mut Value) -> &mut Value {
+        &mut c["operations"]["forecast"]
+    }
+
+    type Edit = fn(&mut Value);
+
+    /// Local connectors both must accept.
+    fn valid_local() -> Vec<(&'static str, Edit)> {
+        vec![
+            ("the base connector", |_| {}),
+            ("$schema", |c| {
+                c["$schema"] = json!("../../wit/connector.schema.json")
+            }),
+            ("a 64-character name", |c| {
+                c["id"] = json!(format!("local/{}", "a".repeat(64)))
+            }),
+            ("a pre-release version", |c| {
+                c["version"] = json!("1.0.0-beta.1")
+            }),
+            ("100-character author", |c| {
+                c["author"] = json!("a".repeat(100))
+            }),
+            ("a port", |c| {
+                c["destinations"]["api"] = json!("https://api.weather.test:8443")
+            }),
+            ("a root path", |c| {
+                c["destinations"]["api"] = json!("https://api.weather.test/")
+            }),
+            ("an uppercase host", |c| {
+                c["destinations"]["api"] = json!("https://API.Weather.test")
+            }),
+            ("loopback over HTTP", |c| {
+                c["destinations"]["api"] = json!("http://127.0.0.1:8765")
+            }),
+            ("localhost over HTTP", |c| {
+                c["destinations"]["api"] = json!("http://localhost:8765")
+            }),
+            ("[::1] over HTTP", |c| {
+                c["destinations"]["api"] = json!("http://[::1]:8765")
+            }),
+            ("HEAD", |c| op(c)["method"] = json!("HEAD")),
+            ("a change with a body", |c| {
+                op(c)["kind"] = json!("change");
+                op(c)["method"] = json!("POST");
+                op(c)["query"] = json!({ "days": "{days}" });
+                op(c)["body"] = json!({ "units": "metric" });
+            }),
+            (
+                "values",
+                |c| {
+                    op(c)["parameters"]["city"] =
+                        json!({ "type": "text", "max_length": 8, "values": ["rome", "paris"] })
+                },
+            ),
+            ("a flag", |c| {
+                op(c)["parameters"]["metric"] = json!({ "type": "flag", "required": false });
+                op(c)["query"]["metric"] = json!("{metric}");
+            }),
+            ("text format", |c| {
+                op(c)["response"] = json!({ "format": "text" })
+            }),
+            ("eight response headers", |c| {
+                op(c)["response"]["headers"] = json!(["A", "B", "C", "D", "E", "F", "G", "H"])
+            }),
+            ("Accept-Language", |c| {
+                op(c)["headers"]["Accept-Language"] = json!("pt-BR")
+            }),
+        ]
+    }
+
+    /// Connectors both must refuse, whatever the source.
+    fn invalid() -> Vec<(&'static str, Edit)> {
+        vec![
+            ("an unknown field", |c| c["colour"] = json!("blue")),
+            ("an unknown operation field", |c| {
+                op(c)["timeout"] = json!(5)
+            }),
+            ("connector_version 2", |c| c["connector_version"] = json!(2)),
+            ("a malformed id", |c| c["id"] = json!("Local/Weather")),
+            ("a 65-character name", |c| {
+                c["id"] = json!(format!("local/{}", "a".repeat(65)))
+            }),
+            ("a version that is not SemVer", |c| {
+                c["version"] = json!("1.0")
+            }),
+            ("an empty author", |c| c["author"] = json!("")),
+            ("a 201-character description", |c| {
+                c["description"] = json!("d".repeat(201))
+            }),
+            ("a control character", |c| c["author"] = json!("A\nB")),
+            ("no destination", |c| c["destinations"] = json!({})),
+            ("a bad destination name", |c| {
+                c["destinations"]["Bad"] = json!("https://x.test")
+            }),
+            ("a destination with a path", |c| {
+                c["destinations"]["api"] = json!("https://api.weather.test/v1")
+            }),
+            ("a destination with a query", |c| {
+                c["destinations"]["api"] = json!("https://api.weather.test?a=1")
+            }),
+            ("a destination with a user", |c| {
+                c["destinations"]["api"] = json!("https://ada@api.weather.test")
+            }),
+            ("an uppercase scheme", |c| {
+                c["destinations"]["api"] = json!("HTTPS://api.weather.test")
+            }),
+            ("plain HTTP elsewhere", |c| {
+                c["destinations"]["api"] = json!("http://192.168.1.10:8765")
+            }),
+            ("HTTP localhost without a port", |c| {
+                c["destinations"]["api"] = json!("http://localhost")
+            }),
+            ("no operation", |c| c["operations"] = json!({})),
+            ("a bad kind", |c| op(c)["kind"] = json!("write")),
+            ("a bad method", |c| op(c)["method"] = json!("OPTIONS")),
+            ("a relative path", |c| op(c)["path"] = json!("v1/{city}")),
+            ("a mixed path segment", |c| {
+                op(c)["path"] = json!("/v1/x{city}")
+            }),
+            ("a 17th query pair", |c| {
+                for i in 0..16 {
+                    op(c)["query"][format!("q{i}")] = json!("x");
+                }
+            }),
+            ("a bad query name", |c| op(c)["query"]["a b"] = json!("x")),
+            ("a 257-character query value", |c| {
+                op(c)["query"]["units"] = json!("u".repeat(257))
+            }),
+            ("a forbidden header", |c| {
+                op(c)["headers"]["Authorization"] = json!("x")
+            }),
+            ("a header value with a line break", |c| {
+                op(c)["headers"]["Accept"] = json!("a\r\nb")
+            }),
+            ("a body that is not an object", |c| {
+                op(c)["kind"] = json!("change");
+                op(c)["body"] = json!([1]);
+            }),
+            ("a parameter without a type", |c| {
+                op(c)["parameters"]["city"] = json!({ "max_length": 8 })
+            }),
+            ("text without max_length", |c| {
+                op(c)["parameters"]["city"] = json!({ "type": "text" })
+            }),
+            ("max_length 2049", |c| {
+                op(c)["parameters"]["city"] = json!({ "type": "text", "max_length": 2049 })
+            }),
+            (
+                "pattern and values",
+                |c| {
+                    op(c)["parameters"]["city"] =
+                        json!({ "type": "text", "max_length": 8, "pattern": "a", "values": ["a"] })
+                },
+            ),
+            (
+                "a 513-character pattern",
+                |c| {
+                    op(c)["parameters"]["city"] =
+                        json!({ "type": "text", "max_length": 8, "pattern": "a".repeat(513) })
+                },
+            ),
+            (
+                "repeated values",
+                |c| {
+                    op(c)["parameters"]["city"] =
+                        json!({ "type": "text", "max_length": 8, "values": ["a", "a"] })
+                },
+            ),
+            ("an integer without maximum", |c| {
+                op(c)["parameters"]["days"] =
+                    json!({ "type": "integer", "minimum": 1, "required": false })
+            }),
+            ("a bad parameter name", |c| {
+                op(c)["parameters"]["City"] = json!({ "type": "flag" })
+            }),
+            ("a bad format", |c| {
+                op(c)["response"]["format"] = json!("xml")
+            }),
+            ("Set-Cookie passed on", |c| {
+                op(c)["response"]["headers"] = json!(["Set-Cookie"])
+            }),
+            ("a repeated response header", |c| {
+                op(c)["response"]["headers"] = json!(["ETag", "ETag"])
+            }),
+            ("a credential", |c| c["credential"] = json!("token")),
+        ]
+    }
+
+    /// Rules only the host checks, which the schema cannot express: the schema accepts these
+    /// local connectors, and the parser refuses them.
+    fn host_only_local() -> Vec<(&'static str, Edit)> {
+        vec![
+            ("an X- header outside the catalog", |c| {
+                op(c)["headers"]["X-HTTP-Method-Override"] = json!("DELETE")
+            }),
+            ("reserves outside the catalog", |c| {
+                c["reserves"] = json!(["weather.test"])
+            }),
+            ("a destination ending with a dot", |c| {
+                c["destinations"]["api"] = json!("https://api.weather.test.")
+            }),
+            ("an IP address over HTTPS", |c| {
+                c["destinations"]["api"] = json!("https://10.0.0.1")
+            }),
+            ("a catalog id outside the catalog", |c| {
+                c["id"] = json!("catalog/weather")
+            }),
+            ("a placeholder naming no parameter", |c| {
+                op(c)["path"] = json!("/v1/{town}/forecast")
+            }),
+            ("a parameter used nowhere", |c| {
+                op(c)["parameters"]["unused"] = json!({ "type": "flag" })
+            }),
+            ("a parameter used twice", |c| {
+                op(c)["query"]["again"] = json!("{city}")
+            }),
+            ("an optional parameter in the path", |c| {
+                op(c)["parameters"]["city"]["required"] = json!(false)
+            }),
+            ("a POST read outside the catalog", |c| {
+                op(c)["method"] = json!("POST")
+            }),
+            ("a read with a body outside the catalog", |c| {
+                op(c)["body"] = json!({ "q": "x" })
+            }),
+            (
+                "minimum greater than maximum",
+                |c| {
+                    op(c)["parameters"]["days"] =
+                        json!({ "type": "integer", "minimum": 8, "maximum": 1, "required": false })
+                },
+            ),
+            ("a destination that is not a key", |c| {
+                op(c)["destination"] = json!("elsewhere")
+            }),
+            ("a body over 4 KiB", |c| {
+                op(c)["kind"] = json!("change");
+                op(c)["body"] = json!({ "pad": "x".repeat(4096) });
+            }),
+            ("a file over 64 KiB", |c| {
+                c["description"] = json!("d".repeat(200))
+            }),
+            ("a pattern that does not compile", |c| {
+                op(c)["parameters"]["city"]["pattern"] = json!("(")
+            }),
+        ]
+    }
+
+    #[test]
+    fn the_schema_and_the_parser_accept_the_same_connectors() {
+        let schema = schema();
+        for (case, edit) in valid_local() {
+            let connector = local(edit);
+            assert!(
+                valid_for_schema(&schema, &connector),
+                "{case}: the schema refuses it"
+            );
+            assert!(
+                parses(&connector, Source::Local),
+                "{case}: the parser refuses it"
+            );
+        }
+        let connector = catalog(|c| op(c)["headers"]["X-Api-Version"] = json!("2"));
+        assert!(valid_for_schema(&schema, &connector));
+        assert!(parses(&connector, Source::Catalog));
+    }
+
+    #[test]
+    fn the_schema_and_the_parser_refuse_the_same_connectors() {
+        let schema = schema();
+        for (case, edit) in invalid() {
+            let connector = local(edit);
+            assert!(
+                !valid_for_schema(&schema, &connector),
+                "{case}: the schema accepts it"
+            );
+            assert!(
+                !parses(&connector, Source::Local),
+                "{case}: the parser accepts it"
+            );
+        }
+    }
+
+    #[test]
+    fn the_host_also_refuses_what_a_schema_cannot_see() {
+        let schema = schema();
+        for (case, edit) in host_only_local() {
+            let mut connector = local(edit);
+            if case == "a file over 64 KiB" {
+                // Within every per-field limit, over the file's
+                let query: serde_json::Map<String, Value> = (0..16)
+                    .map(|i| (format!("q{i}"), json!("v".repeat(256))))
+                    .collect();
+                for i in 0..63 {
+                    connector["operations"][format!("op{i}")] = json!({
+                        "kind": "read", "method": "GET", "destination": "api", "path": "/",
+                        "query": query, "response": { "format": "json" }
+                    });
+                }
+                let bytes = serde_json::to_vec(&connector).unwrap();
+                assert!(bytes.len() > runtime::connector::MAX_CONNECTOR_BYTES);
+                assert!(
+                    valid_for_schema(&schema, &connector),
+                    "{case}: the schema refuses it"
+                );
+                assert!(Connector::parse(&bytes, Source::Local).is_err(), "{case}");
+                continue;
+            }
+            assert!(
+                valid_for_schema(&schema, &connector),
+                "{case}: the schema refuses it, so it is no host-only rule"
+            );
+            assert!(
+                !parses(&connector, Source::Local),
+                "{case}: the parser accepts it"
+            );
+        }
+        // A catalog connector without reserves, or with plain HTTP
+        for (case, connector) in [
+            (
+                "reserves missing in the catalog",
+                catalog(|c| {
+                    c.as_object_mut().unwrap().remove("reserves");
+                }),
+            ),
+            (
+                "plain HTTP in the catalog",
+                catalog(|c| c["destinations"]["api"] = json!("http://localhost:8765")),
+            ),
+        ] {
+            assert!(valid_for_schema(&schema, &connector), "{case}");
+            assert!(!parses(&connector, Source::Catalog), "{case}");
+        }
+    }
+
+    #[test]
+    fn every_catalog_connector_in_the_repository_validates_and_parses() {
+        let schema = schema();
+        let dir = repository().join("connectors").join("catalog");
+        let mut found = 0;
+        for entry in std::fs::read_dir(&dir).expect("the catalog directory") {
+            let path = entry.unwrap().path();
+            let bytes = std::fs::read(&path).unwrap();
+            let connector: Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                valid_for_schema(&schema, &connector),
+                "{} breaks the schema",
+                path.display()
+            );
+            let parsed = Connector::parse(&bytes, Source::Catalog)
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let name = path.file_stem().unwrap().to_str().unwrap();
+            assert_eq!(parsed.id(), format!("catalog/{name}"));
+            found += 1;
+        }
+        assert!(found > 0, "the catalog is empty");
+    }
+}
+
+/// Manifests with `connectors`: the schema and the parser agree, the rule of feature 002 for the
+/// new field.
+#[test]
+fn the_schema_and_the_parser_agree_on_connectors() {
+    let schema = schema();
+    let entry = |id: Value, major: Value, operations: Value, required: Value| {
+        set(
+            "connectors",
+            json!([{ "id": id, "major": major, "operations": operations, "required": required }]),
+        )
+    };
+    for (case, manifest) in [
+        ("none", set("connectors", json!([]))),
+        (
+            "catalog",
+            entry(
+                json!("catalog/github"),
+                json!(1),
+                json!(["list-releases"]),
+                json!(true),
+            ),
+        ),
+        (
+            "local",
+            entry(
+                json!("local/hello"),
+                json!(0),
+                json!(["get", "put"]),
+                json!(false),
+            ),
+        ),
+        (
+            "repository",
+            entry(
+                json!("github.com/ada/weather"),
+                json!(65535),
+                json!(["forecast"]),
+                json!(true),
+            ),
+        ),
+    ] {
+        assert!(
+            valid_for_schema(&schema, &manifest),
+            "{case}: the schema refuses it"
+        );
+        assert_eq!(parse(&manifest), Ok(()), "{case}: the parser refuses it");
+    }
+    let many: Vec<Value> = (0..17)
+        .map(|i| json!({ "id": format!("local/c{i}"), "major": 1, "operations": ["get"], "required": true }))
+        .collect();
+    for (case, manifest) in [
+        ("null", set("connectors", Value::Null)),
+        ("17 connectors", set("connectors", Value::Array(many))),
+        (
+            "a bad id",
+            entry(json!("github"), json!(1), json!(["get"]), json!(true)),
+        ),
+        (
+            "major 65536",
+            entry(json!("local/a"), json!(65536), json!(["get"]), json!(true)),
+        ),
+        (
+            "a negative major",
+            entry(json!("local/a"), json!(-1), json!(["get"]), json!(true)),
+        ),
+        (
+            "no operation",
+            entry(json!("local/a"), json!(1), json!([]), json!(true)),
+        ),
+        (
+            "a repeated operation",
+            entry(
+                json!("local/a"),
+                json!(1),
+                json!(["get", "get"]),
+                json!(true),
+            ),
+        ),
+        (
+            "a bad operation",
+            entry(json!("local/a"), json!(1), json!(["Get"]), json!(true)),
+        ),
+        (
+            "required as text",
+            entry(json!("local/a"), json!(1), json!(["get"]), json!("yes")),
+        ),
+        (
+            "an unknown field",
+            set(
+                "connectors",
+                json!([{ "id": "local/a", "major": 1, "operations": ["get"], "required": true, "x": 1 }]),
+            ),
+        ),
+    ] {
+        assert!(
+            !valid_for_schema(&schema, &manifest),
+            "{case}: the schema accepts it"
+        );
+        assert_eq!(parse(&manifest), Err(ErrorKind::InvalidManifest), "{case}");
+    }
+    // Only the host sees a connector declared twice
+    let twice = set(
+        "connectors",
+        json!([
+            { "id": "local/a", "major": 1, "operations": ["get"], "required": true },
+            { "id": "local/a", "major": 2, "operations": ["put"], "required": false }
+        ]),
+    );
+    assert!(valid_for_schema(&schema, &twice));
+    assert_eq!(parse(&twice), Err(ErrorKind::InvalidManifest));
+}

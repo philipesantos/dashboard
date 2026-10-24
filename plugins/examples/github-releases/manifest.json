@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "local/github-releases",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "permissions": [],
+  "login_providers": [],
+  "connectors": [
+    {
+      "id": "catalog/github",
+      "major": 1,
+      "operations": ["list-releases"],
+      "required": true
+    }
+  ]
+}
