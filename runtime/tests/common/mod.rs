@@ -105,14 +105,20 @@ pub fn approved(package: &[u8]) -> Arc<GrantStore> {
     Arc::new(store)
 }
 
-/// Approves `package`'s required permissions in `store`, from `origin`.
+/// Approves `package`'s required permissions in `store`, from `origin`; a plugin that declares
+/// storage with the approval digest of what it declares, as `approve --expect` does.
 pub fn approve(store: &GrantStore, package: &[u8], origin: &str) {
     let manifest = runtime::package::manifest_section(package)
         .and_then(Manifest::parse)
         .unwrap_or_else(|error| panic!("the package's manifest: {error}"));
-    store
-        .approve(&manifest, origin, &runtime::package::digest(package))
-        .unwrap_or_else(|error| panic!("approving {}: {error}", manifest.id()));
+    let digest = runtime::package::digest(package);
+    let approved = if manifest.storage().is_some() {
+        let expected = runtime::grants::approval_digest(&digest, &manifest, &[]);
+        store.approve_connected(&manifest, origin, &digest, &[], &expected)
+    } else {
+        store.approve(&manifest, origin, &digest)
+    };
+    approved.unwrap_or_else(|error| panic!("approving {}: {error}", manifest.id()));
 }
 
 /// A temporary directory, removed when dropped, and the path of a grant record inside it that
@@ -175,6 +181,36 @@ pub fn connected_manifest(id: &str, connectors: &[(&str, u16, &[&str], bool)]) -
         "connectors": connectors
     })
     .to_string()
+}
+
+/// A manifest for `id` and `version` that declares storage, required or optional, with
+/// `quota_bytes` (feature 004).
+pub fn stored_manifest(id: &str, version: &str, required: bool, quota_bytes: u64) -> String {
+    serde_json::json!({
+        "manifest_version": 1,
+        "id": id,
+        "version": version,
+        "author": "Dashboard contributors",
+        "permissions": [{ "name": "storage", "required": required, "quota_bytes": quota_bytes }],
+        "login_providers": []
+    })
+    .to_string()
+}
+
+/// `store-probe` packed with `manifest`.
+pub fn store_probe(manifest: &str) -> Vec<u8> {
+    repack(&fixture("store-probe"), manifest)
+}
+
+/// A `store-probe` update configuration that makes `steps`, each a step object of the probe
+/// (`plugins/fixtures/store-probe/src/lib.rs`), and ends as `end` says (`"ok"` when `None`).
+pub fn steps(steps: &[serde_json::Value], end: Option<&str>) -> String {
+    serde_json::json!({ "steps": steps, "end": end.unwrap_or("ok") }).to_string()
+}
+
+/// A `store-probe` render configuration that makes `steps` in render.
+pub fn render_steps(steps: &[serde_json::Value]) -> String {
+    serde_json::json!({ "render_steps": steps }).to_string()
 }
 
 /// `net-probe` packed with `manifest`.
