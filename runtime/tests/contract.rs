@@ -214,3 +214,86 @@ fn a_component_using_a_turned_off_proposal_is_refused() {
         ErrorKind::InvalidPackage
     );
 }
+
+// Feature 003: contract 1.1.0 and older minors (FR-016), and local connectors (FR-018)
+
+/// A WAT component exporting `exports`, packed with `manifest`.
+fn component_with(exports: &[&str], manifest: &str) -> Vec<u8> {
+    let mut wat = String::from("(component");
+    for (index, export) in exports.iter().enumerate() {
+        wat.push_str(&format!(
+            " (instance $e{index}) (export \"{export}\" (instance $e{index}))"
+        ));
+    }
+    wat.push(')');
+    pack(&wat::parse_str(&wat).unwrap(), manifest.as_bytes()).unwrap()
+}
+
+#[test]
+fn a_component_built_for_a_newer_minor_is_a_contract_mismatch_naming_both_versions() {
+    let package = component_with(
+        &["dashboard:widget/renderer@1.2.0"],
+        &manifest("local/newer", "0.1.0", &[]),
+    );
+    let (kind, detail) = load_error(&runtime(), &package);
+    assert_eq!(kind, ErrorKind::ContractMismatch);
+    assert!(
+        detail.contains("1.2.0") && detail.contains("1.1.0"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_1_0_0_component_that_declares_a_connector_is_contract_too_old() {
+    let package = component_with(
+        &["dashboard:widget/renderer@1.0.0"],
+        &common::connected_manifest(
+            "local/old",
+            &[("catalog/github", 1, &["list-releases"], true)],
+        ),
+    );
+    let (kind, detail) = load_error(&runtime(), &package);
+    assert_eq!(kind, ErrorKind::ContractTooOld);
+    assert!(detail.contains("1.1.0"), "{detail}");
+}
+
+#[test]
+fn a_local_connector_on_this_machine_runs_only_in_development_mode() {
+    use common::servers::{Reply, Server};
+
+    let server = Server::http();
+    server.route("/", Reply::json(r#"{"here":true}"#));
+    let connector = json!({
+        "connector_version": 1, "id": "local/here", "version": "0.1.0", "author": "You",
+        "description": "This machine", "destinations": { "api": server.http_origin() },
+        "operations": { "get": { "kind": "read", "method": "GET", "destination": "api",
+            "path": "/", "response": { "format": "json" } } }
+    });
+    let package = common::probe(&common::connected_manifest(
+        "local/net-probe",
+        &[("local/here", 0, &["get"], true)],
+    ));
+
+    let development = common::World::production(true);
+    development.write_connector("here", &connector);
+    let plugin = development.approve_and_load(&package);
+    let report = plugin.update(&common::calls(&[("local/here", "get", json!([]))]));
+    assert_eq!(common::answers(&report.result.unwrap())[0]["status"], 200);
+
+    let production = common::World::production(false);
+    production.write_connector("here", &connector);
+    let error = production.runtime.check(&package).err().expect("refused");
+    assert_eq!(error.kind(), ErrorKind::DestinationNotVerified, "{error}");
+
+    // Even in development: the local network and the catalog's hosts
+    for (destination, kind) in [
+        ("http://192.168.1.10:8765", ErrorKind::InvalidConnector),
+        ("https://api.github.com", ErrorKind::DestinationReserved),
+    ] {
+        let mut other = connector.clone();
+        other["destinations"]["api"] = json!(destination);
+        development.write_connector("here", &other);
+        let error = development.runtime.check(&package).err().expect("refused");
+        assert_eq!(error.kind(), kind, "{destination}: {error}");
+    }
+}
