@@ -124,12 +124,22 @@ const CONTRACT_PREFIX: &str = "dashboard:widget/";
 /// Every permission this host knows by name. Each connector is a permission too, but it is
 /// declared under `connectors` in the manifest and carried by the one `connectors` interface
 /// (research R12), so it has no row here.
-const REGISTRY: &[Permission] = &[Permission {
-    name: "log",
-    v0: Some("dashboard:widget/log@0.1.0"),
-    v1: "dashboard:widget/log",
-    since: semver::Version::new(1, 0, 0),
-}];
+const REGISTRY: &[Permission] = &[
+    Permission {
+        name: "log",
+        v0: Some("dashboard:widget/log@0.1.0"),
+        v1: "dashboard:widget/log",
+        since: semver::Version::new(1, 0, 0),
+    },
+    // The plugin's own store, with its quota on the same manifest entry
+    // (specs/004-plugin-storage/research.md, R2, R9)
+    Permission {
+        name: "storage",
+        v0: None,
+        v1: "dashboard:widget/storage",
+        since: semver::Version::new(1, 2, 0),
+    },
+];
 
 /// The names a component imports and exports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -5,10 +5,6 @@ description = "Example plugin for contract 1.2.0: counts its updates and keeps t
 edition.workspace = true
 publish.workspace = true
 
-# The runtime learns quota_bytes in the next task, which adds the manifest
-[package.metadata.dashboard]
-manifest = false
-
 [lib]
 crate-type = ["cdylib"]
 

@@ -38,6 +38,12 @@ const REPOSITORY_PREFIX: &str = "github.com/";
 const MAX_OWNER_CHARS: usize = 39;
 const MAX_REPOSITORY_CHARS: usize = 100;
 const LOCAL_PREFIX: &str = "local/";
+/// The permission that carries a quota (`specs/004-plugin-storage/data-model.md`, Manifest).
+const STORAGE: &str = "storage";
+/// The schema's bounds of `quota_bytes`: one empty entry (the default entry cost) and the default
+/// host cap (`Limits::max_storage_quota_bytes`).
+const MIN_QUOTA_BYTES: u64 = 64;
+const MAX_QUOTA_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_LOCAL_NAME_CHARS: usize = 64;
 
 /// A plugin's manifest, as checked by [`Manifest::parse`]; there is no other way to build one.
@@ -49,6 +55,7 @@ pub struct Manifest {
     permissions: Vec<PermissionRequest>,
     login_providers: Vec<String>,
     connectors: Vec<ConnectorRequest>,
+    storage: Option<StorageRequest>,
 }
 
 /// Where a plugin comes from: `github.com/<owner>/<repository>` or `local/<name>`, lowercase.
@@ -144,7 +151,7 @@ impl Manifest {
 
     /// The `storage` permission and its quota, if the manifest declares it.
     pub fn storage(&self) -> Option<StorageRequest> {
-        None
+        self.storage
     }
 
     /// Every connector declared, once each, in the manifest's order; empty when the manifest
@@ -223,6 +230,10 @@ struct RawConnectorRequest {
 struct RawPermission {
     name: String,
     required: bool,
+    /// Only on `storage`, and required there. Read as any JSON number, compared by value as the
+    /// schema does, so `4096.0` is 4096. Never `null` when present.
+    #[serde(default, deserialize_with = "present")]
+    quota_bytes: Option<serde_json::Number>,
 }
 
 /// A struct read only from a JSON object. A derived `Deserialize` also reads a struct from an
@@ -279,7 +290,7 @@ impl RawManifest {
         let id = PluginId::parse(&self.id).map_err(|problem| field("id", problem))?;
         check_version(&self.version)?;
         check_author(&self.author)?;
-        let permissions = check_permissions(self.permissions)?;
+        let (permissions, storage) = check_permissions(self.permissions)?;
         check_login_providers(&self.login_providers)?;
         let connectors = check_connectors(self.connectors.unwrap_or_default())?;
 
@@ -305,6 +316,7 @@ impl RawManifest {
             permissions,
             login_providers: self.login_providers,
             connectors,
+            storage,
         })
     }
 }
@@ -339,10 +351,11 @@ fn check_author(author: &str) -> Result<(), RuntimeError> {
 }
 
 /// Checks each entry, then drops repeated ones: the same name twice counts once, unless one
-/// entry is required and the other optional.
+/// entry is required and the other optional. `storage`, which carries its quota, appears at most
+/// once.
 fn check_permissions(
     raw: Vec<Object<RawPermission>>,
-) -> Result<Vec<PermissionRequest>, RuntimeError> {
+) -> Result<(Vec<PermissionRequest>, Option<StorageRequest>), RuntimeError> {
     let raw: Vec<RawPermission> = raw
         .into_iter()
         .map(|Object(permission)| permission)
@@ -365,6 +378,36 @@ fn check_permissions(
             ));
         }
     }
+    let mut storage = None;
+    for (index, permission) in raw.iter().enumerate() {
+        let at = format!("permissions[{index}].quota_bytes");
+        match (permission.name == STORAGE, &permission.quota_bytes) {
+            (false, None) => {}
+            (false, Some(_)) => {
+                return Err(field(&at, "only the storage permission takes a quota"));
+            }
+            (true, None) => {
+                return Err(field(
+                    &at,
+                    format!(
+                        "storage needs a quota, a whole number of usage bytes from {MIN_QUOTA_BYTES} to {MAX_QUOTA_BYTES}"
+                    ),
+                ));
+            }
+            (true, Some(quota)) => {
+                if storage.is_some() {
+                    return Err(field(
+                        &format!("permissions[{index}]"),
+                        "`storage` appears more than once",
+                    ));
+                }
+                storage = Some(StorageRequest {
+                    required: permission.required,
+                    quota_bytes: check_quota(quota).map_err(|problem| field(&at, problem))?,
+                });
+            }
+        }
+    }
     let mut permissions: Vec<PermissionRequest> = Vec::new();
     for permission in raw {
         match permissions.iter().find(|kept| kept.name == permission.name) {
@@ -381,7 +424,24 @@ fn check_permissions(
             }
         }
     }
-    Ok(permissions)
+    Ok((permissions, storage))
+}
+
+/// A quota within the schema's bounds. The host's own cap, which may be lower, is checked at
+/// load (load step 3a).
+fn check_quota(quota: &serde_json::Number) -> Result<u64, String> {
+    let whole = quota.as_u64().or_else(|| {
+        quota
+            .as_f64()
+            .filter(|value| value.fract() == 0.0 && (0.0..=u64::MAX as f64).contains(value))
+            .map(|value| value as u64)
+    });
+    match whole {
+        Some(bytes) if (MIN_QUOTA_BYTES..=MAX_QUOTA_BYTES).contains(&bytes) => Ok(bytes),
+        _ => Err(format!(
+            "{quota} is not a whole number of usage bytes from {MIN_QUOTA_BYTES} to {MAX_QUOTA_BYTES}"
+        )),
+    }
 }
 
 fn check_connectors(
@@ -720,7 +780,9 @@ mod tests {
     }
 
     fn storage(entry: Value) -> impl FnOnce(&mut Value) {
-        move |manifest| manifest["permissions"] = json!([{ "name": "log", "required": true }, entry])
+        move |manifest| {
+            manifest["permissions"] = json!([{ "name": "log", "required": true }, entry])
+        }
     }
 
     #[test]

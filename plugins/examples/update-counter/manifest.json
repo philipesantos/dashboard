@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "local/update-counter",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }],
+  "login_providers": []
+}
