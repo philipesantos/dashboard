@@ -425,9 +425,11 @@ fn foreign_store() {
             for answer in &found {
                 assert_eq!(answer["error"], "failed:damaged", "{kind:?}: {answer}");
             }
+            // An update that cannot use its store fails, naming why
             let report = b.update(&steps(&[set("mine", "rewritten")], None));
-            let found = answers(&report.result.unwrap());
-            assert_eq!(found[0]["error"], "failed:damaged", "{kind:?}");
+            let error = report.result.expect_err("the update fails");
+            assert_eq!(error.kind(), ErrorKind::StorageFailed, "{kind:?}: {error}");
+            assert!(error.to_string().contains("damaged"), "{kind:?}: {error}");
         });
         assert!(b_store.is_file(), "{kind:?}: the host deleted the file");
         assert_eq!(render(&a, &[get("secret")]), [hex("A's value")]);

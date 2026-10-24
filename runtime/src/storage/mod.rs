@@ -413,6 +413,18 @@ impl StorageRun {
             used_bytes,
             quota_bytes: self.quota(),
         };
+        let not_kept = "nothing this update wrote was kept";
+        // An aborted run fails as such even when the update then failed too: its first failure
+        // is what ended its writes
+        if let Some(first) = &self.aborted {
+            if let Opened::Store { connection, .. } = &self.opened {
+                let _ = connection.rollback();
+            }
+            return Err(RuntimeError::new(
+                ErrorKind::StorageFailed,
+                format!("{first}; {not_kept}"),
+            ));
+        }
         let Opened::Store {
             connection,
             initial_usage,
@@ -424,16 +436,6 @@ impl StorageRun {
         if self.phase == Phase::Render {
             // Dropping the connection ends the read transaction
             return Ok(counts(0, *usage));
-        }
-        let not_kept = "nothing this update wrote was kept";
-        // An aborted run fails as such even when the update then failed too: its first failure
-        // is what ended its writes
-        if let Some(first) = &self.aborted {
-            let _ = connection.rollback();
-            return Err(RuntimeError::new(
-                ErrorKind::StorageFailed,
-                format!("{first}; {not_kept}"),
-            ));
         }
         if !succeeded {
             let _ = connection.rollback();
@@ -612,13 +614,20 @@ impl StorageRun {
                 Phase::Render => Mode::Render,
                 Phase::Update => Mode::Update,
             };
-            let opened = connection::open(
+            let opened = match connection::open(
                 &binding.file,
                 mode,
                 Some(&binding.identity()),
                 &self.settings(),
-            )
-            .map_err(call_error)?;
+            ) {
+                Ok(opened) => opened,
+                Err(error) => {
+                    // An update that cannot take its store ends its writes: a later call that
+                    // got in (the store no longer busy) would keep part of the update
+                    self.abort_if(true, &error);
+                    return Err(call_error(error));
+                }
+            };
             self.opened = match opened {
                 None => Opened::Empty,
                 Some(connection) => {

@@ -87,7 +87,7 @@ Kept by the real `storage` interface for one `render` or `update` (R7, R9):
 | `calls` | Storage calls so far, refused ones included |
 | `written_bytes` | Names and values of every `set` so far (update) |
 | `taken_away` | Set when a call found storage no longer granted; every later call answers `not-granted`, and the transaction rolls back |
-| `aborted` | Set when a write failed or SQLite ended the run's transaction (the file cap, a full disk, an I/O error, a store that cannot be written); every later call answers `failed(run-aborted)`, and the update fails |
+| `aborted` | Set in an update when a write failed, the store could not be opened (busy, damaged), or SQLite ended the run's transaction (the file cap, a full disk, an I/O error, a store that cannot be written); every later call answers `failed(run-aborted)`, and the update fails as `storage-failed`. An unavailable data directory does not set it: no store can be reached, so nothing can be kept in part |
 
 The stand-in keeps no run state: it answers every call `not-granted` and counts nothing.
 
