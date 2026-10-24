@@ -1,15 +1,82 @@
 //! The hardened connection to one store and the host's fixed statements
 //! (`specs/004-plugin-storage/research.md`, R4, R5, R8). This is the only file that runs SQL.
+//!
+//! Every connection, in every mode, is set up the same way, in the order of R4: [`configure`]
+//! (an absolute path, the open flags, no attached databases, defensive mode with triggers, views
+//! and untrusted schemas off, the length limit, the pragmas), then the transaction and the
+//! schema check, then [`authorize`], which sets the statement length limit and from then on
+//! allows only the statements below. Every
+//! name and value is bound as a parameter, never written into SQL, and no statement calls a
+//! function, so lengths and usage are counted in Rust.
 
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Duration;
 
-use rusqlite::Connection;
+use rusqlite::config::DbConfig;
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+use rusqlite::limits::Limit;
+use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, ffi, params};
+
+/// The SQLite this host is built and reviewed with: `libsqlite3-sys` 0.39.0, pinned in
+/// `runtime/Cargo.toml`, bundles it (research R1).
+const SQLITE_VERSION: &str = "3.54.0";
 
 /// The host's schema, created with the file and checked at every open (research R5).
 const CREATE_STORE: &str =
     "CREATE TABLE store (key TEXT PRIMARY KEY NOT NULL, value ANY NOT NULL) STRICT, WITHOUT ROWID";
 const CREATE_ENTRIES: &str = "CREATE TABLE entries (name BLOB PRIMARY KEY NOT NULL, value BLOB NOT NULL) STRICT, WITHOUT ROWID";
+/// The store's own rows: `format`, `id`, `origin` and `usage`.
+const STORE_FORMAT: i64 = 1;
+const INSERT_IDENTITY: &str =
+    "INSERT INTO store (key, value) VALUES ('format', 1), ('id', ?1), ('origin', ?2), ('usage', 0)";
+const READ_SCHEMA: &str = "SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY name";
+const READ_STORE: &str = "SELECT key, value FROM store ORDER BY key";
+
+/// The statements a plugin's calls and the CLI run, after the authorizer is installed.
+const GET: &str = "SELECT value FROM entries WHERE name = ?1";
+const PUT: &str = "INSERT OR REPLACE INTO entries (name, value) VALUES (?1, ?2)";
+const REMOVE: &str = "DELETE FROM entries WHERE name = ?1";
+const REMOVE_ALL: &str = "DELETE FROM entries";
+/// Listing is a range on the name's bytes, never `LIKE` or `GLOB`, whose `%` and `_` would turn
+/// a name into a pattern; the extra row says whether another page follows.
+const LIST_BOUNDED: &str =
+    "SELECT name FROM entries WHERE name >= ?1 AND name < ?2 AND name > ?3 ORDER BY name LIMIT ?4";
+const LIST_OPEN: &str =
+    "SELECT name FROM entries WHERE name >= ?1 AND name > ?2 ORDER BY name LIMIT ?3";
+const ENTRIES: &str = "SELECT name, value FROM entries ORDER BY name";
+const READ_USAGE: &str = "SELECT value FROM store WHERE key = 'usage'";
+const WRITE_USAGE: &str = "UPDATE store SET value = ?1 WHERE key = 'usage'";
+
+/// Every statement the host prepares on a store connection, for `SQLITE_LIMIT_SQL_LENGTH`. The
+/// pragmas of [`configure`] are shorter than the longest of them.
+const STATEMENTS: &[&str] = &[
+    CREATE_STORE,
+    CREATE_ENTRIES,
+    INSERT_IDENTITY,
+    READ_SCHEMA,
+    READ_STORE,
+    GET,
+    PUT,
+    REMOVE,
+    REMOVE_ALL,
+    LIST_BOUNDED,
+    LIST_OPEN,
+    ENTRIES,
+    READ_USAGE,
+    WRITE_USAGE,
+    "BEGIN DEFERRED",
+    "BEGIN IMMEDIATE",
+    "BEGIN EXCLUSIVE",
+    "COMMIT",
+    "ROLLBACK",
+];
+
+/// The page cache of one connection, in KiB: a store never holds much host memory, and an
+/// update of 1 MiB spills pages to the file (research R4, R8).
+const CACHE_KIB: i64 = 256;
+/// Room in `SQLITE_LIMIT_LENGTH` for a row's own header above the largest name and value.
+const ROW_HEADER_BYTES: usize = 4096;
 
 /// What a connection is opened for, which sets its open flags and its transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +96,14 @@ pub(crate) enum Mode {
 impl Mode {
     fn writes(self) -> bool {
         matches!(self, Mode::Update | Mode::Clear)
+    }
+
+    fn begin(self) -> &'static str {
+        match self {
+            Mode::Render | Mode::Show | Mode::List => "BEGIN DEFERRED",
+            Mode::Update => "BEGIN IMMEDIATE",
+            Mode::Clear => "BEGIN EXCLUSIVE",
+        }
     }
 }
 
@@ -72,43 +147,423 @@ pub(crate) type Entry = (Vec<u8>, Vec<u8>);
 /// One open, hardened connection to a store, inside the transaction its [`Mode`] sets.
 pub(crate) struct StoreConnection {
     connection: Connection,
+    file_cap_bytes: u64,
+}
+
+/// Why one attempt at opening failed: a store error, or a hot journal that a read-only
+/// connection cannot roll back (`SQLITE_READONLY_ROLLBACK`, research R8).
+pub(crate) enum Failure {
+    Store(StoreError),
+    HotJournal,
+}
+
+impl From<StoreError> for Failure {
+    fn from(error: StoreError) -> Self {
+        Failure::Store(error)
+    }
 }
 
 /// Opens the store at `file` for `mode`, hardened as research R4 sets out, and checks that it
 /// holds the host's schema and, when `identity` is given, that identity. `Ok(None)` when there
 /// is no store yet: the file does not exist, or has no tables, in a mode that does not create
 /// it.
+///
+/// A read-only open that finds the hot journal of an interrupted update opens the store
+/// read-write once, which rolls the journal back, then opens it read-only again; if that does
+/// not work, the store is `Busy`, never `Damaged`: it only needs recovering (research R8).
 pub(crate) fn open(
     file: &Path,
     mode: Mode,
     identity: Option<&Identity>,
     settings: &Settings,
 ) -> Result<Option<StoreConnection>, StoreError> {
-    let _ = (file, mode, identity, settings);
-    Err(StoreError::Unavailable("not implemented".to_owned()))
+    engine_check().map_err(StoreError::Unavailable)?;
+    if !file.is_absolute() {
+        // A relative name could be read as a URI (SQLITE_USE_URI is compiled in) or move
+        // with the working directory; the binding always gives an absolute one
+        return Err(StoreError::Unavailable(format!(
+            "the store path {} is not absolute",
+            file.display()
+        )));
+    }
+    match open_once(file, mode, identity, settings) {
+        Ok(opened) => Ok(opened),
+        Err(Failure::Store(error)) => Err(error),
+        Err(Failure::HotJournal) => {
+            let busy = |detail: &str| {
+                StoreError::Busy(format!(
+                    "an interrupted update left a journal that could not be rolled back: {detail}"
+                ))
+            };
+            match open_once(file, Mode::Clear, None, settings) {
+                Ok(recovered) => drop(recovered),
+                // The schema check may still refuse the file; the read-only open says so
+                Err(Failure::Store(StoreError::Damaged(_))) => {}
+                Err(Failure::Store(error)) => return Err(busy(&describe(&error))),
+                Err(Failure::HotJournal) => return Err(busy("the file cannot be written")),
+            }
+            match open_once(file, mode, identity, settings) {
+                Ok(opened) => Ok(opened),
+                Err(Failure::Store(error)) => Err(error),
+                Err(Failure::HotJournal) => Err(busy("it is still there")),
+            }
+        }
+    }
+}
+
+fn describe(error: &StoreError) -> String {
+    match error {
+        StoreError::Damaged(detail)
+        | StoreError::Busy(detail)
+        | StoreError::Unavailable(detail)
+        | StoreError::FileCap(detail) => detail.clone(),
+    }
+}
+
+fn open_once(
+    file: &Path,
+    mode: Mode,
+    identity: Option<&Identity>,
+    settings: &Settings,
+) -> Result<Option<StoreConnection>, Failure> {
+    if mode != Mode::Update && !file.exists() {
+        return Ok(None);
+    }
+    let mut connection = configure(file, mode, settings)?;
+    if !check_schema(&connection, mode, identity)? {
+        return Ok(None);
+    }
+    authorize(&mut connection)?;
+    Ok(Some(StoreConnection {
+        connection,
+        file_cap_bytes: settings.file_cap_bytes,
+    }))
+}
+
+/// Steps 1 to 6 of research R4: everything a connection is set up with before its first
+/// statement on the store's tables.
+pub(crate) fn configure(
+    file: &Path,
+    mode: Mode,
+    settings: &Settings,
+) -> Result<Connection, Failure> {
+    // SQLITE_OPEN_URI is left out: the path is a file name, never a URI
+    let mut flags = OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_EXRESCODE;
+    flags |= match mode {
+        Mode::Update => OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+        Mode::Clear => OpenFlags::SQLITE_OPEN_READ_WRITE,
+        Mode::Render | Mode::Show | Mode::List => OpenFlags::SQLITE_OPEN_READ_ONLY,
+    };
+    let connection =
+        Connection::open_with_flags(file, flags).map_err(|error| failure(error, "opening"))?;
+    let setup = |error| failure(error, "setting up the connection");
+    connection
+        .set_limit(Limit::SQLITE_LIMIT_ATTACHED, 0)
+        .map_err(setup)?;
+    for (config, on) in [
+        (DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true),
+        (DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false),
+        (DbConfig::SQLITE_DBCONFIG_ENABLE_VIEW, false),
+        (DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA, false),
+    ] {
+        if connection.set_db_config(config, on).map_err(setup)? != on {
+            return Err(
+                StoreError::Unavailable(format!("SQLite refused to set {config:?}")).into(),
+            );
+        }
+    }
+    let length = settings.max_name_bytes + settings.max_value_bytes + ROW_HEADER_BYTES;
+    set_limit(&connection, Limit::SQLITE_LIMIT_LENGTH, length)?;
+    let page_size: i64 = pragma(&connection, "PRAGMA page_size")?;
+    let page_count: i64 = pragma(&connection, "PRAGMA page_count")?;
+    let page_size = page_size.max(1) as u64;
+    let cap_pages = settings
+        .file_cap_bytes
+        .div_ceil(page_size)
+        .max(page_count.max(1) as u64);
+    let set: i64 = pragma(&connection, &format!("PRAGMA max_page_count = {cap_pages}"))?;
+    if (set as u64) < cap_pages.min(page_count as u64) {
+        return Err(StoreError::Unavailable(format!(
+            "SQLite kept max_page_count at {set} for a cap of {cap_pages} pages"
+        ))
+        .into());
+    }
+    let _: i64 = pragma(&connection, "PRAGMA secure_delete = ON")?;
+    if mode.writes() {
+        let journal: String = pragma(&connection, "PRAGMA journal_mode = DELETE")?;
+        if !journal.eq_ignore_ascii_case("delete") {
+            return Err(StoreError::Damaged(format!(
+                "the store keeps a {journal} journal, which the host never sets"
+            ))
+            .into());
+        }
+    }
+    connection
+        .execute_batch(&format!(
+            "PRAGMA synchronous = FULL; PRAGMA cache_size = -{CACHE_KIB}"
+        ))
+        .map_err(setup)?;
+    connection
+        .busy_timeout(settings.busy_timeout)
+        .map_err(setup)?;
+    Ok(connection)
+}
+
+fn set_limit(connection: &Connection, limit: Limit, value: usize) -> Result<(), Failure> {
+    let value = i32::try_from(value).map_err(|_| {
+        StoreError::Unavailable(format!("{limit:?} of {value} does not fit SQLite"))
+    })?;
+    connection
+        .set_limit(limit, value)
+        .map(drop)
+        .map_err(|error| failure(error, "setting up the connection"))
+}
+
+/// The first row's first column of a pragma, which some pragmas return and others do not.
+fn pragma<T: rusqlite::types::FromSql + Default>(
+    connection: &Connection,
+    sql: &str,
+) -> Result<T, Failure> {
+    let mut statement = connection
+        .prepare(sql)
+        .map_err(|error| failure(error, "setting up the connection"))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|error| failure(error, "setting up the connection"))?;
+    match rows
+        .next()
+        .map_err(|error| failure(error, "setting up the connection"))?
+    {
+        Some(row) => row
+            .get(0)
+            .map_err(|error| failure(error, "setting up the connection")),
+        None => Ok(T::default()),
+    }
+}
+
+/// Steps 7 and 8 of research R4: starts the mode's transaction, creates the schema in an
+/// update of a file without tables, and checks it holds exactly the host's schema and rows.
+/// `false` when there is no store yet (a file without tables, outside an update).
+fn check_schema(
+    connection: &Connection,
+    mode: Mode,
+    identity: Option<&Identity>,
+) -> Result<bool, Failure> {
+    connection
+        .execute_batch(mode.begin())
+        .map_err(|error| failure(error, "starting a transaction"))?;
+    let read = |error| failure(error, "reading the schema");
+    let mut schema: Vec<(String, String, String, Option<String>)> = {
+        let mut statement = connection.prepare(READ_SCHEMA).map_err(read)?;
+        statement
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .map_err(read)?
+            .collect::<Result<_, _>>()
+            .map_err(read)?
+    };
+    if schema.is_empty() {
+        if mode != Mode::Update {
+            return Ok(false);
+        }
+        let Some(identity) = identity else {
+            return Err(
+                StoreError::Unavailable("an update needs the store's identity".into()).into(),
+            );
+        };
+        let create = |error| failure(error, "creating the store");
+        for sql in [CREATE_STORE, CREATE_ENTRIES] {
+            connection.execute_batch(sql).map_err(create)?;
+        }
+        connection
+            .execute(INSERT_IDENTITY, params![identity.id, identity.origin])
+            .map_err(create)?;
+        schema = vec![
+            table("entries", CREATE_ENTRIES),
+            table("store", CREATE_STORE),
+        ];
+    }
+    let expected = [
+        table("entries", CREATE_ENTRIES),
+        table("store", CREATE_STORE),
+    ];
+    if schema != expected {
+        let names: Vec<String> = schema
+            .iter()
+            .map(|(kind, name, ..)| format!("{kind} {name}"))
+            .collect();
+        return Err(StoreError::Damaged(format!(
+            "the file holds {}, not the host's two tables as it writes them",
+            names.join(", ")
+        ))
+        .into());
+    }
+    let stored = read_identity(connection)?;
+    if let Some(identity) = identity
+        && stored != *identity
+    {
+        return Err(StoreError::Damaged(format!(
+            "the file is the store of {} from {}",
+            stored.id, stored.origin
+        ))
+        .into());
+    }
+    Ok(true)
+}
+
+fn table(name: &str, sql: &str) -> (String, String, String, Option<String>) {
+    (
+        "table".to_owned(),
+        name.to_owned(),
+        name.to_owned(),
+        Some(sql.to_owned()),
+    )
+}
+
+/// The `store` table: exactly `format` = 1, `id` and `origin` as text, and `usage` a whole
+/// number, or the file is damaged.
+fn read_identity(connection: &Connection) -> Result<Identity, StoreError> {
+    use rusqlite::types::Value;
+    let read = |error| store_error(error, "reading the store's identity");
+    let mut statement = connection.prepare(READ_STORE).map_err(read)?;
+    let rows: Vec<(String, Value)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(read)?
+        .collect::<Result<_, _>>()
+        .map_err(read)?;
+    let damaged =
+        || StoreError::Damaged("the store's own rows are not the ones the host writes".to_owned());
+    let [
+        (format_key, format),
+        (id_key, id),
+        (origin_key, origin),
+        (usage_key, usage),
+    ] = <[(String, Value); 4]>::try_from(rows).map_err(|_| damaged())?;
+    match (
+        (format_key.as_str(), format),
+        (id_key.as_str(), id),
+        (origin_key.as_str(), origin),
+        (usage_key.as_str(), usage),
+    ) {
+        (
+            ("format", Value::Integer(STORE_FORMAT)),
+            ("id", Value::Text(id)),
+            ("origin", Value::Text(origin)),
+            ("usage", Value::Integer(usage)),
+        ) if usage >= 0 => Ok(Identity { id, origin }),
+        _ => Err(damaged()),
+    }
+}
+
+/// Step 9 of research R4: from here on the connection runs only the host's statements on its
+/// two tables. Everything else is denied: every function, `ATTACH`, `DETACH`, `PRAGMA`,
+/// `CREATE`, `DROP`, `ALTER`, savepoints, reads of `sqlite_schema` and any action SQLite adds.
+pub(crate) fn authorize(connection: &mut Connection) -> Result<(), Failure> {
+    // Set here rather than with the length limit: creating the tables runs SQLite's own,
+    // longer statements
+    let sql_length = STATEMENTS.iter().map(|sql| sql.len()).max().unwrap_or(0);
+    set_limit(connection, Limit::SQLITE_LIMIT_SQL_LENGTH, sql_length)?;
+    connection
+        .authorizer(Some(|context: AuthContext<'_>| {
+            let main = context.database_name == Some("main");
+            let host_table = |table: &str| main && matches!(table, "store" | "entries");
+            match context.action {
+                AuthAction::Select | AuthAction::Transaction { .. } => Authorization::Allow,
+                AuthAction::Read { table_name, .. }
+                | AuthAction::Insert { table_name }
+                | AuthAction::Update { table_name, .. }
+                | AuthAction::Delete { table_name }
+                    if host_table(table_name) =>
+                {
+                    Authorization::Allow
+                }
+                _ => Authorization::Deny,
+            }
+        }))
+        .map_err(|error| failure(error, "installing the authorizer"))
 }
 
 /// The bundled SQLite is the one this host was built and reviewed with, and its defensive mode
 /// takes effect (research R1). Checked once per process, before any store is opened.
 pub fn engine_check() -> Result<(), String> {
-    Err("not implemented".to_owned())
+    static CHECKED: OnceLock<Result<(), String>> = OnceLock::new();
+    CHECKED
+        .get_or_init(|| {
+            let version = rusqlite::version();
+            if version != SQLITE_VERSION {
+                return Err(format!(
+                    "the linked SQLite is {version}, not {SQLITE_VERSION}, the one this host is built and reviewed with"
+                ));
+            }
+            let connection = Connection::open_in_memory_with_flags(
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .map_err(|error| format!("SQLite cannot open a connection: {error}"))?;
+            let defensive = connection
+                .set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)
+                .and_then(|_| connection.db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE))
+                .map_err(|error| format!("SQLite has no defensive mode: {error}"))?;
+            if defensive {
+                Ok(())
+            } else {
+                Err("SQLite does not turn its defensive mode on".to_owned())
+            }
+        })
+        .clone()
+}
+
+/// The rule behind a SQLite error, with what the host was doing.
+fn store_error(error: rusqlite::Error, doing: &str) -> StoreError {
+    let detail = format!("{doing}: {error}");
+    match error.sqlite_error_code() {
+        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => StoreError::Busy(detail),
+        Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) => StoreError::Damaged(detail),
+        Some(ErrorCode::DiskFull) => StoreError::FileCap(detail),
+        _ => StoreError::Unavailable(detail),
+    }
+}
+
+fn failure(error: rusqlite::Error, doing: &str) -> Failure {
+    match error.sqlite_error() {
+        Some(code) if code.extended_code == ffi::SQLITE_READONLY_ROLLBACK => Failure::HotJournal,
+        _ => Failure::Store(store_error(error, doing)),
+    }
 }
 
 impl StoreConnection {
+    /// The error of a write: a full file names the cap, since SQLite cannot tell it from a
+    /// full disk.
+    fn write_error(&self, error: rusqlite::Error, doing: &str) -> StoreError {
+        match store_error(error, doing) {
+            StoreError::FileCap(_) => StoreError::FileCap(format!(
+                "the store's file reached its size limit of {} bytes, or the disk is full",
+                self.file_cap_bytes
+            )),
+            other => other,
+        }
+    }
+
     pub(crate) fn get(&self, name: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
-        let _ = name;
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        self.connection
+            .query_row(GET, params![name], |row| row.get(0))
+            .optional()
+            .map_err(|error| store_error(error, "reading a value"))
     }
 
     /// Stores `value` under `name`, replacing any value there.
     pub(crate) fn put(&self, name: &[u8], value: &[u8]) -> Result<(), StoreError> {
-        let _ = (name, value);
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        self.connection
+            .execute(PUT, params![name, value])
+            .map(drop)
+            .map_err(|error| self.write_error(error, "writing a value"))
     }
 
     pub(crate) fn remove(&self, name: &[u8]) -> Result<(), StoreError> {
-        let _ = name;
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        self.connection
+            .execute(REMOVE, params![name])
+            .map(drop)
+            .map_err(|error| self.write_error(error, "deleting a value"))
     }
 
     /// At most `page` names that start with `prefix` and come after `after`, in byte order, and
@@ -119,40 +574,83 @@ impl StoreConnection {
         after: Option<&[u8]>,
         page: usize,
     ) -> Result<(Vec<Vec<u8>>, bool), StoreError> {
-        let _ = (prefix, after, page);
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        let read = |error| store_error(error, "listing names");
+        let after = after.unwrap_or_default();
+        let limit = i64::try_from(page.saturating_add(1)).unwrap_or(i64::MAX);
+        let mut names: Vec<Vec<u8>> = match successor(prefix) {
+            Some(end) => {
+                let mut statement = self.connection.prepare(LIST_BOUNDED).map_err(read)?;
+                statement
+                    .query_map(params![prefix, end, after, limit], |row| row.get(0))
+                    .map_err(read)?
+                    .collect::<Result<_, _>>()
+                    .map_err(read)?
+            }
+            None => {
+                let mut statement = self.connection.prepare(LIST_OPEN).map_err(read)?;
+                statement
+                    .query_map(params![prefix, after, limit], |row| row.get(0))
+                    .map_err(read)?
+                    .collect::<Result<_, _>>()
+                    .map_err(read)?
+            }
+        };
+        let more = names.len() > page;
+        names.truncate(page);
+        Ok((names, more))
     }
 
     /// Every entry, in byte order of names.
     pub(crate) fn entries(&self) -> Result<Vec<Entry>, StoreError> {
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        let read = |error| store_error(error, "reading the entries");
+        let mut statement = self.connection.prepare(ENTRIES).map_err(read)?;
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(read)?
+            .collect::<Result<_, _>>()
+            .map_err(read)
     }
 
     /// Deletes every entry; `secure_delete` overwrites their content.
     pub(crate) fn remove_all(&self) -> Result<(), StoreError> {
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        self.connection
+            .execute(REMOVE_ALL, [])
+            .map(drop)
+            .map_err(|error| self.write_error(error, "deleting every entry"))
     }
 
     pub(crate) fn usage(&self) -> Result<u64, StoreError> {
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        let usage: i64 = self
+            .connection
+            .query_row(READ_USAGE, [], |row| row.get(0))
+            .map_err(|error| store_error(error, "reading the usage"))?;
+        u64::try_from(usage).map_err(|_| StoreError::Damaged(format!("the usage is {usage}")))
     }
 
     pub(crate) fn set_usage(&self, usage: u64) -> Result<(), StoreError> {
-        let _ = usage;
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        let usage = i64::try_from(usage)
+            .map_err(|_| StoreError::Unavailable(format!("a usage of {usage} bytes")))?;
+        self.connection
+            .execute(WRITE_USAGE, params![usage])
+            .map(drop)
+            .map_err(|error| self.write_error(error, "writing the usage"))
     }
 
     /// The id and origin the store records.
     pub(crate) fn identity(&self) -> Result<Identity, StoreError> {
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        read_identity(&self.connection)
     }
 
     pub(crate) fn commit(&self) -> Result<(), StoreError> {
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        self.connection
+            .execute_batch("COMMIT")
+            .map_err(|error| self.write_error(error, "committing"))
     }
 
     pub(crate) fn rollback(&self) -> Result<(), StoreError> {
-        Err(StoreError::Unavailable("not implemented".to_owned()))
+        self.connection
+            .execute_batch("ROLLBACK")
+            .map_err(|error| store_error(error, "rolling back"))
     }
 
     /// Whether SQLite ended the transaction this connection opened, as it does on a full file
@@ -165,8 +663,13 @@ impl StoreConnection {
 /// The shortest byte string greater than every string that starts with `prefix`, or `None` when
 /// there is none (an empty prefix, or one of only `0xFF` bytes).
 fn successor(prefix: &[u8]) -> Option<Vec<u8>> {
-    let _ = prefix;
-    None
+    let mut end = prefix.to_vec();
+    while end.last() == Some(&0xff) {
+        end.pop();
+    }
+    let last = end.last_mut()?;
+    *last += 1;
+    Some(end)
 }
 
 #[cfg(test)]

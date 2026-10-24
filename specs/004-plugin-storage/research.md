@@ -119,8 +119,8 @@ function, in this order, before any statement of a plugin's call runs:
    (its default, and rusqlite's `load_extension` feature is not compiled in).
 5. `set_limit(SQLITE_LIMIT_LENGTH, …)` to the largest name plus value the host accepts plus 4 KiB
    (SQLite counts a row's record header against it: the spike refused a 256 B name with a 256 KiB
-   value at exactly their sum), and `SQLITE_LIMIT_SQL_LENGTH` to the length of the host's longest
-   statement. The host's own checks (R10) are the exact limits; these are the layer beneath.
+   value at exactly their sum). The host's own checks (R10) are the exact limits; this is the
+   layer beneath. (`SQLITE_LIMIT_SQL_LENGTH` is set in step 9, see there.)
 6. Pragmas: `max_page_count` (the file cap, R10), `secure_delete = ON` (deleted names and values
    are overwritten with zeros, on B-tree, overflow and free pages; `FAST` would leave free and
    overflow pages as they were), `journal_mode = DELETE` and `synchronous = FULL` (R8),
@@ -130,7 +130,10 @@ function, in this order, before any statement of a plugin's call runs:
 7. In `update` and `clear` only, on a file with no tables yet: the host's `CREATE TABLE`
    statements and its identity rows (R5).
 8. The schema check (R5): it reads `sqlite_schema`, so it runs before the authorizer.
-9. An authorizer that allows only what the host's call statements need, and denies everything
+9. `SQLITE_LIMIT_SQL_LENGTH` to the length of the host's longest statement (set here, not in
+   step 5: creating the tables in step 7 runs SQLite's own, longer statements, which the
+   implementation found), then an authorizer that allows only what the host's call statements
+   need, and denies everything
    else: reading and writing the two tables of R5, `SELECT`, and transactions. It denies every
    function, `ATTACH`, `DETACH`, `PRAGMA`, `CREATE`, `DROP`, `ALTER`, reads of `sqlite_schema`,
    and anything new.
