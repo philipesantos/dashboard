@@ -1261,3 +1261,31 @@ fn check_connector_validates_a_connector_as_the_host_would_load_it() {
     ]);
     assert_eq!(output.status.code(), Some(2));
 }
+
+#[test]
+fn bench_of_a_connected_widget_measures_a_render_from_kept_data() {
+    let server = hello_server();
+    let connected = Connected::hello_only(&server);
+    connected.approve();
+    let data = connected.dir.path().join("data.json");
+    std::fs::write(
+        &data,
+        r#"{"answers":[{"status":200,"headers":[],"body":"{}"}],"more":0}"#,
+    )
+    .unwrap();
+    let output = connected.run(&[
+        "bench",
+        path_str(&connected.plugin),
+        "--iterations",
+        "5",
+        "--kept-data",
+        path_str(&data),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let text = stdout(&output);
+    let last = text.lines().last().unwrap();
+    let (key, value) = last.split_once(": ").unwrap();
+    assert_eq!(key, "render_with_data_us");
+    assert!(value.parse::<u64>().unwrap() < 1_000_000, "{last}");
+    assert!(server.received().is_empty(), "bench made a request");
+}

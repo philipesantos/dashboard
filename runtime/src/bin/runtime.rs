@@ -41,7 +41,7 @@ use runtime::{CheckedPackage, Limits, Plugin, Runtime, RuntimeOptions, escape, p
 
 const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime update <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
-       runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime bench <plugin> [--iterations <n>] [--kept-data <file>] [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime permissions <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime approve <plugin> [--expect <digest>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime optional <plugin> <permission | connector-id> on|off [--grants <path>] [--data <dir>] [--connectors <dir>]
@@ -135,6 +135,8 @@ struct Options {
     /// Only for `requests`: whose entries, and how many.
     plugin_filter: Option<String>,
     last: usize,
+    /// Only for `bench`: a JSON document to render from as kept data.
+    kept_data: Option<serde_json::Value>,
 }
 
 fn parse(args: &[String], command: Command) -> Result<Options, String> {
@@ -150,6 +152,7 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
     let mut expect = None;
     let mut plugin_filter = None;
     let mut last = DEFAULT_LAST;
+    let mut kept_data = None;
     let mut iterations = DEFAULT_ITERATIONS;
     let mut grants = None;
     let mut manifest = None;
@@ -225,6 +228,15 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
                     .filter(|&n| n > 0)
                     .ok_or("--last needs a whole number above 0")?;
             }
+            "--kept-data" if command == Command::Bench => {
+                let path = args.next().ok_or("--kept-data needs a file")?;
+                let text = std::fs::read_to_string(path)
+                    .map_err(|error| format!("cannot read kept data file {path}: {error}"))?;
+                let data = serde_json::from_str(&text).map_err(|error| {
+                    format!("the kept data in {path} is not valid JSON: {error}")
+                })?;
+                kept_data = Some(data);
+            }
             "--iterations" if command == Command::Bench => {
                 iterations = args
                     .next()
@@ -283,6 +295,7 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         expect,
         plugin_filter,
         last,
+        kept_data,
     })
 }
 
@@ -856,8 +869,9 @@ fn approve(options: &Options) -> ExitCode {
 const CHECK_REPEATS: u32 = 100;
 
 /// Times one load, then `iterations` render calls, each with its own instantiation. Then the
-/// checks of a load without the compile, and a re-link after a grant change (SC-007), each as
-/// the median of [`CHECK_REPEATS`] runs.
+/// checks of a load without the compile, connectors included, and a re-link after a grant change
+/// (SC-007), and with `--kept-data` a render from kept data (SC-004), each as the median of
+/// [`CHECK_REPEATS`] runs.
 fn bench(options: &Options) -> ExitCode {
     let target = match Target::open(options) {
         Ok(target) => target,
@@ -894,6 +908,19 @@ fn bench(options: &Options) -> ExitCode {
         Ok(time) => time,
         Err(error) => return refused(&error),
     };
+    // A connected widget rendering from kept data held in memory: no update, no request
+    let render_with_data = match &options.kept_data {
+        None => None,
+        Some(data) => match median(|| {
+            plugin
+                .render_with_kept(&options.config, data)
+                .result
+                .map(drop)
+        }) {
+            Ok(time) => Some(time),
+            Err(error) => return refused(&error),
+        },
+    };
 
     println!("load_ms: {:.1}", load_time.as_secs_f64() * 1000.0);
     println!("render_p50_us: {}", percentile(&times, 50).as_micros());
@@ -901,6 +928,9 @@ fn bench(options: &Options) -> ExitCode {
     println!("render_max_us: {}", percentile(&times, 100).as_micros());
     println!("checks_us: {}", checks.as_micros());
     println!("relink_us: {}", relink.as_micros());
+    if let Some(time) = render_with_data {
+        println!("render_with_data_us: {}", time.as_micros());
+    }
     ExitCode::SUCCESS
 }
 

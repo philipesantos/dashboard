@@ -384,6 +384,9 @@ pub struct Plugin {
     rates: Arc<Rates>,
     kept: KeptStore,
     log: RequestLog,
+    /// Where declared connectors are found, for [`Plugin::recheck`].
+    catalog: catalog::Catalog,
+    options: RuntimeOptions,
 }
 
 /// The plugin linked for one generation of its grant store, or the refusal that generation
@@ -495,6 +498,13 @@ impl Runtime {
         })
     }
 
+    fn connectors(&self) -> Connectors<'_> {
+        Connectors {
+            catalog: &self.catalog,
+            options: &self.options,
+        }
+    }
+
     /// Discards every kept data file of the plugin `id`, as removing its approval or turning
     /// off one of its connectors does (FR-010). Returns how many there were.
     pub fn discard_kept_data(&self, id: &manifest::PluginId) -> std::io::Result<usize> {
@@ -558,7 +568,7 @@ impl Runtime {
         let mut connectors = Vec::new();
         let mut refused_connectors = Vec::new();
         for request in manifest.connectors() {
-            match self.resolve_connector(request) {
+            match self.connectors().resolve(request) {
                 Ok(loaded) => connectors.push(loaded),
                 Err(error) => refused_connectors.push((request.id.clone(), error)),
             }
@@ -574,10 +584,78 @@ impl Runtime {
         })
     }
 
+    /// Checks a connector file as this runtime would load it as `local/<name>` from
+    /// `<name>.json`: the format, the rules of a local connector, its id against its file name,
+    /// and the hosts the catalog reserves. For `runtime check-connector`, for authors.
+    pub fn check_local_connector(
+        &self,
+        bytes: &[u8],
+        name: &str,
+    ) -> Result<Connector, RuntimeError> {
+        let connector = Connector::parse(bytes, Source::Local)?;
+        let id = format!("local/{name}");
+        if connector.id() != id {
+            return Err(RuntimeError::with_names(
+                ErrorKind::InvalidConnector,
+                vec![connector.id().to_owned()],
+                Some(&format!("the file {name}.json must carry the id {id}")),
+            ));
+        }
+        self.connectors().check_not_reserved(&connector)?;
+        Ok(connector)
+    }
+
+    /// Checks a plugin package and its grants, and links it with exactly the capabilities its
+    /// manifest declares and its approval grants (load steps 1–9).
+    ///
+    /// `origin` is where the package came from: in the CLI, its file's canonical path. An
+    /// approval applies only to packages from the origin it was given for, so another package
+    /// that claims an approved id gets none of its grants (FR-020).
+    pub fn load(
+        &self,
+        bytes: &[u8],
+        origin: &str,
+        grants: Arc<GrantStore>,
+    ) -> Result<Plugin, RuntimeError> {
+        let package = self.check(bytes)?;
+        // Read before the grants, so a change made while linking is seen on the next call
+        let generation = grants.generation();
+        let prepared = prepare(&package, origin, &grants)?;
+        let plugin = Plugin {
+            package,
+            origin: origin.to_owned(),
+            grants,
+            linked: Mutex::new(Linked {
+                generation,
+                prepared: Ok(Arc::new(prepared)),
+            }),
+            limits: self.limits.clone(),
+            clock: Arc::clone(&self.clock),
+            network: self.network.clone(),
+            rates: Arc::clone(&self.rates),
+            kept: KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes),
+            log: RequestLog::new(self.options.data_dir(), &self.limits),
+            catalog: self.catalog.clone(),
+            options: self.options.clone(),
+        };
+        // Step 7a: kept data that no longer matches the package or its approval goes now
+        plugin.kept_data();
+        Ok(plugin)
+    }
+}
+
+/// Load step 6a, for the runtime and for a loaded plugin's [`Plugin::recheck`]: where declared
+/// connectors are found and the rules they follow.
+pub(crate) struct Connectors<'a> {
+    catalog: &'a catalog::Catalog,
+    options: &'a RuntimeOptions,
+}
+
+impl Connectors<'_> {
     /// Load step 6a for one declared connector: found, parsed, following the destination
     /// rules, of the declared major, with every declared operation
     /// (`specs/003-plugin-connectors/data-model.md`, Load decision).
-    fn resolve_connector(
+    pub(crate) fn resolve(
         &self,
         request: &manifest::ConnectorRequest,
     ) -> Result<LoadedConnector, RuntimeError> {
@@ -691,27 +769,6 @@ impl Runtime {
         Ok((Arc::new(connector), origin))
     }
 
-    /// Checks a connector file as this runtime would load it as `local/<name>` from
-    /// `<name>.json`: the format, the rules of a local connector, its id against its file name,
-    /// and the hosts the catalog reserves. For `runtime check-connector`, for authors.
-    pub fn check_local_connector(
-        &self,
-        bytes: &[u8],
-        name: &str,
-    ) -> Result<Connector, RuntimeError> {
-        let connector = Connector::parse(bytes, Source::Local)?;
-        let id = format!("local/{name}");
-        if connector.id() != id {
-            return Err(RuntimeError::with_names(
-                ErrorKind::InvalidConnector,
-                vec![connector.id().to_owned()],
-                Some(&format!("the file {name}.json must carry the id {id}")),
-            ));
-        }
-        self.check_not_reserved(&connector)?;
-        Ok(connector)
-    }
-
     /// A connector outside the catalog may not declare a host the catalog reserves (FR-005).
     pub(crate) fn check_not_reserved(&self, connector: &Connector) -> Result<(), RuntimeError> {
         for origin in connector.destinations() {
@@ -727,42 +784,6 @@ impl Runtime {
             }
         }
         Ok(())
-    }
-
-    /// Checks a plugin package and its grants, and links it with exactly the capabilities its
-    /// manifest declares and its approval grants (load steps 1–9).
-    ///
-    /// `origin` is where the package came from: in the CLI, its file's canonical path. An
-    /// approval applies only to packages from the origin it was given for, so another package
-    /// that claims an approved id gets none of its grants (FR-020).
-    pub fn load(
-        &self,
-        bytes: &[u8],
-        origin: &str,
-        grants: Arc<GrantStore>,
-    ) -> Result<Plugin, RuntimeError> {
-        let package = self.check(bytes)?;
-        // Read before the grants, so a change made while linking is seen on the next call
-        let generation = grants.generation();
-        let prepared = prepare(&package, origin, &grants)?;
-        let plugin = Plugin {
-            package,
-            origin: origin.to_owned(),
-            grants,
-            linked: Mutex::new(Linked {
-                generation,
-                prepared: Ok(Arc::new(prepared)),
-            }),
-            limits: self.limits.clone(),
-            clock: Arc::clone(&self.clock),
-            network: self.network.clone(),
-            rates: Arc::clone(&self.rates),
-            kept: KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes),
-            log: RequestLog::new(self.options.data_dir(), &self.limits),
-        };
-        // Step 7a: kept data that no longer matches the package or its approval goes now
-        plugin.kept_data();
-        Ok(plugin)
     }
 }
 
@@ -910,19 +931,32 @@ impl Plugin {
                 };
             }
         };
-        let document;
-        let config = if self.package.interfaces.updater().is_some() {
+        if self.package.interfaces.updater().is_some() {
             let config: serde_json::Value = serde_json::from_str(config)
                 .unwrap_or_else(|_| serde_json::Value::String(config.to_owned()));
-            document = kept::render_document(config, self.kept_data().as_ref()).to_string();
-            document.as_str()
-        } else {
-            config
-        };
-        let mut store = self.store(&prepared, Phase::Render);
+            let document = kept::render_document(config, self.kept_data().as_ref()).to_string();
+            return self.render_prepared(&prepared, &document);
+        }
+        self.render_prepared(&prepared, config)
+    }
+
+    /// Renders `document` as it is, for [`render_with_kept`](Self::render_with_kept).
+    fn render_document(&self, document: &str) -> RenderReport {
+        match self.current() {
+            Ok(prepared) => self.render_prepared(&prepared, document),
+            Err(error) => RenderReport {
+                result: Err(error),
+                logs: Vec::new(),
+                dropped_logs: 0,
+            },
+        }
+    }
+
+    fn render_prepared(&self, prepared: &Prepared, config: &str) -> RenderReport {
+        let mut store = self.store(prepared, Phase::Render);
         let result = self
             .start_limits(&mut store, self.limits.time_limit)
-            .and_then(|()| self.call(&prepared, &mut store, config));
+            .and_then(|()| self.call(prepared, &mut store, config));
         let mut state = store.into_data();
         state.run.finish();
         RenderReport {
@@ -1070,6 +1104,16 @@ impl Plugin {
     pub fn recheck(&self, bytes: &[u8]) -> Result<(), RuntimeError> {
         let manifest = Manifest::parse(package::manifest_section(bytes)?)?;
         let contract = permissions::check_component(&self.package.interfaces, &manifest)?;
+        // Step 6a: each declared connector found and checked again (SC-007)
+        let connectors = Connectors {
+            catalog: &self.catalog,
+            options: &self.options,
+        };
+        let loaded = manifest
+            .connectors()
+            .iter()
+            .map(|request| connectors.resolve(request))
+            .collect::<Result<Vec<_>, _>>()?;
         let entry = self.grants.entry(manifest.id())?;
         permissions::decide(
             contract.contract,
@@ -1077,8 +1121,47 @@ impl Plugin {
             &manifest,
             &self.origin,
             entry.as_ref(),
-        )
-        .map(drop)
+        )?;
+        // Step 7 for connectors
+        if let Some(entry) = &entry {
+            let states: Vec<ConnectorState> = loaded.iter().map(LoadedConnector::state).collect();
+            let changes = entry.connector_changes(&manifest, &states);
+            if !changes.is_empty() {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::NeedsNewApproval,
+                    changes,
+                    Some("its connectors changed since it was approved"),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Renders as [`render`](Self::render) does, from `data` held in memory as the kept data,
+    /// fetched now by a successful update; nothing is read, written or sent. For `runtime
+    /// bench`'s `render_with_data_us` (SC-004).
+    pub fn render_with_kept(&self, config: &str, data: &serde_json::Value) -> RenderReport {
+        let now = calls::now_ms();
+        let kept = kept::Kept {
+            id: self.manifest().id().to_string(),
+            origin: self.origin.clone(),
+            digest: self.package.digest.clone(),
+            approval: kept::KeptApproval {
+                digest: String::new(),
+                connectors_on: Vec::new(),
+            },
+            fetched_at_ms: Some(now),
+            data: Some(data.clone()),
+            last_update: Some(kept::LastUpdate {
+                at_ms: now,
+                outcome: kept::Outcome::Ok,
+                error: None,
+            }),
+        };
+        let config: serde_json::Value = serde_json::from_str(config)
+            .unwrap_or_else(|_| serde_json::Value::String(config.to_owned()));
+        let document = kept::render_document(config, Some(&kept)).to_string();
+        self.render_document(&document)
     }
 
     /// Links the plugin again with its grants as they are now, as after a grant change (load
