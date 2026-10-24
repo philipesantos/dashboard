@@ -903,3 +903,577 @@ fn connector_table() {
     );
     gate.assert_well_behaved();
 }
+
+// T043: cases contained on the network, through the seam
+
+/// A gate whose catalog has `catalog/echo` (reserving `echo.test`) with `destinations` and
+/// `operations`, its HTTPS services made by `services` from the gate's PKI, and `net-probe`
+/// declaring `operations` of it, approved and loaded.
+struct EchoGate {
+    gate: Gate,
+    plugin: Plugin,
+    servers: Vec<Server>,
+}
+
+fn echo_gate(
+    limits: Limits,
+    destinations: Value,
+    operations: Value,
+    services: impl FnOnce(&TestPki) -> (Vec<Server>, Vec<Route>, Vec<SocketAddr>),
+) -> EchoGate {
+    let names: Vec<String> = operations.as_object().unwrap().keys().cloned().collect();
+    let mut servers = Vec::new();
+    let gate = Gate::with(|pki| {
+        let (made, routes, public) = services(pki);
+        let mut public = public;
+        public.extend(made.iter().map(Server::address));
+        servers = made;
+        Extra {
+            routes,
+            public,
+            catalog: vec![
+                json!({
+                    "connector_version": 1, "id": "catalog/echo", "version": "1.0.0",
+                    "author": "Tests", "description": "Echo", "reserves": ["echo.test"],
+                    "destinations": destinations, "operations": operations
+                })
+                .to_string(),
+            ],
+            limits: Some(limits),
+            development: Some(true),
+        }
+    });
+    let operations: Vec<&str> = names.iter().map(String::as_str).collect();
+    let plugin = gate.world.approve_and_load(&probe(&connected_manifest(
+        "local/net-probe",
+        &[("catalog/echo", 1, &operations, true)],
+    )));
+    EchoGate {
+        gate,
+        plugin,
+        servers,
+    }
+}
+
+fn read(path: &str) -> Value {
+    json!({ "kind": "read", "method": "GET", "destination": "api", "path": path,
+            "response": { "format": "json" } })
+}
+
+fn api(pki: &TestPki) -> Server {
+    let server = Server::https(&pki.leaf(&["api.echo.test"]));
+    server.route("/", Reply::json(r#"{"ok":true}"#));
+    server
+}
+
+/// `private-address` (FR-007): a name that leads to this machine, the local network or a
+/// cloud metadata service is refused with nothing sent, as are IP destinations and plain HTTP.
+#[test]
+fn private_address() {
+    for address in [
+        "10.0.0.1:443",
+        "127.0.0.1:443",
+        "[::1]:443",
+        "169.254.169.254:443",
+        "[::ffff:192.168.0.1]:443",
+    ] {
+        let address: SocketAddr = address.parse().unwrap();
+        let echo = echo_gate(
+            Limits::default(),
+            json!({ "api": "https://api.echo.test" }),
+            json!({ "root": read("/") }),
+            |_| {
+                (
+                    Vec::new(),
+                    vec![route("api.echo.test", 443, address)],
+                    Vec::new(),
+                )
+            },
+        );
+        let answer = update(&echo.plugin, &calls(&[("catalog/echo", "root", json!([]))]));
+        assert_error(&answer[0], "failed:non-public-address");
+        echo.gate.assert_well_behaved();
+    }
+    // An IP destination, and plain HTTP to anything but this machine, never load
+    let gate = Gate::new();
+    for destination in [
+        "https://10.0.0.1",
+        "https://[::1]",
+        "http://192.168.1.10:8765",
+        "http://api.echo.test",
+    ] {
+        gate.connector("echo", &local("echo", destination, |_| {}));
+        assert_kind(
+            &gate.load_error(&probe_of("echo", &["get"])),
+            ErrorKind::InvalidConnector,
+            &["destinations.api"],
+        );
+    }
+    // Plain HTTP outside development: a local connector does not load at all
+    let production = Gate::with(|_| Extra {
+        development: Some(false),
+        ..Extra::default()
+    });
+    production.connector("echo", &local("echo", "http://127.0.0.1:9", |_| {}));
+    assert_kind(
+        &production.load_error(&probe_of("echo", &["get"])),
+        ErrorKind::DestinationNotVerified,
+        &[],
+    );
+    gate.assert_well_behaved();
+}
+
+/// `rebinding` (FR-007): a name public on the first lookup and private on the second is
+/// refused at the second.
+#[test]
+fn rebinding() {
+    let echo = echo_gate(
+        Limits::default(),
+        json!({ "api": "https://api.echo.test" }),
+        json!({ "root": read("/") }),
+        |pki| {
+            let server = api(pki);
+            let route = Route {
+                host: "api.echo.test".to_owned(),
+                port: 443,
+                answers: vec![
+                    vec![server.address()],
+                    vec!["192.168.0.1:443".parse().unwrap()],
+                ],
+            };
+            (vec![server], vec![route], Vec::new())
+        },
+    );
+    let answers = update(
+        &echo.plugin,
+        &calls(&[
+            ("catalog/echo", "root", json!([])),
+            ("catalog/echo", "root", json!([])),
+        ]),
+    );
+    assert_eq!(answers[0]["status"], 200);
+    assert_error(&answers[1], "failed:non-public-address");
+    assert_eq!(echo.servers[0].received().len(), 1);
+    echo.gate.assert_well_behaved();
+}
+
+/// A gate with `api` (`api.echo.test`) whose `/go` answers `go`, `files` (`files.echo.test`),
+/// and `private` (`private.echo.test`, routed to a private address).
+fn redirect_gate(go: Reply) -> EchoGate {
+    echo_gate(
+        Limits::default(),
+        json!({
+            "api": "https://api.echo.test",
+            "files": "https://files.echo.test",
+            "private": "https://private.echo.test"
+        }),
+        json!({ "go": read("/go") }),
+        |pki| {
+            let api = Server::https(&pki.leaf(&["api.echo.test"]));
+            api.route("/go", go);
+            let other =
+                Server::https(&pki.leaf(&["api.echo.test", "elsewhere.test", "files.echo.test"]));
+            other.route("/there", Reply::json("{}"));
+            let routes = vec![
+                route("api.echo.test", 443, api.address()),
+                route("files.echo.test", 443, other.address()),
+                route("api.echo.test", 8443, other.address()),
+                route("elsewhere.test", 443, other.address()),
+                route("private.echo.test", 443, "10.9.8.7:443".parse().unwrap()),
+            ];
+            (vec![api, other], routes, Vec::new())
+        },
+    )
+}
+
+/// `exact-port` (FR-007): a redirect to the same host on another port is not followed.
+#[test]
+fn exact_port() {
+    let echo = redirect_gate(Reply::redirect(302, "https://api.echo.test:8443/there"));
+    let answer = update(&echo.plugin, &calls(&[("catalog/echo", "go", json!([]))]));
+    assert_error(&answer[0], "failed:redirect-not-allowed");
+    assert!(
+        echo.servers[1].received().is_empty(),
+        "the other port was reached"
+    );
+    echo.gate.assert_well_behaved();
+}
+
+/// `redirect-escape` (FR-007): redirects to an undeclared host, to a private address and to
+/// plain HTTP are not followed.
+#[test]
+fn redirect_escape() {
+    for location in [
+        "https://elsewhere.test/there",
+        "https://private.echo.test/there",
+        "http://api.echo.test/there",
+        "//elsewhere.test/there",
+    ] {
+        let echo = redirect_gate(Reply::redirect(307, location));
+        let answer = update(&echo.plugin, &calls(&[("catalog/echo", "go", json!([]))]));
+        assert_error(&answer[0], "failed:redirect-not-allowed");
+        assert!(
+            echo.servers[1].received().is_empty(),
+            "{location} was reached"
+        );
+        echo.gate.assert_well_behaved();
+    }
+}
+
+/// `tls` (FR-007): a wrong name, an untrusted CA and an expired certificate fail with nothing
+/// sent past the handshake, and the verifier fetches nothing a certificate points at.
+#[test]
+fn tls() {
+    let recorder = Server::recorder();
+    let fetch = recorder.http_origin();
+    let certificates: [fn(&TestPki, &str) -> crate::common::servers::ServerCert; 4] = [
+        |pki, _| pki.leaf(&["other.echo.test"]),
+        |pki, _| pki.untrusted(&["api.echo.test"]),
+        |pki, _| pki.expired(&["api.echo.test"]),
+        |pki, fetch| pki.with_fetch_addresses(&["other.echo.test"], fetch),
+    ];
+    for certificate in certificates {
+        let fetch = fetch.clone();
+        let echo = echo_gate(
+            Limits::default(),
+            json!({ "api": "https://api.echo.test" }),
+            json!({ "root": read("/") }),
+            move |pki| {
+                let server = Server::https(&certificate(pki, &fetch));
+                server.route("/", Reply::json("{}"));
+                let routes = vec![route("api.echo.test", 443, server.address())];
+                (vec![server], routes, Vec::new())
+            },
+        );
+        let answer = update(&echo.plugin, &calls(&[("catalog/echo", "root", json!([]))]));
+        assert_error(&answer[0], "failed:unavailable");
+        assert!(
+            echo.servers[0].received().is_empty(),
+            "a request passed the handshake"
+        );
+        echo.gate.assert_well_behaved();
+    }
+    // A valid certificate with the same addresses: the call works and nothing is fetched
+    let echo = echo_gate(
+        Limits::default(),
+        json!({ "api": "https://api.echo.test" }),
+        json!({ "root": read("/") }),
+        |pki| {
+            let server = Server::https(
+                &pki.with_fetch_addresses(&["api.echo.test"], &recorder.http_origin()),
+            );
+            server.route("/", Reply::json("{}"));
+            let routes = vec![route("api.echo.test", 443, server.address())];
+            (vec![server], routes, Vec::new())
+        },
+    );
+    assert_eq!(
+        update(&echo.plugin, &calls(&[("catalog/echo", "root", json!([]))]))[0]["status"],
+        200
+    );
+    assert!(recorder.received().is_empty(), "{:?}", recorder.received());
+    assert!(!echo.gate.pki.root().is_empty());
+}
+
+/// `cookie` (FR-007): a `Set-Cookie` answer is never sent back.
+#[test]
+fn cookie() {
+    let echo = echo_gate(
+        Limits::default(),
+        json!({ "api": "https://api.echo.test" }),
+        json!({ "root": read("/") }),
+        |pki| {
+            let server = Server::https(&pki.leaf(&["api.echo.test"]));
+            server.route(
+                "/",
+                Reply::json("{}").header("Set-Cookie", "session=stolen; Path=/"),
+            );
+            let routes = vec![route("api.echo.test", 443, server.address())];
+            (vec![server], routes, Vec::new())
+        },
+    );
+    let config = json!({ "calls": [{ "connector": "catalog/echo", "operation": "root", "arguments": [], "repeat": 3 }] }).to_string();
+    update(&echo.plugin, &config);
+    update(&echo.plugin, &config);
+    let received = echo.servers[0].received();
+    assert_eq!(received.len(), 6);
+    assert!(
+        received
+            .iter()
+            .all(|request| request.header("Cookie").is_none())
+    );
+    echo.gate.assert_well_behaved();
+}
+
+/// `over-limits` (FR-008): every limit of the data model refuses or stops what passes it, and
+/// the widget gets nothing over a limit.
+#[test]
+fn over_limits() {
+    let text = || json!({ "type": "text", "max_length": 2048 });
+    let body: serde_json::Map<String, Value> = (0..6)
+        .map(|i| (format!("f{i}"), json!(format!("{{p{i}}}"))))
+        .collect();
+    let body_parameters: serde_json::Map<String, Value> =
+        (0..6).map(|i| (format!("p{i}"), text())).collect();
+    let echo = echo_gate(
+        Limits {
+            call_time_limit: Duration::from_secs(1),
+            calls_per_minute_per_widget: 1000,
+            calls_per_minute_per_host: 1000,
+            ..Limits::default()
+        },
+        json!({ "api": "https://api.echo.test" }),
+        json!({
+            "big": read("/big"),
+            "mib": read("/mib"),
+            "headers": read("/headers"),
+            "slow": read("/slow"),
+            "loop": read("/loop"),
+            "address": { "kind": "read", "method": "GET", "destination": "api", "path": "/a/{v}",
+                "parameters": { "v": text() }, "response": { "format": "json" } },
+            "body": { "kind": "read", "method": "POST", "destination": "api", "path": "/body",
+                "body": body, "parameters": body_parameters, "response": { "format": "json" } }
+        }),
+        |pki| {
+            let server = Server::https(&pki.leaf(&["api.echo.test"]));
+            server.route("/big", Reply::json_of_size(1024 * 1024 + 1));
+            server.route("/mib", Reply::json_of_size(1024 * 1024));
+            server.route(
+                "/headers",
+                Reply::json("{}").header("X-Big", &"h".repeat(17 * 1024)),
+            );
+            server.route("/slow", Reply::json("{}").delay(Duration::from_secs(3)));
+            server.route("/loop", Reply::redirect(302, "/loop"));
+            let routes = vec![route("api.echo.test", 443, server.address())];
+            (vec![server], routes, Vec::new())
+        },
+    );
+    let call = |operation: &str, arguments: Value| json!({ "connector": "catalog/echo", "operation": operation, "arguments": arguments });
+    // Per call: body, headers, address, request body, time, redirects
+    let config = json!({ "bodies": "size", "calls": [
+        call("big", json!([])),
+        call("headers", json!([])),
+        call("address", json!([["v", "é".repeat(2048)]])),
+        call("body", Value::Array((0..6).map(|i| json!([format!("p{i}"), "\u{1}".repeat(2048)])).collect())),
+        call("slow", json!([])),
+        call("loop", json!([]))
+    ] })
+    .to_string();
+    let answers = update(&echo.plugin, &config);
+    assert_error(&answers[0], "failed:over-limit");
+    assert!(
+        answers[0].get("body_bytes").is_none(),
+        "part of a body over the limit"
+    );
+    assert_error(&answers[1], "failed:over-limit");
+    assert_error(&answers[2], "refused:over-limit");
+    assert_error(&answers[3], "refused:over-limit");
+    assert_error(&answers[4], "failed:over-limit");
+    assert_error(&answers[5], "failed:redirect-not-allowed");
+    let paths: Vec<String> = echo.servers[0]
+        .received()
+        .into_iter()
+        .map(|r| r.path)
+        .collect();
+    assert!(
+        !paths.contains(&"/body".to_owned()) && !paths.iter().any(|p| p.starts_with("/a/")),
+        "{paths:?}"
+    );
+    assert_eq!(
+        paths.iter().filter(|p| *p == "/loop").count(),
+        6,
+        "the first request and five redirects"
+    );
+
+    // 4 MiB across an update: four whole bodies of 1 MiB fit, the fifth does not
+    let config = json!({ "bodies": "size", "calls": [{ "connector": "catalog/echo", "operation": "mib", "arguments": [], "repeat": 5 }] }).to_string();
+    let answers = update(&echo.plugin, &config);
+    for answer in &answers[..4] {
+        assert_eq!(answer["body_bytes"], 1024 * 1024, "{answer}");
+    }
+    assert_error(&answers[4], "failed:over-limit");
+
+    // 21 calls in one run: the 21st is refused, though valid
+    let config = json!({ "calls": [{ "connector": "catalog/echo", "operation": "address", "arguments": [["v", "a"]], "repeat": 21 }] }).to_string();
+    let answers = update(&echo.plugin, &config);
+    assert_eq!(answers[19]["status"], 404, "{}", answers[19]);
+    assert_error(&answers[20], "refused:over-limit");
+
+    // Output over 256 KiB fails the update, and the previous data stays
+    let report = echo
+        .plugin
+        .update(&json!({ "output": 256 * 1024 + 1 }).to_string());
+    assert_eq!(report.result.unwrap_err().kind(), ErrorKind::OutputTooLarge);
+    echo.gate.assert_well_behaved();
+}
+
+/// `over-limits`, the rates (FR-008): calls per minute per widget, and per destination host
+/// across every widget of one runtime.
+#[test]
+fn over_limits_rates() {
+    let echo = echo_gate(
+        Limits {
+            max_calls_per_run: 1000,
+            calls_per_minute_per_widget: 5,
+            calls_per_minute_per_host: 8,
+            ..Limits::default()
+        },
+        json!({ "api": "https://api.echo.test" }),
+        json!({ "root": read("/") }),
+        |pki| {
+            let server = api(pki);
+            let routes = vec![route("api.echo.test", 443, server.address())];
+            (vec![server], routes, Vec::new())
+        },
+    );
+    // Both loaded first, so the buckets barely refill between the bursts
+    let other = echo.gate.world.approve_and_load(&probe(&connected_manifest(
+        "local/net-probe-two",
+        &[("catalog/echo", 1, &["root"], true)],
+    )));
+    let burst = json!({ "calls": [{ "connector": "catalog/echo", "operation": "root", "arguments": [], "repeat": 6 }] }).to_string();
+    let answers = update(&echo.plugin, &burst);
+    assert!(
+        answers[..5].iter().all(|answer| answer["status"] == 200),
+        "{answers:?}"
+    );
+    assert_error(&answers[5], "refused:over-limit");
+    // The second widget on the same host: the host has 3 calls left of its 8
+    let answers = update(&other, &burst);
+    assert!(
+        answers[..3].iter().all(|answer| answer["status"] == 200),
+        "{answers:?}"
+    );
+    assert_error(&answers[3], "refused:over-limit");
+    assert!(
+        answers[3]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("api.echo.test"),
+        "{}",
+        answers[3]
+    );
+    assert_eq!(echo.servers[0].received().len(), 8);
+}
+
+/// The child half of `system-proxy`: run by [`system_proxy`] in a process of its own, with the
+/// proxy variables set, since setting them in this process is not safe. Ignored when the suite
+/// runs; the parent runs it by name and fails if it does.
+#[test]
+#[ignore = "run by system_proxy in a child process, with the proxy variables set"]
+fn system_proxy_child_process() {
+    assert!(
+        std::env::var("HTTPS_PROXY").is_ok(),
+        "run through system_proxy"
+    );
+    let echo = echo_gate(
+        Limits::default(),
+        json!({ "api": "https://api.echo.test" }),
+        json!({ "root": read("/") }),
+        |pki| {
+            let server = api(pki);
+            let routes = vec![route("api.echo.test", 443, server.address())];
+            (vec![server], routes, Vec::new())
+        },
+    );
+    let answer = update(&echo.plugin, &calls(&[("catalog/echo", "root", json!([]))]));
+    assert_eq!(answer[0]["status"], 200, "{answer:?}");
+    assert_eq!(
+        echo.servers[0].received().len(),
+        1,
+        "the request went straight to the service"
+    );
+}
+
+/// `system-proxy` (FR-007, clarification 5): with every proxy variable set, connector requests
+/// still go straight to their destination, for the HTTPS agent (a child test process, through
+/// the seam) and for the loopback agent (the CLI); the proxy receives nothing.
+#[test]
+fn system_proxy() {
+    let proxy = Server::recorder();
+    let proxy_url = proxy.http_origin();
+    let with_proxy = |command: &mut std::process::Command| {
+        for name in [
+            "HTTPS_PROXY",
+            "HTTP_PROXY",
+            "ALL_PROXY",
+            "https_proxy",
+            "http_proxy",
+            "all_proxy",
+        ] {
+            command.env(name, &proxy_url);
+        }
+        command.env_remove("NO_PROXY").env_remove("no_proxy");
+    };
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+    child.args([
+        "--exact",
+        "connectors::system_proxy_child_process",
+        "--ignored",
+        "--nocapture",
+    ]);
+    with_proxy(&mut child);
+    let output = child.output().expect("the child test runs");
+    assert!(
+        output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+        "the child failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The loopback agent, through the CLI
+    let service = Server::http();
+    service.route("/", Reply::json("{}"));
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join("connectors")).unwrap();
+    std::fs::write(
+        dir.path().join("connectors").join("echo.json"),
+        local("echo", &service.http_origin(), |_| {}).to_string(),
+    )
+    .unwrap();
+    let plugin = dir.path().join("net-probe.wasm");
+    std::fs::write(&plugin, probe_of("echo", &["get"])).unwrap();
+    let cli = |args: &[&str]| {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_runtime"));
+        command.args(args).args([
+            "--grants",
+            dir.path().join("grants.json").to_str().unwrap(),
+            "--data",
+            dir.path().to_str().unwrap(),
+        ]);
+        with_proxy(&mut command);
+        command.output().unwrap()
+    };
+    let shown = String::from_utf8(cli(&["permissions", plugin.to_str().unwrap()]).stdout).unwrap();
+    let digest = shown
+        .lines()
+        .find_map(|line| line.strip_prefix("approval digest: "))
+        .unwrap()
+        .to_owned();
+    assert!(
+        cli(&["approve", plugin.to_str().unwrap(), "--expect", &digest])
+            .status
+            .success()
+    );
+    let output = cli(&[
+        "update",
+        plugin.to_str().unwrap(),
+        "--config",
+        &calls(&[("local/echo", "get", json!([]))]),
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        service.received().len(),
+        1,
+        "the request went straight to the service"
+    );
+    assert!(
+        proxy.received().is_empty(),
+        "the proxy received {:?}",
+        proxy.received()
+    );
+}
