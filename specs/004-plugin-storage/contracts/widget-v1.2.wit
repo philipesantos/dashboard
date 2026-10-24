@@ -122,8 +122,9 @@ interface storage {
     render-only-reads,
     /// The write would take the store's usage past the quota the manifest declares.
     over-quota,
-    /// A limit: calls per run, bytes written per update, value size, or the store's file size;
-    /// reaching the file size ends the run, as `run-aborted` says.
+    /// A limit: calls per run, bytes written per update, value size, or the store's file size.
+    /// A write that finds no room on disk, because the file reached its size or the disk is full
+    /// (the host cannot tell which), answers this too and ends the run, as `run-aborted` says.
     over-limit,
     /// The name is empty or longer than 256 bytes in UTF-8, or a `list` prefix or `after` is
     /// longer than that.
@@ -132,7 +133,8 @@ interface storage {
     damaged,
     /// Another process is writing the store, past the time the call could wait.
     busy,
-    /// The store could not be read or written: disk full, data directory unavailable.
+    /// The store could not be read or written: the data directory is unavailable, or the store
+    /// cannot be written, such as a read-only file. A full disk answers `over-limit`.
     unavailable,
     /// An earlier call of this run failed in a way that ended its transaction, such as reaching
     /// the store's file size: nothing was done, and nothing this run wrote will be kept.
