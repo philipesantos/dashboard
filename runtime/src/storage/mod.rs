@@ -10,8 +10,9 @@
 //! for an update, commits its writes only when the update succeeded and storage is still
 //! granted (R7).
 
+// Until the CLI uses them (task T047)
+#[allow(dead_code)]
 mod admin;
-// Until the storage calls use it (tasks T021 and T047)
 #[allow(dead_code)]
 mod connection;
 
