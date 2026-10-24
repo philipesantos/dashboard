@@ -1556,3 +1556,323 @@ fn a_failed_update_says_its_storage_writes_were_not_kept() {
         json!({ "ok": { "hex": "6265666f7265" } })
     );
 }
+
+impl Stored {
+    /// A second plugin in the same data directory: `store-probe`, approved.
+    fn add_probe(&self) -> PathBuf {
+        let manifest = common::stored_manifest("local/store-probe", "0.1.0", true, 65536);
+        let plugin = self.dir.path().join("store-probe.wasm");
+        std::fs::write(
+            &plugin,
+            common::repack(&common::fixture("store-probe"), &manifest),
+        )
+        .unwrap();
+        let digest = stdout(&self.run(&["permissions", path_str(&plugin)]))
+            .lines()
+            .find_map(|line| line.strip_prefix("approval digest: ").map(str::to_owned))
+            .unwrap();
+        let output = self.run(&["approve", path_str(&plugin), "--expect", &digest]);
+        assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+        plugin
+    }
+
+    fn update_counter(&self, note: &str) {
+        let output = self.run(&[
+            "update",
+            path_str(&self.plugin),
+            "--config",
+            &json!({ "note": note }).to_string(),
+        ]);
+        assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    }
+
+    fn list(&self) -> String {
+        let output = self.run(&["storage", "list"]);
+        assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+        stdout(&output)
+    }
+}
+
+#[test]
+fn storage_list_prints_every_store_sorted_and_changes_nothing() {
+    let stored = Stored::new();
+    assert_eq!(stored.list(), "no stores\n");
+    assert_eq!(stored.approve().status.code(), Some(0));
+    stored.update_counter("first");
+    let probe = stored.add_probe();
+    let output = stored.run(&[
+        "update",
+        path_str(&probe),
+        "--config",
+        &json!({ "steps": [{ "op": "set", "name": "a", "value": "b" }] }).to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let counter_origin = origin(&stored.plugin);
+    let probe_origin = origin(&probe);
+    assert_eq!(
+        stored.list(),
+        format!(
+            "local/store-probe  {probe_origin}  used 66 of 65536 bytes\nlocal/update-counter  {counter_origin}  used 223 of 65536 bytes\n"
+        )
+    );
+    // The package file moved away: no file; its approval removed: not approved
+    std::fs::rename(&probe, stored.dir.path().join("moved.wasm")).unwrap();
+    let output = stored.run(&["remove", "local/update-counter"]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stored.list(),
+        format!(
+            "local/store-probe  {probe_origin}  used 66 of 65536 bytes, no file\nlocal/update-counter  {counter_origin}  used 223 bytes, not approved\n"
+        )
+    );
+    // A file that is no store the host wrote
+    let garbage = stored.dir.path().join("storage").join("0000.sqlite");
+    std::fs::write(&garbage, vec![7u8; 4096]).unwrap();
+    let listed = stored.list();
+    let last = listed.lines().last().unwrap();
+    assert!(last.starts_with("0000.sqlite  -  damaged: "), "{listed}");
+    assert_eq!(std::fs::read(&garbage).unwrap(), vec![7u8; 4096]);
+}
+
+#[test]
+fn storage_show_prints_every_entry_quoted() {
+    let stored = Stored::new();
+    let output = stored.run(&["storage", "show", path_str(&stored.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let header = format!(
+        "store: local/update-counter from {}\n",
+        origin(&stored.plugin)
+    );
+    assert_eq!(stdout(&output), format!("{header}no store yet\n"));
+    assert_eq!(stored.approve().status.code(), Some(0));
+    stored.update_counter("remember the milk\n");
+    let output = stored.run(&["storage", "show", path_str(&stored.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "{header}used 236 of 65536 bytes, 3 entries\n\"count\" = \"1\"\n\"first_run_ms\" = \"0\"\n\"notes/0\" = \"remember the milk\\n\"\n"
+        )
+    );
+    // A damaged store
+    let store = std::fs::read_dir(stored.dir.path().join("storage"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .next()
+        .unwrap();
+    std::fs::write(&store, vec![7u8; 4096]).unwrap();
+    let output = stored.run(&["storage", "show", path_str(&stored.plugin)]);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(
+        stderr(&output).starts_with("error: storage-failed: damaged: "),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn storage_clear_empties_one_store_and_no_other() {
+    let stored = Stored::new();
+    assert_eq!(stored.approve().status.code(), Some(0));
+    stored.update_counter("first");
+    let probe = stored.add_probe();
+    let output = stored.run(&[
+        "update",
+        path_str(&probe),
+        "--config",
+        &json!({ "steps": [{ "op": "set", "name": "a", "value": "b" }] }).to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let output = stored.run(&["storage", "clear", path_str(&stored.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "cleared local/update-counter from {} (223 bytes)\n",
+            origin(&stored.plugin)
+        )
+    );
+    let listed = stored.list();
+    assert!(listed.contains("local/update-counter  "), "{listed}");
+    assert!(listed.contains("used 0 of 65536 bytes"), "{listed}");
+    assert!(
+        listed.contains("used 66 of 65536 bytes"),
+        "the other store: {listed}"
+    );
+    let output = stored.run(&["run", path_str(&stored.plugin)]);
+    let content: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(content["text"], "Not updated yet");
+    // A store whose package file is gone, by id and origin
+    let probe_origin = origin(&probe);
+    std::fs::remove_file(&probe).unwrap();
+    let output = stored.run(&[
+        "storage",
+        "clear",
+        "--id",
+        "local/store-probe",
+        "--origin",
+        &probe_origin,
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        format!("removed local/store-probe from {probe_origin} (its package file is gone)\n")
+    );
+    assert!(!stored.list().contains("local/store-probe"));
+    // --id needs --origin, and a plugin file goes alone
+    for args in [
+        &["storage", "clear", "--id", "local/store-probe"][..],
+        &["storage", "clear"][..],
+        &["storage", "unknown"][..],
+    ] {
+        let output = stored.run(args);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn storage_clear_of_a_store_in_use_is_busy_and_changes_nothing() {
+    use std::sync::Arc;
+
+    let stored = Stored::probe();
+    let set = |value: &str| json!({ "op": "set", "name": "a", "value": value });
+    let output = stored.update_with(&json!({ "steps": [set("b")] }));
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let store = std::fs::read_dir(stored.dir.path().join("storage"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .next()
+        .unwrap();
+    // Another process holds the store: an update in this one, which writes, then spins with no
+    // CPU budget for about 5 s
+    let limits = runtime::Limits {
+        fuel: u64::MAX,
+        update_time_limit: std::time::Duration::from_secs(60),
+        ..runtime::Limits::default()
+    };
+    let holder = runtime::Runtime::new(limits, runtime::RuntimeOptions::new(stored.dir.path()))
+        .unwrap()
+        .load(
+            &std::fs::read(&stored.plugin).unwrap(),
+            &origin(&stored.plugin),
+            Arc::new(GrantStore::open(&stored.grants)),
+        )
+        .unwrap();
+    let probe = 200_000_000u64;
+    let started = std::time::Instant::now();
+    holder
+        .render(&json!({ "render_steps": [{ "op": "spin", "iterations": probe }] }).to_string())
+        .result
+        .unwrap();
+    let spin = (probe as f64 * 5.0 / started.elapsed().as_secs_f64().max(0.001)) as u64;
+    let journal = store.with_extension("sqlite-journal");
+    let output = std::thread::scope(|scope| {
+        let running = scope.spawn(|| {
+            holder.update(
+                &json!({ "steps": [set("held"), { "op": "spin", "iterations": spin }] })
+                    .to_string(),
+            )
+        });
+        let started = std::time::Instant::now();
+        while !journal.exists() {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(30),
+                "no journal"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let output = stored.run(&["storage", "clear", path_str(&stored.plugin)]);
+        assert!(
+            running.join().unwrap().result.is_ok(),
+            "the holder's update"
+        );
+        output
+    });
+    assert_eq!(output.status.code(), Some(1), "stdout: {}", stdout(&output));
+    assert!(
+        stderr(&output).starts_with("error: storage-failed: busy: "),
+        "{}",
+        stderr(&output)
+    );
+    // The clear changed nothing: the holder's update is what the store holds
+    let output = stored.run(&["storage", "show", path_str(&stored.plugin)]);
+    assert!(
+        stdout(&output).contains("\"a\" = \"held\""),
+        "{}",
+        stdout(&output)
+    );
+}
+
+#[test]
+fn optional_storage_off_keeps_the_data_and_remove_says_where_it_is() {
+    let stored = Stored::new();
+    let manifest = common::stored_manifest("local/update-counter", "0.1.0", false, 65536);
+    std::fs::write(
+        &stored.plugin,
+        common::repack(&common::fixture("update-counter"), &manifest),
+    )
+    .unwrap();
+    assert_eq!(stored.approve().status.code(), Some(0));
+    let plugin = path_str(&stored.plugin);
+    let output = stored.run(&["optional", plugin, "storage", "on"]);
+    assert_eq!(
+        stdout(&output),
+        "storage on\n",
+        "stderr: {}",
+        stderr(&output)
+    );
+    stored.update_counter("kept");
+    let output = stored.run(&["optional", plugin, "storage", "off"]);
+    assert_eq!(
+        stdout(&output),
+        "storage off (data kept)\n",
+        "stderr: {}",
+        stderr(&output)
+    );
+    assert_eq!(
+        stored
+            .run(&["optional", plugin, "storage", "on"])
+            .status
+            .code(),
+        Some(0)
+    );
+    let content: serde_json::Value =
+        serde_json::from_str(&stdout(&stored.run(&["run", plugin]))).unwrap();
+    assert_eq!(content["items"], json!(["kept"]));
+    // Turning it on above the approved quota needs a new approval
+    stored.run(&["optional", plugin, "storage", "off"]);
+    let larger = common::stored_manifest("local/update-counter", "0.1.0", false, 131072);
+    std::fs::write(
+        &stored.plugin,
+        common::repack(&common::fixture("update-counter"), &larger),
+    )
+    .unwrap();
+    let output = stored.run(&["optional", plugin, "storage", "on"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).starts_with("error: needs-new-approval: storage"),
+        "{}",
+        stderr(&output)
+    );
+    // remove keeps the store and says so; approving again from the same file finds the data
+    let output = stored.run(&["remove", "local/update-counter"]);
+    assert_eq!(
+        stdout(&output),
+        "removed local/update-counter\nstorage kept: run runtime storage clear to delete it\n"
+    );
+    std::fs::write(
+        &stored.plugin,
+        common::repack(&common::fixture("update-counter"), &manifest),
+    )
+    .unwrap();
+    assert_eq!(stored.approve().status.code(), Some(0));
+    stored.run(&["optional", plugin, "storage", "on"]);
+    let content: serde_json::Value =
+        serde_json::from_str(&stdout(&stored.run(&["run", plugin]))).unwrap();
+    assert_eq!(content["items"], json!(["kept"]));
+}
