@@ -61,13 +61,13 @@ pub(crate) mod v0 {
     wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
 }
 
-/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.1.0`), from its widest world,
-/// `connected-widget`, for the host side of every interface. Wasmtime matches the imports of
-/// plugins built for an older minor against them by compatible version. Exports are looked up
+/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.2.0`), from its widest world,
+/// `connected-stored-widget`, for the host side of every interface. Wasmtime matches the imports
+/// of plugins built for an older minor against them by compatible version. Exports are looked up
 /// one by one, by the exact names each plugin has, since a render-only widget has no `updater`
-/// (`specs/003-plugin-connectors/research.md`, R11).
+/// (`specs/003-plugin-connectors/research.md`, R11; `specs/004-plugin-storage/research.md`, R13).
 pub(crate) mod v1 {
-    wasmtime::component::bindgen!({ path: "../wit/v1", world: "connected-widget" });
+    wasmtime::component::bindgen!({ path: "../wit/v1", world: "connected-stored-widget" });
 }
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the

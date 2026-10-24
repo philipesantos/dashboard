@@ -60,6 +60,23 @@ fn a_contract_1_0_0_plugin_runs_on_the_1_1_0_host() {
     assert_eq!(report.logs.len(), 1);
 }
 
+/// Feature 004, SC-007: plugins built from the frozen 1.0.0 and 1.1.0 contracts load, link and
+/// run as before on the 1.2.0 host.
+#[test]
+fn contract_1_0_0_and_1_1_0_plugins_run_on_the_1_2_0_host() {
+    let world = common::World::production(false);
+    let hello = world.approve_and_load(&fixture("hello-widget"));
+    assert_eq!(hello.contract_version().display(), "v1 (1.0.0)");
+    assert!(hello.render(r#"{"name":"Ada"}"#).result.is_ok());
+    let releases = world.approve_and_load(&fixture("github-releases"));
+    assert_eq!(releases.contract_version().display(), "v1 (1.1.0)");
+    let content = releases
+        .render(r#"{"owner":"rust-lang","repo":"rust"}"#)
+        .result
+        .expect("github-releases renders before its first update");
+    assert_eq!(content["text"], "No data yet");
+}
+
 #[test]
 fn hello_widget_renders_its_greeting_and_one_log() {
     let runtime = runtime();

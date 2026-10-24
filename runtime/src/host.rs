@@ -1,6 +1,6 @@
 //! The host side of one render or update call: the state its store holds, the `log` capability
-//! of each contract version, the `connectors` capability of contract 1.1.0, and the stand-ins
-//! linked in place of a capability that is off.
+//! of each contract version, the `connectors` capability of contract 1.1.0, the `storage`
+//! capability of contract 1.2.0, and the stand-ins linked in place of a capability that is off.
 
 use wasmtime::component::{HasData, HasSelf, Linker};
 
@@ -8,7 +8,9 @@ use crate::calls::{Answer, Calls, RunLog};
 use crate::connector::ArgValue;
 use crate::limits::{Limits, MemoryLimiter};
 use crate::permissions::Contract;
+use crate::storage::{CallError, Rule, StorageRun};
 use crate::v1::dashboard::widget::connectors as wit;
+use crate::v1::dashboard::widget::storage as storage_wit;
 use crate::{LogLevel, LogMessage, text, v0, v1};
 
 /// What [`link`] adds for a permission.
@@ -38,6 +40,12 @@ pub(crate) fn link(
         }
         (Contract::V1, "log", Link::StandIn) => {
             v1::dashboard::widget::log::add_to_linker::<_, LogStandIn>(linker, |_| LogStandIn)
+        }
+        (Contract::V1, "storage", Link::Real) => {
+            storage_wit::add_to_linker::<_, HasSelf<_>>(linker, |state| state)
+        }
+        (Contract::V1, "storage", Link::StandIn) => {
+            storage_wit::add_to_linker::<_, StorageStandIn>(linker, |_| StorageStandIn)
         }
         _ => Err(wasmtime::format_err!(
             "contract {} has no {link:?} interface for the {permission} permission",
@@ -76,6 +84,9 @@ pub(crate) struct HostState {
     pub(crate) run: RunLog,
     /// What the real `connectors` reaches: present only when a connector is granted.
     pub(crate) calls: Option<Calls>,
+    /// What the real `storage` reaches: the run of the store bound at link time, present only
+    /// when storage is granted.
+    pub(crate) storage: Option<StorageRun>,
 }
 
 impl HostState {
@@ -88,7 +99,15 @@ impl HostState {
             limiter: MemoryLimiter::new(limits.max_memory_bytes),
             run,
             calls,
+            storage: None,
         }
+    }
+
+    /// The run's storage; with none, the call reaches nothing and answers `not-granted`.
+    fn storage(&mut self) -> Result<&mut StorageRun, storage_wit::StorageError> {
+        self.storage
+            .as_mut()
+            .ok_or(storage_wit::StorageError::NotGranted)
     }
 
     /// Keeps at most `max_log_messages` per call, each escaped and cut to
@@ -218,6 +237,100 @@ fn to_wit(answer: Answer) -> Result<wit::Response, wit::CallError> {
     }
 }
 
+/// The real `storage`: every call goes to the run's [`StorageRun`], which acts only on the store
+/// the plugin was linked with (`specs/004-plugin-storage/data-model.md`, A storage call).
+impl storage_wit::Host for HostState {
+    fn get(&mut self, name: String) -> Result<Option<Vec<u8>>, storage_wit::StorageError> {
+        self.storage()?.get(&name).map_err(storage_error)
+    }
+
+    fn set(&mut self, name: String, value: Vec<u8>) -> Result<(), storage_wit::StorageError> {
+        self.storage()?.set(&name, &value).map_err(storage_error)
+    }
+
+    fn delete(&mut self, name: String) -> Result<(), storage_wit::StorageError> {
+        self.storage()?.delete(&name).map_err(storage_error)
+    }
+
+    fn list(
+        &mut self,
+        prefix: String,
+        after: Option<String>,
+    ) -> Result<storage_wit::Page, storage_wit::StorageError> {
+        let (names, next) = self
+            .storage()?
+            .list(&prefix, after.as_deref())
+            .map_err(storage_error)?;
+        Ok(storage_wit::Page { names, next })
+    }
+
+    fn usage(&mut self) -> Result<storage_wit::StoreUsage, storage_wit::StorageError> {
+        let (used_bytes, quota_bytes) = self.storage()?.usage().map_err(storage_error)?;
+        Ok(storage_wit::StoreUsage {
+            used_bytes,
+            quota_bytes,
+        })
+    }
+}
+
+fn storage_error(error: CallError) -> storage_wit::StorageError {
+    let problem = |rule: Rule, detail: String| storage_wit::Problem {
+        rule: match rule {
+            Rule::RenderOnlyReads => storage_wit::Rule::RenderOnlyReads,
+            Rule::OverQuota => storage_wit::Rule::OverQuota,
+            Rule::OverLimit => storage_wit::Rule::OverLimit,
+            Rule::InvalidName => storage_wit::Rule::InvalidName,
+            Rule::Damaged => storage_wit::Rule::Damaged,
+            Rule::Busy => storage_wit::Rule::Busy,
+            Rule::Unavailable => storage_wit::Rule::Unavailable,
+            Rule::RunAborted => storage_wit::Rule::RunAborted,
+        },
+        detail,
+    };
+    match error {
+        CallError::NotGranted => storage_wit::StorageError::NotGranted,
+        CallError::Refused(rule, detail) => {
+            storage_wit::StorageError::Refused(problem(rule, detail))
+        }
+        CallError::Failed(rule, detail) => storage_wit::StorageError::Failed(problem(rule, detail)),
+    }
+}
+
+/// Linked in place of `storage` when it is an optional permission that is off (FR-001). It
+/// holds no store binding and reaches nothing: every call answers `not-granted`, and nothing is
+/// counted, read or written.
+pub(crate) struct StorageStandIn;
+
+impl HasData for StorageStandIn {
+    type Data<'a> = StorageStandIn;
+}
+
+impl storage_wit::Host for StorageStandIn {
+    fn get(&mut self, _name: String) -> Result<Option<Vec<u8>>, storage_wit::StorageError> {
+        Err(storage_wit::StorageError::NotGranted)
+    }
+
+    fn set(&mut self, _name: String, _value: Vec<u8>) -> Result<(), storage_wit::StorageError> {
+        Err(storage_wit::StorageError::NotGranted)
+    }
+
+    fn delete(&mut self, _name: String) -> Result<(), storage_wit::StorageError> {
+        Err(storage_wit::StorageError::NotGranted)
+    }
+
+    fn list(
+        &mut self,
+        _prefix: String,
+        _after: Option<String>,
+    ) -> Result<storage_wit::Page, storage_wit::StorageError> {
+        Err(storage_wit::StorageError::NotGranted)
+    }
+
+    fn usage(&mut self) -> Result<storage_wit::StoreUsage, storage_wit::StorageError> {
+        Err(storage_wit::StorageError::NotGranted)
+    }
+}
+
 /// Linked in place of contract v1's `log` when `log` is an optional permission that is off
 /// (FR-019). It holds nothing and reaches nothing: every call answers `not-granted`.
 pub(crate) struct LogStandIn;
@@ -317,5 +430,23 @@ mod tests {
             stand_in.write(Level::Error, "anything".to_owned()),
             Err(LogError::NotGranted)
         );
+    }
+
+    /// Step 0 of a storage call (`specs/004-plugin-storage/data-model.md`): the stand-in of
+    /// storage that is off answers every call `not-granted`, and so does a run without storage.
+    #[test]
+    fn storage_off_answers_not_granted_to_every_call() {
+        use storage_wit::{Host as _, StorageError};
+        let not_granted = |answer: Result<(), StorageError>| {
+            assert!(matches!(answer, Err(StorageError::NotGranted)));
+        };
+        let mut stand_in = StorageStandIn;
+        not_granted(stand_in.get("a".to_owned()).map(drop));
+        not_granted(stand_in.set("a".to_owned(), b"b".to_vec()));
+        not_granted(stand_in.delete("a".to_owned()));
+        not_granted(stand_in.list(String::new(), None).map(drop));
+        not_granted(stand_in.usage().map(drop));
+        let mut state = state();
+        not_granted(storage_wit::Host::get(&mut state, "a".to_owned()).map(drop));
     }
 }
