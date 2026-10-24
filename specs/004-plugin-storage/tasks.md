@@ -169,7 +169,7 @@ turning storage off or removing the approval applies from the next call, and at 
 
 ### Implementation for User Story 4
 
-- [ ] T045 [US4] Make the failure messages of `update` match `contracts/cli.md` exactly, including `(storage writes not kept, previous data kept)` for an update that wrote and failed, in `runtime/src/lib.rs` and `runtime/src/bin/runtime.rs`
+- [X] T045 [US4] Make the failure messages of `update` match `contracts/cli.md` exactly, including `(storage writes not kept, previous data kept)` for an update that wrote and failed, in `runtime/src/lib.rs` and `runtime/src/bin/runtime.rs`
 
 **Checkpoint**: User Story 4 is complete
 

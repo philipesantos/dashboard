@@ -372,7 +372,16 @@ fn update(options: &Options) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("error: {error} (previous data kept)");
+            // A storage failure already says nothing it wrote was kept; any other failure of a
+            // widget with storage says so here (specs/004-plugin-storage/contracts/cli.md)
+            let kept = if plugin.manifest().storage().is_some()
+                && error.kind() != runtime::ErrorKind::StorageFailed
+            {
+                "storage writes not kept, previous data kept"
+            } else {
+                "previous data kept"
+            };
+            eprintln!("error: {error} ({kept})");
             ExitCode::from(PLUGIN_FAILED)
         }
     }
