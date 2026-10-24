@@ -1289,3 +1289,183 @@ fn bench_of_a_connected_widget_measures_a_render_from_kept_data() {
     assert!(value.parse::<u64>().unwrap() < 1_000_000, "{last}");
     assert!(server.received().is_empty(), "bench made a request");
 }
+
+// Storage (specs/004-plugin-storage/contracts/cli.md). Every command gets --grants and --data in
+// a temporary directory.
+
+/// A data directory and grant record, and `update-counter` copied into it, so the test can
+/// replace the package at the same path, as a new build would.
+struct Stored {
+    dir: TempDir,
+    grants: PathBuf,
+    plugin: PathBuf,
+}
+
+impl Stored {
+    fn new() -> Stored {
+        let dir = TempDir::new().unwrap();
+        let plugin = dir.path().join("update-counter.wasm");
+        std::fs::copy(fixture_path("update-counter"), &plugin).unwrap();
+        let grants = dir.path().join("grants.json");
+        Stored {
+            dir,
+            grants,
+            plugin,
+        }
+    }
+
+    /// Replaces the package with `update-counter` declaring `quota_bytes`.
+    fn declare_quota(&self, quota_bytes: u64) {
+        let manifest = common::stored_manifest("local/update-counter", "0.1.0", true, quota_bytes);
+        let package = common::repack(&common::fixture("update-counter"), &manifest);
+        std::fs::write(&self.plugin, package).unwrap();
+    }
+
+    fn run(&self, args: &[&str]) -> Output {
+        let mut args = args.to_vec();
+        args.extend([
+            "--grants",
+            path_str(&self.grants),
+            "--data",
+            path_str(self.dir.path()),
+        ]);
+        runtime(&args)
+    }
+
+    fn permissions(&self) -> String {
+        let output = self.run(&["permissions", path_str(&self.plugin)]);
+        assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+        stdout(&output)
+    }
+
+    fn digest(&self) -> String {
+        self.permissions()
+            .lines()
+            .find_map(|line| line.strip_prefix("approval digest: "))
+            .unwrap_or_else(|| panic!("no digest in {}", self.permissions()))
+            .to_owned()
+    }
+
+    fn approve(&self) -> Output {
+        let digest = self.digest();
+        self.run(&["approve", path_str(&self.plugin), "--expect", &digest])
+    }
+
+    fn line(text: &str, prefix: &str) -> String {
+        text.lines()
+            .find(|line| line.starts_with(prefix))
+            .unwrap_or_else(|| panic!("no `{prefix}` line in {text}"))
+            .to_owned()
+    }
+}
+
+#[test]
+fn permissions_shows_storage_its_quota_and_usage_and_changes_nothing() {
+    let stored = Stored::new();
+    let shown = stored.permissions();
+    assert!(shown.contains("contract: v1 (1.2.0)\n"), "{shown}");
+    assert!(
+        shown.contains("permissions:\n  storage  required  not granted\n"),
+        "{shown}"
+    );
+    assert_eq!(
+        Stored::line(&shown, "storage:"),
+        "storage: quota 65536 bytes (64 KiB), not approved, used 0 bytes"
+    );
+    assert!(Stored::line(&shown, "approval digest: ").starts_with("approval digest: sha256:"));
+    assert!(!stored.grants.exists(), "permissions wrote the record");
+    assert!(
+        !stored.dir.path().join("storage").exists(),
+        "permissions created the storage directory"
+    );
+    // A widget without storage shows no storage line
+    let hello = fixture_path("hello-widget");
+    let output = stored.run(&["permissions", path_str(&hello)]);
+    assert!(!stdout(&output).contains("storage:"), "{}", stdout(&output));
+}
+
+#[test]
+fn approve_needs_the_digest_permissions_printed_for_storage() {
+    let stored = Stored::new();
+    let output = stored.run(&["approve", path_str(&stored.plugin)]);
+    assert_eq!(output.status.code(), Some(2), "stderr: {}", stderr(&output));
+    assert!(
+        stderr(&output).contains("runtime permissions"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!stored.grants.exists(), "nothing was granted");
+    let output = stored.run(&[
+        "approve",
+        path_str(&stored.plugin),
+        "--expect",
+        "sha256:0000",
+    ]);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(
+        stderr(&output).starts_with("error: approval-changed: "),
+        "{}",
+        stderr(&output)
+    );
+    let output = stored.approve();
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "approved local/update-counter 0.1.0\ngranted: storage\nstorage: quota 65536 bytes\n"
+    );
+    assert_eq!(
+        Stored::line(&stored.permissions(), "storage:"),
+        "storage: quota 65536 bytes (64 KiB), approved up to 65536 bytes, used 0 bytes"
+    );
+}
+
+#[test]
+fn update_prints_its_storage_and_run_renders_what_it_kept() {
+    let stored = Stored::new();
+    assert_eq!(stored.approve().status.code(), Some(0));
+    let output = stored.run(&[
+        "update",
+        path_str(&stored.plugin),
+        "--config",
+        r#"{"note":"first"}"#,
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "updated local/update-counter 0.1.0\nstorage: 13 calls, 7 writes kept, used 223 of 65536 bytes\n"
+    );
+    let output = stored.run(&["run", path_str(&stored.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let content: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(content["text"], "Updated 1 times");
+    assert_eq!(content["items"], json!(["first"]));
+    assert_eq!(
+        Stored::line(&stored.permissions(), "storage:"),
+        "storage: quota 65536 bytes (64 KiB), approved up to 65536 bytes, used 223 bytes"
+    );
+}
+
+#[test]
+fn a_quota_above_the_approved_one_needs_approval_again() {
+    let stored = Stored::new();
+    assert_eq!(stored.approve().status.code(), Some(0));
+    stored.declare_quota(131072);
+    assert_eq!(
+        Stored::line(&stored.permissions(), "storage:"),
+        "storage: quota 131072 bytes (128 KiB), approved up to 65536 bytes, used 0 bytes (above the approved quota: approve again)"
+    );
+    let output = stored.run(&["update", path_str(&stored.plugin)]);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    let error = stderr(&output);
+    assert!(
+        error.starts_with("error: needs-new-approval: storage"),
+        "{error}"
+    );
+    assert!(
+        error.contains("65536") && error.contains("131072"),
+        "{error}"
+    );
+    assert_eq!(stored.approve().status.code(), Some(0));
+    let output = stored.run(&["update", path_str(&stored.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+}
