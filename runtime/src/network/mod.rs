@@ -386,7 +386,15 @@ impl Session {
             hop.duration = hop_start.elapsed();
             let answer = match answer {
                 Ok(answer) => answer,
-                Err(failure) => {
+                Err(mut failure) => {
+                    // A redirect that leads to a non-public address is one not followed
+                    // (FR-019): the target is the service's choice, not the connector's
+                    if redirect > 0 && failure.rule == FailureRule::NonPublicAddress {
+                        failure = Failure::new(
+                            FailureRule::RedirectNotAllowed,
+                            format!("to {}: {}", hop.host, failure.detail),
+                        );
+                    }
                     hop.outcome = Err(failure.clone());
                     hops.push(hop);
                     return Exchange {
@@ -520,12 +528,21 @@ impl Session {
         } else {
             let per_call = self.limits.max_response_body_bytes;
             let limit = per_call.min(*update_bytes_left);
-            match response
+            // One byte of slack: ureq refuses to read on once its limit is reached, even to see
+            // the end, so a body of exactly the limit is read whole and accepted
+            let read = response
                 .body_mut()
                 .with_config()
-                .limit(limit as u64)
+                .limit(limit as u64 + 1)
                 .read_to_vec()
-            {
+                .and_then(|body| {
+                    if body.len() > limit {
+                        Err(ureq::Error::BodyExceedsLimit(limit as u64))
+                    } else {
+                        Ok(body)
+                    }
+                });
+            match read {
                 Ok(body) => body,
                 Err(ureq::Error::BodyExceedsLimit(_)) if limit < per_call => {
                     return Err(Failure::new(
