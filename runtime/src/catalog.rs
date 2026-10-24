@@ -80,11 +80,6 @@ impl Catalog {
                 .map(|domain| (connector.id(), domain.as_str()))
         })
     }
-
-    /// Whether a catalog connector reserves `host`.
-    pub(crate) fn reserved(&self, host: &str) -> bool {
-        self.reserving(host).is_some()
-    }
 }
 
 #[cfg(test)]
@@ -145,7 +140,7 @@ mod tests {
             "githubcom",
             "com",
         ] {
-            assert!(!catalog.reserved(host), "{host}");
+            assert!(catalog.reserving(host).is_none(), "{host}");
         }
     }
 
@@ -161,7 +156,7 @@ mod tests {
         let catalog = Catalog::with_extra(&[extra.to_owned()]).unwrap();
         assert!(catalog.get("catalog/echo").is_some());
         assert!(catalog.get("catalog/github").is_some());
-        assert!(catalog.reserved("api.echo.test"));
+        assert!(catalog.reserving("api.echo.test").is_some());
 
         // The seam half of `catalog-reserves`: a destination outside its reserves is refused
         let outside = extra.replace(r#"["echo.test"]"#, r#"["other.test"]"#);

@@ -1,10 +1,14 @@
-//! The host side of one render call: the state its store holds, the `log` capability of each
-//! contract version, and the stand-in linked in place of an optional capability that is off.
+//! The host side of one render or update call: the state its store holds, the `log` capability
+//! of each contract version, the `connectors` capability of contract 1.1.0, and the stand-ins
+//! linked in place of a capability that is off.
 
 use wasmtime::component::{HasData, HasSelf, Linker};
 
+use crate::calls::{Answer, Calls, RunLog};
+use crate::connector::ArgValue;
 use crate::limits::{Limits, MemoryLimiter};
 use crate::permissions::Contract;
+use crate::v1::dashboard::widget::connectors as wit;
 use crate::{LogLevel, LogMessage, text, v0, v1};
 
 /// What [`link`] adds for a permission.
@@ -42,7 +46,22 @@ pub(crate) fn link(
     }
 }
 
-/// State of one render call, dropped with its store when the call ends.
+/// Adds `connectors` to `linker`: the real interface over the plugin's table of granted
+/// connectors, or the stand-in, which holds no table, no network and no grants, and answers
+/// `not-granted` to every call (Principle II, research R12).
+pub(crate) fn link_connectors(linker: &mut Linker<HostState>, link: Link) -> wasmtime::Result<()> {
+    match link {
+        Link::Real => wit::add_to_linker::<_, Real>(linker, |state| RealConnectors {
+            run: &mut state.run,
+            calls: state.calls.as_mut(),
+        }),
+        Link::StandIn => wit::add_to_linker::<_, StandIn>(linker, |state| ConnectorsStandIn {
+            run: &mut state.run,
+        }),
+    }
+}
+
+/// State of one render or update call, dropped with its store when the call ends.
 pub(crate) struct HostState {
     /// Messages kept, in the order the plugin wrote them, escaped and cut to size.
     pub(crate) logs: Vec<LogMessage>,
@@ -52,16 +71,23 @@ pub(crate) struct HostState {
     max_log_message_bytes: usize,
     /// The memory cap of this call, installed with `Store::limiter`.
     pub(crate) limiter: MemoryLimiter,
+    /// The run's connector call count and request log entries, kept by both the real
+    /// `connectors` and its stand-in.
+    pub(crate) run: RunLog,
+    /// What the real `connectors` reaches: present only when a connector is granted.
+    pub(crate) calls: Option<Calls>,
 }
 
 impl HostState {
-    pub(crate) fn new(limits: &Limits) -> Self {
+    pub(crate) fn new(limits: &Limits, run: RunLog, calls: Option<Calls>) -> Self {
         Self {
             logs: Vec::new(),
             dropped_logs: 0,
             max_log_messages: limits.max_log_messages,
             max_log_message_bytes: limits.max_log_message_bytes,
             limiter: MemoryLimiter::new(limits.max_memory_bytes),
+            run,
+            calls,
         }
     }
 
@@ -95,6 +121,100 @@ impl v1::dashboard::widget::log::Host for HostState {
     ) -> Result<(), v1::dashboard::widget::log::LogError> {
         self.keep_log(level.into(), &message);
         Ok(())
+    }
+}
+
+/// The real `connectors` of one call.
+pub(crate) struct RealConnectors<'a> {
+    run: &'a mut RunLog,
+    calls: Option<&'a mut Calls>,
+}
+
+/// The marker the linker projects [`RealConnectors`] through.
+pub(crate) struct Real;
+
+impl HasData for Real {
+    type Data<'a> = RealConnectors<'a>;
+}
+
+impl wit::Host for RealConnectors<'_> {
+    fn call(
+        &mut self,
+        connector: String,
+        operation: String,
+        arguments: Vec<wit::Argument>,
+    ) -> Result<wit::Response, wit::CallError> {
+        let arguments = arguments
+            .into_iter()
+            .map(|argument| {
+                let value = match argument.value {
+                    wit::Value::Text(text) => ArgValue::Text(text),
+                    wit::Value::Integer(number) => ArgValue::Integer(number),
+                    wit::Value::Flag(flag) => ArgValue::Flag(flag),
+                };
+                (argument.name, value)
+            })
+            .collect();
+        let answer = match self.calls.as_deref_mut() {
+            Some(calls) => calls.call(self.run, &connector, &operation, arguments),
+            None => self.run.not_granted(&connector, &operation),
+        };
+        to_wit(answer)
+    }
+}
+
+/// Linked in place of `connectors` when the plugin declares connectors and none is granted.
+/// It counts and logs each call, as every call is logged, and reaches nothing.
+pub(crate) struct ConnectorsStandIn<'a> {
+    run: &'a mut RunLog,
+}
+
+/// The marker the linker projects [`ConnectorsStandIn`] through.
+pub(crate) struct StandIn;
+
+impl HasData for StandIn {
+    type Data<'a> = ConnectorsStandIn<'a>;
+}
+
+impl wit::Host for ConnectorsStandIn<'_> {
+    fn call(
+        &mut self,
+        connector: String,
+        operation: String,
+        _arguments: Vec<wit::Argument>,
+    ) -> Result<wit::Response, wit::CallError> {
+        to_wit(self.run.not_granted(&connector, &operation))
+    }
+}
+
+fn to_wit(answer: Answer) -> Result<wit::Response, wit::CallError> {
+    let problem = |rule: crate::calls::Rule, detail: String| wit::Problem {
+        rule: match rule {
+            crate::calls::Rule::OperationNotDeclared => wit::Rule::OperationNotDeclared,
+            crate::calls::Rule::ValueOutsideType => wit::Rule::ValueOutsideType,
+            crate::calls::Rule::CalledOutsideUpdate => wit::Rule::CalledOutsideUpdate,
+            crate::calls::Rule::ChangeNeedsUserAction => wit::Rule::ChangeNeedsUserAction,
+            crate::calls::Rule::OverLimit => wit::Rule::OverLimit,
+            crate::calls::Rule::NonPublicAddress => wit::Rule::NonPublicAddress,
+            crate::calls::Rule::RedirectNotAllowed => wit::Rule::RedirectNotAllowed,
+            crate::calls::Rule::Unavailable => wit::Rule::Unavailable,
+            crate::calls::Rule::InvalidResponse => wit::Rule::InvalidResponse,
+        },
+        detail,
+    };
+    match answer {
+        Answer::Ok(response) => Ok(wit::Response {
+            status: response.status,
+            headers: response
+                .headers
+                .into_iter()
+                .map(|(name, value)| wit::Header { name, value })
+                .collect(),
+            body: response.body,
+        }),
+        Answer::NotGranted => Err(wit::CallError::NotGranted),
+        Answer::Refused(rule, detail) => Err(wit::CallError::Refused(problem(rule, detail))),
+        Answer::Failed(rule, detail) => Err(wit::CallError::Failed(problem(rule, detail))),
     }
 }
 
@@ -146,11 +266,13 @@ mod tests {
     use v1::dashboard::widget::log::{Host as _, Level, LogError};
 
     fn state() -> HostState {
-        HostState::new(&Limits {
+        let limits = Limits {
             max_log_messages: 2,
             max_log_message_bytes: 4,
             ..Limits::default()
-        })
+        };
+        let plugin = crate::manifest::PluginId::parse("local/test").expect("a valid id");
+        HostState::new(&limits, RunLog::new(&plugin, None, &limits), None)
     }
 
     #[test]

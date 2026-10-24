@@ -32,8 +32,9 @@ pub(crate) enum Source {
     /// A file of the development directory: reads are body-less `GET` or `HEAD` requests, no
     /// `X-` header, and its destinations may be this machine over plain HTTP.
     Local,
-    /// A connector from a repository: parsed so the refusal can say why, refused at load until
-    /// installation verifies its destinations (Phase 3).
+    /// A connector from a repository, whose destinations installation verifies (Phase 3). Its
+    /// rules are those of a local connector without plain HTTP; nothing loads one yet.
+    #[allow(dead_code)]
     Repository,
 }
 

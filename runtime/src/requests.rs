@@ -26,45 +26,45 @@ const TRUNCATED: &str = " [truncated]";
 /// One line of the log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Entry {
+pub struct Entry {
     /// When the call started, in milliseconds since the Unix epoch.
-    pub(crate) at_ms: u64,
-    pub(crate) plugin: String,
-    pub(crate) connector: String,
-    pub(crate) operation: String,
+    pub at_ms: u64,
+    pub plugin: String,
+    pub connector: String,
+    pub operation: String,
     /// `read` or `change`, when the operation is known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) kind: Option<String>,
+    pub kind: Option<String>,
     /// The request as built; absent when the call was refused before building it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) method: Option<String>,
+    pub method: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) host: Option<String>,
+    pub host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) path: Option<String>,
+    pub path: Option<String>,
     /// Each argument as sent, its value cut to a maximum length.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) arguments: BTreeMap<String, String>,
-    pub(crate) outcome: Outcome,
+    pub arguments: BTreeMap<String, String>,
+    pub outcome: Outcome,
     #[serde(default)]
-    pub(crate) sent_bytes: u64,
+    pub sent_bytes: u64,
     #[serde(default)]
-    pub(crate) received_bytes: u64,
+    pub received_bytes: u64,
     #[serde(default)]
-    pub(crate) duration_ms: u64,
+    pub duration_ms: u64,
     /// For a redirect the host followed: the number of the redirect in its call, from 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) redirect_of: Option<u32>,
+    pub redirect_of: Option<u32>,
     /// Only in the one entry written past a run's call limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) summary: Option<Summary>,
+    pub summary: Option<Summary>,
 }
 
 /// How a call ended: `{ "status": 200 }`, `{ "not-granted": true }`,
 /// `{ "refused": "<rule>", "detail": "…" }` or `{ "failed": "<rule>", "detail": "…" }`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
-pub(crate) enum Outcome {
+pub enum Outcome {
     Status {
         status: u16,
     },
@@ -92,12 +92,12 @@ impl Outcome {
 /// through is refused as `over-limit`, so none is sent.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Summary {
+pub struct Summary {
     /// Calls past the limit.
-    pub(crate) calls: u64,
+    pub calls: u64,
     #[serde(rename = "not-granted")]
-    pub(crate) not_granted: u64,
-    pub(crate) refused: u64,
+    pub not_granted: u64,
+    pub refused: u64,
 }
 
 /// The request log of one data directory.
