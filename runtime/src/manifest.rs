@@ -43,11 +43,27 @@ pub struct Manifest {
     author: String,
     permissions: Vec<PermissionRequest>,
     login_providers: Vec<String>,
+    connectors: Vec<ConnectorRequest>,
 }
 
 /// Where a plugin comes from: `github.com/<owner>/<repository>` or `local/<name>`, lowercase.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PluginId(String);
+
+/// A connector the manifest declares (`specs/003-plugin-connectors/data-model.md`): each one is a
+/// permission of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectorRequest {
+    /// `catalog/<name>`, `local/<name>` or a repository id.
+    pub id: String,
+    /// The connector's major version the widget is built for.
+    pub major: u16,
+    /// Every operation the widget calls, in the manifest's order; calling any other is refused.
+    pub operations: Vec<String>,
+    /// As for permissions: required connectors are approved with the other required
+    /// permissions; optional ones start off.
+    pub required: bool,
+}
 
 /// A permission the manifest requests.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +126,17 @@ impl Manifest {
 
     pub fn login_providers(&self) -> &[String] {
         &self.login_providers
+    }
+
+    /// Every connector declared, once each, in the manifest's order; empty when the manifest
+    /// has no `connectors`.
+    pub fn connectors(&self) -> &[ConnectorRequest] {
+        &self.connectors
+    }
+
+    /// The connector `id`, if the manifest declares it.
+    pub fn connector(&self, id: &str) -> Option<&ConnectorRequest> {
+        self.connectors.iter().find(|connector| connector.id == id)
     }
 }
 
@@ -237,6 +264,7 @@ impl RawManifest {
             author: self.author,
             permissions,
             login_providers: self.login_providers,
+            connectors: Vec::new(),
         })
     }
 }
@@ -463,6 +491,116 @@ mod tests {
 
     fn set(field: &'static str, value: Value) -> impl FnOnce(&mut Value) {
         move |manifest| manifest[field] = value
+    }
+
+    fn connectors(value: Value) -> impl FnOnce(&mut Value) {
+        move |manifest| manifest["connectors"] = value
+    }
+
+    fn github() -> Value {
+        json!({ "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true })
+    }
+
+    #[test]
+    fn a_manifest_without_connectors_declares_none() {
+        let manifest = parse_with(|_| {}).unwrap();
+        assert!(manifest.connectors().is_empty());
+        assert!(manifest.connector("catalog/github").is_none());
+    }
+
+    #[test]
+    fn declared_connectors_are_read_in_order() {
+        let manifest = parse_with(connectors(json!([
+            github(),
+            { "id": "local/weather", "major": 0, "operations": ["forecast", "now"], "required": false },
+            { "id": "github.com/ada/weather", "major": 65535, "operations": ["get"], "required": true }
+        ])))
+        .unwrap();
+        let ids: Vec<&str> = manifest
+            .connectors()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            ["catalog/github", "local/weather", "github.com/ada/weather"]
+        );
+        assert_eq!(
+            manifest.connector("local/weather"),
+            Some(&ConnectorRequest {
+                id: "local/weather".to_owned(),
+                major: 0,
+                operations: vec!["forecast".to_owned(), "now".to_owned()],
+                required: false,
+            })
+        );
+        assert_eq!(
+            manifest.connector("github.com/ada/weather").unwrap().major,
+            65535
+        );
+        assert!(
+            parse_with(connectors(json!([])))
+                .unwrap()
+                .connectors()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn connector_entries_follow_the_schema() {
+        let entries: Vec<Value> = (0..17)
+            .map(|i| json!({ "id": format!("local/c{i}"), "major": 1, "operations": ["get"], "required": true }))
+            .collect();
+        assert_invalid_field("connectors", connectors(Value::Array(entries)));
+        assert_invalid_field("connectors", connectors(json!([github(), github()])));
+        assert_invalid_field("connectors", connectors(json!({ "id": "catalog/github" })));
+        assert_invalid_field("connectors", connectors(Value::Null));
+        for id in [
+            "catalog/GitHub",
+            "github",
+            "local/",
+            "other/x",
+            "github.com/ada",
+            "catalog/",
+        ] {
+            let mut entry = github();
+            entry["id"] = json!(id);
+            assert_invalid_field("connectors[0].id", connectors(json!([entry])));
+        }
+        let mut entry = github();
+        entry["id"] = json!(format!("github.com/{}/{}", "a".repeat(39), "b".repeat(101)));
+        assert_invalid_field("connectors[0].id", connectors(json!([entry])));
+        for major in [json!(-1), json!(65536), json!(1.5), json!("1")] {
+            let mut entry = github();
+            entry["major"] = major;
+            assert_invalid_field("connectors[0].major", connectors(json!([entry])));
+        }
+        let many: Vec<String> = (0..33).map(|i| format!("op{i}")).collect();
+        for operations in [
+            json!([]),
+            json!(many),
+            json!(["get", "get"]),
+            json!(["Get"]),
+            json!(["-get"]),
+        ] {
+            let mut entry = github();
+            entry["operations"] = operations;
+            assert_invalid_field("connectors[0].operations", connectors(json!([entry])));
+        }
+        let mut entry = github();
+        entry["operations"] = json!(["list-releases", "Bad"]);
+        assert_invalid_field("connectors[0].operations[1]", connectors(json!([entry])));
+        let mut entry = github();
+        entry["required"] = json!("yes");
+        assert_invalid_field("connectors[0].required", connectors(json!([entry])));
+        for missing in ["id", "major", "operations", "required"] {
+            let mut entry = github();
+            entry.as_object_mut().unwrap().remove(missing);
+            assert_invalid_field(missing, connectors(json!([entry])));
+        }
+        let mut entry = github();
+        entry["version"] = json!("1.0.0");
+        assert_invalid_field("version", connectors(json!([entry])));
     }
 
     #[test]
