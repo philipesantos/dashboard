@@ -1297,3 +1297,79 @@ fn killed_mid_update() {
         assert!(!journal.exists(), "the journal was rolled back");
     });
 }
+
+// User Story 5: the maintainer sees and clears a plugin's storage
+
+/// `show-spoof` (FR-014): names and values that try to pass for other lines or fields of
+/// `runtime storage show`, or to drive the terminal, are printed escaped, one entry per line.
+#[test]
+fn show_spoof() {
+    let vault = Vault::new();
+    let packages = vault.data().join("packages");
+    std::fs::create_dir_all(&packages).unwrap();
+    let file = packages.join("spoof.wasm");
+    let package = Vault::probe("local/store-probe", QUOTA);
+    std::fs::write(&file, &package).unwrap();
+    let origin = std::fs::canonicalize(&file)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let plugin = vault.plugin(&package, &origin);
+    let spoofs = [
+        ("count\" = \"999", "x"),
+        ("line\nstore: local/other from /etc", "y"),
+        ("\u{1b}[2J\u{1b}]0;title\u{7}", "\u{1b}[31mred"),
+        ("back\\slash", "a\\\"b"),
+        ("used 0 of 0 bytes", "\r\nno store yet"),
+        ("\u{202e}reversed", "\u{9b}31m"),
+    ];
+    let writes: Vec<Value> = spoofs
+        .iter()
+        .map(|(name, value)| set(name, value))
+        .collect();
+    update(&plugin, &writes);
+    vault.contained(&[], || {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_runtime"))
+            .args([
+                "storage",
+                "show",
+                file.to_str().unwrap(),
+                "--grants",
+                vault.data().join("grants.json").to_str().unwrap(),
+                "--data",
+                vault.data().to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        let text = String::from_utf8(output.stdout).unwrap();
+        // The header, the usage line, then one line per entry, and nothing a terminal acts on
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2 + spoofs.len(), "{text}");
+        assert!(
+            !text
+                .chars()
+                .any(|c| c != '\n' && (c.is_control() || matches!(c, '\u{202a}'..='\u{202e}'))),
+            "{text:?}"
+        );
+        for line in &lines[2..] {
+            // `"<name>" = "<value>"`: the name's closing quote is the first unescaped one
+            assert!(line.starts_with('"'), "{line}");
+            let mut escaped = false;
+            let close = line[1..]
+                .char_indices()
+                .find(|&(_, c)| {
+                    let found = c == '"' && !escaped;
+                    escaped = c == '\\' && !escaped;
+                    found
+                })
+                .map(|(at, _)| at + 1)
+                .unwrap();
+            assert!(line[close..].starts_with("\" = \""), "{line}");
+            assert!(line.ends_with('"'), "{line}");
+        }
+        assert!(text.contains(r#""count\" = \"999" = "x""#), "{text}");
+        assert!(text.contains(r#""back\\slash" = "a\\\"b""#), "{text}");
+    });
+}
