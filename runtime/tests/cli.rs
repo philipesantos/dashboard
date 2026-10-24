@@ -626,3 +626,362 @@ fn pack_needs_its_options_and_takes_no_grant_record() {
         );
     }
 }
+
+// Connectors (specs/003-plugin-connectors/contracts/cli.md). Every command gets --grants and
+// --data in a temporary directory, and local connectors reach a test service on loopback.
+
+use common::servers::{Reply, Server};
+
+/// A data directory with `local/hello` on `server`, and `net-probe` packed with a manifest
+/// declaring `connectors`.
+struct Connected {
+    dir: TempDir,
+    grants: PathBuf,
+    plugin: PathBuf,
+}
+
+impl Connected {
+    fn new(server: &Server, connectors: &[(&str, u16, &[&str], bool)]) -> Connected {
+        let dir = TempDir::new().unwrap();
+        let connectors_dir = dir.path().join("connectors");
+        std::fs::create_dir_all(&connectors_dir).unwrap();
+        std::fs::write(connectors_dir.join("hello.json"), hello(server).to_string()).unwrap();
+        let plugin = dir.path().join("net-probe.wasm");
+        std::fs::write(
+            &plugin,
+            common::probe(&common::connected_manifest("local/net-probe", connectors)),
+        )
+        .unwrap();
+        let grants = dir.path().join("grants.json");
+        Connected {
+            dir,
+            grants,
+            plugin,
+        }
+    }
+
+    fn hello_only(server: &Server) -> Connected {
+        Connected::new(server, &[("local/hello", 0, &["get"], true)])
+    }
+
+    fn run(&self, args: &[&str]) -> Output {
+        let mut args = args.to_vec();
+        args.extend([
+            "--grants",
+            path_str(&self.grants),
+            "--data",
+            path_str(self.dir.path()),
+        ]);
+        runtime(&args)
+    }
+
+    fn connector_file(&self) -> PathBuf {
+        std::fs::canonicalize(self.dir.path().join("connectors").join("hello.json")).unwrap()
+    }
+
+    fn digest(&self) -> String {
+        let output = self.run(&["permissions", path_str(&self.plugin)]);
+        stdout(&output)
+            .lines()
+            .find_map(|line| line.strip_prefix("approval digest: "))
+            .unwrap_or_else(|| panic!("no digest in {}", stdout(&output)))
+            .to_owned()
+    }
+
+    fn approve(&self) {
+        let digest = self.digest();
+        let output = self.run(&["approve", path_str(&self.plugin), "--expect", &digest]);
+        assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    }
+}
+
+/// `local/hello`: a read `get` of `/hello.json`, with a query parameter and fixed values.
+fn hello(server: &Server) -> serde_json::Value {
+    json!({
+        "connector_version": 1,
+        "id": "local/hello",
+        "version": "0.1.0",
+        "author": "You",
+        "description": "A file served on this machine",
+        "destinations": { "here": server.http_origin() },
+        "operations": {
+            "get": {
+                "kind": "read", "method": "GET", "destination": "here", "path": "/hello.json",
+                "query": { "lang": "{lang}", "v": "2" },
+                "headers": { "Accept": "application/json" },
+                "parameters": { "lang": { "type": "text", "max_length": 8, "required": false } },
+                "response": { "format": "json" }
+            },
+            "put": {
+                "kind": "change", "method": "PUT", "destination": "here", "path": "/hello.json",
+                "response": { "format": "json" }
+            }
+        }
+    })
+}
+
+fn hello_server() -> Server {
+    let server = Server::http();
+    server.route("/hello.json", Reply::json(r#"{"hello":"world"}"#));
+    server
+}
+
+#[test]
+fn permissions_shows_each_connector_its_destinations_and_operations_and_changes_nothing() {
+    let server = hello_server();
+    let connected = Connected::new(&server, &[("local/hello", 0, &["get", "put"], true)]);
+    let output = connected.run(&["permissions", path_str(&connected.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let origin = server.http_origin();
+    let text = stdout(&output);
+    let digest = text
+        .lines()
+        .find_map(|line| line.strip_prefix("approval digest: "))
+        .expect("a digest");
+    assert!(
+        digest.starts_with("sha256:") && digest.len() == 71,
+        "{digest}"
+    );
+    assert_eq!(
+        text,
+        format!(
+            "plugin: local/net-probe 0.1.0
+author: Dashboard contributors
+contract: v1 (1.1.0)
+approved: no
+permissions: none
+connectors:
+  local/hello 0.1.0  required  not granted
+    from: local file {} (development)
+    destinations: {origin}
+    get  read (declared by the developer)  GET {origin}/hello.json
+      sends: lang (text, optional)
+      fixed: v=2, Accept: application/json
+    put  change (declared by the developer)  PUT {origin}/hello.json
+      sends: nothing
+login providers: none
+approval digest: {digest}
+",
+            connected.connector_file().display()
+        )
+    );
+    assert!(!connected.grants.exists(), "permissions wrote the record");
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn permissions_says_when_data_from_this_machine_can_reach_another_destination() {
+    let server = hello_server();
+    let connected = Connected::new(
+        &server,
+        &[
+            ("local/hello", 0, &["get"], true),
+            ("catalog/github", 1, &["list-releases"], false),
+        ],
+    );
+    let text = stdout(&connected.run(&["permissions", path_str(&connected.plugin)]));
+    let flow = format!(
+        "data flow: data read from this machine ({}) can reach https://api.github.com\nlogin providers: none\n",
+        server.http_origin()
+    );
+    assert!(text.contains(&flow), "{text}");
+    assert!(
+        text.contains(
+            "  catalog/github 1.0.0  optional  not granted\n    from: official catalog\n"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn approve_needs_the_digest_permissions_printed_and_grants_exactly_that() {
+    let server = hello_server();
+    let connected = Connected::hello_only(&server);
+    // Without --expect: a usage error, nothing granted
+    let output = connected.run(&["approve", path_str(&connected.plugin)]);
+    assert_eq!(output.status.code(), Some(2), "stderr: {}", stderr(&output));
+    assert!(
+        stderr(&output).contains("runtime permissions"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!connected.grants.exists());
+
+    let digest = connected.digest();
+    let output = connected.run(&["approve", path_str(&connected.plugin), "--expect", &digest]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "approved local/net-probe 0.1.0\nconnectors: local/hello ({})\n",
+            server.http_origin()
+        )
+    );
+    let text = stdout(&connected.run(&["permissions", path_str(&connected.plugin)]));
+    assert!(
+        text.contains("  local/hello 0.1.0  required  granted\n"),
+        "{text}"
+    );
+
+    // The connector file changes after it was shown: the old digest grants nothing
+    let mut changed = hello(&server);
+    changed["operations"]["get"]["query"]["v"] = json!("3");
+    std::fs::write(connected.connector_file(), changed.to_string()).unwrap();
+    let record = std::fs::read(&connected.grants).unwrap();
+    let output = connected.run(&["approve", path_str(&connected.plugin), "--expect", &digest]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).starts_with("error: approval-changed: "),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(
+        std::fs::read(&connected.grants).unwrap(),
+        record,
+        "nothing changed"
+    );
+}
+
+#[test]
+fn update_keeps_the_data_and_run_renders_it_without_the_network() {
+    let server = hello_server();
+    let connected = Connected::hello_only(&server);
+    connected.approve();
+    let config = json!({ "calls": [
+        { "connector": "local/hello", "operation": "get", "arguments": [["lang", "pt"]] },
+        { "connector": "local/hello", "operation": "nope", "arguments": [] }
+    ] })
+    .to_string();
+    let output = connected.run(&["update", path_str(&connected.plugin), "--config", &config]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "updated local/net-probe 0.1.0\ncalls: 2 (0 not granted, 1 refused, 0 failed), 17 bytes received\n"
+    );
+    assert_eq!(server.received().len(), 1);
+    assert_eq!(server.received()[0].query.as_deref(), Some("lang=pt&v=2"));
+
+    let output = connected.run(&["run", path_str(&connected.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let content: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(content["data"]["answers"][0]["status"], 200);
+    assert_eq!(content["last_update"]["outcome"], "ok");
+    assert!(content["fetched_at_ms"].as_u64().is_some());
+    assert_eq!(server.received().len(), 1, "run made a request");
+}
+
+#[test]
+fn requests_prints_the_log_oldest_first_escaped_and_filtered() {
+    let server = hello_server();
+    let connected = Connected::hello_only(&server);
+    connected.approve();
+    let config = json!({ "calls": [
+        { "connector": "local/hello", "operation": "get", "arguments": [] },
+        { "connector": "evil\n2026-01-01T00:00:00.000Z forged\u{1b}[2J", "operation": "x", "arguments": [] },
+        { "connector": "local/hello", "operation": "get", "arguments": [["lang", "far too long"]] }
+    ] })
+    .to_string();
+    connected.run(&["update", path_str(&connected.plugin), "--config", &config]);
+    let output = runtime(&["requests", "--data", path_str(connected.dir.path())]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let text = stdout(&output);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 3, "{text}");
+    let time = |line: &str| line.split(' ').next().unwrap().to_owned();
+    for line in &lines {
+        let at = time(line);
+        assert_eq!(at.len(), "2026-10-23T14:02:11.204Z".len(), "{line}");
+        assert!(at.ends_with('Z') && at.as_bytes()[10] == b'T', "{line}");
+    }
+    assert!(
+        lines[0].ends_with(&format!(
+            " local/net-probe local/hello get GET 127.0.0.1 /hello.json?v=2 200 17B {}",
+            lines[0].rsplit(' ').next().unwrap()
+        )),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        lines[1].contains(r"evil\n2026-01-01T00:00:00.000Z forged\u{1b}[2J x not-granted"),
+        "{}",
+        lines[1]
+    );
+    assert!(
+        lines[2].ends_with(
+            "local/hello get refused value-outside-type: `lang`: longer than 8 characters (12)"
+        ),
+        "{}",
+        lines[2]
+    );
+
+    let last = runtime(&[
+        "requests",
+        "--last",
+        "1",
+        "--data",
+        path_str(connected.dir.path()),
+    ]);
+    assert_eq!(stdout(&last).lines().collect::<Vec<_>>(), [lines[2]]);
+    let other = runtime(&[
+        "requests",
+        "--plugin",
+        "local/other",
+        "--data",
+        path_str(connected.dir.path()),
+    ]);
+    assert_eq!(stdout(&other), "");
+}
+
+#[test]
+fn an_update_past_the_call_limit_ends_its_log_with_one_summary_line() {
+    let server = hello_server();
+    let connected = Connected::hello_only(&server);
+    connected.approve();
+    let config = json!({ "calls": [
+        { "connector": "local/hello", "operation": "nope", "arguments": [], "repeat": 21 },
+        { "connector": "local/none", "operation": "x", "arguments": [], "repeat": 2 }
+    ] })
+    .to_string();
+    connected.run(&["update", path_str(&connected.plugin), "--config", &config]);
+    let text = stdout(&runtime(&[
+        "requests",
+        "--last",
+        "100",
+        "--data",
+        path_str(connected.dir.path()),
+    ]));
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 21, "{text}");
+    assert!(
+        lines[20].ends_with(" local/net-probe … 3 more calls past the limit of this run (not-granted: 2, refused: 1)"),
+        "{}",
+        lines[20]
+    );
+}
+
+#[test]
+fn update_of_a_widget_without_updater_is_missing_updater() {
+    let plugin = fixture_path("hello-widget");
+    let dir = TempDir::new().unwrap();
+    let grants = dir.path().join("grants.json");
+    approve_file(&grants, &plugin);
+    let output = runtime(&[
+        "update",
+        path_str(&plugin),
+        "--grants",
+        path_str(&grants),
+        "--data",
+        path_str(dir.path()),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).starts_with("error: missing-updater: "),
+        "{}",
+        stderr(&output)
+    );
+    assert!(
+        stderr(&output).contains("(previous data kept)"),
+        "{}",
+        stderr(&output)
+    );
+}

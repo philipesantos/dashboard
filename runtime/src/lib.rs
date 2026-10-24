@@ -201,6 +201,8 @@ pub struct CheckedPackage {
     digest: String,
     /// Each connector the manifest declares, loaded and checked (load step 6a).
     connectors: Vec<LoadedConnector>,
+    /// The declared connectors step 6a refused, kept only by [`Runtime::inspect`].
+    refused_connectors: Vec<(String, RuntimeError)>,
 }
 
 /// A connector the manifest declares, loaded and checked (load step 6a).
@@ -216,6 +218,28 @@ pub struct LoadedConnector {
 }
 
 impl LoadedConnector {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `catalog`, or the canonical path of the local connector file.
+    pub fn origin(&self) -> &str {
+        &self.origin
+    }
+
+    pub fn connector(&self) -> &Connector {
+        &self.connector
+    }
+
+    pub fn required(&self) -> bool {
+        self.required
+    }
+
+    /// The operations the manifest declares for it, in its order.
+    pub fn operations(&self) -> &[String] {
+        &self.operations
+    }
+
     /// What an approval records and compares of this connector.
     fn state(&self) -> ConnectorState {
         ConnectorState {
@@ -268,6 +292,12 @@ impl CheckedPackage {
         &self.connectors
     }
 
+    /// The declared connectors that cannot be used, with why: only a package from
+    /// [`Runtime::inspect`] has any, since [`Runtime::check`] refuses it.
+    pub fn refused_connectors(&self) -> &[(String, RuntimeError)] {
+        &self.refused_connectors
+    }
+
     fn connector_states(&self) -> Vec<ConnectorState> {
         self.connectors.iter().map(LoadedConnector::state).collect()
     }
@@ -288,6 +318,9 @@ impl CheckedPackage {
         origin: &str,
         expected: Option<&str>,
     ) -> Result<Approval, RuntimeError> {
+        if let Some((_, error)) = self.refused_connectors.first() {
+            return Err(error.clone());
+        }
         if self.connectors.is_empty() {
             return grants.approve(&self.manifest, origin, &self.digest);
         }
@@ -484,6 +517,17 @@ impl Runtime {
     /// imports (load steps 1–6). A failure stops at the first step that refuses the package,
     /// with that step's error kind.
     pub fn check(&self, bytes: &[u8]) -> Result<CheckedPackage, RuntimeError> {
+        let package = self.inspect(bytes)?;
+        match package.refused_connectors.first() {
+            Some((_, error)) => Err(error.clone()),
+            None => Ok(package),
+        }
+    }
+
+    /// As [`check`](Self::check), keeping the declared connectors that step 6a refuses beside
+    /// the package instead of refusing it, so `permissions` can show each refusal in its place.
+    /// A package with such a connector can neither be approved nor loaded.
+    pub fn inspect(&self, bytes: &[u8]) -> Result<CheckedPackage, RuntimeError> {
         // Step 1: size and preamble
         if bytes.len() > self.limits.max_package_bytes {
             return Err(RuntimeError::new(
@@ -511,11 +555,14 @@ impl Runtime {
         let interfaces = Interfaces::of(&self.engine, &component);
         let contract = permissions::check_component(&interfaces, &manifest)?;
         // Step 6a: each declared connector, from the catalog or, in development, a local file
-        let connectors = manifest
-            .connectors()
-            .iter()
-            .map(|request| self.resolve_connector(request))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut connectors = Vec::new();
+        let mut refused_connectors = Vec::new();
+        for request in manifest.connectors() {
+            match self.resolve_connector(request) {
+                Ok(loaded) => connectors.push(loaded),
+                Err(error) => refused_connectors.push((request.id.clone(), error)),
+            }
+        }
         Ok(CheckedPackage {
             component,
             interfaces,
@@ -523,6 +570,7 @@ impl Runtime {
             contract,
             digest: package::digest(bytes),
             connectors,
+            refused_connectors,
         })
     }
 

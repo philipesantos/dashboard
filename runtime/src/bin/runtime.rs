@@ -10,6 +10,15 @@
 //! `runtime pack <component> --manifest <file> --output <file>` checks a manifest and adds it to
 //! a component, for authors outside this repository's xtask.
 //!
+//! For widgets with connectors (`specs/003-plugin-connectors/contracts/cli.md`): `permissions`
+//! also shows each connector, its destinations and the operations the widget calls, with an
+//! approval digest that `approve --expect <digest>` needs, so what is approved is what was
+//! shown. `runtime update <plugin>` runs the widget's update and keeps the data it returns, and
+//! `run` renders it from that data, never from the network. `runtime requests` prints the
+//! request log. Kept data and the log live in the data directory (`--data <dir>`), and local
+//! connectors in `--connectors <dir>`, which only this tool reads: it runs the runtime in
+//! development mode.
+//!
 //! The tool is the host's control in this phase: it works in development mode only, on local
 //! package files, with the development grant record (`--grants <path>`, or the default one in
 //! the system's data directory). A package's origin is its file's canonical path, and an
@@ -23,17 +32,21 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use runtime::connector::{Kind, ParameterType, Template};
 use runtime::grants::{GrantStore, Status};
 use runtime::manifest::MAX_MANIFEST_BYTES;
 use runtime::manifest::PluginId;
+use runtime::requests::{Entry, Outcome};
 use runtime::{CheckedPackage, Limits, Plugin, Runtime, RuntimeOptions, escape, package};
 
-const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>]
-       runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>]
-       runtime permissions <plugin> [--grants <path>]
-       runtime approve <plugin> [--grants <path>]
-       runtime optional <plugin> <permission> on|off [--grants <path>]
-       runtime remove <plugin-id> [--grants <path>]
+const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime update <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime permissions <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime approve <plugin> [--expect <digest>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime optional <plugin> <permission | connector-id> on|off [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime remove <plugin-id> [--grants <path>] [--data <dir>]
+       runtime requests [--plugin <plugin-id>] [--last <n>] [--data <dir>]
        runtime pack <component> --manifest <file> --output <file>";
 
 /// Exit status when the plugin or the change was refused, or the plugin failed or was stopped.
@@ -44,12 +57,17 @@ const USAGE_ERROR: u8 = 2;
 /// Render calls `bench` measures when `--iterations` is not given.
 const DEFAULT_ITERATIONS: u32 = 1000;
 
+/// Entries `requests` prints when `--last` is not given.
+const DEFAULT_LAST: usize = 50;
+
 /// What `permissions` says of login providers until accounts can be connected.
 const LOGIN_PROVIDERS_LATER: &str = "(connecting accounts arrives in feature 005)";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Command {
     Run,
+    Update,
+    Requests,
     Bench,
     Permissions,
     Approve,
@@ -62,6 +80,8 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let command = match args.first().map(String::as_str) {
         Some("run") => Command::Run,
+        Some("update") => Command::Update,
+        Some("requests") => Command::Requests,
         Some("bench") => Command::Bench,
         Some("permissions") => Command::Permissions,
         Some("approve") => Command::Approve,
@@ -77,6 +97,8 @@ fn main() -> ExitCode {
     };
     match command {
         Command::Run => run(&options),
+        Command::Update => update(&options),
+        Command::Requests => requests(&options),
         Command::Bench => bench(&options),
         Command::Permissions => permissions(&options),
         Command::Approve => approve(&options),
@@ -87,7 +109,7 @@ fn main() -> ExitCode {
 }
 
 struct Options {
-    /// A package file, or for `remove` a plugin id.
+    /// A package file, or for `remove` a plugin id; empty for `requests`.
     plugin: String,
     /// Already checked to be valid JSON. Only for `run` and `bench`.
     config: String,
@@ -100,11 +122,29 @@ struct Options {
     /// Only for `pack`: the manifest file and the package to write.
     manifest: Option<PathBuf>,
     output: Option<PathBuf>,
+    /// The data directory given with `--data`: kept data and the request log.
+    data: Option<PathBuf>,
+    /// Where local connectors are read, given with `--connectors`.
+    connectors: Option<PathBuf>,
+    /// Only for `approve`: the approval digest `permissions` printed.
+    expect: Option<String>,
+    /// Only for `requests`: whose entries, and how many.
+    plugin_filter: Option<String>,
+    last: usize,
 }
 
 fn parse(args: &[String], command: Command) -> Result<Options, String> {
-    let renders = matches!(command, Command::Run | Command::Bench);
+    let renders = matches!(command, Command::Run | Command::Bench | Command::Update);
+    // Which commands read grants, data and local connectors (contracts/cli.md)
+    let uses_grants = !matches!(command, Command::Pack | Command::Requests);
+    let uses_data = command != Command::Pack;
+    let uses_connectors = !matches!(command, Command::Pack | Command::Requests | Command::Remove);
     let mut config = None;
+    let mut data = None;
+    let mut connectors = None;
+    let mut expect = None;
+    let mut plugin_filter = None;
+    let mut last = DEFAULT_LAST;
     let mut iterations = DEFAULT_ITERATIONS;
     let mut grants = None;
     let mut manifest = None;
@@ -128,8 +168,7 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
                     })?
                 });
             }
-            // pack checks and writes a package; it needs no grant record
-            "--grants" if command != Command::Pack => {
+            "--grants" if uses_grants => {
                 let value = args.next().ok_or("--grants needs a path")?;
                 if grants.replace(PathBuf::from(value)).is_some() {
                     return Err("give --grants only once".to_owned());
@@ -148,6 +187,39 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
                     return Err(format!("give {option} only once"));
                 }
             }
+            option @ ("--data" | "--connectors")
+                if (option == "--data" && uses_data) || uses_connectors =>
+            {
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("{option} needs a directory"))?;
+                let slot = if option == "--data" {
+                    &mut data
+                } else {
+                    &mut connectors
+                };
+                if slot.replace(PathBuf::from(value)).is_some() {
+                    return Err(format!("give {option} only once"));
+                }
+            }
+            "--expect" if command == Command::Approve => {
+                let value = args.next().ok_or("--expect needs the approval digest")?;
+                if expect.replace(value.clone()).is_some() {
+                    return Err("give --expect only once".to_owned());
+                }
+            }
+            "--plugin" if command == Command::Requests => {
+                let value = args.next().ok_or("--plugin needs a plugin id")?;
+                PluginId::parse(value)?;
+                plugin_filter = Some(value.clone());
+            }
+            "--last" if command == Command::Requests => {
+                last = args
+                    .next()
+                    .and_then(|value| value.parse().ok())
+                    .filter(|&n| n > 0)
+                    .ok_or("--last needs a whole number above 0")?;
+            }
             "--iterations" if command == Command::Bench => {
                 iterations = args
                     .next()
@@ -162,11 +234,15 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         }
     }
     let mut positional = positional.into_iter();
-    let plugin = positional.next().ok_or(match command {
-        Command::Remove => "no plugin id given",
-        Command::Pack => "no component file given",
-        _ => "no plugin file given",
-    })?;
+    let plugin = if command == Command::Requests {
+        String::new()
+    } else {
+        positional.next().ok_or(match command {
+            Command::Remove => "no plugin id given",
+            Command::Pack => "no component file given",
+            _ => "no plugin file given",
+        })?
+    };
     if command == Command::Pack && (manifest.is_none() || output.is_none()) {
         return Err("pack needs --manifest <file> and --output <file>".to_owned());
     }
@@ -196,6 +272,11 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         optional,
         manifest,
         output,
+        data,
+        connectors,
+        expect,
+        plugin_filter,
+        last,
     })
 }
 
@@ -206,12 +287,7 @@ fn run(options: &Options) -> ExitCode {
     };
 
     let report = plugin.render(&options.config);
-    for log in &report.logs {
-        eprintln!("[plugin] {}: {}", log.level.as_str(), log.message);
-    }
-    if report.dropped_logs > 0 {
-        eprintln!("[runtime] {} log messages dropped", report.dropped_logs);
-    }
+    print_logs(&report.logs, report.dropped_logs);
     match report.result {
         Ok(content) => {
             let pretty =
@@ -226,27 +302,174 @@ fn run(options: &Options) -> ExitCode {
     }
 }
 
+fn print_logs(logs: &[runtime::LogMessage], dropped: u32) {
+    for log in logs {
+        eprintln!("[plugin] {}: {}", log.level.as_str(), log.message);
+    }
+    if dropped > 0 {
+        eprintln!("[runtime] {dropped} log messages dropped");
+    }
+}
+
+/// Runs the widget's update and keeps the data it returns (FR-010, FR-012). A call that is not
+/// granted, refused or failed does not fail the update: the widget sees it and decides.
+fn update(options: &Options) -> ExitCode {
+    let plugin = match load(options) {
+        Ok((plugin, _)) => plugin,
+        Err(status) => return status,
+    };
+    let report = plugin.update(&options.config);
+    print_logs(&report.logs, report.dropped_logs);
+    match report.result {
+        Ok(_) => {
+            let manifest = plugin.manifest();
+            println!(
+                "updated {} {}",
+                escape(manifest.id().as_str()),
+                escape(manifest.version())
+            );
+            let calls = report.calls;
+            println!(
+                "calls: {} ({} not granted, {} refused, {} failed), {} bytes received",
+                calls.calls, calls.not_granted, calls.refused, calls.failed, calls.received_bytes
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {error} (previous data kept)");
+            ExitCode::from(PLUGIN_FAILED)
+        }
+    }
+}
+
+/// Prints the request log, oldest first, one line per entry, every text a plugin or a connector
+/// wrote escaped (FR-009). Changes nothing.
+fn requests(options: &Options) -> ExitCode {
+    let data = match data_dir(options) {
+        Ok(data) => data,
+        Err(message) => return usage_error(&message),
+    };
+    let runtime = match Runtime::new(Limits::default(), RuntimeOptions::new(data)) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("error: cannot start the runtime: {error:#}");
+            return ExitCode::from(PLUGIN_FAILED);
+        }
+    };
+    match runtime.read_requests(options.last, options.plugin_filter.as_deref()) {
+        Ok(entries) => {
+            for entry in &entries {
+                println!("{}", request_line(entry));
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: cannot read the request log: {error}");
+            ExitCode::from(PLUGIN_FAILED)
+        }
+    }
+}
+
+/// One entry of the request log as `requests` prints it (contracts/cli.md).
+fn request_line(entry: &Entry) -> String {
+    let mut line = utc(entry.at_ms);
+    line.push(' ');
+    line.push_str(&escape(&entry.plugin));
+    if let Some(summary) = &entry.summary {
+        line.push_str(&format!(
+            " … {} more calls past the limit of this run (not-granted: {}, refused: {})",
+            summary.calls, summary.not_granted, summary.refused
+        ));
+        return line;
+    }
+    line.push_str(&format!(
+        " {} {}",
+        escape(&entry.connector),
+        escape(&entry.operation)
+    ));
+    if let (Some(method), Some(host), Some(path)) = (&entry.method, &entry.host, &entry.path) {
+        line.push_str(&format!(
+            " {} {} {}",
+            escape(method),
+            escape(host),
+            escape(path)
+        ));
+    }
+    match &entry.outcome {
+        Outcome::Status { status } => line.push_str(&format!(
+            " {status} {}B {}ms",
+            entry.received_bytes, entry.duration_ms
+        )),
+        Outcome::NotGranted { .. } => line.push_str(" not-granted"),
+        Outcome::Refused { refused, detail } => {
+            line.push_str(&format!(" refused {}: {}", escape(refused), escape(detail)));
+        }
+        Outcome::Failed { failed, detail } => {
+            line.push_str(&format!(" failed {}: {}", escape(failed), escape(detail)));
+        }
+    }
+    if let Some(redirect) = entry.redirect_of {
+        line.push_str(&format!(" (redirect {redirect})"));
+    }
+    line
+}
+
+/// `2026-10-23T14:02:11.204Z`: milliseconds since the Unix epoch in UTC, without a date library
+/// (the civil-from-days algorithm of Howard Hinnant's date algorithms).
+fn utc(at_ms: u64) -> String {
+    let seconds = at_ms / 1000;
+    let days = i64::try_from(seconds / 86_400).unwrap_or(i64::MAX);
+    let time = seconds % 86_400;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+        time / 3600,
+        time % 3600 / 60,
+        time % 60,
+        at_ms % 1000
+    )
+}
+
 /// Shows what the plugin requests and what is granted to this file (FR-014); changes nothing.
 fn permissions(options: &Options) -> ExitCode {
     let target = match Target::open(options) {
         Ok(target) => target,
         Err(status) => return status,
     };
-    let checked = match target.check() {
+    // Connectors that cannot be used are shown in their place, not as a refusal of the whole
+    let checked = match target.runtime.inspect(&target.bytes) {
         Ok(checked) => checked,
-        Err(status) => return status,
+        Err(error) => return refused(&error),
     };
     let status = match target.grants.status(checked.manifest(), &target.origin) {
         Ok(status) => status,
         Err(error) => return refused(&error),
     };
-    print!("{}", describe(&checked, &status));
+    let entry = status.approval.clone().filter(|_| status.this_origin);
+    print!("{}", describe(&checked, &status, entry.as_ref()));
     ExitCode::SUCCESS
 }
 
 /// The output of `permissions`, as `contracts/cli.md` shows it. Every text that comes from the
 /// package or the record is escaped.
-fn describe(checked: &CheckedPackage, status: &Status) -> String {
+fn describe(
+    checked: &CheckedPackage,
+    status: &Status,
+    entry: Option<&runtime::grants::Entry>,
+) -> String {
     let manifest = checked.manifest();
     let mut text = format!(
         "plugin: {} {}\nauthor: {}\ncontract: {}\n",
@@ -289,6 +512,10 @@ fn describe(checked: &CheckedPackage, status: &Status) -> String {
             ));
         }
     }
+    let declares_connectors = !manifest.connectors().is_empty();
+    if declares_connectors {
+        text.push_str(&describe_connectors(checked, entry));
+    }
     let providers = manifest.login_providers();
     if providers.is_empty() {
         text.push_str("login providers: none\n");
@@ -299,7 +526,216 @@ fn describe(checked: &CheckedPackage, status: &Status) -> String {
             providers.join(", ")
         ));
     }
+    // The digest of what `approve` would grant, only when it could grant it
+    if declares_connectors && checked.refused_connectors().is_empty() {
+        text.push_str(&format!("approval digest: {}\n", checked.approval_digest()));
+    }
     text
+}
+
+/// The `connectors` section of `permissions` (contracts/cli.md): each connector, where it comes
+/// from, every destination, and each operation the widget calls with the parameters it sends
+/// and the fixed values the connector writes; then whether data read from this machine can
+/// reach another destination.
+fn describe_connectors(checked: &CheckedPackage, entry: Option<&runtime::grants::Entry>) -> String {
+    let mut text = String::from("connectors:\n");
+    let manifest = checked.manifest();
+    for request in manifest.connectors() {
+        let required = if request.required {
+            "required"
+        } else {
+            "optional"
+        };
+        if let Some((_, error)) = checked
+            .refused_connectors()
+            .iter()
+            .find(|(id, _)| *id == request.id)
+        {
+            text.push_str(&format!(
+                "  {}  {required}  error: {error}\n",
+                escape(&request.id)
+            ));
+            continue;
+        }
+        let Some(loaded) = checked
+            .connectors()
+            .iter()
+            .find(|loaded| loaded.id() == request.id)
+        else {
+            continue;
+        };
+        let connector = loaded.connector();
+        let granted = if entry.is_some_and(|entry| entry.is_connector_granted(&request.id)) {
+            "granted"
+        } else {
+            "not granted"
+        };
+        text.push_str(&format!(
+            "  {} {}  {required}  {granted}\n",
+            escape(&request.id),
+            escape(&connector.version().to_string())
+        ));
+        let catalog = loaded.origin() == "catalog";
+        if catalog {
+            text.push_str("    from: official catalog\n");
+        } else {
+            text.push_str(&format!(
+                "    from: local file {} (development)\n",
+                escape(loaded.origin())
+            ));
+        }
+        let destinations: Vec<String> = connector
+            .destinations()
+            .iter()
+            .map(|origin| escape(&origin.serialization()))
+            .collect();
+        text.push_str(&format!("    destinations: {}\n", destinations.join(", ")));
+        for name in loaded.operations() {
+            let Some(operation) = connector.operation(name) else {
+                continue;
+            };
+            let who = if catalog {
+                "reviewed"
+            } else {
+                "declared by the developer"
+            };
+            let kind = match operation.kind() {
+                Kind::Read => "read",
+                Kind::Change => "change",
+            };
+            let origin = connector
+                .destination(operation.destination())
+                .map(|origin| origin.serialization())
+                .unwrap_or_default();
+            let mut path = String::new();
+            for segment in operation.path() {
+                path.push('/');
+                match segment {
+                    Template::Literal(text) => path.push_str(text),
+                    Template::Parameter(parameter) => path.push_str(&format!("{{{parameter}}}")),
+                }
+            }
+            text.push_str(&format!(
+                "    {}  {kind} ({who})  {} {}\n",
+                escape(name),
+                operation.method().as_str(),
+                escape(&format!("{origin}{path}"))
+            ));
+            text.push_str(&format!("      sends: {}\n", sends(operation)));
+            let fixed = fixed(operation);
+            if !fixed.is_empty() {
+                text.push_str(&format!("      fixed: {}\n", fixed.join(", ")));
+            }
+        }
+    }
+    if let Some(flow) = data_flow(checked) {
+        text.push_str(&flow);
+    }
+    text
+}
+
+/// The parameters an operation sends: those in its path first, in order, then the rest by name.
+fn sends(operation: &runtime::connector::Operation) -> String {
+    let parameters = operation.parameters();
+    if parameters.is_empty() {
+        return "nothing".to_owned();
+    }
+    let mut names: Vec<&String> = operation
+        .path()
+        .iter()
+        .filter_map(|segment| match segment {
+            Template::Parameter(name) => parameters.get_key_value(name).map(|(name, _)| name),
+            Template::Literal(_) => None,
+        })
+        .collect();
+    for name in parameters.keys() {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let described: Vec<String> = names
+        .into_iter()
+        .map(|name| {
+            let parameter = &parameters[name];
+            let kind = match parameter.kind {
+                ParameterType::Text { .. } => "text",
+                ParameterType::Integer { .. } => "integer",
+                ParameterType::Flag => "flag",
+            };
+            if parameter.required {
+                format!("{} ({kind})", escape(name))
+            } else {
+                format!("{} ({kind}, optional)", escape(name))
+            }
+        })
+        .collect();
+    described.join(", ")
+}
+
+/// Every value the connector writes into the request itself: they are public.
+fn fixed(operation: &runtime::connector::Operation) -> Vec<String> {
+    let mut fixed: Vec<String> = operation
+        .query()
+        .iter()
+        .filter_map(|(name, value)| match value {
+            Template::Literal(value) => Some(format!("{}={}", escape(name), escape(value))),
+            Template::Parameter(_) => None,
+        })
+        .collect();
+    fixed.extend(
+        operation
+            .headers()
+            .iter()
+            .map(|(name, value)| format!("{}: {}", escape(name), escape(value))),
+    );
+    if let Some(body) = operation.body() {
+        fixed_body(body, "body", &mut fixed);
+    }
+    fixed
+}
+
+fn fixed_body(value: &serde_json::Value, path: &str, fixed: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (name, item) in fields {
+                fixed_body(item, &format!("{path}.{name}"), fixed);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                fixed_body(item, &format!("{path}[{index}]"), fixed);
+            }
+        }
+        serde_json::Value::String(text) if runtime::connector::is_placeholder(text) => {}
+        other => fixed.push(format!("{}: {}", escape(path), escape(&other.to_string()))),
+    }
+}
+
+/// When a local connector reaches this machine and the widget can also reach another
+/// destination, a line says so (Principle III).
+fn data_flow(checked: &CheckedPackage) -> Option<String> {
+    let mut here = Vec::new();
+    let mut elsewhere = Vec::new();
+    for loaded in checked.connectors() {
+        for origin in loaded.connector().destinations() {
+            let serialized = escape(&origin.serialization());
+            let list = if origin.is_https() {
+                &mut elsewhere
+            } else {
+                &mut here
+            };
+            if !list.contains(&serialized) {
+                list.push(serialized);
+            }
+        }
+    }
+    (!here.is_empty() && !elsewhere.is_empty()).then(|| {
+        format!(
+            "data flow: data read from this machine ({}) can reach {}\n",
+            here.join(", "),
+            elsewhere.join(", ")
+        )
+    })
 }
 
 /// Grants every required permission the manifest declares, all at once (FR-018), after the
@@ -314,8 +750,14 @@ fn approve(options: &Options) -> ExitCode {
         Err(status) => return status,
     };
     let manifest = checked.manifest();
-    let digest = package::digest(&target.bytes);
-    let approval = match target.grants.approve(manifest, &target.origin, &digest) {
+    if !manifest.connectors().is_empty() && options.expect.is_none() {
+        return usage_error(&format!(
+            "approve needs --expect <digest> for a widget that declares connectors: run `runtime permissions {}` and give the approval digest it prints",
+            options.plugin
+        ));
+    }
+    let approval = match checked.approve(&target.grants, &target.origin, options.expect.as_deref())
+    {
         Ok(approval) => approval,
         Err(error) => return refused(&error),
     };
@@ -329,6 +771,22 @@ fn approve(options: &Options) -> ExitCode {
     );
     for permission in &approval.required {
         println!("granted: {}", escape(permission));
+    }
+    if !checked.connectors().is_empty() {
+        let connectors: Vec<String> = checked
+            .connectors()
+            .iter()
+            .map(|loaded| {
+                let destinations: Vec<String> = loaded
+                    .connector()
+                    .destinations()
+                    .iter()
+                    .map(|origin| escape(&origin.serialization()))
+                    .collect();
+                format!("{} ({})", escape(loaded.id()), destinations.join(", "))
+            })
+            .collect();
+        println!("connectors: {}", connectors.join(", "));
     }
     ExitCode::SUCCESS
 }
@@ -506,10 +964,13 @@ impl Target {
         let origin = origin(path).map_err(|message| usage_error(&message))?;
         let grants =
             grant_store(options.grants.as_ref()).map_err(|message| usage_error(&message))?;
-        // Development mode and --data arrive with the connector commands (T039)
-        let data_dir = RuntimeOptions::default_development_data_dir()
-            .ok_or_else(|| usage_error("this system has no data directory; give --grants"))?;
-        let runtime = Runtime::new(limits, RuntimeOptions::new(data_dir)).map_err(|error| {
+        let data_dir = data_dir(options).map_err(|message| usage_error(&message))?;
+        // The development tool, the only place local connectors load (FR-018)
+        let mut runtime_options = RuntimeOptions::new(data_dir).development(true);
+        if let Some(connectors) = &options.connectors {
+            runtime_options = runtime_options.connectors_dir(connectors);
+        }
+        let runtime = Runtime::new(limits, runtime_options).map_err(|error| {
             eprintln!("error: cannot start the runtime: {error:#}");
             ExitCode::from(PLUGIN_FAILED)
         })?;
@@ -526,6 +987,17 @@ impl Target {
         self.runtime
             .check(&self.bytes)
             .map_err(|error| refused(&error))
+    }
+}
+
+/// The data directory given with `--data`, or the default development one.
+fn data_dir(options: &Options) -> Result<PathBuf, String> {
+    match &options.data {
+        Some(data) => Ok(data.clone()),
+        None => RuntimeOptions::default_development_data_dir().ok_or_else(|| {
+            "this system has no data directory for kept data and the request log; give --data <dir>"
+                .to_owned()
+        }),
     }
 }
 

@@ -62,7 +62,7 @@ connectors:
     from: official catalog
     destinations: https://api.github.com
     list-releases  read (reviewed)  GET https://api.github.com/repos/{owner}/{repo}/releases
-      sends: owner (text), repo (text), per_page (integer, optional), page (integer, optional)
+      sends: owner (text), repo (text), page (integer, optional), per_page (integer, optional)
       fixed: Accept: application/vnd.github+json, X-GitHub-Api-Version: 2022-11-28
 login providers: none
 approval digest: sha256:0c7d…
@@ -73,8 +73,11 @@ approval digest: sha256:0c7d…
   `read (declared by the developer)` or `change (declared by the developer)` for local
   connectors.
 - `destinations:` lists every origin of the connector, the ones redirects may reach included.
-- `fixed:` lists every value the connector writes into the request itself (query, headers,
-  body): they are public; query values also appear in the logged address.
+- `sends:` lists the parameters the widget fills in, those in the path first, in its order,
+  then the others by name; `nothing` when there are none.
+- `fixed:` lists every value the connector writes into the request itself, as `name=value`
+  for the query, `Name: value` for headers and `body.<field>: <JSON>` for the body: they are
+  public; query values also appear in the logged address.
 - When a widget combines a local connector whose destination is this machine with any other
   destination, a line says so, before the login providers:
   `data flow: data read from this machine (http://127.0.0.1:8765) can reach https://api.github.com`.

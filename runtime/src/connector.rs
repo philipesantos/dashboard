@@ -1015,6 +1015,12 @@ pub(crate) fn placeholder_name(text: &str) -> Option<&str> {
     placeholder(text)
 }
 
+/// Whether `text` is exactly `{<parameter>}`, a value the widget fills in rather than a fixed
+/// one.
+pub fn is_placeholder(text: &str) -> bool {
+    placeholder(text).is_some()
+}
+
 fn placeholder(text: &str) -> Option<&str> {
     let name = text.strip_prefix('{')?.strip_suffix('}')?;
     is_name(name, MAX_PARAMETER_NAME_CHARS, '_').then_some(name)
