@@ -985,3 +985,45 @@ fn update_of_a_widget_without_updater_is_missing_updater() {
         stderr(&output)
     );
 }
+
+#[test]
+fn with_the_service_down_update_fails_keeping_the_data_and_run_still_renders_it() {
+    let server = hello_server();
+    let connected = Connected::hello_only(&server);
+    connected.approve();
+    let config = json!({ "fail": true, "calls": [
+        { "connector": "local/hello", "operation": "get", "arguments": [] }
+    ] })
+    .to_string();
+    let output = connected.run(&["update", path_str(&connected.plugin), "--config", &config]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+
+    server.stop();
+    let output = connected.run(&["update", path_str(&connected.plugin), "--config", &config]);
+    assert_eq!(output.status.code(), Some(1));
+    let error = stderr(&output);
+    assert!(error.starts_with("error: plugin-error: "), "{error}");
+    assert!(error.contains("failed:unavailable"), "{error}");
+    assert!(error.contains("does not use network proxies"), "{error}");
+    assert!(
+        error.trim_end().ends_with("(previous data kept)"),
+        "{error}"
+    );
+
+    let output = connected.run(&["run", path_str(&connected.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let content: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(
+        content["data"]["answers"][0]["status"], 200,
+        "the previous data"
+    );
+    assert!(content["fetched_at_ms"].as_u64().is_some());
+    assert_eq!(content["last_update"]["outcome"], "failed");
+    assert!(
+        content["last_update"]["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("plugin-error: "),
+        "{content}"
+    );
+}
