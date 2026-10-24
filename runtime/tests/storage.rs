@@ -254,6 +254,8 @@ fn data_dir_is_absolute() {
         "Cargo runs the tests from the package directory"
     );
     let dir = RelativeDir::new("relative");
+    // Only Unix adds a second directory: `:` cannot appear in a Windows file name
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut data_dirs = vec![(dir.relative.clone(), dir.absolute.clone())];
     // A name that SQLite would read as a URI if it ever reached it relative
     #[cfg(unix)]
