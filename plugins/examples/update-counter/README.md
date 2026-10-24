@@ -29,6 +29,8 @@ rt approve target/plugins/update-counter.wasm --expect <the approval digest>
 rt update target/plugins/update-counter.wasm --config '{"note":"first"}'
 rt update target/plugins/update-counter.wasm --config '{"note":"second"}'
 rt run target/plugins/update-counter.wasm
+rt storage show target/plugins/update-counter.wasm
+rt storage clear target/plugins/update-counter.wasm
 ```
 
 - `permissions` shows the storage quota the plugin declares, the quota you last approved and
@@ -40,6 +42,8 @@ rt run target/plugins/update-counter.wasm
   were kept and how much the store uses.
 - `run` renders what the store holds: `Updated 2 times`, with both notes, in this run of the host
   or any later one.
+- `storage show` prints every name and value the store holds, escaped, one per line; `storage
+  clear` empties it. `storage list` lists every store, also those whose package file is gone.
 
 Each command also takes `--grants <path>` and `--data <dir>`, to keep the approval and the store
 out of your own development directory. Stores live in `<data dir>/storage/`, apart from the

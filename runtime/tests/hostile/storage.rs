@@ -434,6 +434,30 @@ fn foreign_store() {
         assert!(b_store.is_file(), "{kind:?}: the host deleted the file");
         assert_eq!(render(&a, &[get("secret")]), [hex("A's value")]);
     }
+    // `runtime storage list` shows each of them damaged, and A's store as A's
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_runtime"))
+        .args([
+            "storage",
+            "list",
+            "--grants",
+            vault.data().join("grants.json").to_str().unwrap(),
+            "--data",
+            vault.data().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let listed = String::from_utf8(output.stdout).unwrap();
+    let damaged = listed
+        .lines()
+        .filter(|line| line.contains("  damaged: "))
+        .count();
+    assert_eq!(damaged, 5, "{listed}");
+    assert!(
+        listed
+            .lines()
+            .any(|line| line.starts_with("local/store-a  ") && line.contains(" used ")),
+        "{listed}"
+    );
 }
 
 /// White box (FR-004): every layer of the production setup, read back, and one attempt past
@@ -1247,15 +1271,22 @@ fn killed_mid_update_child_process() {
 #[test]
 fn killed_mid_update() {
     let vault = Vault::new();
-    let origin = vault.origin("killed");
     let package = Vault::probe("local/store-probe", 2 * 1024 * 1024);
+    // A real file, so `runtime storage show` reaches the same store: the origin is its path
+    let packages = vault.data().join("packages");
+    std::fs::create_dir_all(&packages).unwrap();
+    let package_file = packages.join("killed.wasm");
+    std::fs::write(&package_file, &package).unwrap();
+    let origin = std::fs::canonicalize(&package_file)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
     let plugin = vault.plugin(&package, &origin);
     update(&plugin, &[set("kept", "before")]);
     let store = vault.store_file("local/store-probe", &origin);
     let journal = store.with_extension("sqlite-journal");
     let size_before = std::fs::metadata(&store).unwrap().len();
-    let package_file = vault.data().join("killed.wasm");
-    std::fs::write(&package_file, &package).unwrap();
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
@@ -1290,6 +1321,30 @@ fn killed_mid_update() {
     let mut own = vault.own("local/store-probe", &origin);
     own.push(journal.clone());
     vault.contained(&own, || {
+        // The CLI first, in a process of its own: it rolls the journal back and reads
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_runtime"))
+            .args([
+                "storage",
+                "show",
+                package_file.to_str().unwrap(),
+                "--grants",
+                vault.data().join("grants.json").to_str().unwrap(),
+                "--data",
+                vault.data().to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        let shown = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{shown}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            shown.ends_with("1 entries\n\"kept\" = \"before\"\n"),
+            "{shown}"
+        );
         let found = render(&plugin, &[get("kept"), get("v0"), list("v")]);
         assert_eq!(found[0], hex("before"), "the state from before the update");
         assert_eq!(found[1], json!({ "ok": null }));

@@ -82,9 +82,11 @@ local/store-probe  /tmp/old/store-probe.wasm  used 2048 bytes, not approved, no 
 
 - `of <n> bytes` is the approved quota when the grant record holds an approval of that id from that
   origin; otherwise `not approved`.
+- With no store at all: `no stores`.
 - `no file` when the origin's file no longer exists.
 - A store that is damaged, or whose file name is not the hash of the id and origin it holds,
-  prints `damaged: <detail>` instead of its usage.
+  prints `damaged: <detail>` instead of its usage; one whose identity cannot be read shows its
+  file name and `-` for the id and origin.
 
 ## `runtime storage show <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]`
 
@@ -118,8 +120,9 @@ exists, or that is damaged, is removed instead: its file is deleted.
 cleared local/update-counter from /home/ada/dashboard/target/plugins/update-counter.wasm (412 bytes)
 ```
 
-A store in use by an update in another process: `error: storage-failed: busy: …`, exit 1, nothing
-changed.
+A store removed instead prints `removed <id> from <origin> (<reason>)`, such as `(its package
+file is gone)` or `(damaged: …)`; no store at all, `no store of <id> from <origin>`. A store in use
+by an update in another process: `error: storage-failed: busy: …`, exit 1, nothing changed.
 
 ## `runtime bench <plugin> …`
 

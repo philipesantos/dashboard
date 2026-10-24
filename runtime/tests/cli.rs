@@ -1752,6 +1752,7 @@ fn storage_clear_of_a_store_in_use_is_busy_and_changes_nothing() {
     // CPU budget for about 5 s
     let limits = runtime::Limits {
         fuel: u64::MAX,
+        time_limit: std::time::Duration::from_secs(30),
         update_time_limit: std::time::Duration::from_secs(60),
         ..runtime::Limits::default()
     };

@@ -191,7 +191,7 @@ origin; turning storage off or removing the approval keeps the data
 
 ### Implementation for User Story 5
 
-- [ ] T050 [US5] Add `storage list|show|clear` to `runtime/src/bin/runtime.rs` exactly as in `contracts/cli.md`, and extend `optional` (`storage on|off`) and `remove` with their storage lines; update the usage text
+- [X] T050 [US5] Add `storage list|show|clear` to `runtime/src/bin/runtime.rs` exactly as in `contracts/cli.md`, and extend `optional` (`storage on|off`) and `remove` with their storage lines; update the usage text
 
 **Checkpoint**: User Story 5 is complete
 
