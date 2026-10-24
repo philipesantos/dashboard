@@ -3,6 +3,8 @@
 // Each test file compiles this module on its own and uses only some of the helpers.
 #![allow(dead_code)]
 
+pub mod servers;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
