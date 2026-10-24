@@ -637,7 +637,7 @@ impl StorageRun {
         })
     }
 
-    /// Step 8: runs a write; when it fails and SQLite ended the transaction, the run is aborted.
+    /// Step 8: runs a write; when it fails, the run is aborted.
     fn write(
         &mut self,
         statements: impl FnOnce(&StoreConnection) -> Result<(), StoreError>,
@@ -650,7 +650,12 @@ impl StorageRun {
                 self.writes += 1;
                 Ok(())
             }
-            Err(error) => Err(self.statement_failed(error)),
+            // A write that failed ends the update's writes, whether or not SQLite ended the
+            // transaction (a read-only file does not): an update keeps all of its writes or none
+            Err(error) => {
+                self.abort_if(true, &error);
+                Err(call_error(error))
+            }
         }
     }
 
@@ -661,10 +666,15 @@ impl StorageRun {
             &self.opened,
             Opened::Store { connection, .. } if connection.transaction_ended()
         );
-        if self.phase == Phase::Update && ended && self.aborted.is_none() {
-            self.aborted = Some(describe(&error));
-        }
+        self.abort_if(ended, &error);
         call_error(error)
+    }
+
+    /// Ends the run's writes on `error` when `ended`, keeping the first failure.
+    fn abort_if(&mut self, ended: bool, error: &StoreError) {
+        if self.phase == Phase::Update && ended && self.aborted.is_none() {
+            self.aborted = Some(describe(error));
+        }
     }
 }
 

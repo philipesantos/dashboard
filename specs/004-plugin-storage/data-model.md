@@ -87,7 +87,7 @@ Kept by the real `storage` interface for one `render` or `update` (R7, R9):
 | `calls` | Storage calls so far, refused ones included |
 | `written_bytes` | Names and values of every `set` so far (update) |
 | `taken_away` | Set when a call found storage no longer granted; every later call answers `not-granted`, and the transaction rolls back |
-| `aborted` | Set when SQLite ended the run's transaction (the file cap, a full disk, an I/O error); every later call answers `failed(run-aborted)`, and the update fails |
+| `aborted` | Set when a write failed or SQLite ended the run's transaction (the file cap, a full disk, an I/O error, a store that cannot be written); every later call answers `failed(run-aborted)`, and the update fails |
 
 The stand-in keeps no run state: it answers every call `not-granted` and counts nothing.
 
@@ -105,7 +105,7 @@ The first rule that applies answers.
 | 5 | A name, prefix or `after` empty (name only) or over 256 bytes; a value over 256 KiB; a `set` past `max_storage_written_bytes_per_update` | `refused(invalid-name)`, `refused(over-limit)` |
 | 6 | Open the connection, hardened (R4); roll back a hot journal (R8); check the file (R5) | `failed(damaged)`, `failed(busy)`, `failed(unavailable)` |
 | 7 | `set`: usage after it within the quota (R6) | `refused(over-quota)` |
-| 8 | Run the statement. If it fails and SQLite ended the transaction (`is_autocommit()`), set `aborted` | `failed(over-limit)` (the file cap), `failed(unavailable)`, `failed(busy)` |
+| 8 | Run the statement. If a write fails, or SQLite ended the transaction (`is_autocommit()`), set `aborted` | `failed(over-limit)` (the file cap), `failed(unavailable)`, `failed(busy)` |
 | 9 | Answer | the value, page or usage |
 
 `list(prefix, after)` returns at most `storage_list_page` (100) names, in byte order, all starting
@@ -173,7 +173,7 @@ away).
 
 Calls answer with the WIT `storage-error`: `not-granted`, `refused` with `render-only-reads`,
 `over-quota`, `over-limit` or `invalid-name`, and `failed` with `damaged`, `busy`, `unavailable`,
-`over-limit` (the file cap, which ends the run) or `run-aborted`.
+`over-limit` (the file cap or a full disk, which ends the run) or `run-aborted`.
 
 ## Combinations (SC-002)
 

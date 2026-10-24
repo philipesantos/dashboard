@@ -250,8 +250,10 @@ entries at each write (cost grows with the store).
   (spike: after "database or disk is full" in `BEGIN IMMEDIATE`, `is_autocommit()` is true, the
   next insert succeeds and stays, and `ROLLBACK` answers "no transaction is active"). So after
   every statement that fails in an update, the host checks `is_autocommit()`; when the transaction
-  is gone, the run is aborted: the failing call answers its rule (`over-limit` for the file cap,
-  `unavailable` for a full disk or an I/O error), every later storage call answers
+  is gone, or a write failed at all (a read-only file fails a write without ending the
+  transaction, which the implementation found), the run is aborted: the failing call answers its
+  rule (`over-limit` for the file cap,
+  `over-limit` also for a full disk, `unavailable` for an I/O error, R11), every later storage call answers
   `failed(run-aborted)` without running anything, and the update fails as `storage-failed`, with
   nothing of it kept. The host never runs a plugin's statement outside its own transaction.
 - **Commit.** The transaction commits only after the plugin's `update` returned `ok` with valid
@@ -366,8 +368,11 @@ before changing anything: `render-only-reads`, `over-quota`, `over-limit`, `inva
 `run-aborted` after the run's transaction ended, R7), each with a detail for the author
 ([contract](contracts/widget-v1.2.wit)). The file cap answers `failed(over-limit)`: unlike the
 refusals, it ends the run. A store that is `damaged` is never changed, deleted or repaired by the
-host on its own; `runtime storage clear` removes it on the maintainer's word (R14). A full disk or
-an unwritable data directory is `unavailable`.
+host on its own; `runtime storage clear` removes it on the maintainer's word (R14). An
+unwritable data directory or store file is `unavailable`. A full disk answers as the file cap
+does, `failed(over-limit)`, with a detail naming both causes: SQLite reports both as
+`SQLITE_FULL`, and the host cannot tell them apart without asking the system for free space,
+which the standard library does not offer (found in implementation).
 
 The data directory itself (spec edge case): at load step 8a, before linking, the host checks that
 `<data dir>/storage/` exists or can be created as a directory it can write, and that the SQLite
