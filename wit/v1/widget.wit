@@ -1,14 +1,14 @@
-/// Plugin contract v1, minor version 1 (feature 003).
+/// Plugin contract v1, minor version 2 (feature 004).
 ///
 /// The host and every v1 plugin build from wit/v1. A minor version only adds: every interface,
-/// function and type of 1.0.0 (wit/history/1.0.0/widget.wit) is here unchanged, and
+/// function and type of 1.1.0 (wit/history/1.1.0/widget.wit) is here unchanged, and
 /// runtime/tests/contract_v1.rs fails the build otherwise. The host runs plugins built for any
 /// v1 minor version up to its own.
 ///
 /// Every function of a capability interface returns `result<T, E>`, where `E` is an enum or
 /// variant of that interface whose first case is `not-granted`: the answer of an optional
 /// capability the user has not turned on (constitution Principle II).
-package dashboard:widget@1.1.0;
+package dashboard:widget@1.2.0;
 
 /// Writes log messages; carried by the `log` permission. Unchanged from 1.0.0.
 interface log {
@@ -109,6 +109,78 @@ interface connectors {
     -> result<response, call-error>;
 }
 
+/// The plugin's own store of named values, carried by the `storage` permission. The host chooses
+/// the store when it links the plugin, from the plugin's id and origin: no function names a store,
+/// a file or a place, and no plugin reaches another's. Names are any non-empty text up to 256
+/// bytes in UTF-8, compared and sorted as bytes; values are bytes, up to 256 KiB. Reads work in
+/// `render` and `update`; writes only in `update`, and they are kept together only when `update`
+/// returns `ok`. New in 1.2.0.
+interface storage {
+  /// The rule behind a call that was refused or failed.
+  enum rule {
+    /// A write or delete during `render`, which only reads.
+    render-only-reads,
+    /// The write would take the store's usage past the quota the manifest declares.
+    over-quota,
+    /// A limit: calls per run, bytes written per update, value size, or the store's file size;
+    /// reaching the file size ends the run, as `run-aborted` says.
+    over-limit,
+    /// The name is empty or longer than 256 bytes in UTF-8, or a `list` prefix or `after` is
+    /// longer than that.
+    invalid-name,
+    /// The store's file is not one the host wrote for this plugin; the host left it as it is.
+    damaged,
+    /// Another process is writing the store, past the time the call could wait.
+    busy,
+    /// The store could not be read or written: disk full, data directory unavailable.
+    unavailable,
+    /// An earlier call of this run failed in a way that ended its transaction, such as reaching
+    /// the store's file size: nothing was done, and nothing this run wrote will be kept.
+    run-aborted,
+  }
+
+  /// A rule and a message for the plugin's author.
+  record problem {
+    rule: rule,
+    detail: string,
+  }
+
+  variant storage-error {
+    /// `storage` is an optional permission the user has not turned on, or it was turned off or
+    /// its approval removed during this run: nothing was read or written, and nothing this run
+    /// wrote will be kept.
+    not-granted,
+    /// The host refused the call before changing anything.
+    refused(problem),
+    /// The store could not do it.
+    failed(problem),
+  }
+
+  /// One page of names, in byte order.
+  record page {
+    names: list<string>,
+    /// The last name of this page when more remain: pass it as `after` for the next page.
+    next: option<string>,
+  }
+
+  /// The store's usage: the bytes of every name and value plus a fixed cost per entry, and the
+  /// quota the manifest declares.
+  record store-usage {
+    used-bytes: u64,
+    quota-bytes: u64,
+  }
+
+  /// The value stored under `name`, or `none` when there is none.
+  get: func(name: string) -> result<option<list<u8>>, storage-error>;
+  /// Stores `value` under `name`, replacing any value there. `update` only.
+  set: func(name: string, value: list<u8>) -> result<_, storage-error>;
+  /// Removes `name`; removing a name that is not there succeeds. `update` only.
+  delete: func(name: string) -> result<_, storage-error>;
+  /// The names that start with `prefix` (empty: every name) and come after `after`, at most 100.
+  %list: func(prefix: string, after: option<string>) -> result<page, storage-error>;
+  usage: func() -> result<store-usage, storage-error>;
+}
+
 /// The entry point every plugin implements. Unchanged from 1.0.0.
 interface renderer {
   /// `config` is a JSON document chosen by the host. On success the plugin returns the widget
@@ -121,7 +193,8 @@ interface renderer {
   render: func(config: string) -> result<string, string>;
 }
 
-/// The entry point of plugins that fetch data through connectors.
+/// The entry point of plugins that fetch data through connectors or write their store.
+/// Unchanged from 1.1.0.
 interface updater {
   /// `config` is the widget's configuration, chosen by the host. On success the plugin
   /// returns its data as a JSON document of at most 256 KiB, which the host keeps and gives to
@@ -135,10 +208,28 @@ world widget {
   export renderer;
 }
 
-/// A widget that fetches data through connectors in `update` and renders it.
+/// A widget that fetches data through connectors in `update` and renders it. Unchanged from
+/// 1.1.0.
 world connected-widget {
   import log;
   import connectors;
+  export renderer;
+  export updater;
+}
+
+/// A widget that writes its own store in `update` and reads it in `render`.
+world stored-widget {
+  import log;
+  import storage;
+  export renderer;
+  export updater;
+}
+
+/// A widget with connectors and its own store; the world the host binds.
+world connected-stored-widget {
+  import log;
+  import connectors;
+  import storage;
   export renderer;
   export updater;
 }
