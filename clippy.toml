@@ -2,6 +2,10 @@
 # that module then covers every byte a connector sends (constitution Principle III,
 # specs/003-plugin-connectors/research.md, R20). The network module and the test servers
 # allow these with an inner #![allow(clippy::disallowed_types, clippy::disallowed_methods)].
+#
+# Likewise only runtime/src/storage/ opens a plugin's store, and it is the only user of rusqlite:
+# the review of that module then covers every SQL statement the host runs and every hardening
+# layer (Principle IX, specs/004-plugin-storage/research.md, R15). It allows them the same way.
 
 disallowed-types = [
     { path = "ureq::Agent", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
@@ -11,6 +15,7 @@ disallowed-types = [
     { path = "ureq::RequestExt", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
     { path = "std::net::TcpStream", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
     { path = "std::net::UdpSocket", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "rusqlite::Connection", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
 ]
 
 disallowed-methods = [
@@ -30,4 +35,13 @@ disallowed-methods = [
     { path = "std::net::TcpStream::connect", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
     { path = "std::net::TcpStream::connect_timeout", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
     { path = "std::net::UdpSocket::bind", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    # Every constructor of rusqlite 0.41.0's Connection
+    { path = "rusqlite::Connection::open", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    { path = "rusqlite::Connection::open_with_flags", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    { path = "rusqlite::Connection::open_with_flags_and_vfs", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    { path = "rusqlite::Connection::open_in_memory", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    { path = "rusqlite::Connection::open_in_memory_with_flags", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    { path = "rusqlite::Connection::open_in_memory_with_flags_and_vfs", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    { path = "rusqlite::Connection::from_handle", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    { path = "rusqlite::Connection::from_handle_owned", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
 ]
