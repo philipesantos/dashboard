@@ -347,3 +347,234 @@ fn us4_an_optional_permission_that_becomes_required_needs_approval() {
     assert_eq!(error.kind(), ErrorKind::NeedsNewApproval);
     assert_eq!(error.names(), ["log"]);
 }
+
+// Feature 003, User Story 4: changes never widen network access silently. Local connectors on
+// a loopback test service, through the real network module in development mode.
+
+mod connected {
+    use common_servers::{Reply, Server};
+    use runtime::ErrorKind;
+    use runtime::manifest::Manifest;
+    use serde_json::{Value, json};
+
+    use super::common::servers as common_servers;
+    use super::common::{TEST_ORIGIN, World, answers, calls, connected_manifest, probe};
+
+    fn echo(server: &Server, edit: impl FnOnce(&mut Value)) -> Value {
+        let mut connector = json!({
+            "connector_version": 1, "id": "local/echo", "version": "1.0.0", "author": "A",
+            "description": "Echo",
+            "destinations": { "api": server.http_origin() },
+            "operations": {
+                "get": { "kind": "read", "method": "GET", "destination": "api", "path": "/",
+                         "response": { "format": "json" } },
+                "more": { "kind": "read", "method": "GET", "destination": "api", "path": "/more",
+                          "response": { "format": "json" } }
+            }
+        });
+        edit(&mut connector);
+        connector
+    }
+
+    fn server() -> Server {
+        let server = Server::http();
+        server.route("/", Reply::json(r#"{"n":1}"#));
+        server.route("/more", Reply::json(r#"{"n":2}"#));
+        server
+    }
+
+    fn manifest(operations: &[&str], required: bool) -> String {
+        connected_manifest(
+            "local/net-probe",
+            &[("local/echo", 1, operations, required)],
+        )
+    }
+
+    fn get(plugin: &runtime::Plugin) -> Value {
+        answers(
+            &plugin
+                .update(&calls(&[("local/echo", "get", json!([]))]))
+                .result
+                .unwrap(),
+        )
+        .remove(0)
+    }
+
+    fn load_error(world: &World, package: &[u8]) -> runtime::RuntimeError {
+        match world
+            .runtime
+            .load(package, TEST_ORIGIN, std::sync::Arc::clone(&world.grants))
+        {
+            Ok(_) => panic!("loaded, but it must be refused"),
+            Err(error) => error,
+        }
+    }
+
+    #[test]
+    fn a_connector_that_only_adds_operations_the_widget_does_not_call_runs_without_approval() {
+        let server = server();
+        let world = World::production(true);
+        world.write_connector("echo", &echo(&server, |_| {}));
+        let package = probe(&manifest(&["get"], true));
+        world.approve(&package);
+        world.write_connector(
+            "echo",
+            &echo(&server, |c| {
+                c["version"] = json!("1.1.0");
+                c["operations"]["new"] = c["operations"]["get"].clone();
+            }),
+        );
+        let plugin = world.load(&package);
+        assert_eq!(get(&plugin)["status"], 200);
+    }
+
+    #[test]
+    fn a_change_to_what_the_widget_calls_needs_approval_and_leaves_the_grants() {
+        let server = server();
+        let world = World::production(true);
+        let package = probe(&manifest(&["get"], true));
+        type Change = (fn(&mut Value), &'static str);
+        let changes: [Change; 4] = [
+            (
+                |c| c["destinations"]["more"] = json!("http://localhost:9"),
+                "destination added",
+            ),
+            (
+                |c| c["operations"]["get"]["path"] = json!("/more"),
+                "operation changed: get",
+            ),
+            (
+                |c| c["operations"]["get"]["query"] = json!({ "x": "1" }),
+                "operation changed: get",
+            ),
+            (
+                |c| c["operations"]["get"]["kind"] = json!("change"),
+                "operation changed: get",
+            ),
+        ];
+        for (change, named) in changes {
+            world.write_connector("echo", &echo(&server, |_| {}));
+            world.approve(&package);
+            let entry = world
+                .grants
+                .entry(&runtime::manifest::PluginId::parse("local/net-probe").unwrap())
+                .unwrap();
+            world.write_connector("echo", &echo(&server, change));
+            let error = load_error(&world, &package);
+            assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+            assert!(error.to_string().contains(named), "{error}");
+            assert_eq!(
+                world
+                    .grants
+                    .entry(&runtime::manifest::PluginId::parse("local/net-probe").unwrap())
+                    .unwrap(),
+                entry,
+                "the grants changed"
+            );
+        }
+        // A version of the widget that calls a new operation
+        world.write_connector("echo", &echo(&server, |_| {}));
+        world.approve(&package);
+        let newer = probe(&manifest(&["get", "more"], true));
+        let error = load_error(&world, &newer);
+        assert_eq!(error.kind(), ErrorKind::NeedsNewApproval);
+        assert!(
+            error.to_string().contains("operation newly declared: more"),
+            "{error}"
+        );
+        assert!(server.received().is_empty());
+    }
+
+    #[test]
+    fn an_optional_connector_starts_off_and_its_changes_apply_from_the_next_call() {
+        let server = server();
+        let world = World::production(true);
+        world.write_connector("echo", &echo(&server, |_| {}));
+        let text = manifest(&["get"], false);
+        let package = probe(&text);
+        let plugin = world.approve_and_load(&package);
+        assert_eq!(get(&plugin)["error"], "not-granted");
+        assert!(server.received().is_empty());
+
+        let manifest = Manifest::parse(text.as_bytes()).unwrap();
+        world
+            .grants
+            .set_connector(&manifest, TEST_ORIGIN, "local/echo", true)
+            .unwrap();
+        assert_eq!(get(&plugin)["status"], 200, "on from the next update");
+        assert!(!plugin.render("{}").result.unwrap()["data"].is_null());
+
+        world
+            .grants
+            .set_connector(&manifest, TEST_ORIGIN, "local/echo", false)
+            .unwrap();
+        assert!(
+            plugin.render("{}").result.unwrap()["data"].is_null(),
+            "kept data discarded"
+        );
+        assert_eq!(get(&plugin)["error"], "not-granted");
+
+        world
+            .grants
+            .set_connector(&manifest, TEST_ORIGIN, "local/echo", true)
+            .unwrap();
+        assert_eq!(get(&plugin)["status"], 200);
+        world.grants.remove(manifest.id()).unwrap();
+        assert_eq!(
+            plugin
+                .update(&calls(&[("local/echo", "get", json!([]))]))
+                .result
+                .unwrap_err()
+                .kind(),
+            ErrorKind::NotGranted
+        );
+        assert_eq!(
+            plugin.render("{}").result.unwrap_err().kind(),
+            ErrorKind::NotGranted
+        );
+        // Approved again: the data of before is gone
+        let plugin = world.approve_and_load(&package);
+        world
+            .grants
+            .set_connector(&manifest, TEST_ORIGIN, "local/echo", true)
+            .unwrap();
+        assert!(
+            plugin.render("{}").result.unwrap()["data"].is_null(),
+            "old data came back"
+        );
+    }
+
+    #[test]
+    fn a_connector_that_is_missing_or_of_another_version_is_unavailable() {
+        let server = server();
+        let world = World::production(true);
+        let package = probe(&manifest(&["get"], true));
+        // Not found at all
+        let error = world.runtime.check(&package).err().expect("refused");
+        assert_eq!(error.kind(), ErrorKind::ConnectorUnavailable, "{error}");
+        assert!(error.to_string().contains("local/echo"), "{error}");
+        // Of another major
+        world.write_connector("echo", &echo(&server, |c| c["version"] = json!("2.0.0")));
+        let error = world.runtime.check(&package).err().expect("refused");
+        assert_eq!(error.kind(), ErrorKind::ConnectorUnavailable);
+        assert!(error.to_string().contains("major version 1"), "{error}");
+        // Without an operation the widget declares
+        world.write_connector(
+            "echo",
+            &echo(&server, |c| {
+                c["operations"].as_object_mut().unwrap().remove("get");
+            }),
+        );
+        let error = world.runtime.check(&package).err().expect("refused");
+        assert_eq!(error.kind(), ErrorKind::ConnectorUnavailable);
+        assert!(error.to_string().contains("`get`"), "{error}");
+        // Deleted after approval
+        let path = world.write_connector("echo", &echo(&server, |_| {}));
+        world.approve(&package);
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(
+            load_error(&world, &package).kind(),
+            ErrorKind::ConnectorUnavailable
+        );
+    }
+}

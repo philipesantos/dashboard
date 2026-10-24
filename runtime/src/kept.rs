@@ -141,6 +141,11 @@ impl KeptStore {
     /// A successful update: replaces the data and when it was fetched.
     pub(crate) fn record_success(&self, key: &Key, data: Value, at_ms: u64) -> io::Result<()> {
         let mut kept = self.current(key);
+        // The data was fetched under this approval, with these connectors on
+        kept.approval = KeptApproval {
+            digest: key.approval.clone(),
+            connectors_on: key.connectors_on.clone(),
+        };
         kept.fetched_at_ms = Some(at_ms);
         kept.data = Some(data);
         kept.last_update = Some(LastUpdate {
@@ -372,6 +377,9 @@ mod tests {
         let mut more = key();
         more.connectors_on.push("local/weather".to_owned());
         assert!(matches!(store.read(&more), Found::Current(Some(_))));
+        // Data fetched with it on records it, so turning it off again discards that data
+        store.record_success(&more, json!({"a": 2}), 2).unwrap();
+        assert!(matches!(store.read(&key()), Found::Discarded(_)));
     }
 
     #[test]

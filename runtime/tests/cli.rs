@@ -55,9 +55,7 @@ fn runtime_approved(plugin: Option<&Path>, args: &[&str]) -> Output {
     if let Some(plugin) = plugin {
         approve_file(&grants, plugin);
     }
-    let mut args = args.to_vec();
-    args.extend(["--grants", path_str(&grants)]);
-    runtime(&args)
+    runtime_with(&grants, args)
 }
 
 #[test]
@@ -184,10 +182,12 @@ fn an_unknown_command_is_a_usage_error() {
 
 // Plugin permissions (feature 002), User Story 1
 
-/// Runs `args` followed by `--grants <grants>`.
+/// Runs `args` followed by `--grants <grants>` and, so no test touches the user's own data,
+/// `--data` with the record's directory.
 fn runtime_with(grants: &Path, args: &[&str]) -> Output {
     let mut args = args.to_vec();
-    args.extend(["--grants", path_str(grants)]);
+    let data = grants.parent().expect("the record is in a directory");
+    args.extend(["--grants", path_str(grants), "--data", path_str(data)]);
     runtime(&args)
 }
 
@@ -1026,4 +1026,134 @@ fn with_the_service_down_update_fails_keeping_the_data_and_run_still_renders_it(
             .starts_with("plugin-error: "),
         "{content}"
     );
+}
+
+#[test]
+fn optional_turns_a_connector_on_and_off_and_off_discards_the_kept_data() {
+    let server = hello_server();
+    let connected = Connected::new(
+        &server,
+        &[
+            ("local/hello", 0, &["get"], false),
+            ("catalog/github", 1, &["list-releases"], true),
+        ],
+    );
+    connected.approve();
+    let plugin = path_str(&connected.plugin);
+    let config = calls_config(&[("local/hello", "get")]);
+
+    let output = connected.run(&["optional", plugin, "local/hello", "on"]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "local/hello on\n");
+    connected.run(&["update", plugin, "--config", &config]);
+    let content = run_content(&connected);
+    assert_eq!(content["data"]["answers"][0]["status"], 200);
+
+    let output = connected.run(&["optional", plugin, "local/hello", "off"]);
+    assert_eq!(stdout(&output), "local/hello off (kept data discarded)\n");
+    assert!(run_content(&connected)["data"].is_null());
+
+    let output = connected.run(&["optional", plugin, "catalog/github", "off"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).starts_with("error: required-together: catalog/github"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn turning_a_connector_off_in_another_process_drops_a_response_in_flight() {
+    let server = Server::http();
+    server.route(
+        "/hello.json",
+        Reply::json(r#"{"late":true}"#).delay(std::time::Duration::from_secs(2)),
+    );
+    let connected = Connected::new(&server, &[("local/hello", 0, &["get"], false)]);
+    connected.approve();
+    let plugin = path_str(&connected.plugin).to_owned();
+    connected.run(&["optional", &plugin, "local/hello", "on"]);
+    let updating = {
+        let args: Vec<String> = [
+            "update",
+            &plugin,
+            "--config",
+            &calls_config(&[("local/hello", "get")]),
+            "--grants",
+            path_str(&connected.grants),
+            "--data",
+            path_str(connected.dir.path()),
+        ]
+        .iter()
+        .map(|arg| (*arg).to_owned())
+        .collect();
+        std::process::Command::new(env!("CARGO_BIN_EXE_runtime"))
+            .args(&args)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap()
+    };
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    connected.run(&["optional", &plugin, "local/hello", "off"]);
+    let output = updating.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(server.received().len(), 1, "it was sent");
+    let text = stdout(&runtime(&[
+        "requests",
+        "--data",
+        path_str(connected.dir.path()),
+    ]));
+    assert!(
+        text.trim_end()
+            .ends_with("local/hello get GET 127.0.0.1 /hello.json?v=2 not-granted"),
+        "{text}"
+    );
+}
+
+#[test]
+fn remove_discards_the_kept_data_and_a_changed_connector_needs_a_new_approval() {
+    let server = hello_server();
+    let connected = Connected::hello_only(&server);
+    connected.approve();
+    let plugin = path_str(&connected.plugin);
+    let config = calls_config(&[("local/hello", "get")]);
+    connected.run(&["update", plugin, "--config", &config]);
+    assert!(!run_content(&connected)["data"].is_null());
+    let widget_data = connected.dir.path().join("widget-data");
+    assert_eq!(std::fs::read_dir(&widget_data).unwrap().count(), 1);
+
+    let output = connected.run(&["remove", "local/net-probe"]);
+    assert_eq!(stdout(&output), "removed local/net-probe\n");
+    assert_eq!(
+        std::fs::read_dir(&widget_data).unwrap().count(),
+        0,
+        "the kept data stayed"
+    );
+
+    connected.approve();
+    let mut changed = hello(&server);
+    changed["destinations"]["more"] = json!("http://localhost:9");
+    std::fs::write(connected.connector_file(), changed.to_string()).unwrap();
+    let output = connected.run(&["update", plugin, "--config", &config]);
+    assert_eq!(output.status.code(), Some(1));
+    let error = stderr(&output);
+    assert!(error.starts_with("error: needs-new-approval: "), "{error}");
+    assert!(
+        error.contains("destination added: http://localhost:9"),
+        "{error}"
+    );
+}
+
+fn calls_config(calls: &[(&str, &str)]) -> String {
+    let calls: Vec<serde_json::Value> = calls
+        .iter()
+        .map(|(connector, operation)| json!({ "connector": connector, "operation": operation, "arguments": [] }))
+        .collect();
+    json!({ "calls": calls }).to_string()
+}
+
+fn run_content(connected: &Connected) -> serde_json::Value {
+    let output = connected.run(&["run", path_str(&connected.plugin)]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    serde_json::from_str(&stdout(&output)).unwrap()
 }

@@ -877,6 +877,23 @@ fn optional(options: &Options) -> ExitCode {
         Ok(checked) => checked,
         Err(status) => return status,
     };
+    // A connector id has a `/`; a permission name never does
+    if permission.contains('/') {
+        if let Err(error) = checked.set_connector(&target.grants, &target.origin, permission, *on) {
+            return refused(&error);
+        }
+        if *on {
+            println!("{} on", escape(permission));
+        } else {
+            // Data fetched with the connector on goes with it (FR-010)
+            if let Err(error) = target.runtime.discard_kept_data(checked.manifest().id()) {
+                eprintln!("error: cannot discard the kept data: {error}");
+                return ExitCode::from(PLUGIN_FAILED);
+            }
+            println!("{} off (kept data discarded)", escape(permission));
+        }
+        return ExitCode::SUCCESS;
+    }
     if let Err(error) = checked.set_optional(&target.grants, &target.origin, permission, *on) {
         return refused(&error);
     }
@@ -930,6 +947,23 @@ fn remove(options: &Options) -> ExitCode {
         Ok(true) => println!("removed {id}"),
         Ok(false) => println!("{id} has no approval"),
         Err(error) => return refused(&error),
+    }
+    // The data the host kept for it goes with the approval (FR-010)
+    let data = match data_dir(options) {
+        Ok(data) => data,
+        Err(message) => return usage_error(&message),
+    };
+    match Runtime::new(Limits::default(), RuntimeOptions::new(data)) {
+        Ok(runtime) => {
+            if let Err(error) = runtime.discard_kept_data(&id) {
+                eprintln!("error: cannot discard the kept data of {id}: {error}");
+                return ExitCode::from(PLUGIN_FAILED);
+            }
+        }
+        Err(error) => {
+            eprintln!("error: cannot start the runtime: {error:#}");
+            return ExitCode::from(PLUGIN_FAILED);
+        }
     }
     ExitCode::SUCCESS
 }

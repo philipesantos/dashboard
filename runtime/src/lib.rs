@@ -1031,7 +1031,13 @@ impl Plugin {
     /// The kept data, discarding it first when it no longer matches (load step 7a). A damaged
     /// file counts as no data.
     fn kept_data(&self) -> Option<kept::Kept> {
-        match self.kept.read(&self.kept_key()?) {
+        self.package.interfaces.updater()?;
+        let Some(key) = self.kept_key() else {
+            // No approval any more, removed by any process: its data goes with it (FR-010)
+            let _ = self.kept.discard(self.manifest().id().as_str());
+            return None;
+        };
+        match self.kept.read(&key) {
             Found::Current(kept) => kept,
             Found::Discarded(_) | Found::Damaged(_) => None,
         }
