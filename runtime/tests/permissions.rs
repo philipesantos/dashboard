@@ -12,7 +12,8 @@ use runtime::{ErrorKind, Limits, LogLevel, LogMessage, Plugin, Runtime, RuntimeE
 use serde_json::json;
 
 fn runtime() -> Runtime {
-    Runtime::new(Limits::default()).expect("the runtime starts with the default limits")
+    Runtime::new(Limits::default(), common::options())
+        .expect("the runtime starts with the default limits")
 }
 
 /// The `probe` fixture packed with a manifest for `local/probe` at `version`.

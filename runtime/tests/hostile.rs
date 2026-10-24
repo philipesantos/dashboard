@@ -24,7 +24,8 @@ use tempfile::TempDir;
 const WATCHDOG: Duration = Duration::from_secs(30);
 
 fn runtime() -> Runtime {
-    Runtime::new(Limits::default()).expect("the runtime starts with the default limits")
+    Runtime::new(Limits::default(), common::options())
+        .expect("the runtime starts with the default limits")
 }
 
 /// Loads a fixture with its required permissions approved.
@@ -88,10 +89,13 @@ fn infinite_loop_runs_out_of_cpu_budget_and_keeps_its_log() {
     // The default fuel, with a time limit only a broken budget could reach: on a slow or busy
     // machine, the default 1 s could otherwise run out first. Fuel stops at the same point on
     // every system (R2).
-    let runtime = Runtime::new(Limits {
-        time_limit: Duration::from_secs(20),
-        ..Limits::default()
-    })
+    let runtime = Runtime::new(
+        Limits {
+            time_limit: Duration::from_secs(20),
+            ..Limits::default()
+        },
+        common::options(),
+    )
     .unwrap();
     let report = render(&load(&runtime, "infinite-loop"), "{}");
 
@@ -108,7 +112,7 @@ fn infinite_loop_with_unlimited_fuel_hits_the_time_limit_on_time() {
         time_limit: Duration::from_millis(500),
         ..Limits::default()
     };
-    let runtime = Runtime::new(limits.clone()).unwrap();
+    let runtime = Runtime::new(limits.clone(), common::options()).unwrap();
     let plugin = load(&runtime, "infinite-loop");
 
     let start = Instant::now();

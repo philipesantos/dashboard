@@ -1,6 +1,14 @@
 //! Plugin runtime: loads plugins packaged as WebAssembly components and runs them in a sandbox,
 //! under limits set by the host, with exactly the capabilities their manifest declares and the
-//! user granted (`specs/002-plugin-permissions/`).
+//! user granted (`specs/002-plugin-permissions/`), and reach external services only through
+//! the connectors they declare, which the host runs (`specs/003-plugin-connectors/`).
+
+// The test seam replaces DNS and the trusted roots; it must never reach a build anyone runs
+// (specs/003-plugin-connectors/research.md, R15).
+#[cfg(all(feature = "test-network", not(debug_assertions)))]
+compile_error!(
+    "the test-network feature is only for the runtime's own tests, which run in debug builds: a release build never includes the test seam"
+);
 
 // Unused until loading runs connectors (specs/003-plugin-connectors/tasks.md, T035)
 #[allow(dead_code)]
@@ -29,6 +37,7 @@ mod permissions;
 mod requests;
 mod text;
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -45,6 +54,8 @@ use permissions::Interfaces;
 
 pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
+#[cfg(feature = "test-network")]
+pub use network::{Route, TestNetwork};
 pub use permissions::Contract;
 pub use text::escape;
 
@@ -103,11 +114,73 @@ pub struct RenderReport {
     pub dropped_logs: u32,
 }
 
+/// What the host decides when it starts the runtime: where its data lives, and whether it runs
+/// in development mode, the only mode in which local connectors load (FR-018).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeOptions {
+    development: bool,
+    connectors_dir: Option<PathBuf>,
+    data_dir: PathBuf,
+}
+
+impl RuntimeOptions {
+    /// Options with `data_dir` for kept data and the request log, development mode off and
+    /// local connectors read from `<data_dir>/connectors/` once it is on.
+    pub fn new(data_dir: impl Into<PathBuf>) -> RuntimeOptions {
+        RuntimeOptions {
+            development: false,
+            connectors_dir: None,
+            data_dir: data_dir.into(),
+        }
+    }
+
+    /// Turns development mode on or off. Only the development command-line tool turns it on;
+    /// the host app of Phase 3 never does.
+    pub fn development(mut self, on: bool) -> RuntimeOptions {
+        self.development = on;
+        self
+    }
+
+    /// Reads local connectors from `dir`, `<dir>/<name>.json` for `local/<name>`.
+    pub fn connectors_dir(mut self, dir: impl Into<PathBuf>) -> RuntimeOptions {
+        self.connectors_dir = Some(dir.into());
+        self
+    }
+
+    pub fn is_development(&self) -> bool {
+        self.development
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    /// Where local connectors are read from.
+    pub fn local_connectors_dir(&self) -> PathBuf {
+        self.connectors_dir
+            .clone()
+            .unwrap_or_else(|| self.data_dir.join("connectors"))
+    }
+
+    /// `<data dir>/dev.philsantos.dashboard/development/`, beside the development grant record,
+    /// or `None` when the system has no data directory.
+    pub fn default_development_data_dir() -> Option<PathBuf> {
+        dirs::data_dir().map(|dir| dir.join(grants::APP_DIR).join("development"))
+    }
+}
+
 /// Loads plugins and runs them under the host's limits.
 pub struct Runtime {
     engine: Engine,
     limits: Limits,
     clock: Arc<EpochClock>,
+    // Read once loading runs connectors (specs/003-plugin-connectors/tasks.md, T035)
+    #[allow(dead_code)]
+    options: RuntimeOptions,
+    #[allow(dead_code)]
+    catalog: catalog::Catalog,
+    #[allow(dead_code)]
+    network: network::Network,
 }
 
 /// A package that passed every check that needs no grants: load steps 1–6 of
@@ -177,7 +250,34 @@ impl Runtime {
     /// Starts Wasmtime with every WebAssembly proposal the runtime does not need turned off.
     ///
     /// Fails only if Wasmtime cannot start on this machine.
-    pub fn new(limits: Limits) -> wasmtime::Result<Runtime> {
+    pub fn new(limits: Limits, options: RuntimeOptions) -> wasmtime::Result<Runtime> {
+        Runtime::start(
+            limits,
+            options,
+            catalog::Catalog::built_in(),
+            network::Network::production(),
+        )
+    }
+
+    /// A runtime whose connector requests go through the test seam instead of DNS and
+    /// Mozilla's roots, and whose catalog has `test.catalog` added (research R15). Only the
+    /// runtime's own tests can build one.
+    #[cfg(feature = "test-network")]
+    pub fn with_test_network(
+        limits: Limits,
+        options: RuntimeOptions,
+        test: TestNetwork,
+    ) -> wasmtime::Result<Runtime> {
+        let catalog = catalog::Catalog::with_extra(&test.catalog)?;
+        Runtime::start(limits, options, catalog, network::Network::with_seam(test))
+    }
+
+    fn start(
+        limits: Limits,
+        options: RuntimeOptions,
+        catalog: catalog::Catalog,
+        network: network::Network,
+    ) -> wasmtime::Result<Runtime> {
         let mut config = Config::new();
         // Turned off explicitly, so a Wasmtime upgrade that changes a default does not widen
         // what plugins can use. Function references, exceptions, threads and component-model
@@ -214,6 +314,9 @@ impl Runtime {
             engine,
             limits,
             clock,
+            options,
+            catalog,
+            network,
         })
     }
 

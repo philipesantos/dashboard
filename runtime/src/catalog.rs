@@ -9,6 +9,7 @@
 use std::sync::{Arc, OnceLock};
 
 use crate::connector::{self, Connector, Source};
+#[cfg(any(test, feature = "test-network"))]
 use crate::error::RuntimeError;
 
 /// Every catalog connector: its id, which is `catalog/<file name>`, and its file.

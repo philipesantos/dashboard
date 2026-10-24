@@ -17,7 +17,7 @@ use std::time::Instant;
 use runtime::grants::GrantStore;
 use runtime::manifest::Manifest;
 use runtime::package;
-use runtime::{Limits, Runtime};
+use runtime::{Limits, Runtime, RuntimeOptions};
 
 const MANIFEST: &str = r#"{"manifest_version":1,"id":"local/compile-cost","version":"0.1.0","author":"Dashboard contributors","permissions":[],"login_providers":[]}"#;
 const ORIGIN: &str = "compile-cost";
@@ -103,7 +103,9 @@ fn main() {
         .approve(&manifest, ORIGIN, &package::digest(&package))
         .expect("approved");
 
-    let runtime = Runtime::new(Limits::default()).expect("the runtime starts");
+    // Loading these packages writes nothing: they declare no connector
+    let options = RuntimeOptions::new(std::env::temp_dir().join("dashboard-compile-cost"));
+    let runtime = Runtime::new(Limits::default(), options).expect("the runtime starts");
     reset_peak_memory();
     let start = Instant::now();
     let outcome = match runtime.load(&package, ORIGIN, Arc::new(grants)) {

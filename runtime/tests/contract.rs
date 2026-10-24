@@ -12,7 +12,8 @@ use runtime::{Contract, ErrorKind, Limits, LogLevel, LogMessage, Plugin, Runtime
 use serde_json::json;
 
 fn runtime() -> Runtime {
-    Runtime::new(Limits::default()).expect("the runtime starts with the default limits")
+    Runtime::new(Limits::default(), common::options())
+        .expect("the runtime starts with the default limits")
 }
 
 /// Loads `bytes` with its required permissions approved.
@@ -148,10 +149,13 @@ fn a_core_module_is_not_a_component() {
 #[test]
 fn a_package_over_the_size_limit_is_refused_before_anything_else() {
     let bytes = fixture("hello-widget");
-    let runtime = Runtime::new(Limits {
-        max_package_bytes: bytes.len() - 1,
-        ..Limits::default()
-    })
+    let runtime = Runtime::new(
+        Limits {
+            max_package_bytes: bytes.len() - 1,
+            ..Limits::default()
+        },
+        common::options(),
+    )
     .unwrap();
     assert_eq!(load_error(&runtime, &bytes).0, ErrorKind::InvalidPackage);
 }

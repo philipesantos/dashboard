@@ -8,6 +8,7 @@ pub mod servers;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use runtime::RuntimeOptions;
 use runtime::grants::GrantStore;
 use runtime::manifest::Manifest;
 use tempfile::TempDir;
@@ -146,4 +147,12 @@ pub fn append_manifest_section(package: &[u8], payload: &[u8]) -> Vec<u8> {
     leb128(contents.len(), &mut appended);
     appended.extend_from_slice(&contents);
     appended
+}
+
+/// Runtime options for tests whose plugins declare no connector: development mode off, and a
+/// data directory of this test binary's own, which such plugins never write to.
+pub fn options() -> RuntimeOptions {
+    static DATA: std::sync::OnceLock<TempDir> = std::sync::OnceLock::new();
+    let data = DATA.get_or_init(|| TempDir::new().expect("a temporary data directory"));
+    RuntimeOptions::new(data.path())
 }

@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use runtime::grants::{GrantStore, Status};
 use runtime::manifest::MAX_MANIFEST_BYTES;
 use runtime::manifest::PluginId;
-use runtime::{CheckedPackage, Limits, Plugin, Runtime, escape, package};
+use runtime::{CheckedPackage, Limits, Plugin, Runtime, RuntimeOptions, escape, package};
 
 const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>]
        runtime bench <plugin> [--iterations <n>] [--config <json> | --config-file <path>] [--grants <path>]
@@ -506,7 +506,10 @@ impl Target {
         let origin = origin(path).map_err(|message| usage_error(&message))?;
         let grants =
             grant_store(options.grants.as_ref()).map_err(|message| usage_error(&message))?;
-        let runtime = Runtime::new(limits).map_err(|error| {
+        // Development mode and --data arrive with the connector commands (T039)
+        let data_dir = RuntimeOptions::default_development_data_dir()
+            .ok_or_else(|| usage_error("this system has no data directory; give --grants"))?;
+        let runtime = Runtime::new(limits, RuntimeOptions::new(data_dir)).map_err(|error| {
             eprintln!("error: cannot start the runtime: {error:#}");
             ExitCode::from(PLUGIN_FAILED)
         })?;
