@@ -19,6 +19,7 @@ members = [
     "hostile/state-leak",
     "hostile/out-of-bounds",
     "hostile/log-spoof",
+    "hostile/storage-file",
     "fixtures/hello-v0",
     "fixtures/probe",
     "fixtures/quiet",
