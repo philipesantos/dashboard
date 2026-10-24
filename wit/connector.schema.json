@@ -205,7 +205,10 @@
               "uniqueItems": true,
               "items": {
                 "type": "string",
-                "pattern": "^(?![Ss][Ee][Tt]-[Cc][Oo][Oo][Kk][Ii][Ee]$)(?![Cc][Oo][Oo][Kk][Ii][Ee]$)[A-Za-z0-9-]{1,64}$"
+                "pattern": "^[A-Za-z0-9-]{1,64}$",
+                "not": {
+                  "pattern": "^([Ss][Ee][Tt]-)?[Cc][Oo][Oo][Kk][Ii][Ee]$"
+                }
               }
             }
           }

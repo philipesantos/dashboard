@@ -21,11 +21,12 @@ use crate::error::{ErrorKind, RuntimeError};
 use crate::manifest::{self, Object};
 
 /// Largest connector file accepted, checked before parsing.
-pub(crate) const MAX_CONNECTOR_BYTES: usize = 64 * 1024;
+pub const MAX_CONNECTOR_BYTES: usize = 64 * 1024;
 
-/// Where a connector comes from, which decides the rules it follows.
+/// Where a connector comes from, which decides the rules it follows. Parsing a connector
+/// adds it to nothing: the catalog is the list built into the host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Source {
+pub enum Source {
     /// Built into the host from `connectors/catalog/`, reviewed line by line: it lists the
     /// domains it reserves, may fix `X-` headers, and may declare a read with a body.
     Catalog,
@@ -150,7 +151,7 @@ pub enum ArgValue {
 impl Connector {
     /// Parses and checks a connector file. Refuses it as `invalid-connector`, naming the field
     /// path and the problem, or as `credentials-not-supported` when it declares a credential.
-    pub(crate) fn parse(bytes: &[u8], source: Source) -> Result<Connector, RuntimeError> {
+    pub fn parse(bytes: &[u8], source: Source) -> Result<Connector, RuntimeError> {
         if bytes.len() > MAX_CONNECTOR_BYTES {
             return Err(invalid(format!(
                 "the connector is {} bytes, over the limit of {MAX_CONNECTOR_BYTES}",
