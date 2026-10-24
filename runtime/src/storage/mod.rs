@@ -5,4 +5,6 @@
 //! hardening layer of the connection.
 
 mod admin;
+// Until the storage calls use it (tasks T021 and T047)
+#[allow(dead_code)]
 mod connection;
