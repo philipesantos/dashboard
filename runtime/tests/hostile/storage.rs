@@ -1208,3 +1208,90 @@ fn taken_away_mid_render() {
         "the read after the change"
     );
 }
+
+/// The child half of `killed-mid-update`: run by [`killed_mid_update`] in a process of its own,
+/// which the parent kills while this update holds its transaction. Ignored when the suite runs.
+#[test]
+#[ignore = "run by killed_mid_update in a child process, which it kills"]
+fn killed_mid_update_child_process() {
+    use std::sync::Arc;
+
+    let data = std::env::var("STORE_DATA").expect("run through killed_mid_update");
+    let package = std::fs::read(std::env::var("STORE_PACKAGE").unwrap()).unwrap();
+    let origin = std::env::var("STORE_ORIGIN").unwrap();
+    let limits = Limits {
+        update_time_limit: std::time::Duration::from_secs(120),
+        ..spinning_limits()
+    };
+    let runtime = runtime::Runtime::new(limits, runtime::RuntimeOptions::new(&data)).unwrap();
+    let grants = Arc::new(runtime::grants::GrantStore::open(
+        Path::new(&data).join("grants.json"),
+    ));
+    let plugin = runtime.load(&package, &origin, grants).unwrap();
+    // About 900 KiB, past the 256 KiB page cache, then a spin the parent never lets end
+    let report = plugin.update(&steps(
+        &[
+            json!({ "op": "set", "name": "v{i}", "value_size": 4096, "repeat": 225 }),
+            json!({ "op": "spin", "iterations": u64::MAX }),
+        ],
+        None,
+    ));
+    panic!("the update should have been killed: {:?}", report.result);
+}
+
+/// `killed-mid-update` (FR-010, research R8): the process is killed after the update spilled
+/// pages to the store; the next reader rolls the hot journal back and reads the state from
+/// before the update, never reporting the store damaged.
+#[test]
+fn killed_mid_update() {
+    let vault = Vault::new();
+    let origin = vault.origin("killed");
+    let package = Vault::probe("local/store-probe", 2 * 1024 * 1024);
+    let plugin = vault.plugin(&package, &origin);
+    update(&plugin, &[set("kept", "before")]);
+    let store = vault.store_file("local/store-probe", &origin);
+    let journal = store.with_extension("sqlite-journal");
+    let size_before = std::fs::metadata(&store).unwrap().len();
+    let package_file = vault.data().join("killed.wasm");
+    std::fs::write(&package_file, &package).unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "storage::killed_mid_update_child_process",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("STORE_DATA", vault.data())
+        .env("STORE_PACKAGE", &package_file)
+        .env("STORE_ORIGIN", &origin)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the child test starts");
+    // Killed once the update wrote pages past the cache into the store file itself
+    let started = std::time::Instant::now();
+    while std::fs::metadata(&store).unwrap().len() < size_before + 300 * 1024 {
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "the child ended before it was killed"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "the update never spilled pages to the store"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(journal.is_file(), "the killed update left its journal");
+    // The store and its journal change on purpose: the journal is rolled back
+    let mut own = vault.own("local/store-probe", &origin);
+    own.push(journal.clone());
+    vault.contained(&own, || {
+        let found = render(&plugin, &[get("kept"), get("v0"), list("v")]);
+        assert_eq!(found[0], hex("before"), "the state from before the update");
+        assert_eq!(found[1], json!({ "ok": null }));
+        assert_eq!(found[2], json!({ "ok": { "names": [], "next": null } }));
+        assert!(!journal.exists(), "the journal was rolled back");
+    });
+}
