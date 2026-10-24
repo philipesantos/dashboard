@@ -7,14 +7,114 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 /// Whether `address` is a public address of the internet, the only kind a connector reaches
 /// outside development. An IPv6 address that embeds an IPv4 one is judged by the IPv4 address.
 pub(crate) fn is_public(address: IpAddr) -> bool {
-    let _ = address;
-    true
+    match address {
+        IpAddr::V4(address) => is_public_v4(address),
+        IpAddr::V6(address) => match embedded_v4(address) {
+            Some(embedded) => is_public_v4(embedded),
+            None => is_public_v6(address),
+        },
+    }
 }
 
 /// Whether `address` is this machine: what a local connector reaches in development (FR-018).
 pub(crate) fn is_loopback(address: IpAddr) -> bool {
-    let _ = address;
-    false
+    match address {
+        IpAddr::V4(address) => address.is_loopback(),
+        IpAddr::V6(address) => {
+            address.is_loopback() || address.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
+        }
+    }
+}
+
+/// IPv4 ranges that are not public: the IANA IPv4 Special-Purpose Address Registry rows that are
+/// not globally reachable, plus multicast. Each is `(network, prefix length)`.
+const NOT_PUBLIC_V4: &[(Ipv4Addr, u8)] = &[
+    // "This network" (RFC 791), including 0.0.0.0, the unspecified address
+    (Ipv4Addr::new(0, 0, 0, 0), 8),
+    // Private-Use (RFC 1918)
+    (Ipv4Addr::new(10, 0, 0, 0), 8),
+    // Shared Address Space, carrier-grade NAT (RFC 6598)
+    (Ipv4Addr::new(100, 64, 0, 0), 10),
+    // Loopback (RFC 1122)
+    (Ipv4Addr::new(127, 0, 0, 0), 8),
+    // Link Local (RFC 3927), cloud metadata services included
+    (Ipv4Addr::new(169, 254, 0, 0), 16),
+    // Private-Use (RFC 1918)
+    (Ipv4Addr::new(172, 16, 0, 0), 12),
+    // IETF Protocol Assignments (RFC 6890)
+    (Ipv4Addr::new(192, 0, 0, 0), 24),
+    // Documentation, TEST-NET-1 (RFC 5737)
+    (Ipv4Addr::new(192, 0, 2, 0), 24),
+    // Deprecated 6to4 Relay Anycast (RFC 7526)
+    (Ipv4Addr::new(192, 88, 99, 0), 24),
+    // Private-Use (RFC 1918)
+    (Ipv4Addr::new(192, 168, 0, 0), 16),
+    // Benchmarking (RFC 2544)
+    (Ipv4Addr::new(198, 18, 0, 0), 15),
+    // Documentation, TEST-NET-2 (RFC 5737)
+    (Ipv4Addr::new(198, 51, 100, 0), 24),
+    // Documentation, TEST-NET-3 (RFC 5737)
+    (Ipv4Addr::new(203, 0, 113, 0), 24),
+    // Multicast (RFC 5771)
+    (Ipv4Addr::new(224, 0, 0, 0), 4),
+    // Reserved (RFC 1112), and Limited Broadcast, 255.255.255.255 (RFC 919)
+    (Ipv4Addr::new(240, 0, 0, 0), 4),
+];
+
+/// IPv6 ranges inside global unicast (`2000::/3`) that are not public, from the IANA IPv6
+/// Special-Purpose Address Registry. Everything outside `2000::/3` is not public either: the
+/// unspecified and loopback addresses, discard-only (`100::/64`), local-use translation
+/// (`64:ff9b:1::/48`), unique local (`fc00::/7`), link-local (`fe80::/10`) and multicast
+/// (`ff00::/8`) all lie there.
+const NOT_PUBLIC_V6: &[(Ipv6Addr, u8)] = &[
+    // IETF Protocol Assignments (RFC 2928), taken whole: Teredo (2001::/32), benchmarking,
+    // ORCHID and the anycast rows under it; no service a connector reaches lives there
+    (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23),
+    // Documentation (RFC 3849)
+    (Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32),
+    // Documentation (RFC 9637)
+    (Ipv6Addr::new(0x3fff, 0, 0, 0, 0, 0, 0, 0), 20),
+    // Segment Routing SIDs (RFC 9602)
+    (Ipv6Addr::new(0x5f00, 0, 0, 0, 0, 0, 0, 0), 16),
+];
+
+fn is_public_v4(address: Ipv4Addr) -> bool {
+    let bits = u32::from(address);
+    !NOT_PUBLIC_V4.iter().any(|(network, prefix)| {
+        let mask = u32::MAX.checked_shl(32 - u32::from(*prefix)).unwrap_or(0);
+        bits & mask == u32::from(*network) & mask
+    })
+}
+
+fn is_public_v6(address: Ipv6Addr) -> bool {
+    let bits = u128::from(address);
+    let in_range = |network: Ipv6Addr, prefix: u8| {
+        let mask = u128::MAX.checked_shl(128 - u32::from(prefix)).unwrap_or(0);
+        bits & mask == u128::from(network) & mask
+    };
+    in_range(Ipv6Addr::new(0x2000, 0, 0, 0, 0, 0, 0, 0), 3)
+        && !NOT_PUBLIC_V6
+            .iter()
+            .any(|(network, prefix)| in_range(*network, *prefix))
+}
+
+/// The IPv4 address an IPv6 form carries, judged in its place: IPv4-mapped (`::ffff:0:0/96`),
+/// IPv4-compatible (`::/96`, deprecated, but routed by some stacks), NAT64 (`64:ff9b::/96`,
+/// RFC 6052) and 6to4 (`2002::/16`, RFC 3056).
+fn embedded_v4(address: Ipv6Addr) -> Option<Ipv4Addr> {
+    if let Some(mapped) = address.to_ipv4_mapped() {
+        return Some(mapped);
+    }
+    let segments = address.segments();
+    let last = |high: u16, low: u16| Ipv4Addr::from((u32::from(high) << 16) | u32::from(low));
+    match segments {
+        // :: and ::1 are judged as IPv6
+        [0, 0, 0, 0, 0, 0, 0, 0 | 1] => None,
+        [0, 0, 0, 0, 0, 0, high, low] => Some(last(high, low)),
+        [0x64, 0xff9b, 0, 0, 0, 0, high, low] => Some(last(high, low)),
+        [0x2002, high, low, ..] => Some(last(high, low)),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
