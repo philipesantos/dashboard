@@ -57,6 +57,21 @@ plugins never receive, Principle IV); a quota the user changes and storage of in
 clears data explicitly until then); a file or blob API; the vault, OAuth and the token case
 (feature 005); the TypeScript example (separate Phase 2 item)."
 
+## Clarifications
+
+### Session 2026-10-24
+
+- Q: When the maintainer approves a widget that declares storage, should the tool require the
+  approval digest that the permissions listing printed, as it does for widgets with connectors?
+  → A: Yes, whenever storage is declared, required or optional; the quota is part of the approval
+  digest (FR-008).
+- Q: Must a widget that declares storage also export the update entry point? → A: Yes; one that
+  does not is refused at load as missing updater, naming that storage is written only in an
+  update (FR-012).
+- Q: How should the maintainer find and clear a store whose package file was moved or deleted?
+  → A: The tool lists every store (id, origin, usage, quota, and whether the origin's file still
+  exists) and clears one by id and origin, whether or not the file exists (FR-014).
+
 ## User Scenarios & Testing *(mandatory)*
 
 The people using this feature are the maintainer, who runs plugins and approves them through the
@@ -87,14 +102,18 @@ and changed as the widget wrote them.
 **Acceptance Scenarios**:
 
 1. **Given** a widget that declares storage, **When** the maintainer asks what it requests,
-   **Then** the tool lists storage as required or optional, with the quota the widget declared.
-2. **Given** the widget is approved, **When** an update writes values and returns successfully,
+   **Then** the tool lists storage as required or optional, with the quota the widget declared,
+   and the approval digest of what it showed.
+2. **Given** the package changed after the maintainer asked, such as a larger quota, **When** the
+   maintainer approves with the digest shown earlier, **Then** the approval is refused and
+   nothing is granted; approving without a digest is refused too.
+3. **Given** the widget is approved, **When** an update writes values and returns successfully,
    **Then** the values are kept, and the next render reads them.
-3. **Given** values a widget wrote, **When** the host runs again and the widget renders, **Then**
+4. **Given** values a widget wrote, **When** the host runs again and the widget renders, **Then**
    it reads the same values.
-4. **Given** values a widget wrote, **When** a new version of the widget from the same origin is
+5. **Given** values a widget wrote, **When** a new version of the widget from the same origin is
    loaded and approved where needed, **Then** it reads the values the earlier version wrote.
-5. **Given** a widget that stores values, **When** it lists the names it stored that start with a
+6. **Given** a widget that stores values, **When** it lists the names it stored that start with a
    prefix, **Then** it receives them in a fixed order, a page at a time, with a way to ask for
    the next page.
 
@@ -239,6 +258,10 @@ turn storage off and on and check the data is still there; clear the store and c
    **Then** its earlier data is there.
 4. **Given** a plugin's store, **When** the maintainer clears it, **Then** it is empty and its
    usage is zero; other plugins' stores are unchanged.
+5. **Given** a store whose package file was moved or deleted, **When** the maintainer lists the
+   stores, **Then** it appears with its id, origin, usage and quota, marked as having no file;
+   **when** the maintainer clears it by id and origin, **Then** it is gone and no other store
+   changes.
 
 ---
 
@@ -267,6 +290,8 @@ declaring storage while built for 1.1.0 is refused naming 1.2.0.
 
 ### Edge Cases
 
+- A widget that declares storage but exports no update entry point: refused at load as missing
+  updater, since nothing could ever write its store.
 - A plugin that declares storage but never calls it: allowed; required storage still needs
   approval, as every required permission does (feature 002).
 - A plugin that does not declare storage calls it: refused as not declared at load, as for any
@@ -299,6 +324,8 @@ declaring storage while built for 1.1.0 is refused naming 1.2.0.
 - A new version of a widget is loaded: its kept data from feature 003 is discarded, as before,
   but its storage is kept. Kept data is the host's copy of the last update; storage is the
   plugin's own state.
+- A package file is moved or deleted: its store stays, unreachable by any plugin, since another
+  path is another origin; the maintainer finds it in the list of stores and clears it.
 - A file at the same path is replaced by another plugin with a different id: it gets its own
   store; data belongs to the id and the origin together.
 
@@ -341,7 +368,10 @@ declaring storage while built for 1.1.0 is refused naming 1.2.0.
   disk. A call over a limit MUST be refused, naming the limit; the file MUST never grow past its
   cap, whatever sequence of writes and deletes a plugin makes.
 - **FR-008**: Before approval, the host MUST show that the plugin declares storage, required or
-  optional, and its quota; the quota is part of what is approved. A new version that declares a
+  optional, and its quota; the quota is part of what is approved. In this phase, the tool MUST
+  approve a plugin that declares storage, required or optional, only when given the digest of
+  what it showed, quota included, and MUST refuse when anything changed since, granting
+  nothing, as for connectors (feature 003). A new version that declares a
   larger quota MUST be refused until approved, naming the old and the new quota, with the grants
   already given unchanged. A new version that declares the same or a smaller quota MUST NOT need a
   new approval for it.
@@ -357,7 +387,9 @@ declaring storage while built for 1.1.0 is refused naming 1.2.0.
   MUST take effect from the plugin's next storage call, even within a run already in progress, and
   an update running when it happens MUST NOT keep any of its writes. Neither action deletes the
   stored data.
-- **FR-012**: A widget that declares storage and no connector MAY export the update entry point
+- **FR-012**: A widget that declares storage MUST export the update entry point, where it writes
+  its store, or be refused at load as missing updater, naming that storage is written only in an
+  update. A widget that declares storage and no connector MAY export the update entry point only
   to write its store, and the host MUST run its updates as for a widget with connectors. Feature
   003's rules for kept data are unchanged; storage is kept across new versions of the plugin from
   the same origin, while kept data is not.
@@ -366,7 +398,10 @@ declaring storage while built for 1.1.0 is refused naming 1.2.0.
   this phase stores live in the development data directory, which installed plugins never use;
   storage for installed plugins arrives with installation in Phase 3.
 - **FR-014**: The development command-line tool MUST show a plugin's storage (usage, quota, and
-  each name and value) escaping every text a plugin wrote, and MUST clear a plugin's store. Only
+  each name and value) escaping every text a plugin wrote, and MUST clear a plugin's store. It
+  MUST list every store in the development data directory, with its id, origin, usage, quota and
+  whether the origin's file still exists, and MUST clear a store by id and origin whether or not
+  that file exists. Only
   the host's own controls MAY read or clear a store other than through the plugin's own calls.
 - **FR-015**: Contract v1 MUST move to version 1.2.0, adding the storage capability, whose every
   failure can answer "not granted"; version 1.1.0 MUST first be kept unchanged as a record, and a
@@ -377,8 +412,8 @@ declaring storage while built for 1.1.0 is refused naming 1.2.0.
 - **FR-016**: Every refusal and failure MUST name, in one message, the name, limit or field
   concerned and the rule that applied: not granted, render only reads, over quota, over a limit,
   invalid name, store damaged, store busy, store unavailable; and, when a plugin loads or is
-  approved: invalid manifest (quota missing or outside its bounds), contract too old, needs a new
-  approval (larger quota).
+  approved: invalid manifest (quota missing or outside its bounds), contract too old, missing
+  updater, needs a new approval (larger quota), approval changed (or no digest given).
 - **FR-017**: The hostile suite MUST gain one case per rule: another plugin's names
   (FR-002, FR-003), a file that copies an approved id (FR-002), names that look like paths or
   commands (FR-003, FR-004), opening the storage file through the file system (FR-002), a version
