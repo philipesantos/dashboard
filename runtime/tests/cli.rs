@@ -1469,3 +1469,79 @@ fn a_quota_above_the_approved_one_needs_approval_again() {
     let output = stored.run(&["update", path_str(&stored.plugin)]);
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
 }
+
+impl Stored {
+    /// `store-probe` as `local/store-probe`, approved, in its own data directory.
+    fn probe() -> Stored {
+        let stored = Stored::new();
+        let manifest = common::stored_manifest("local/store-probe", "0.1.0", true, 65536);
+        std::fs::write(
+            &stored.plugin,
+            common::repack(&common::fixture("store-probe"), &manifest),
+        )
+        .unwrap();
+        assert_eq!(stored.approve().status.code(), Some(0));
+        stored
+    }
+
+    fn update_with(&self, config: &serde_json::Value) -> Output {
+        self.run(&[
+            "update",
+            path_str(&self.plugin),
+            "--config",
+            &config.to_string(),
+        ])
+    }
+}
+
+#[test]
+fn a_failed_update_says_its_storage_writes_were_not_kept() {
+    let stored = Stored::probe();
+    let write = |value: &str| json!({ "op": "set", "name": "a", "value": value });
+    let output = stored.update_with(&json!({ "steps": [write("before")] }));
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let output = stored.update_with(&json!({ "steps": [write("during")], "end": "fuel" }));
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    let error = stderr(&output);
+    assert!(error.starts_with("error: cpu-budget-exceeded: "), "{error}");
+    assert!(
+        error.ends_with(" (storage writes not kept, previous data kept)\n"),
+        "{error}"
+    );
+    // A store that cannot be written fails the update as storage-failed
+    let store = std::fs::read_dir(stored.dir.path().join("storage"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "sqlite")
+        })
+        .unwrap();
+    let mut permissions = std::fs::metadata(&store).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&store, permissions.clone()).unwrap();
+    let output = stored.update_with(&json!({ "steps": [write("during")] }));
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(false);
+    std::fs::set_permissions(&store, permissions).unwrap();
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    let error = stderr(&output);
+    assert!(error.starts_with("error: storage-failed: "), "{error}");
+    assert!(
+        error.ends_with("; nothing this update wrote was kept (previous data kept)\n"),
+        "{error}"
+    );
+    // run renders the values from before both updates
+    let output = stored.run(&[
+        "run",
+        path_str(&stored.plugin),
+        "--config",
+        &json!({ "render_steps": [{ "op": "get", "name": "a" }] }).to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    let content: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(
+        content["answers"][0],
+        json!({ "ok": { "hex": "6265666f7265" } })
+    );
+}
