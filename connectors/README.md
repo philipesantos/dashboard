@@ -18,3 +18,13 @@ of the service the connector is for, and that it covers every host the connector
 Every change to a file here changes what every user's widgets can reach, so it gets the same
 line-by-line review as host code. The criteria for adding a connector to the catalog arrive in
 Phase 3.
+
+## Contributing a connector
+
+[`docs/connectors.md`](../docs/connectors.md) explains the format and how to test a connector
+against your own service first, as a local connector. To propose one for the catalog, add
+`catalog/<name>.json` with the id `catalog/<name>` and the whole domains of its service in
+`reserves`, add it to the list in `runtime/src/catalog.rs`, and say in the pull request why each
+operation is a read or a change: the reviewers check each kind by hand, since a catalog
+connector may declare a read with a body. `runtime check-connector` and the schema tests
+(`runtime/tests/manifest_schema.rs`) check every file here.

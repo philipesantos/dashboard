@@ -203,7 +203,7 @@ their own machine, and older v1 widgets keep running
 - [X] T056 [US5] Add `check-connector <file>` to `runtime/src/bin/runtime.rs` as in `contracts/cli.md`
 - [X] T057 [P] [US5] Update `docs/plugin-authors.md` (FR-021): contract 1.1.0 and the two worlds, declaring connectors in the manifest, the `update` entry point and the render document, handling `not-granted`, `refused` and `failed`, kept data, the request log, and building a 1.0.0 widget still being fine
 - [X] T058 [P] [US5] Write `docs/connectors.md` (FR-021): the connector format field by field (link the schema), reads versus changes and what can be checked, parameters and encoding, fixed values being public, destinations and the catalog's reserved domains, testing against your own machine with a local connector in development, `check-connector`, and contributing a connector to the catalog
-- [ ] T059 [P] [US5] Update `wit/README.md` (contract 1.1.0, minor versions only add, `history/`, the connector schema) and `connectors/README.md` (how to contribute, link to `docs/connectors.md`)
+- [X] T059 [P] [US5] Update `wit/README.md` (contract 1.1.0, minor versions only add, `history/`, the connector schema) and `connectors/README.md` (how to contribute, link to `docs/connectors.md`)
 
 **Checkpoint**: an author can write and check a connector and a widget from the docs alone
 

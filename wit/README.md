@@ -3,8 +3,11 @@
 The contracts between the host and plugins: WIT packages, one directory per version, and the
 manifest schema. Everything here is security core (constitution, Principle IX).
 
-- [`v1/widget.wit`](v1/widget.wit): plugin contract v1 (`dashboard:widget@1.0.0`), from
-  [feature 002](../specs/002-plugin-permissions/spec.md). New plugins build against it.
+- [`v1/widget.wit`](v1/widget.wit): plugin contract v1 at its newest minor,
+  `dashboard:widget@1.1.0`, from [feature 002](../specs/002-plugin-permissions/spec.md) and
+  [feature 003](../specs/003-plugin-connectors/spec.md), with two worlds: `widget`, which only
+  renders, and `connected-widget`, which also fetches data through connectors in `update`. New
+  plugins build against it.
 - [`v0/widget.wit`](v0/widget.wit): plugin contract v0 (`dashboard:widget@0.1.0`), from
   [feature 001](../specs/001-plugin-runtime/spec.md). The host keeps running v0 plugins, with
   `log` required.
@@ -14,6 +17,10 @@ manifest schema. Everything here is security core (constitution, Principle IX).
 - [`manifest.schema.json`](manifest.schema.json): the JSON Schema (draft 2020-12) of the plugin
   manifest. The host's parser and this schema are tested to agree
   (`runtime/tests/manifest_schema.rs`).
+- [`connector.schema.json`](connector.schema.json): the JSON Schema of a connector, the
+  declaration of a service's operations that the host runs for widgets. The host's connector
+  parser and this schema are tested to agree too, with the rules only the host can check listed
+  apart; [`docs/connectors.md`](../docs/connectors.md) explains the format.
 
 The host and every plugin build from these files; they are the only copies. A change to a
 published version is a new version.
@@ -26,8 +33,12 @@ where `E` is an enum or variant of that interface whose first case is `not-grant
 of an optional permission the user has not turned on. `runtime/tests/contract_v1.rs` fails the
 build if a function breaks this rule.
 
-Features 003 to 005 each add one interface (network, storage, secrets) and bump the package to
-the next minor version, with one row in the host's permission registry.
+A minor version only adds: 1.1.0 holds every interface, function and type of 1.0.0 unchanged,
+which `runtime/tests/contract_v1.rs` checks against `history/1.0.0`. The host runs plugins built
+for any v1 minor up to its own and refuses newer ones, naming both versions. Feature 003 added
+`connectors`, which carries every connector a manifest declares, each a permission of its own,
+and the `updater` export; features 004 and 005 add storage and accounts, each in the next
+minor.
 
 ## The manifest in a package
 
