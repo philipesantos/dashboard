@@ -17,12 +17,16 @@ mod connection;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use sha2::{Digest, Sha256};
 
 use crate::calls::Phase;
-use crate::error::RuntimeError;
+use crate::error::{ErrorKind, RuntimeError};
 use crate::grants::GrantStore;
 use crate::limits::Limits;
+use crate::manifest::PluginId;
+use connection::{Identity, Mode, Settings, StoreConnection, StoreError};
 
 pub use connection::engine_check;
 
@@ -52,28 +56,39 @@ impl StoreBinding {
         quota_bytes: u64,
         approved_quota_bytes: u64,
     ) -> StoreBinding {
-        let _ = (storage_dir, id, origin, quota_bytes, approved_quota_bytes);
         StoreBinding {
-            id: String::new(),
-            origin: String::new(),
-            file: PathBuf::new(),
-            quota_bytes: 0,
-            approved_quota_bytes: 0,
+            id: id.to_owned(),
+            origin: origin.to_owned(),
+            file: storage_dir.join(store_file_name(id, origin)),
+            quota_bytes,
+            approved_quota_bytes,
         }
     }
 
     /// `factor × approved quota + extra`; the connection rounds it up to whole pages and never
     /// sets it below the file's current size (research R10).
     pub(crate) fn file_cap_bytes(&self, limits: &Limits) -> u64 {
-        let _ = limits;
-        0
+        limits
+            .storage_file_cap_factor
+            .saturating_mul(self.approved_quota_bytes)
+            .saturating_add(limits.storage_file_cap_extra_bytes)
+    }
+
+    fn identity(&self) -> Identity {
+        Identity {
+            id: self.id.clone(),
+            origin: self.origin.clone(),
+        }
     }
 }
 
 /// The file name of the store of `id` from `origin`.
 pub(crate) fn store_file_name(id: &str, origin: &str) -> String {
-    let _ = (id, origin);
-    String::new()
+    let hash: String = Sha256::digest(format!("{id}\n{origin}").as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("{hash}.sqlite")
 }
 
 /// The rule behind a call that was refused or failed, as the contract names it.
@@ -110,10 +125,50 @@ pub struct StorageCounts {
     pub quota_bytes: u64,
 }
 
+/// The limits a run applies, from [`Limits`].
+struct RunLimits {
+    entry_cost: u64,
+    max_name: usize,
+    max_value: usize,
+    max_calls: usize,
+    max_written: u64,
+    page: usize,
+    busy_wait: Duration,
+    settings_file_cap: u64,
+}
+
+/// The run's store, opened on its first call that needs it.
+enum Opened {
+    NotYet,
+    /// No store yet, in a run that does not create one: every read finds nothing.
+    Empty,
+    Store {
+        connection: StoreConnection,
+        /// The usage when the run opened the store, and now.
+        initial_usage: u64,
+        usage: u64,
+    },
+}
+
 /// One run's storage: the real `storage` interface of a plugin granted storage
 /// (`data-model.md`, Run state).
 pub(crate) struct StorageRun {
-    _private: (),
+    store: Result<Arc<StoreBinding>, String>,
+    /// The plugin, for the grant check of every call; `None` when the store is unavailable.
+    plugin: Option<PluginId>,
+    phase: Phase,
+    grants: Arc<GrantStore>,
+    limits: RunLimits,
+    deadline: Instant,
+    opened: Opened,
+    calls: usize,
+    written_bytes: u64,
+    writes: usize,
+    /// Set when a call found storage no longer granted: every later call answers
+    /// `not-granted`, and nothing the run wrote is kept.
+    taken_away: bool,
+    /// The failure that ended the run's transaction, when SQLite ended it (research R7).
+    aborted: Option<String>,
 }
 
 impl StorageRun {
@@ -127,23 +182,123 @@ impl StorageRun {
         limits: &Limits,
         deadline: Instant,
     ) -> StorageRun {
-        let _ = (store, phase, grants, limits, deadline);
-        StorageRun { _private: () }
+        let plugin = store
+            .as_ref()
+            .ok()
+            .and_then(|binding| PluginId::parse(&binding.id).ok());
+        let settings_file_cap = store
+            .as_ref()
+            .map_or(0, |binding| binding.file_cap_bytes(limits));
+        StorageRun {
+            store,
+            plugin,
+            phase,
+            grants,
+            limits: RunLimits {
+                entry_cost: limits.storage_entry_cost_bytes,
+                max_name: limits.max_storage_name_bytes,
+                max_value: limits.max_storage_value_bytes,
+                max_calls: limits.max_storage_calls_per_run,
+                max_written: limits.max_storage_written_bytes_per_update,
+                page: limits.storage_list_page,
+                busy_wait: limits.max_storage_busy_wait,
+                settings_file_cap,
+            },
+            deadline,
+            opened: Opened::NotYet,
+            calls: 0,
+            written_bytes: 0,
+            writes: 0,
+            taken_away: false,
+            aborted: None,
+        }
     }
 
     pub(crate) fn get(&mut self, name: &str) -> Result<Option<Vec<u8>>, CallError> {
-        let _ = name;
-        Err(CallError::NotGranted)
+        self.begin(false)?;
+        self.check_name(name, "the name")?;
+        match self.open()? {
+            None => Ok(None),
+            Some(connection) => connection
+                .get(name.as_bytes())
+                .map_err(|error| self.statement_failed(error)),
+        }
     }
 
     pub(crate) fn set(&mut self, name: &str, value: &[u8]) -> Result<(), CallError> {
-        let _ = (name, value);
-        Err(CallError::NotGranted)
+        self.begin(true)?;
+        self.check_name(name, "the name")?;
+        if value.len() > self.limits.max_value {
+            return Err(CallError::Refused(
+                Rule::OverLimit,
+                format!(
+                    "the value is {} bytes, over the limit of {}",
+                    value.len(),
+                    self.limits.max_value
+                ),
+            ));
+        }
+        let size = (name.len() + value.len()) as u64;
+        if self.written_bytes + size > self.limits.max_written {
+            return Err(CallError::Refused(
+                Rule::OverLimit,
+                format!(
+                    "this update would write {} bytes of names and values, over the limit of {}",
+                    self.written_bytes + size,
+                    self.limits.max_written
+                ),
+            ));
+        }
+        let quota = self.quota();
+        let entry_cost = self.limits.entry_cost;
+        let Some(connection) = self.open()? else {
+            unreachable!("an update always has a store")
+        };
+        let old = connection
+            .get(name.as_bytes())
+            .map_err(|error| self.statement_failed(error))?;
+        let usage = self.usage_now();
+        let old_entry = old.map_or(0, |old| (name.len() + old.len()) as u64 + entry_cost);
+        let after = usage - old_entry + size + entry_cost;
+        if after > quota {
+            return Err(CallError::Refused(
+                Rule::OverQuota,
+                format!(
+                    "the store's usage would be {after} bytes, over its quota of {quota} (now {usage})"
+                ),
+            ));
+        }
+        self.write(|connection| {
+            connection.put(name.as_bytes(), value)?;
+            connection.set_usage(after)
+        })?;
+        self.set_usage_now(after);
+        self.written_bytes += size;
+        Ok(())
     }
 
     pub(crate) fn delete(&mut self, name: &str) -> Result<(), CallError> {
-        let _ = name;
-        Err(CallError::NotGranted)
+        self.begin(true)?;
+        self.check_name(name, "the name")?;
+        let entry_cost = self.limits.entry_cost;
+        let Some(connection) = self.open()? else {
+            unreachable!("an update always has a store")
+        };
+        let old = connection
+            .get(name.as_bytes())
+            .map_err(|error| self.statement_failed(error))?;
+        let Some(old) = old else {
+            // Removing a name that is not there succeeds and changes nothing
+            self.writes += 1;
+            return Ok(());
+        };
+        let after = self.usage_now() - ((name.len() + old.len()) as u64 + entry_cost);
+        self.write(|connection| {
+            connection.remove(name.as_bytes())?;
+            connection.set_usage(after)
+        })?;
+        self.set_usage_now(after);
+        Ok(())
     }
 
     /// One page of the names that start with `prefix` and come after `after`, and the name to
@@ -153,13 +308,41 @@ impl StorageRun {
         prefix: &str,
         after: Option<&str>,
     ) -> Result<(Vec<String>, Option<String>), CallError> {
-        let _ = (prefix, after);
-        Err(CallError::NotGranted)
+        self.begin(false)?;
+        self.check_length(prefix, "the prefix")?;
+        if let Some(after) = after {
+            self.check_length(after, "after")?;
+        }
+        let page = self.limits.page;
+        let Some(connection) = self.open()? else {
+            return Ok((Vec::new(), None));
+        };
+        let (names, more) = connection
+            .list(prefix.as_bytes(), after.map(str::as_bytes), page)
+            .map_err(|error| self.statement_failed(error))?;
+        let names = names
+            .into_iter()
+            .map(String::from_utf8)
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(|_| {
+                CallError::Failed(
+                    Rule::Damaged,
+                    "the store holds a name that is not UTF-8, which the host never writes"
+                        .to_owned(),
+                )
+            })?;
+        let next = if more { names.last().cloned() } else { None };
+        Ok((names, next))
     }
 
     /// The store's usage and the declared quota.
     pub(crate) fn usage(&mut self) -> Result<(u64, u64), CallError> {
-        Err(CallError::NotGranted)
+        self.begin(false)?;
+        let quota = self.quota();
+        Ok(match self.open()? {
+            None => (0, quota),
+            Some(_) => (self.usage_now(), quota),
+        })
     }
 
     /// Ends the run. An update's writes are committed only when `succeeded` (the update
@@ -168,24 +351,299 @@ impl StorageRun {
     /// back. An aborted run or a failed commit is `storage-failed`, and storage taken away
     /// `not-granted`, both naming why.
     pub(crate) fn finish(self, succeeded: bool) -> Result<StorageCounts, RuntimeError> {
-        let _ = succeeded;
-        Ok(StorageCounts::default())
+        let counts = |writes_kept, used_bytes| StorageCounts {
+            calls: self.calls,
+            writes_kept,
+            used_bytes,
+            quota_bytes: self.quota(),
+        };
+        let Opened::Store {
+            connection,
+            initial_usage,
+            usage,
+        } = &self.opened
+        else {
+            return Ok(counts(0, self.usage_without_opening()));
+        };
+        if self.phase == Phase::Render {
+            // Dropping the connection ends the read transaction
+            return Ok(counts(0, *usage));
+        }
+        let not_kept = "nothing this update wrote was kept";
+        // An aborted run fails as such even when the update then failed too: its first failure
+        // is what ended its writes
+        if let Some(first) = &self.aborted {
+            let _ = connection.rollback();
+            return Err(RuntimeError::new(
+                ErrorKind::StorageFailed,
+                format!("{first}; {not_kept}"),
+            ));
+        }
+        if !succeeded {
+            let _ = connection.rollback();
+            return Ok(counts(0, *initial_usage));
+        }
+        let taken_away = || {
+            RuntimeError::new(
+                ErrorKind::NotGranted,
+                format!(
+                    "storage was turned off or its approval removed during the update; {not_kept}"
+                ),
+            )
+        };
+        if self.taken_away {
+            let _ = connection.rollback();
+            return Err(taken_away());
+        }
+        let (Ok(binding), Some(plugin)) = (&self.store, &self.plugin) else {
+            unreachable!("a store was opened, so the binding is there")
+        };
+        // The grant record's shared lock is held through the commit: a removal or a turn-off
+        // waits for it, and one made before is seen here (research R7)
+        match self
+            .grants
+            .while_granted(plugin, &binding.origin, STORAGE, || connection.commit())
+        {
+            Ok(Some(Ok(()))) => Ok(counts(self.writes, *usage)),
+            Ok(Some(Err(error))) => {
+                let _ = connection.rollback();
+                Err(RuntimeError::new(
+                    ErrorKind::StorageFailed,
+                    format!(
+                        "the update's writes could not be committed, {}; {not_kept}",
+                        describe(&error)
+                    ),
+                ))
+            }
+            Ok(None) | Err(_) => {
+                let _ = connection.rollback();
+                Err(taken_away())
+            }
+        }
     }
+
+    /// Steps 1 to 4 of a call (`data-model.md`, A storage call): counted first, then storage
+    /// still granted, then the run not aborted, then writes only in update.
+    fn begin(&mut self, writes: bool) -> Result<(), CallError> {
+        self.calls += 1;
+        if self.calls > self.limits.max_calls {
+            return Err(CallError::Refused(
+                Rule::OverLimit,
+                format!(
+                    "more than {} storage calls in one run",
+                    self.limits.max_calls
+                ),
+            ));
+        }
+        if self.taken_away || !self.still_granted() {
+            self.taken_away = true;
+            return Err(CallError::NotGranted);
+        }
+        if let Some(first) = &self.aborted {
+            return Err(CallError::Failed(
+                Rule::RunAborted,
+                format!(
+                    "an earlier call of this update ended its writes ({first}); nothing it wrote will be kept"
+                ),
+            ));
+        }
+        if writes && self.phase == Phase::Render {
+            return Err(CallError::Refused(
+                Rule::RenderOnlyReads,
+                "render only reads storage; write it in update".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The grant record as it is now: a change by any process applies from the next call.
+    fn still_granted(&self) -> bool {
+        match (&self.store, &self.plugin) {
+            (Ok(binding), Some(plugin)) => self
+                .grants
+                .permission_granted(plugin, &binding.origin, STORAGE)
+                .unwrap_or(false),
+            // No store to reach: every call fails as unavailable anyway
+            _ => true,
+        }
+    }
+
+    fn check_name(&self, name: &str, what: &str) -> Result<(), CallError> {
+        if name.is_empty() {
+            return Err(CallError::Refused(
+                Rule::InvalidName,
+                format!("{what} is empty"),
+            ));
+        }
+        self.check_length(name, what)
+    }
+
+    fn check_length(&self, text: &str, what: &str) -> Result<(), CallError> {
+        if text.len() > self.limits.max_name {
+            return Err(CallError::Refused(
+                Rule::InvalidName,
+                format!(
+                    "{what} is {} bytes in UTF-8, over the limit of {}",
+                    text.len(),
+                    self.limits.max_name
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn quota(&self) -> u64 {
+        self.store.as_ref().map_or(0, |binding| binding.quota_bytes)
+    }
+
+    fn usage_now(&self) -> u64 {
+        match &self.opened {
+            Opened::Store { usage, .. } => *usage,
+            Opened::NotYet | Opened::Empty => 0,
+        }
+    }
+
+    fn set_usage_now(&mut self, now: u64) {
+        if let Opened::Store { usage, .. } = &mut self.opened {
+            *usage = now;
+        }
+    }
+
+    /// The usage of a store the run never opened, for its report: read with a read-only
+    /// connection, or 0.
+    fn usage_without_opening(&self) -> u64 {
+        let Ok(binding) = &self.store else {
+            return 0;
+        };
+        connection::open(
+            &binding.file,
+            Mode::Show,
+            Some(&binding.identity()),
+            &self.settings(),
+        )
+        .ok()
+        .flatten()
+        .and_then(|connection| connection.usage().ok())
+        .unwrap_or(0)
+    }
+
+    fn settings(&self) -> Settings {
+        Settings {
+            max_name_bytes: self.limits.max_name,
+            max_value_bytes: self.limits.max_value,
+            file_cap_bytes: self.limits.settings_file_cap,
+            busy_timeout: self
+                .limits
+                .busy_wait
+                .min(self.deadline.saturating_duration_since(Instant::now())),
+        }
+    }
+
+    /// Step 6: the store, opened on the first call that needs it; `None` when there is none
+    /// yet in a run that does not create one.
+    fn open(&mut self) -> Result<Option<&StoreConnection>, CallError> {
+        if let Opened::NotYet = self.opened {
+            let binding = match &self.store {
+                Ok(binding) => binding.clone(),
+                Err(reason) => {
+                    return Err(CallError::Failed(
+                        Rule::Unavailable,
+                        format!("storage is unavailable: {reason}"),
+                    ));
+                }
+            };
+            let mode = match self.phase {
+                Phase::Render => Mode::Render,
+                Phase::Update => Mode::Update,
+            };
+            let opened = connection::open(
+                &binding.file,
+                mode,
+                Some(&binding.identity()),
+                &self.settings(),
+            )
+            .map_err(call_error)?;
+            self.opened = match opened {
+                None => Opened::Empty,
+                Some(connection) => {
+                    let usage = connection.usage().map_err(call_error)?;
+                    Opened::Store {
+                        connection,
+                        initial_usage: usage,
+                        usage,
+                    }
+                }
+            };
+        }
+        Ok(match &self.opened {
+            Opened::Store { connection, .. } => Some(connection),
+            Opened::NotYet | Opened::Empty => None,
+        })
+    }
+
+    /// Step 8: runs a write; when it fails and SQLite ended the transaction, the run is aborted.
+    fn write(
+        &mut self,
+        statements: impl FnOnce(&StoreConnection) -> Result<(), StoreError>,
+    ) -> Result<(), CallError> {
+        let Opened::Store { connection, .. } = &self.opened else {
+            unreachable!("a write runs on an open store")
+        };
+        match statements(connection) {
+            Ok(()) => {
+                self.writes += 1;
+                Ok(())
+            }
+            Err(error) => Err(self.statement_failed(error)),
+        }
+    }
+
+    /// The answer to a statement that failed. In an update whose transaction SQLite ended (a
+    /// full file, an I/O error), every later call answers `run-aborted` and nothing is kept.
+    fn statement_failed(&mut self, error: StoreError) -> CallError {
+        let ended = matches!(
+            &self.opened,
+            Opened::Store { connection, .. } if connection.transaction_ended()
+        );
+        if self.phase == Phase::Update && ended && self.aborted.is_none() {
+            self.aborted = Some(describe(&error));
+        }
+        call_error(error)
+    }
+}
+
+/// The permission that carries a store.
+const STORAGE: &str = "storage";
+
+fn describe(error: &StoreError) -> String {
+    match error {
+        StoreError::Damaged(detail) => format!("the store is damaged: {detail}"),
+        StoreError::Busy(detail) => format!("the store is busy: {detail}"),
+        StoreError::Unavailable(detail) => format!("the store is unavailable: {detail}"),
+        StoreError::FileCap(detail) => detail.clone(),
+    }
+}
+
+fn call_error(error: StoreError) -> CallError {
+    let rule = match &error {
+        StoreError::Damaged(_) => Rule::Damaged,
+        StoreError::Busy(_) => Rule::Busy,
+        StoreError::Unavailable(_) => Rule::Unavailable,
+        StoreError::FileCap(_) => Rule::OverLimit,
+    };
+    CallError::Failed(rule, describe(&error))
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::Duration;
 
     use serde_json::json;
-    use sha2::{Digest, Sha256};
     use tempfile::TempDir;
 
     use super::*;
-    use crate::error::ErrorKind;
     use crate::grants;
-    use crate::manifest::{Manifest, PluginId};
+    use crate::manifest::Manifest;
 
     const ID: &str = "local/probe";
     const ORIGIN: &str = "/plugins/probe.wasm";
