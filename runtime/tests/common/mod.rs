@@ -246,10 +246,14 @@ impl World {
 
     /// Requests go to the real network (local connectors on loopback); development mode as given.
     pub fn production(development: bool) -> World {
+        World::production_with(runtime::Limits::default(), development)
+    }
+
+    /// As [`production`](Self::production), with `limits`.
+    pub fn production_with(limits: runtime::Limits, development: bool) -> World {
         let data = TempDir::new().expect("a temporary data directory");
         let options = RuntimeOptions::new(data.path()).development(development);
-        let runtime =
-            runtime::Runtime::new(runtime::Limits::default(), options).expect("the runtime starts");
+        let runtime = runtime::Runtime::new(limits, options).expect("the runtime starts");
         World::with(data, runtime)
     }
 
@@ -273,20 +277,37 @@ impl World {
 
     /// Approves `package` from [`TEST_ORIGIN`] with the approval digest of what it is now.
     pub fn approve(&self, package: &[u8]) {
+        self.approve_at(package, TEST_ORIGIN);
+    }
+
+    pub fn load(&self, package: &[u8]) -> runtime::Plugin {
+        self.load_at(package, TEST_ORIGIN)
+    }
+
+    /// Approves `package` from `origin`, as the CLI does for the file at that path.
+    pub fn approve_at(&self, package: &[u8], origin: &str) {
         let checked = self
             .runtime
             .check(package)
             .unwrap_or_else(|error| panic!("the package checks: {error}"));
         let digest = checked.approval_digest();
         checked
-            .approve(&self.grants, TEST_ORIGIN, Some(&digest))
+            .approve(&self.grants, origin, Some(&digest))
             .unwrap_or_else(|error| panic!("approving: {error}"));
     }
 
-    pub fn load(&self, package: &[u8]) -> runtime::Plugin {
-        self.runtime
-            .load(package, TEST_ORIGIN, Arc::clone(&self.grants))
+    /// Loads `package` from `origin`.
+    pub fn load_at(&self, package: &[u8], origin: &str) -> runtime::Plugin {
+        self.try_load_at(package, origin)
             .unwrap_or_else(|error| panic!("the package loads: {error}"))
+    }
+
+    pub fn try_load_at(
+        &self,
+        package: &[u8],
+        origin: &str,
+    ) -> Result<runtime::Plugin, runtime::RuntimeError> {
+        self.runtime.load(package, origin, Arc::clone(&self.grants))
     }
 
     /// Approves and loads `package`.
