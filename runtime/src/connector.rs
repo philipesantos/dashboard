@@ -1342,7 +1342,7 @@ fn refuse_credentials(value: &Value, path: &str) -> Result<(), RuntimeError> {
 }
 
 /// JSON with every object's keys sorted and no whitespace, whatever order a map keeps.
-fn canonical(value: &Value) -> String {
+pub(crate) fn canonical(value: &Value) -> String {
     match value {
         Value::Object(fields) => {
             let mut names: Vec<&String> = fields.keys().collect();

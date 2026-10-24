@@ -5,6 +5,10 @@
 //! the only record is the development one, which the CLI changes for local package files.
 //! Every approval belongs to the origin it was approved from, so another package that claims
 //! the same id gets none of its grants (FR-020).
+//!
+//! Version 2 (`specs/003-plugin-connectors/data-model.md`) adds the connectors each approval
+//! covers: where each came from, its destinations and the digests of the operations the widget
+//! declares, so a change to any of them needs a new approval.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -21,8 +25,11 @@ use crate::error::{ErrorKind, RuntimeError};
 use crate::manifest::{Manifest, PluginId};
 use crate::permissions;
 
-/// The record format this host reads and writes.
-pub const RECORD_VERSION: u64 = 1;
+/// The record format this host writes. It also reads version 1, as version 2 with no
+/// connectors, and writes it back as version 2.
+pub const RECORD_VERSION: u64 = 2;
+/// The format of feature 002, still read.
+const RECORD_VERSION_1: u64 = 1;
 
 /// The app's directory inside the system's data directory. Provisional: it moves with the
 /// project's final name, before the first release.
@@ -43,12 +50,136 @@ pub struct Entry {
     /// The package last approved, for display only.
     pub approved_version: String,
     pub approved_digest: String,
+    /// One entry per connector the approved manifest declared (record version 2).
+    #[serde(default)]
+    pub connectors: BTreeMap<String, ConnectorGrant>,
+}
+
+/// What an approval covers of one connector (`data-model.md`, Grant record, version 2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectorGrant {
+    /// `catalog`, or the canonical path of the local connector file.
+    pub origin: String,
+    /// The connector's version, for display; a new version that changes nothing the widget
+    /// uses needs no approval.
+    pub version: String,
+    /// Required connectors: `true`. Optional ones: `true` only while on.
+    pub granted: bool,
+    /// Every origin of the connector, sorted.
+    pub destinations: Vec<String>,
+    /// For each operation the widget declares, the digest of its declaration.
+    pub operations: BTreeMap<String, String>,
 }
 
 impl Entry {
     pub fn is_granted(&self, permission: &str) -> bool {
         self.granted.iter().any(|name| name == permission)
     }
+
+    /// Whether the connector `id` is granted to this approval.
+    pub fn is_connector_granted(&self, id: &str) -> bool {
+        self.connectors
+            .get(id)
+            .is_some_and(|connector| connector.granted)
+    }
+
+    /// What changed in `connectors` since this approval, for each required connector and each
+    /// optional one that is on: an empty list when the approval still covers them all. A
+    /// connector that only added operations the widget does not declare changes nothing.
+    pub fn connector_changes(
+        &self,
+        manifest: &Manifest,
+        connectors: &[ConnectorState],
+    ) -> Vec<String> {
+        let mut changes = Vec::new();
+        for state in connectors {
+            let Some(request) = manifest.connector(&state.id) else {
+                continue;
+            };
+            let Some(grant) = self.connectors.get(&state.id) else {
+                changes.push(format!("connector newly declared: {}", state.id));
+                continue;
+            };
+            if !request.required && !grant.granted {
+                continue;
+            }
+            if grant.origin != state.origin {
+                changes.push(format!(
+                    "origin changed: {} (now {})",
+                    state.id, state.origin
+                ));
+                continue;
+            }
+            for destination in &state.destinations {
+                if !grant.destinations.contains(destination) {
+                    changes.push(format!("destination added: {destination}"));
+                }
+            }
+            for (operation, digest) in &state.operations {
+                match grant.operations.get(operation) {
+                    None => changes.push(format!("operation newly declared: {operation}")),
+                    Some(approved) if approved != digest => {
+                        changes.push(format!("operation changed: {operation}"));
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+        changes
+    }
+}
+
+/// A declared connector as loaded now: what an approval of it records and compares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectorState {
+    pub id: String,
+    /// `catalog`, or the canonical path of the local connector file.
+    pub origin: String,
+    pub version: String,
+    pub required: bool,
+    /// Every origin of the connector, sorted.
+    pub destinations: Vec<String>,
+    /// Each operation the widget declares, with the digest of its declaration.
+    pub operations: BTreeMap<String, String>,
+}
+
+/// The approval digest (`data-model.md`, Approval digest): `sha256:` and the hex SHA-256 of a
+/// canonical JSON of the package digest, the manifest's permissions and each declared
+/// connector's id, origin, version, `required`, destinations and operation digests. What
+/// `permissions` shows and `approve` grants carry the same one.
+pub fn approval_digest(
+    package_digest: &str,
+    manifest: &Manifest,
+    connectors: &[ConnectorState],
+) -> String {
+    let mut permissions: Vec<serde_json::Value> = manifest
+        .permissions()
+        .iter()
+        .map(|permission| serde_json::json!({ "name": permission.name, "required": permission.required }))
+        .collect();
+    permissions.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    let mut connectors: Vec<&ConnectorState> = connectors.iter().collect();
+    connectors.sort_by(|a, b| a.id.cmp(&b.id));
+    let connectors: Vec<serde_json::Value> = connectors
+        .into_iter()
+        .map(|state| {
+            serde_json::json!({
+                "id": state.id,
+                "origin": state.origin,
+                "version": state.version,
+                "required": state.required,
+                "destinations": state.destinations,
+                "operations": state.operations,
+            })
+        })
+        .collect();
+    let document = serde_json::json!({
+        "package": package_digest,
+        "permissions": permissions,
+        "connectors": connectors,
+    });
+    crate::connector::sha256(crate::connector::canonical(&document).as_bytes())
 }
 
 /// What [`GrantStore::approve`] did.
@@ -102,27 +233,45 @@ impl GrantRecord {
         // The version first, so a newer record is named as such, whatever else it holds
         let value: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|error| format!("not JSON: {error}"))?;
-        match value
+        let version = match value
             .get("record_version")
             .and_then(serde_json::Value::as_u64)
         {
-            Some(RECORD_VERSION) => {}
+            Some(version @ (RECORD_VERSION_1 | RECORD_VERSION)) => version,
             Some(version) if version > RECORD_VERSION => {
                 return Err(format!(
                     "record_version {version} is newer than this host's {RECORD_VERSION}"
                 ));
             }
-            _ => return Err(format!("record_version must be {RECORD_VERSION}")),
-        }
+            _ => {
+                return Err(format!(
+                    "record_version must be {RECORD_VERSION_1} or {RECORD_VERSION}"
+                ));
+            }
+        };
         // Parsed again from the bytes, which refuses duplicate fields
-        let record: GrantRecord =
+        let mut record: GrantRecord =
             serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
         for (id, entry) in &record.plugins {
             PluginId::parse(id)?;
             if !entry.granted.windows(2).all(|pair| pair[0] < pair[1]) {
                 return Err(format!("the grants of {id} are not sorted and unique"));
             }
+            if version == RECORD_VERSION_1 && !entry.connectors.is_empty() {
+                return Err(format!(
+                    "{id} has connectors in a record of version {RECORD_VERSION_1}, which has none"
+                ));
+            }
+            for (connector, grant) in &entry.connectors {
+                if !grant.destinations.windows(2).all(|pair| pair[0] < pair[1]) {
+                    return Err(format!(
+                        "the destinations of {connector} in {id} are not sorted and unique"
+                    ));
+                }
+            }
         }
+        // A version 1 record is version 2 with no connectors, and is written back as 2
+        record.record_version = RECORD_VERSION;
         Ok(record)
     }
 }
@@ -249,6 +398,7 @@ impl GrantStore {
                     granted,
                     approved_version: manifest.version().to_owned(),
                     approved_digest: digest.to_owned(),
+                    connectors: BTreeMap::new(),
                 },
             );
             let approval = Approval {
@@ -256,6 +406,187 @@ impl GrantStore {
                 replaced,
             };
             Ok((approval, true))
+        })
+    }
+
+    /// Approves a widget and every connector it declares, as [`approve`](Self::approve) does
+    /// its permissions, only when `expected` is the [`approval_digest`] of what it would approve
+    /// now: anything that changed since it was shown is refused as `approval-changed`, granting
+    /// nothing (FR-014). Each declared connector is recorded with its origin, destinations and
+    /// operation digests; required ones are granted, and an optional one keeps its state when
+    /// nothing about it changed, and is off otherwise.
+    pub fn approve_connected(
+        &self,
+        manifest: &Manifest,
+        origin: &str,
+        digest: &str,
+        connectors: &[ConnectorState],
+        expected: &str,
+    ) -> Result<Approval, RuntimeError> {
+        let current = approval_digest(digest, manifest, connectors);
+        if expected != current {
+            return Err(RuntimeError::new(
+                ErrorKind::ApprovalChanged,
+                format!(
+                    "what would be approved now has the digest {current}, not {expected}: the package, its permissions or a connector changed since it was shown; show it again"
+                ),
+            ));
+        }
+        let required: Vec<String> = manifest
+            .permissions()
+            .iter()
+            .filter(|permission| permission.required)
+            .map(|permission| permission.name.clone())
+            .collect();
+        self.change(|record| {
+            let previous = record.plugins.get(manifest.id().as_str()).cloned();
+            let same_origin = previous.as_ref().filter(|entry| entry.origin == origin);
+            let mut granted: Vec<String> = same_origin
+                .map(|entry| {
+                    entry
+                        .granted
+                        .iter()
+                        .filter(|name| manifest.permission(name).is_some())
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default();
+            granted.extend(required.iter().cloned());
+            granted.sort();
+            granted.dedup();
+            let mut grants = BTreeMap::new();
+            for state in connectors {
+                let Some(request) = manifest.connector(&state.id) else {
+                    continue;
+                };
+                let kept_on = same_origin
+                    .and_then(|entry| entry.connectors.get(&state.id))
+                    .is_some_and(|grant| {
+                        grant.granted
+                            && grant.origin == state.origin
+                            && grant.destinations == state.destinations
+                            && grant.operations == state.operations
+                    });
+                grants.insert(
+                    state.id.clone(),
+                    ConnectorGrant {
+                        origin: state.origin.clone(),
+                        version: state.version.clone(),
+                        granted: request.required || kept_on,
+                        destinations: state.destinations.clone(),
+                        operations: state.operations.clone(),
+                    },
+                );
+            }
+            record.plugins.insert(
+                manifest.id().to_string(),
+                Entry {
+                    origin: origin.to_owned(),
+                    granted,
+                    approved_version: manifest.version().to_owned(),
+                    approved_digest: digest.to_owned(),
+                    connectors: grants,
+                },
+            );
+            let replaced = previous
+                .filter(|entry| entry.origin != origin)
+                .map(|entry| entry.origin);
+            Ok((
+                Approval {
+                    required: required.clone(),
+                    replaced,
+                },
+                true,
+            ))
+        })
+    }
+
+    /// Turns one optional connector on or off. Refused as `not-declared` when the manifest does
+    /// not declare it, `required-together` when it is required, and `not-granted` when the
+    /// plugin has no approval from `origin` that covers it.
+    pub fn set_connector(
+        &self,
+        manifest: &Manifest,
+        origin: &str,
+        id: &str,
+        on: bool,
+    ) -> Result<(), RuntimeError> {
+        let names = || vec![id.to_owned()];
+        match manifest.connector(id) {
+            None => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::NotDeclared,
+                    names(),
+                    Some("the manifest does not declare this connector"),
+                ));
+            }
+            Some(request) if request.required => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::RequiredTogether,
+                    names(),
+                    Some(
+                        "it is required: required connectors are approved together, and change only with a new approval or by removing it",
+                    ),
+                ));
+            }
+            Some(_) => {}
+        }
+        self.change(|record| {
+            let entry = approved_entry(record, manifest.id(), origin)?;
+            let Some(grant) = entry.connectors.get_mut(id) else {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::NotGranted,
+                    names(),
+                    Some("the approval does not cover this connector; approve the widget again"),
+                ));
+            };
+            if grant.granted == on {
+                return Ok(((), false));
+            }
+            grant.granted = on;
+            Ok(((), true))
+        })
+    }
+
+    /// Whether the connector `id` is granted to the plugin's approval from `origin`, read from
+    /// the record as it is now, under its lock: a change made by any process applies.
+    pub fn connector_granted(
+        &self,
+        plugin: &PluginId,
+        origin: &str,
+        id: &str,
+    ) -> Result<bool, RuntimeError> {
+        Ok(self
+            .entry(plugin)?
+            .is_some_and(|entry| entry.origin == origin && entry.is_connector_granted(id)))
+    }
+
+    /// Rewrites the version of each connector whose new version changes nothing the approval
+    /// covers (load step 7). Writes nothing when no version moved.
+    pub fn refresh_connector_versions(
+        &self,
+        manifest: &Manifest,
+        origin: &str,
+        connectors: &[ConnectorState],
+    ) -> Result<(), RuntimeError> {
+        self.change(|record| {
+            let Some(entry) = record
+                .plugins
+                .get_mut(manifest.id().as_str())
+                .filter(|entry| entry.origin == origin)
+            else {
+                return Ok(((), false));
+            };
+            let mut changed = false;
+            for state in connectors {
+                if let Some(grant) = entry.connectors.get_mut(&state.id)
+                    && grant.version != state.version
+                {
+                    grant.version = state.version.clone();
+                    changed = true;
+                }
+            }
+            Ok(((), changed))
         })
     }
 
@@ -332,11 +663,22 @@ impl GrantStore {
             else {
                 return Ok((Vec::new(), false));
             };
-            let (kept, removed): (Vec<String>, Vec<String>) = entry
+            let (kept, mut removed): (Vec<String>, Vec<String>) = entry
                 .granted
                 .drain(..)
                 .partition(|name| manifest.permission(name).is_some());
             entry.granted = kept;
+            // Connectors too, so declaring one again in a later version needs a new approval
+            let dropped: Vec<String> = entry
+                .connectors
+                .keys()
+                .filter(|id| manifest.connector(id).is_none())
+                .cloned()
+                .collect();
+            for id in &dropped {
+                entry.connectors.remove(id);
+            }
+            removed.extend(dropped);
             let changed = !removed.is_empty();
             Ok((removed, changed))
         })
@@ -576,13 +918,14 @@ mod tests {
         assert_eq!(
             record,
             json!({
-                "record_version": 1,
+                "record_version": 2,
                 "plugins": {
                     "local/probe": {
                         "origin": ORIGIN,
                         "granted": ["log"],
                         "approved_version": "1.2.0",
-                        "approved_digest": DIGEST
+                        "approved_digest": DIGEST,
+                        "connectors": {}
                     }
                 }
             })
@@ -634,7 +977,7 @@ mod tests {
             ("not an object", "[]".to_owned()),
             (
                 "a newer record version",
-                r#"{"record_version":2,"plugins":{},"more":1}"#.to_owned(),
+                r#"{"record_version":3,"plugins":{},"more":1}"#.to_owned(),
             ),
             (
                 "an older record version",
@@ -730,6 +1073,7 @@ mod tests {
                     granted: vec!["log".to_owned()],
                     approved_version: "1.0.0".to_owned(),
                     approved_digest: DIGEST.to_owned(),
+                    connectors: BTreeMap::new(),
                 })
             );
         });
@@ -1065,5 +1409,435 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A manifest for `local/github-releases` declaring `catalog/github` (required) with
+    /// `list-releases`, and `local/weather` (optional) with `forecast`.
+    fn connected_manifest(weather_operations: &[&str]) -> Manifest {
+        let manifest = json!({
+            "manifest_version": 1,
+            "id": "local/github-releases",
+            "version": "0.1.0",
+            "author": "A",
+            "permissions": [],
+            "login_providers": [],
+            "connectors": [
+                { "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true },
+                { "id": "local/weather", "major": 0, "operations": weather_operations, "required": false }
+            ]
+        });
+        Manifest::parse(&serde_json::to_vec(&manifest).expect("serializes")).expect("valid")
+    }
+
+    fn github_state() -> ConnectorState {
+        ConnectorState {
+            id: "catalog/github".to_owned(),
+            origin: "catalog".to_owned(),
+            version: "1.0.0".to_owned(),
+            required: true,
+            destinations: vec!["https://api.github.com".to_owned()],
+            operations: BTreeMap::from([("list-releases".to_owned(), "sha256:51c0".to_owned())]),
+        }
+    }
+
+    fn weather_state() -> ConnectorState {
+        ConnectorState {
+            id: "local/weather".to_owned(),
+            origin: "/dev/connectors/weather.json".to_owned(),
+            version: "0.1.0".to_owned(),
+            required: false,
+            destinations: vec!["http://127.0.0.1:8765".to_owned()],
+            operations: BTreeMap::from([("forecast".to_owned(), "sha256:aa".to_owned())]),
+        }
+    }
+
+    const CONNECTED: &str = "local/github-releases";
+
+    fn approve_connected(store: &GrantStore, manifest: &Manifest, states: &[ConnectorState]) {
+        let expected = approval_digest(DIGEST, manifest, states);
+        store
+            .approve_connected(manifest, ORIGIN, DIGEST, states, &expected)
+            .expect("approved");
+    }
+
+    #[test]
+    fn a_version_1_record_reads_as_version_2_without_connectors_and_is_written_back_as_2() {
+        let (_dir, store, path) = store_with_text(&format!(
+            r#"{{"record_version":1,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}"}}}}}}"#
+        ));
+        let entry = entry(&store, "local/probe").expect("an entry");
+        assert!(entry.connectors.is_empty());
+        assert_eq!(entry.granted, ["log"]);
+        store.remove(&id("local/other")).expect("no change");
+        store
+            .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
+            .expect("approved");
+        let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(record["record_version"], 2);
+        assert_eq!(record["plugins"]["local/probe"]["granted"], json!(["log"]));
+        // A version 1 record never has connectors
+        let (_dir, store, _) = store_with_text(&format!(
+            r#"{{"record_version":1,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":[],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{"catalog/github":{{"origin":"catalog","version":"1.0.0","granted":true,"destinations":[],"operations":{{}}}}}}}}}}}}"#
+        ));
+        assert_eq!(
+            store.entry(&id("local/probe")).unwrap_err().kind(),
+            ErrorKind::NotGranted
+        );
+    }
+
+    #[test]
+    fn approve_connected_records_every_declared_connector() {
+        for_each_store(|store| {
+            let manifest = connected_manifest(&["forecast"]);
+            approve_connected(store, &manifest, &[github_state(), weather_state()]);
+            let entry = entry(store, CONNECTED).expect("an entry");
+            assert_eq!(
+                entry.connectors["catalog/github"],
+                ConnectorGrant {
+                    origin: "catalog".to_owned(),
+                    version: "1.0.0".to_owned(),
+                    granted: true,
+                    destinations: vec!["https://api.github.com".to_owned()],
+                    operations: BTreeMap::from([(
+                        "list-releases".to_owned(),
+                        "sha256:51c0".to_owned()
+                    )]),
+                }
+            );
+            // Optional connectors start off
+            assert!(!entry.connectors["local/weather"].granted);
+            assert!(entry.is_connector_granted("catalog/github"));
+            assert!(!entry.is_connector_granted("local/weather"));
+            assert!(!entry.is_connector_granted("catalog/missing"));
+        });
+    }
+
+    #[test]
+    fn the_file_format_of_record_version_2() {
+        let (_dir, store) = file_store();
+        let manifest = connected_manifest(&["forecast"]);
+        approve_connected(&store, &manifest, &[github_state(), weather_state()]);
+        let record: Value =
+            serde_json::from_slice(&fs::read(store.path().unwrap()).unwrap()).unwrap();
+        assert_eq!(
+            record["plugins"][CONNECTED]["connectors"]["catalog/github"],
+            json!({
+                "origin": "catalog",
+                "version": "1.0.0",
+                "granted": true,
+                "destinations": ["https://api.github.com"],
+                "operations": { "list-releases": "sha256:51c0" }
+            })
+        );
+    }
+
+    #[test]
+    fn approve_connected_refuses_a_digest_of_anything_else_and_grants_nothing() {
+        for_each_store(|store| {
+            let manifest = connected_manifest(&["forecast"]);
+            let shown = approval_digest(DIGEST, &manifest, &[github_state(), weather_state()]);
+            let mut changed = weather_state();
+            changed
+                .destinations
+                .push("https://api.weather.test".to_owned());
+            let error = store
+                .approve_connected(
+                    &manifest,
+                    ORIGIN,
+                    DIGEST,
+                    &[github_state(), changed],
+                    &shown,
+                )
+                .unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::ApprovalChanged, "{error}");
+            assert!(entry(store, CONNECTED).is_none());
+            let error = store
+                .approve_connected(
+                    &manifest,
+                    ORIGIN,
+                    DIGEST,
+                    &[github_state(), weather_state()],
+                    "sha256:00",
+                )
+                .unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::ApprovalChanged);
+            assert_eq!(store.generation(), 0);
+        });
+    }
+
+    #[test]
+    fn the_approval_digest_covers_everything_an_approval_records() {
+        let manifest = connected_manifest(&["forecast"]);
+        let states = [github_state(), weather_state()];
+        let base = approval_digest(DIGEST, &manifest, &states);
+        assert!(base.starts_with("sha256:"));
+        assert_eq!(base.len(), "sha256:".len() + 64);
+        // Stable, and independent of the order the connectors come in
+        assert_eq!(base, approval_digest(DIGEST, &manifest, &states));
+        assert_eq!(
+            base,
+            approval_digest(DIGEST, &manifest, &[weather_state(), github_state()])
+        );
+        let edits: [fn(&mut ConnectorState); 6] = [
+            |state| state.id = "local/other".to_owned(),
+            |state| state.origin = "/elsewhere/weather.json".to_owned(),
+            |state| state.version = "0.2.0".to_owned(),
+            |state| state.required = true,
+            |state| state.destinations.push("https://x.test".to_owned()),
+            |state| {
+                state
+                    .operations
+                    .insert("forecast".to_owned(), "sha256:bb".to_owned());
+            },
+        ];
+        for edit in edits {
+            let mut weather = weather_state();
+            edit(&mut weather);
+            assert_ne!(
+                base,
+                approval_digest(DIGEST, &manifest, &[github_state(), weather])
+            );
+        }
+        assert_ne!(base, approval_digest("sha256:11", &manifest, &states));
+        let with_log = {
+            let mut value: Value = serde_json::from_str(r#"{
+                "manifest_version": 1, "id": "local/github-releases", "version": "0.1.0", "author": "A",
+                "permissions": [{ "name": "log", "required": false }], "login_providers": [],
+                "connectors": [
+                    { "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true },
+                    { "id": "local/weather", "major": 0, "operations": ["forecast"], "required": false }
+                ]
+            }"#).unwrap();
+            let bytes = serde_json::to_vec(&value).unwrap();
+            value.take();
+            Manifest::parse(&bytes).unwrap()
+        };
+        assert_ne!(base, approval_digest(DIGEST, &with_log, &states));
+    }
+
+    #[test]
+    fn an_optional_connector_keeps_its_state_when_nothing_changed_and_is_off_otherwise() {
+        for_each_store(|store| {
+            let manifest = connected_manifest(&["forecast"]);
+            approve_connected(store, &manifest, &[github_state(), weather_state()]);
+            store
+                .set_connector(&manifest, ORIGIN, "local/weather", true)
+                .expect("turned on");
+            approve_connected(store, &manifest, &[github_state(), weather_state()]);
+            assert!(
+                entry(store, CONNECTED)
+                    .unwrap()
+                    .is_connector_granted("local/weather")
+            );
+            let mut changed = weather_state();
+            changed
+                .operations
+                .insert("forecast".to_owned(), "sha256:bb".to_owned());
+            approve_connected(store, &manifest, &[github_state(), changed]);
+            assert!(
+                !entry(store, CONNECTED)
+                    .unwrap()
+                    .is_connector_granted("local/weather")
+            );
+        });
+    }
+
+    #[test]
+    fn set_connector_turns_an_optional_connector_on_and_off() {
+        for_each_store(|store| {
+            let manifest = connected_manifest(&["forecast"]);
+            approve_connected(store, &manifest, &[github_state(), weather_state()]);
+            let before = store.generation();
+            store
+                .set_connector(&manifest, ORIGIN, "local/weather", true)
+                .unwrap();
+            assert!(
+                store
+                    .connector_granted(&id(CONNECTED), ORIGIN, "local/weather")
+                    .unwrap()
+            );
+            assert_eq!(store.generation(), before + 1);
+            store
+                .set_connector(&manifest, ORIGIN, "local/weather", true)
+                .unwrap();
+            assert_eq!(
+                store.generation(),
+                before + 1,
+                "no change, no new generation"
+            );
+            store
+                .set_connector(&manifest, ORIGIN, "local/weather", false)
+                .unwrap();
+            assert!(
+                !store
+                    .connector_granted(&id(CONNECTED), ORIGIN, "local/weather")
+                    .unwrap()
+            );
+            assert!(
+                !store
+                    .connector_granted(&id(CONNECTED), OTHER_ORIGIN, "catalog/github")
+                    .unwrap()
+            );
+
+            let kind = |result: Result<(), RuntimeError>| result.unwrap_err().kind();
+            assert_eq!(
+                kind(store.set_connector(&manifest, ORIGIN, "catalog/github", false)),
+                ErrorKind::RequiredTogether
+            );
+            assert_eq!(
+                kind(store.set_connector(&manifest, ORIGIN, "local/other", true)),
+                ErrorKind::NotDeclared
+            );
+            assert_eq!(
+                kind(store.set_connector(&manifest, OTHER_ORIGIN, "local/weather", true)),
+                ErrorKind::NotGranted
+            );
+        });
+    }
+
+    #[test]
+    fn prune_removes_connectors_the_manifest_no_longer_declares() {
+        for_each_store(|store| {
+            let manifest = connected_manifest(&["forecast"]);
+            approve_connected(store, &manifest, &[github_state(), weather_state()]);
+            let without_weather = Manifest::parse(
+                &serde_json::to_vec(&json!({
+                    "manifest_version": 1, "id": CONNECTED, "version": "0.2.0", "author": "A",
+                    "permissions": [], "login_providers": [],
+                    "connectors": [{ "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true }]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                store.prune(&without_weather, ORIGIN).unwrap(),
+                ["local/weather"]
+            );
+            let entry = entry(store, CONNECTED).unwrap();
+            assert!(entry.connectors.contains_key("catalog/github"));
+            assert!(!entry.connectors.contains_key("local/weather"));
+        });
+    }
+
+    #[test]
+    fn connector_changes_name_what_needs_a_new_approval() {
+        let store = GrantStore::in_memory();
+        let manifest = connected_manifest(&["forecast"]);
+        approve_connected(&store, &manifest, &[github_state(), weather_state()]);
+        store
+            .set_connector(&manifest, ORIGIN, "local/weather", true)
+            .unwrap();
+        let entry = entry(&store, CONNECTED).unwrap();
+        assert!(
+            entry
+                .connector_changes(&manifest, &[github_state(), weather_state()])
+                .is_empty()
+        );
+
+        // A new version that only adds operations the widget does not declare changes nothing
+        let mut github = github_state();
+        github.version = "1.1.0".to_owned();
+        assert!(
+            entry
+                .connector_changes(&manifest, &[github, weather_state()])
+                .is_empty()
+        );
+
+        let mut github = github_state();
+        github
+            .destinations
+            .push("https://uploads.github.com".to_owned());
+        assert_eq!(
+            entry.connector_changes(&manifest, &[github, weather_state()]),
+            ["destination added: https://uploads.github.com"]
+        );
+        let mut github = github_state();
+        github
+            .operations
+            .insert("list-releases".to_owned(), "sha256:99".to_owned());
+        assert_eq!(
+            entry.connector_changes(&manifest, &[github, weather_state()]),
+            ["operation changed: list-releases"]
+        );
+        let mut weather = weather_state();
+        weather.origin = "/elsewhere/weather.json".to_owned();
+        assert_eq!(
+            entry
+                .connector_changes(&manifest, &[github_state(), weather])
+                .len(),
+            1
+        );
+        let more = connected_manifest(&["forecast", "now"]);
+        let mut weather = weather_state();
+        weather
+            .operations
+            .insert("now".to_owned(), "sha256:cc".to_owned());
+        assert_eq!(
+            entry.connector_changes(&more, &[github_state(), weather]),
+            ["operation newly declared: now"]
+        );
+        // An optional connector that is off needs nothing, whatever changed
+        store
+            .set_connector(&manifest, ORIGIN, "local/weather", false)
+            .unwrap();
+        let entry = self::entry(&store, CONNECTED).unwrap();
+        let mut weather = weather_state();
+        weather.destinations.push("https://x.test".to_owned());
+        assert!(
+            entry
+                .connector_changes(&manifest, &[github_state(), weather])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_new_connector_version_that_changes_nothing_is_recorded_on_load() {
+        let store = GrantStore::in_memory();
+        let manifest = connected_manifest(&["forecast"]);
+        approve_connected(&store, &manifest, &[github_state(), weather_state()]);
+        let mut github = github_state();
+        github.version = "1.2.0".to_owned();
+        store
+            .refresh_connector_versions(&manifest, ORIGIN, &[github, weather_state()])
+            .unwrap();
+        assert_eq!(
+            entry(&store, CONNECTED).unwrap().connectors["catalog/github"].version,
+            "1.2.0"
+        );
+        let generation = store.generation();
+        store
+            .refresh_connector_versions(&manifest, ORIGIN, &[github_state(), weather_state()])
+            .unwrap();
+        assert_eq!(store.generation(), generation + 1);
+        store
+            .refresh_connector_versions(&manifest, ORIGIN, &[github_state(), weather_state()])
+            .unwrap();
+        assert_eq!(
+            store.generation(),
+            generation + 1,
+            "nothing moved, nothing written"
+        );
+    }
+
+    #[test]
+    fn a_change_from_another_store_on_the_same_file_is_seen_at_once() {
+        let (_dir, store) = file_store();
+        let manifest = connected_manifest(&["forecast"]);
+        approve_connected(&store, &manifest, &[github_state(), weather_state()]);
+        let other = GrantStore::open(store.path().unwrap());
+        other
+            .set_connector(&manifest, ORIGIN, "local/weather", true)
+            .unwrap();
+        assert!(
+            store
+                .connector_granted(&id(CONNECTED), ORIGIN, "local/weather")
+                .unwrap()
+        );
+        other.remove(&id(CONNECTED)).unwrap();
+        assert!(
+            !store
+                .connector_granted(&id(CONNECTED), ORIGIN, "catalog/github")
+                .unwrap()
+        );
     }
 }
