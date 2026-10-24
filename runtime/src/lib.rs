@@ -24,6 +24,8 @@ mod network;
 pub mod package;
 mod permissions;
 pub mod requests;
+// Until loading links storage (tasks T024 and T025)
+#[allow(dead_code)]
 pub mod storage;
 mod text;
 
