@@ -691,6 +691,27 @@ impl Runtime {
         Ok((Arc::new(connector), origin))
     }
 
+    /// Checks a connector file as this runtime would load it as `local/<name>` from
+    /// `<name>.json`: the format, the rules of a local connector, its id against its file name,
+    /// and the hosts the catalog reserves. For `runtime check-connector`, for authors.
+    pub fn check_local_connector(
+        &self,
+        bytes: &[u8],
+        name: &str,
+    ) -> Result<Connector, RuntimeError> {
+        let connector = Connector::parse(bytes, Source::Local)?;
+        let id = format!("local/{name}");
+        if connector.id() != id {
+            return Err(RuntimeError::with_names(
+                ErrorKind::InvalidConnector,
+                vec![connector.id().to_owned()],
+                Some(&format!("the file {name}.json must carry the id {id}")),
+            ));
+        }
+        self.check_not_reserved(&connector)?;
+        Ok(connector)
+    }
+
     /// A connector outside the catalog may not declare a host the catalog reserves (FR-005).
     pub(crate) fn check_not_reserved(&self, connector: &Connector) -> Result<(), RuntimeError> {
         for origin in connector.destinations() {

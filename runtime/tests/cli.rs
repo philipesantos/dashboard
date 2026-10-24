@@ -1157,3 +1157,107 @@ fn run_content(connected: &Connected) -> serde_json::Value {
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     serde_json::from_str(&stdout(&output)).unwrap()
 }
+
+#[test]
+fn check_connector_validates_a_connector_as_the_host_would_load_it() {
+    let dir = TempDir::new().unwrap();
+    let write = |name: &str, connector: &serde_json::Value| {
+        let path = dir.path().join(format!("{name}.json"));
+        std::fs::write(&path, connector.to_string()).unwrap();
+        path
+    };
+    let base = || {
+        json!({
+            "connector_version": 1, "id": "local/weather", "version": "0.1.0", "author": "You",
+            "description": "Weather", "destinations": { "api": "https://api.weather.test" },
+            "operations": {
+                "now": { "kind": "read", "method": "GET", "destination": "api", "path": "/now",
+                         "response": { "format": "json" } },
+                "week": { "kind": "read", "method": "GET", "destination": "api", "path": "/week",
+                          "response": { "format": "json" } }
+            }
+        })
+    };
+    let output = runtime(&["check-connector", path_str(&write("weather", &base()))]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "ok: local/weather 0.1.0, 1 destination, 2 operations (2 reads)\n"
+    );
+
+    let mut more = base();
+    more["destinations"]["cdn"] = json!("https://cdn.weather.test");
+    more["operations"]["set"] = json!({ "kind": "change", "method": "POST", "destination": "cdn", "path": "/set", "response": { "format": "json" } });
+    more["operations"].as_object_mut().unwrap().remove("week");
+    let output = runtime(&["check-connector", path_str(&write("weather", &more))]);
+    assert_eq!(
+        stdout(&output),
+        "ok: local/weather 0.1.0, 2 destinations, 2 operations (1 read, 1 change)\n"
+    );
+
+    for (case, edit, kind, mentions) in [
+        (
+            "an unknown field",
+            (|c: &mut serde_json::Value| c["colour"] = json!(1)) as fn(&mut serde_json::Value),
+            "invalid-connector",
+            "colour",
+        ),
+        (
+            "a destination with a path",
+            |c| c["destinations"]["api"] = json!("https://api.weather.test/v1"),
+            "invalid-connector",
+            "destinations.api",
+        ),
+        (
+            "a parameter without a type",
+            |c| {
+                c["operations"]["now"]["path"] = json!("/now/{city}");
+                c["operations"]["now"]["parameters"] = json!({ "city": { "max_length": 8 } });
+            },
+            "invalid-connector",
+            "operations.now.parameters.city",
+        ),
+        (
+            "a POST read",
+            |c| c["operations"]["now"]["method"] = json!("POST"),
+            "invalid-connector",
+            "operations.now",
+        ),
+        (
+            "an X- header",
+            |c| c["operations"]["now"]["headers"] = json!({ "X-Version": "2" }),
+            "invalid-connector",
+            "X-Version",
+        ),
+        (
+            "a reserved host",
+            |c| c["destinations"]["api"] = json!("https://api.github.com"),
+            "destination-reserved",
+            "api.github.com",
+        ),
+    ] {
+        let mut connector = base();
+        edit(&mut connector);
+        let output = runtime(&["check-connector", path_str(&write("weather", &connector))]);
+        assert_eq!(output.status.code(), Some(1), "{case}");
+        let error = stderr(&output);
+        assert!(
+            error.starts_with(&format!("error: {kind}: ")),
+            "{case}: {error}"
+        );
+        assert!(error.contains(mentions), "{case}: {error}");
+    }
+    // The file's name is the connector's
+    let output = runtime(&["check-connector", path_str(&write("other", &base()))]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("local/other"),
+        "{}",
+        stderr(&output)
+    );
+    let output = runtime(&[
+        "check-connector",
+        path_str(&dir.path().join("missing.json")),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+}

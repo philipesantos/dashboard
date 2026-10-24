@@ -27,7 +27,7 @@
 
 use std::fs::File;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -47,6 +47,7 @@ const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-fil
        runtime optional <plugin> <permission | connector-id> on|off [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime remove <plugin-id> [--grants <path>] [--data <dir>]
        runtime requests [--plugin <plugin-id>] [--last <n>] [--data <dir>]
+       runtime check-connector <file>
        runtime pack <component> --manifest <file> --output <file>";
 
 /// Exit status when the plugin or the change was refused, or the plugin failed or was stopped.
@@ -68,6 +69,7 @@ enum Command {
     Run,
     Update,
     Requests,
+    CheckConnector,
     Bench,
     Permissions,
     Approve,
@@ -82,6 +84,7 @@ fn main() -> ExitCode {
         Some("run") => Command::Run,
         Some("update") => Command::Update,
         Some("requests") => Command::Requests,
+        Some("check-connector") => Command::CheckConnector,
         Some("bench") => Command::Bench,
         Some("permissions") => Command::Permissions,
         Some("approve") => Command::Approve,
@@ -99,6 +102,7 @@ fn main() -> ExitCode {
         Command::Run => run(&options),
         Command::Update => update(&options),
         Command::Requests => requests(&options),
+        Command::CheckConnector => check_connector(&options),
         Command::Bench => bench(&options),
         Command::Permissions => permissions(&options),
         Command::Approve => approve(&options),
@@ -136,9 +140,10 @@ struct Options {
 fn parse(args: &[String], command: Command) -> Result<Options, String> {
     let renders = matches!(command, Command::Run | Command::Bench | Command::Update);
     // Which commands read grants, data and local connectors (contracts/cli.md)
-    let uses_grants = !matches!(command, Command::Pack | Command::Requests);
-    let uses_data = command != Command::Pack;
-    let uses_connectors = !matches!(command, Command::Pack | Command::Requests | Command::Remove);
+    let reads_files_only = matches!(command, Command::Pack | Command::CheckConnector);
+    let uses_grants = !reads_files_only && command != Command::Requests;
+    let uses_data = !reads_files_only;
+    let uses_connectors = uses_grants && command != Command::Remove;
     let mut config = None;
     let mut data = None;
     let mut connectors = None;
@@ -240,6 +245,7 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         positional.next().ok_or(match command {
             Command::Remove => "no plugin id given",
             Command::Pack => "no component file given",
+            Command::CheckConnector => "no connector file given",
             _ => "no plugin file given",
         })?
     };
@@ -441,6 +447,61 @@ fn utc(at_ms: u64) -> String {
         time % 60,
         at_ms % 1000
     )
+}
+
+/// Checks a connector file as the host would load it as a local connector, for authors:
+/// `<name>.json` must carry `local/<name>`, and no host the catalog reserves (contracts/cli.md).
+fn check_connector(options: &Options) -> ExitCode {
+    let path = Path::new(&options.plugin);
+    let bytes = match read_capped(
+        &options.plugin,
+        runtime::connector::MAX_CONNECTOR_BYTES,
+        "connector file",
+    ) {
+        Ok(bytes) => bytes,
+        Err(message) => return usage_error(&message),
+    };
+    let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return usage_error("the connector file has no UTF-8 name");
+    };
+    // Nothing is written: the data directory is only where a runtime would keep its data
+    let runtime = match Runtime::new(Limits::default(), RuntimeOptions::new(std::env::temp_dir())) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("error: cannot start the runtime: {error:#}");
+            return ExitCode::from(PLUGIN_FAILED);
+        }
+    };
+    let connector = match runtime.check_local_connector(&bytes, name) {
+        Ok(connector) => connector,
+        Err(error) => return refused(&error),
+    };
+    let plural = |count: usize, one: &str| {
+        if count == 1 {
+            format!("{count} {one}")
+        } else {
+            format!("{count} {one}s")
+        }
+    };
+    let operations: Vec<_> = connector.operations().collect();
+    let reads = operations
+        .iter()
+        .filter(|(_, operation)| operation.kind() == Kind::Read)
+        .count();
+    let changes = operations.len() - reads;
+    let mut kinds = vec![plural(reads, "read")];
+    if changes > 0 {
+        kinds.push(plural(changes, "change"));
+    }
+    println!(
+        "ok: {} {}, {}, {} ({})",
+        escape(connector.id()),
+        escape(&connector.version().to_string()),
+        plural(connector.destinations().len(), "destination"),
+        plural(operations.len(), "operation"),
+        kinds.join(", ")
+    );
+    ExitCode::SUCCESS
 }
 
 /// Shows what the plugin requests and what is granted to this file (FR-014); changes nothing.

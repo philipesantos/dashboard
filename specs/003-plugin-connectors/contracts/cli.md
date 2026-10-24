@@ -137,13 +137,15 @@ rule would be; the summary written past the call limit of a run of `update` or `
 2026-10-23T14:02:11.391Z local/net-probe local/echo fetch refused value-outside-type: id (longer than 16 characters)
 ```
 
-## `runtime check-connector <file> [--data <dir>]`
+## `runtime check-connector <file>`
 
 Validates a connector file as the host would load it as a local connector, the catalog's
-reserved hosts included, and prints a summary; for authors.
+reserved hosts included, and prints a summary; for authors. `<name>.json` must carry the id
+`local/<name>`. Reads nothing else and writes nothing.
 
 ```text
 ok: local/weather 0.1.0, 1 destination, 2 operations (2 reads)
+ok: local/weather 0.1.0, 2 destinations, 2 operations (1 read, 1 change)
 ```
 
 ## `runtime bench <plugin> … [--kept-data <file>]`
