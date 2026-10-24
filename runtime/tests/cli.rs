@@ -1873,3 +1873,42 @@ fn optional_storage_off_keeps_the_data_and_remove_says_where_it_is() {
         serde_json::from_str(&stdout(&stored.run(&["run", plugin]))).unwrap();
     assert_eq!(content["items"], json!(["kept"]));
 }
+
+/// The CLI half of `data_dir_is_absolute` (`specs/004-plugin-storage/data-model.md`): a
+/// relative `--data` puts the store at an absolute path under that directory.
+#[test]
+fn a_relative_data_directory_holds_its_stores() {
+    let stored = Stored::probe();
+    // Relative to the package directory, where Cargo runs the tests and so the CLI
+    let relative = PathBuf::from("..")
+        .join("target")
+        .join("storage-tests")
+        .join(format!("cli-{}", std::process::id()));
+    let absolute = Path::new(env!("CARGO_MANIFEST_DIR")).join(&relative);
+    let _ = std::fs::remove_dir_all(&absolute);
+    let output = Command::new(env!("CARGO_BIN_EXE_runtime"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args([
+            "update",
+            path_str(&stored.plugin),
+            "--config",
+            &json!({ "steps": [{ "op": "set", "name": "a", "value": "b" }] }).to_string(),
+            "--grants",
+            path_str(&stored.grants),
+            "--data",
+            path_str(&relative),
+        ])
+        .output()
+        .unwrap();
+    let stores: Vec<PathBuf> = std::fs::read_dir(absolute.join("storage"))
+        .map(|entries| entries.map(|entry| entry.unwrap().path()).collect())
+        .unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&absolute);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stores.len(), 1, "{stores:?}");
+    assert!(
+        stores[0]
+            .extension()
+            .is_some_and(|extension| extension == "sqlite")
+    );
+}
