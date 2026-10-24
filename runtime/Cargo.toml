@@ -31,6 +31,14 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 ureq = { version = "=3.5.0", default-features = false, features = ["rustls-no-provider", "rustls-webpki-roots"] }
 # Connector origins and redirect targets (R6, R7)
 url = "2"
+# Plugin storage: one SQLite database per plugin, used only in src/storage/
+# (specs/004-plugin-storage/research.md, R1). Pinned exactly, since a minor release may change
+# the authorizer's actions; the SQLite it compiles in is the one below. `hooks` gives the
+# authorizer and `limits` the connection limits (R4); the default statement `cache` is left out.
+rusqlite = { version = "=0.41.0", default-features = false, features = ["bundled", "hooks", "limits"] }
+# Pins the SQLite that rusqlite's `bundled` compiles, 3.54.0: rusqlite asks for it only with a
+# caret requirement, so without this a Cargo.lock update alone could change it (R1)
+libsqlite3-sys = { version = "=0.39.0", default-features = false }
 # Finds the manifest section without compiling the package. Pinned to the version Wasmtime 50
 # uses, so the build carries one copy.
 wasmparser = "=0.261.0"
