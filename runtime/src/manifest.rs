@@ -70,6 +70,15 @@ pub struct ConnectorRequest {
     pub required: bool,
 }
 
+/// The `storage` permission's declaration (`specs/004-plugin-storage/data-model.md`, Manifest).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StorageRequest {
+    /// As for any permission.
+    pub required: bool,
+    /// The most the plugin's store may hold, in usage bytes.
+    pub quota_bytes: u64,
+}
+
 /// A permission the manifest requests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionRequest {
@@ -131,6 +140,11 @@ impl Manifest {
 
     pub fn login_providers(&self) -> &[String] {
         &self.login_providers
+    }
+
+    /// The `storage` permission and its quota, if the manifest declares it.
+    pub fn storage(&self) -> Option<StorageRequest> {
+        None
     }
 
     /// Every connector declared, once each, in the manifest's order; empty when the manifest
@@ -703,6 +717,98 @@ mod tests {
         let mut entry = github();
         entry["version"] = json!("1.0.0");
         assert_invalid_field("version", connectors(json!([entry])));
+    }
+
+    fn storage(entry: Value) -> impl FnOnce(&mut Value) {
+        move |manifest| manifest["permissions"] = json!([{ "name": "log", "required": true }, entry])
+    }
+
+    #[test]
+    fn a_manifest_without_storage_declares_none() {
+        assert_eq!(parse_with(|_| {}).unwrap().storage(), None);
+    }
+
+    #[test]
+    fn storage_is_declared_with_its_quota() {
+        for (required, quota) in [(true, 65536), (false, 64), (true, 8_388_608)] {
+            let manifest = parse_with(storage(
+                json!({ "name": "storage", "required": required, "quota_bytes": quota }),
+            ))
+            .unwrap();
+            assert_eq!(
+                manifest.storage(),
+                Some(StorageRequest {
+                    required,
+                    quota_bytes: quota
+                })
+            );
+            // Still a permission, approved and turned on and off as any other
+            assert_eq!(manifest.permission("storage").unwrap().required, required);
+        }
+        // The schema reads a number by value, so 4096.0 is the integer 4096
+        let manifest = parse_with(storage(
+            json!({ "name": "storage", "required": true, "quota_bytes": 4096.0 }),
+        ))
+        .unwrap();
+        assert_eq!(manifest.storage().unwrap().quota_bytes, 4096);
+    }
+
+    #[test]
+    fn storage_needs_a_quota_within_the_schema_bounds() {
+        assert_invalid_field(
+            "permissions[1].quota_bytes",
+            storage(json!({ "name": "storage", "required": true })),
+        );
+        for quota in [
+            json!(0),
+            json!(63),
+            json!(8_388_609),
+            json!(-64),
+            json!(64.5),
+            json!("65536"),
+            Value::Null,
+        ] {
+            let detail = invalid(&manifest_with(storage(
+                json!({ "name": "storage", "required": true, "quota_bytes": quota }),
+            )));
+            assert!(
+                detail.contains("permissions[1].quota_bytes"),
+                "{detail} for {quota}"
+            );
+        }
+        let detail = invalid(&manifest_with(storage(
+            json!({ "name": "storage", "required": true, "quota_bytes": 63 }),
+        )));
+        assert!(
+            detail.contains("64") && detail.contains("8388608"),
+            "names both bounds: {detail}"
+        );
+    }
+
+    #[test]
+    fn only_storage_takes_a_quota() {
+        assert_invalid_field(
+            "permissions[0].quota_bytes",
+            set(
+                "permissions",
+                json!([{ "name": "log", "required": true, "quota_bytes": 4096 }]),
+            ),
+        );
+    }
+
+    #[test]
+    fn storage_appears_at_most_once() {
+        for second_required in [true, false] {
+            let detail = invalid(&manifest_with(set(
+                "permissions",
+                json!([
+                    { "name": "storage", "required": true, "quota_bytes": 4096 },
+                    { "name": "storage", "required": second_required, "quota_bytes": 4096 }
+                ]),
+            )));
+            assert!(detail.contains("permissions[1]"), "{detail}");
+            assert!(detail.contains("storage"), "{detail}");
+        }
     }
 
     #[test]
