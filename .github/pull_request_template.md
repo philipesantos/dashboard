@@ -8,7 +8,10 @@
 
 ## Security core (Principle IX)
 
-<!-- The security core today is runtime/ and wit/; the security tests are in plugins/hostile/. -->
+<!-- The security core today is runtime/, wit/ and connectors/ (the official catalog), and
+Cargo.lock when it moves a crate of the network stack: ureq, ureq-proto, rustls, rustls-webpki,
+ring, webpki-roots, url or regex. The security tests are in plugins/hostile/, plugins/fixtures/,
+runtime/tests/hostile.rs, runtime/tests/hostile/ and runtime/tests/common/servers.rs. -->
 
 - [ ] Does not touch the security core or the security tests
 - [ ] Every commit touching the security core or the security tests was reviewed line by line by: @
