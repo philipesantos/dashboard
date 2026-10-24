@@ -1062,3 +1062,149 @@ fn optional_off() {
     turn(true);
     assert_eq!(render(&plugin, &[get("a")]), [hex("kept while off")]);
 }
+
+/// Loop iterations of `store-probe`'s `spin` that take about `wanted` on this machine,
+/// measured with a render that only spins.
+fn calibrate_spin(plugin: &Plugin, wanted: std::time::Duration) -> u64 {
+    let probe = 200_000_000u64;
+    let started = std::time::Instant::now();
+    plugin
+        .render(&render_steps(&[
+            json!({ "op": "spin", "iterations": probe }),
+        ]))
+        .result
+        .expect("a render that spins");
+    let took = started.elapsed().as_secs_f64().max(0.001);
+    (probe as f64 * wanted.as_secs_f64() / took) as u64
+}
+
+/// The limits of the mid-run cases: no CPU budget, and time limits long enough for a test to
+/// change the grants while the probe spins.
+fn spinning_limits() -> Limits {
+    Limits {
+        fuel: u64::MAX,
+        time_limit: std::time::Duration::from_secs(10),
+        update_time_limit: std::time::Duration::from_secs(30),
+        ..Limits::default()
+    }
+}
+
+/// Waits until `path` exists, failing the test instead of hanging.
+fn wait_for(path: &Path) {
+    let started = std::time::Instant::now();
+    while !path.exists() {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(20),
+            "{} never appeared",
+            path.display()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn taken_away_mid_update() {
+    use runtime::grants::GrantStore;
+    use runtime::manifest::PluginId;
+
+    for (variant, extra_call) in [
+        ("turned off", false),
+        ("approval removed", false),
+        ("turned off, then one more call", true),
+    ] {
+        let vault = Vault::with_limits(spinning_limits());
+        let origin = vault.origin("taken");
+        let package = repack(
+            &fixture("store-probe"),
+            &stored_manifest("local/store-probe", "0.1.0", false, QUOTA),
+        );
+        let plugin = vault.plugin(&package, &origin);
+        let checked = vault.world.runtime.check(&package).unwrap();
+        checked
+            .set_optional(&vault.world.grants, &origin, "storage", true)
+            .unwrap();
+        update(&plugin, &[set("a", "before")]);
+        let spin = calibrate_spin(&plugin, std::time::Duration::from_secs(3));
+        let journal = vault
+            .store_file("local/store-probe", &origin)
+            .with_extension("sqlite-journal");
+        let record = vault.data().join("grants.json");
+        let mut step_list = vec![
+            set("a", "during"),
+            json!({ "op": "spin", "iterations": spin }),
+        ];
+        if extra_call {
+            step_list.push(get("a"));
+        }
+        let error = std::thread::scope(|scope| {
+            let running = scope.spawn(|| plugin.update(&steps(&step_list, None)));
+            // The update has written once it holds a journal: change the grants then, from
+            // another grant store on the same record, as another process would
+            wait_for(&journal);
+            let other = GrantStore::open(&record);
+            if variant == "approval removed" {
+                other
+                    .remove(&PluginId::parse("local/store-probe").unwrap())
+                    .unwrap();
+            } else {
+                checked
+                    .set_optional(&other, &origin, "storage", false)
+                    .unwrap();
+            }
+            running.join().unwrap().result.expect_err(variant)
+        });
+        assert_eq!(error.kind(), ErrorKind::NotGranted, "{variant}: {error}");
+        assert!(error.to_string().contains("storage"), "{variant}: {error}");
+        // Nothing of the update was kept
+        if variant == "approval removed" {
+            vault.world.approve_at(&package, &origin);
+        }
+        checked
+            .set_optional(&vault.world.grants, &origin, "storage", true)
+            .unwrap();
+        assert_eq!(render(&plugin, &[get("a")]), [hex("before")], "{variant}");
+    }
+}
+
+#[test]
+fn taken_away_mid_render() {
+    use runtime::grants::GrantStore;
+
+    let vault = Vault::with_limits(spinning_limits());
+    let origin = vault.origin("taken");
+    let package = repack(
+        &fixture("store-probe"),
+        &stored_manifest("local/store-probe", "0.1.0", false, QUOTA),
+    );
+    let plugin = vault.plugin(&package, &origin);
+    let checked = vault.world.runtime.check(&package).unwrap();
+    checked
+        .set_optional(&vault.world.grants, &origin, "storage", true)
+        .unwrap();
+    update(&plugin, &[set("a", "1")]);
+    let spin = calibrate_spin(&plugin, std::time::Duration::from_secs(3));
+    let record = vault.data().join("grants.json");
+    let found = std::thread::scope(|scope| {
+        let running = scope.spawn(|| {
+            render(
+                &plugin,
+                &[
+                    get("a"),
+                    json!({ "op": "spin", "iterations": spin }),
+                    get("a"),
+                ],
+            )
+        });
+        // Render leaves no file to watch: the change comes 1 s into a render of about 3 s
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        checked
+            .set_optional(&GrantStore::open(&record), &origin, "storage", false)
+            .unwrap();
+        running.join().unwrap()
+    });
+    assert_eq!(found[0], hex("1"), "the first read, before the change");
+    assert_eq!(
+        found[1]["error"], "not-granted",
+        "the read after the change"
+    );
+}
