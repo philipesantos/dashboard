@@ -68,7 +68,7 @@ When the update fails, nothing it wrote is kept, and the error says so:
 
 ```text
 error: cpu-budget-exceeded: used the whole CPU budget of 500000000 fuel units (storage writes not kept, previous data kept)
-error: storage-failed: the store reached its file size of 393216 bytes; nothing this update wrote was kept (previous data kept)
+error: storage-failed: the store's file reached its size limit of 393216 bytes, or the disk is full; nothing this update wrote was kept (previous data kept)
 ```
 
 ## `runtime storage list [--grants <path>] [--data <dir>]`

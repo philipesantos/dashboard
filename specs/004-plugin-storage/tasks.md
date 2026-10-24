@@ -146,7 +146,7 @@ on names, values, calls, bytes and the file keep every widget from filling the d
 
 ### Implementation for User Story 3
 
-- [ ] T039 [US3] Make the refusal details match `data-model.md` and `contracts/cli.md` exactly in `runtime/src/storage/mod.rs`, `runtime/src/grants.rs` and `runtime/src/lib.rs`: `over-quota` names the quota and the usage after the write; `needs-new-approval` names the approved and the declared quota; `invalid-manifest` names the field path and both bounds; each limit names itself and its value (SC-003)
+- [X] T039 [US3] Make the refusal details match `data-model.md` and `contracts/cli.md` exactly in `runtime/src/storage/mod.rs`, `runtime/src/grants.rs` and `runtime/src/lib.rs`: `over-quota` names the quota and the usage after the write; `needs-new-approval` names the approved and the declared quota; `invalid-manifest` names the field path and both bounds; each limit names itself and its value (SC-003)
 
 **Checkpoint**: User Story 3 is complete
 
