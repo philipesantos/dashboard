@@ -44,7 +44,7 @@
       "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
     },
     "permissions": {
-      "description": "Every capability the plugin may use. A permission the host does not know refuses the plugin; the same name twice counts once, unless one entry is required and the other optional.",
+      "description": "Every capability the plugin may use. A permission the host does not know refuses the plugin; the same name twice counts once, unless one entry is required and the other optional. storage appears at most once (specs/004-plugin-storage/data-model.md).",
       "type": "array",
       "maxItems": 32,
       "items": {
@@ -53,16 +53,45 @@
         "required": ["name", "required"],
         "properties": {
           "name": {
-            "description": "The permission, such as log.",
+            "description": "The permission, such as log or storage.",
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,31}$"
           },
           "required": {
             "description": "true: the user approves it with every other required permission, or the plugin does not run. false: optional; it starts off, and while off every use answers not-granted.",
             "type": "boolean"
+          },
+          "quota_bytes": {
+            "description": "Only on storage, and required there: the most the plugin's store may hold, in usage bytes (the bytes of every name and value plus 64 per entry). Shown before approval; a later version that raises it needs a new approval. The host refuses a quota above its own cap.",
+            "type": "integer",
+            "minimum": 64,
+            "maximum": 8388608
+          }
+        },
+        "if": {
+          "properties": {
+            "name": { "const": "storage" }
+          },
+          "required": ["name"]
+        },
+        "then": {
+          "required": ["quota_bytes"]
+        },
+        "else": {
+          "not": {
+            "required": ["quota_bytes"]
           }
         }
-      }
+      },
+      "contains": {
+        "type": "object",
+        "properties": {
+          "name": { "const": "storage" }
+        },
+        "required": ["name"]
+      },
+      "minContains": 0,
+      "maxContains": 1
     },
     "login_providers": {
       "description": "Accounts the plugin would ask the user to connect. Shown now; connecting arrives in feature 005.",
