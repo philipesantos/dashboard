@@ -213,7 +213,7 @@ agree
 
 ### Implementation for User Story 6
 
-- [ ] T054 [P] [US6] Update `docs/plugin-authors.md` (FR-018): contract 1.2.0 and the worlds `stored-widget` and `connected-stored-widget`; declaring storage and `quota_bytes`; how usage is counted (name + value + 64 per entry) and what the limits are; read-only render and all-or-nothing updates; handling `not-granted`, `refused` and `failed`, `run-aborted` included; that storage is kept across new versions from the same origin while kept data is not; that storage is not encrypted and not for secrets (Principle IV); what T003 found about declaring storage for a world that imports it
+- [X] T054 [P] [US6] Update `docs/plugin-authors.md` (FR-018): contract 1.2.0 and the worlds `stored-widget` and `connected-stored-widget`; declaring storage and `quota_bytes`; how usage is counted (name + value + 64 per entry) and what the limits are; read-only render and all-or-nothing updates; handling `not-granted`, `refused` and `failed`, `run-aborted` included; that storage is kept across new versions from the same origin while kept data is not; that storage is not encrypted and not for secrets (Principle IV); what T003 found about declaring storage for a world that imports it
 - [ ] T055 [P] [US6] Update `wit/README.md`: contract 1.2.0, `history/1.1.0` frozen and pinned by hash, the `storage` interface and the two new worlds, and `quota_bytes` in the manifest schema
 
 **Checkpoint**: an author can declare and use storage from the docs alone
