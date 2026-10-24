@@ -87,9 +87,9 @@ rt storage list                                             # gone
 ## 6. Numbers
 
 ```sh
-rt bench target/plugins/update-counter.wasm
+cargo run -p dashboard-bench --release --bin storage_cost
 ```
 
-Expected: the storage lines of [contracts/cli.md](contracts/cli.md#runtime-bench-plugin-), each
+Expected: the lines of [contracts/cli.md](contracts/cli.md#runtime-bench-plugin-), each
 storage call well under 1 ms (SC-006). CI's `bench.yml` records them on the three systems in
 `performance.md`.

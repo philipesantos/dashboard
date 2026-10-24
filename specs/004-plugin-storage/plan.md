@@ -49,7 +49,7 @@ grants change only through the development CLI (Principle VII); everything under
 
 **Scale/Scope**: one storage module, contract 1.2.0 with 2 new worlds, grant record v3, 1 new
 error kind and 8 call rules, 3 new CLI subcommands (`storage list|show|clear`) and storage in
-`permissions`, `approve`, `optional`, `update`, `remove` and `bench`, 22 hostile cases (2 white
+`permissions`, `approve`, `optional`, `update` and `remove`, a `storage_cost` bench binary, 22 hostile cases (2 white
 box) and 8 other named tests, 1 example, 1 fixture and 1 hostile crate
 
 ## Constitution Check
@@ -133,7 +133,7 @@ runtime/                        # Security core
 │   ├── text.rs                 # + quoting for `storage show`: `"` and `\` escaped (R14)
 │   ├── limits.rs               # + storage limits (R10)
 │   ├── error.rs                # + storage-failed
-│   └── bin/runtime.rs          # + storage list|show|clear; storage in permissions, approve, optional, update, remove, bench
+│   └── bin/runtime.rs          # + storage list|show|clear; storage in permissions, approve, optional, update, remove
 └── tests/
     ├── storage.rs              # Calls, usage, quota, render read-only, commit, concurrency (US1, US3, US4)
     ├── permissions.rs          # + storage approvals, quotas, optional, taken away (US3, US5)
@@ -143,6 +143,8 @@ runtime/                        # Security core
     ├── cli.rs                  # + storage commands and output
     ├── hostile.rs              # + mod storage
     └── hostile/storage.rs      # The 22 cases of FR-017
+
+bench/src/bin/storage_cost.rs   # New: storage call costs and file sizes (R16)
 
 plugins/
 ├── Cargo.toml                  # + the new crates

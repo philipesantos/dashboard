@@ -122,8 +122,8 @@ changed.
 
 ## `runtime bench <plugin> …`
 
-As in feature 003. For a plugin that declares storage, after a warm-up update that writes 100
-values, these lines print the median of 100 runs each:
+Unchanged. The storage numbers come from `cargo run -p dashboard-bench --release --bin
+storage_cost`, which prints, as medians of 100 runs each ([research.md](../research.md#r16-measuring)):
 
 ```text
 storage_open_us: <first storage call of a run>
@@ -131,6 +131,7 @@ storage_get_us: <one get, grant check included>
 storage_set_us: <one set in an update, grant check included>
 storage_commit_us: <commit of an update that wrote 100 values>
 render_reading_100_us: <a render that reads 100 values>
+file_bytes_at_quota: <value size> <usage> <file size>   (one line each for 32 B, 1,000 B, 4 KiB)
 ```
 
 ## New error kind

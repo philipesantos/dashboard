@@ -124,7 +124,9 @@ function, in this order, before any statement of a plugin's call runs:
 6. Pragmas: `max_page_count` (the file cap, R10), `secure_delete = ON` (deleted names and values
    are overwritten with zeros, on B-tree, overflow and free pages; `FAST` would leave free and
    overflow pages as they were), `journal_mode = DELETE` and `synchronous = FULL` (R8),
-   `busy_timeout` (R8).
+   `busy_timeout` (R8), `cache_size = -256` (at most 256 KiB of page cache per connection, so a
+   store never holds much host memory, and an update of 1 MiB spills pages to the file, which
+   the `killed-mid-update` case needs to leave a hot journal, R8).
 7. In `update` and `clear` only, on a file with no tables yet: the host's `CREATE TABLE`
    statements and its identity rows (R5).
 8. The schema check (R5): it reads `sqlite_schema`, so it runs before the authorizer.
@@ -463,11 +465,18 @@ and `libsqlite3-sys`, and its fixtures line gains `plugins/fixtures/store-probe`
 
 ## R16. Measuring
 
-`runtime bench` adds, for a plugin that declares storage, `storage_open_us` (first call of a
-run), `storage_get_us`, `storage_set_us` (median per call, grant check included),
-`storage_commit_us`, and `render_reading_100_us` (a render that reads 100 values). `bench.yml`
-benches the example on the three systems; `performance.md` records the numbers, the entry cost
-and file sizes measured, and confirms or changes R10 (spec SC-006).
+The numbers come from a bench binary, `bench/src/bin/storage_cost.rs` in the `dashboard-bench`
+crate, as `compile_cost` does for loading: it packs the `store-probe` fixture with a manifest that
+declares storage, approves it in a grant record file of its own (so every call re-reads a real
+record, R9), writes 100 values in a warm-up update, and runs each shape 100 times. Per-call costs
+are differences of medians between runs that differ only in their storage calls, so no timing
+code enters the host: `storage_open_us` (a render with one `get` minus one with none),
+`storage_get_us` and `storage_set_us` (100 calls minus one, divided by 99; grant check included),
+`storage_commit_us` (an update of 100 sets that returns `ok` minus one that returns an error and
+rolls back), and `render_reading_100_us` (a whole render that reads 100 values). It also prints
+the file size of a store filled to its quota with values of 32 B, 1,000 B and 4 KiB. `bench.yml`
+runs it on the three systems; `performance.md` records the numbers, the entry cost and the file
+sizes measured, and confirms or changes R10 (spec SC-006).
 
 ## R17. The example and the fixture
 
