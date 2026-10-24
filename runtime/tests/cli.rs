@@ -1067,7 +1067,9 @@ fn turning_a_connector_off_in_another_process_drops_a_response_in_flight() {
     let server = Server::http();
     server.route(
         "/hello.json",
-        Reply::json(r#"{"late":true}"#).delay(std::time::Duration::from_secs(2)),
+        // Under the 5 s call limit, with room for `optional … off`, another debug process, to
+        // start and change the record while the response waits
+        Reply::json(r#"{"late":true}"#).delay(std::time::Duration::from_secs(4)),
     );
     let connected = Connected::new(&server, &[("local/hello", 0, &["get"], false)]);
     connected.approve();
@@ -1093,7 +1095,16 @@ fn turning_a_connector_off_in_another_process_drops_a_response_in_flight() {
             .spawn()
             .unwrap()
     };
-    std::thread::sleep(std::time::Duration::from_millis(700));
+    // Turned off once the request is in flight: the service answers 4 s after it arrives. A
+    // fixed delay here lost the race to a slow start of the child process
+    let started = std::time::Instant::now();
+    while server.received().is_empty() {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "the update never sent its request"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
     connected.run(&["optional", &plugin, "local/hello", "off"]);
     let output = updating.wait_with_output().unwrap();
     assert!(output.status.success());
