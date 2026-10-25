@@ -11,6 +11,7 @@ compile_error!(
     "the test-network feature is only for the runtime's own tests, which run in debug builds: a release build never includes the test seam"
 );
 
+pub mod accounts;
 mod calls;
 mod catalog;
 pub mod connector;
@@ -24,8 +25,10 @@ mod network;
 pub mod package;
 mod permissions;
 pub mod requests;
+mod signin;
 pub mod storage;
 mod text;
+mod vault;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

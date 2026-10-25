@@ -10,6 +10,7 @@
 //! follows redirects itself, to the connector's own origins only.
 
 mod address;
+mod callback;
 mod resolver;
 
 use std::collections::BTreeMap;
