@@ -5,11 +5,9 @@ description = "Hostile plugin (security test fixture, never shipped): looks for 
 edition.workspace = true
 publish.workspace = true
 
-# Built with the standard library for WASI, which is what an author ignoring the contract ships.
-# Its manifest declares account use, which the parser learns in feature 005's T015; added then.
+# Built with the standard library for WASI, which is what an author ignoring the contract ships
 [package.metadata.dashboard]
 target = "wasm32-wasip2"
-manifest = false
 
 [lib]
 crate-type = ["cdylib"]

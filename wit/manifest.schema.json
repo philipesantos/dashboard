@@ -4,7 +4,7 @@
   "description": "Who a plugin is and what it needs. Carried in the plugin package's dashboard-manifest custom section (specs/002-plugin-permissions/contracts/package.md).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["manifest_version", "id", "version", "author", "permissions", "login_providers"],
+  "required": ["manifest_version", "id", "version", "author", "permissions"],
   "properties": {
     "$schema": {
       "description": "Lets editors find this schema; the host ignores it.",

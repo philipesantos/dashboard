@@ -71,6 +71,22 @@ fn permission(name: Value, required: Value) -> Value {
 fn valid() -> Vec<(&'static str, Value)> {
     vec![
         ("the base manifest", base()),
+        // Obsolete since feature 005, no longer required
+        ("no login_providers", with("login_providers", None)),
+        (
+            "a connector used with its account",
+            set(
+                "connectors",
+                json!([{ "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }]),
+            ),
+        ),
+        (
+            "a connector used without its account",
+            set(
+                "connectors",
+                json!([{ "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": false, "account": false }]),
+            ),
+        ),
         (
             "$schema",
             set("$schema", json!("../../../wit/manifest.schema.json")),
@@ -259,7 +275,6 @@ fn invalid() -> Vec<(&'static str, Value)> {
                 json!([{ "name": "log", "required": true, "scope": "x" }]),
             ),
         ),
-        ("no login_providers", with("login_providers", None)),
         (
             "an unknown login provider",
             set("login_providers", json!(["gitlab"])),
@@ -902,6 +917,20 @@ fn the_schema_and_the_parser_agree_on_connectors() {
             set(
                 "connectors",
                 json!([{ "id": "local/a", "major": 1, "operations": ["get"], "required": true, "x": 1 }]),
+            ),
+        ),
+        (
+            "account as text",
+            set(
+                "connectors",
+                json!([{ "id": "local/a", "major": 1, "operations": ["get"], "required": true, "account": "yes" }]),
+            ),
+        ),
+        (
+            "account null",
+            set(
+                "connectors",
+                json!([{ "id": "local/a", "major": 1, "operations": ["get"], "required": true, "account": null }]),
             ),
         ),
     ] {

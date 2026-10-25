@@ -212,6 +212,9 @@ struct RawManifest {
     version: String,
     author: String,
     permissions: Vec<Object<RawPermission>>,
+    /// Obsolete since feature 005: accepted as before and never used. An array when present:
+    /// `null` is not accepted.
+    #[serde(default)]
     login_providers: Vec<String>,
     /// Absent means none (feature 003). An array when present: `null` is not accepted.
     #[serde(default, deserialize_with = "present")]
@@ -226,6 +229,9 @@ struct RawConnectorRequest {
     major: u64,
     operations: Vec<String>,
     required: bool,
+    /// Absent means `false` (feature 005). A boolean when present: `null` is not accepted.
+    #[serde(default)]
+    account: bool,
 }
 
 #[derive(Deserialize)]
@@ -506,7 +512,7 @@ fn check_connectors(
             ));
         }
         connectors.push(ConnectorRequest {
-            account: false,
+            account: entry.account,
             id: entry.id,
             major,
             operations: entry.operations,
