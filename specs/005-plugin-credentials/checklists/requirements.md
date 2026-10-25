@@ -54,3 +54,26 @@
 - The numbers (sign-in time limit, key length, refresh limits) are left to the plan and measured,
   as in features 001, 003 and 004. SC-006's 5 ms per call is a target to confirm in
   `performance.md`.
+- Planning session (2026-10-25): the maintainer first chose both sign-in flows, then removed the
+  device flow; with it went the GitHub account (GitHub's redirect flow needs a client secret), so
+  `catalog/github` stays public-only and the example uses a development connector. Constitution
+  v2.4.1 names keyring-rs's crates. The CLI keeps 003's rule of no test seam: sign-in, the example
+  and the hostile cases are library tests.
+- Independent review of the plan against v2.4.1 (2026-10-25), each finding checked at the source
+  before the artifacts changed:
+  - Conflicts (4), all fixed: the `data flow:` line for data read as an account (Principle III,
+    FR-005); no plain-HTTP destination in a connector with a credential (FR-007); token,
+    revocation and identity on the credential's own destinations (FR-001); the account fixed at
+    link time, so one connected mid-run applies from the next load (Principle II, FR-011).
+  - Risks (10), all addressed in research: no test path through the CLI (R15, the maintainer's
+    choice); a key cannot be typed in CI (pseudo-terminal, library checks); the Windows store's
+    ordering across threads and abandoned writes with rotating refresh tokens (one vault thread,
+    lock held through the write); secrets in `keyring-core` and `serde_json` errors (secret-free
+    mapping, a test); escaped echoes (bearer-token set, escaped forms searched); a type-only
+    `connectors` import (rule and test); one widget locking the shared account out (401 confirmed
+    with identity); macOS prompts across binaries (same binary creates and deletes); CI and bench
+    wiring on Linux.
+  - Gaps (7), all closed: kept data deleted at disconnect, not only at the next load; `identity`
+    optional with `id` required; named tests for the rules that had none; host requests and the
+    rate limits; the disconnect race (lock across both steps); header names compared without case;
+    counts (32 hostile cases, 14 named tests).

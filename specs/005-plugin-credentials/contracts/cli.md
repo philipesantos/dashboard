@@ -93,6 +93,7 @@ As in feature 004, plus, for each connector with a credential, after its `destin
       this widget acts as the account: ada (id 1234567)
     list-notes  read (declared by the developer)  GET https://notes.test/notes
 …
+data flow: data read as the account of local/notes can reach https://api.github.com
 login providers: none
 approval digest: sha256:…
 ```
@@ -102,7 +103,11 @@ approval digest: sha256:…
   connected)` for a required one; a widget that does not declare `account` reads `this widget
   does not use the account`.
 - `asks for:` marks `(reviewed)` for the catalog and `(declared by the developer)` for local
-  connectors.
+  connectors. The `credential:` block also prints the `sign-in:` and `token:` addresses.
+- For a widget that uses an account, a `data flow:` line names every origin of its connectors,
+  other than the credential's own destinations, that data read as the account can reach
+  (Principle III), beside 003's line for data read from this machine; none is printed when there
+  is no other origin.
 - `login providers:` reads `none`, or the list followed by `(obsolete: accounts come from
   connectors)`.
 

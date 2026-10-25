@@ -10,15 +10,17 @@ The optional field of [R3](research.md#r3-the-credential-declaration)
 step 6a), in this order, each failure `invalid-connector` naming the field:
 
 1. The schema: kinds, flows, lengths, patterns; `account` only with `kind: account`.
-2. Each of `destinations` names a declared destination whose origin is `https`. A local connector on
-   a loopback address without HTTPS that declares a credential is `credential-needs-https`
-   (FR-007).
+2. Each of `destinations` names a declared destination, and every destination of the connector,
+   not only those, is `https`: one that is not, a local loopback one included, is
+   `credential-needs-https` (FR-007, Principle III).
 3. `header`: `Authorization` with a `scheme`; another name only in a catalog connector, never a
-   name the host forbids or a header an operation fixes.
-4. Sign-in addresses and pages: `https`, no user information or fragment, each host under a
-   domain the connector `reserves` (catalog) or equal to the host of one of its destinations
-   (local).
-5. `identity.operation` is a read the connector declares, `GET` without parameters.
+   name the host forbids or a header an operation fixes. Names compare without regard to case.
+4. Addresses and pages: `https`, no user information or fragment. `authorize`, `access_page` and
+   `revoke_page`: on a host under a domain the connector `reserves` (catalog) or the host of one
+   of its destinations (local). `token` and `revoke`: their origin is one of the credential's
+   destinations (FR-001).
+5. `identity`, when present: its operation is a read the connector declares, `GET` without
+   parameters, on one of the credential's destinations; `id` is required.
 6. `client` names a registration (R4); whether one is available is checked only when connecting.
 
 ## Manifest: `account`
@@ -153,8 +155,10 @@ Connectors without a credential, and widgets without one, keep the digests they 
 ## Kept data
 
 The file of 003 gains `accounts`: for each connector the widget uses with an account, the
-`account_id` the data was fetched with, or `null` when it was fetched without one. A load (step
-7a) that finds another `account_id`, or none where one was recorded, discards the file.
+`account_id` the data was fetched with, or `null` when it was fetched without one.
+`accounts disconnect` deletes, at once, every file that names the account it removes (FR-013); a
+load (step 7a) that finds another `account_id`, or none where one was recorded, also discards the
+file, as a backstop.
 
 ## Request log entry
 
@@ -185,12 +189,15 @@ For `accounts.call(connector, operation, arguments)`: the steps of 003's connect
 account table, plus:
 
 - **7a** After the grant re-check: the account state of [R11](research.md#r11-account-states-and-refresh),
-  steps 1–5. `account-not-connected` sends nothing.
+  steps 1–5, against the account snapshot taken when the widget was linked (step 0 there).
+  `account-not-connected` sends nothing.
 - **8a** The request carries the credential only to origins it is for, over `https`, re-checked
   per redirect hop (R10).
-- **9a** A `401` to a request that carried it: refresh once and resend, or mark the account and
-  answer `account-not-connected`.
-- **11a** The body, a declared header or `Location` contains the secret: `failed(invalid-response)`.
+- **9a** A `401` to a request that carried it: refresh once and resend; a `401` that remains is
+  confirmed with the identity operation, which marks the account only if refused too; either way
+  this call answers `account-not-connected` and its `401` body is dropped.
+- **11a** The body, a declared header or `Location` contains the secret, in any of the forms of
+  R10, or the whole header value: `failed(invalid-response)`.
 - **11b** A status of `subscription_required`: `subscription-required`.
 - **12a** Before handing the response over, the accounts record still has the same `account_id`
   connected: else `account-not-connected`, response dropped.
@@ -250,7 +257,11 @@ and the scan of R15 afterwards. Fixtures: `net-probe` (calls and dumps), `hostil
 | `echo-body` | Destination returns the `Authorization` value in its body | `failed(invalid-response)`; the widget gets nothing |
 | `echo-header` | …in a declared response header | Same |
 | `echo-location` | …in a redirect's `Location` | Same; the target not logged |
+| `echo-json-escaped` | …in a JSON body with `/` escaped `\/` and `+`, `/`, `=` as `\u` escapes | Same |
 | `other-destination` | Calls the connector's destination the credential is not for | Sent without the header |
+| `plain-http-beside` | A local connector with a credential on an `https` destination and a plain-HTTP loopback one | `credential-needs-https` at load |
+| `token-host-elsewhere` | A connector whose `token` or `revoke` address is on a destination the credential is not for | `invalid-connector` at load; no refresh token sent there |
+| `identity-elsewhere` | A connector whose identity operation is on a destination the credential is not for | `invalid-connector` at load |
 | `redirect-other-host` | Credential-bearing request redirected to another host of the connector | Followed without the header |
 | `header-smuggling` | Values with CR/LF, `Authorization:` text, the scheme, the header's name | Refused by type or sent as data; no header added; never replaced |
 | `fixed-auth-header` | A local connector fixes `Authorization` or the credential's header | `invalid-connector` |
@@ -268,9 +279,11 @@ and the scan of R15 afterwards. Fixtures: `net-probe` (calls and dumps), `hostil
 | `late-callback` | Callback after the time limit | Listener closed; nothing connected |
 | `another-account` | Sign-in returns another account's identity | `another-account-connected`; new token revoked or dropped; earlier account kept |
 | `widget-connect` | Widget tries every call while no account is connected | `account-not-connected`; no browser, no sign-in |
-| `revoked-token` | Test service answers 401 | One refresh; then `account-not-connected`; no further retries |
+| `revoked-token` | Test service answers 401, identity refused too | One refresh, one resend, one identity call, then `account-not-connected` and marked; no further requests |
+| `foreign-401` | 401 for one operation only, identity still answered | That call `account-not-connected`; the account stays connected for every widget |
 | `expired-refresh` | Refresh refused | `account-not-connected`; marked `refresh-failed` |
 | `disconnect-mid-run` | Account disconnected by another process during an update | In-flight response dropped; later requests without the header or `account-not-connected` |
+| `connect-mid-run` | No account at link time; another process connects one during the update | The run keeps going without the credential (optional) or `account-not-connected` (required); the account applies from the next load |
 | `account-spoof` | Account name with line breaks and terminal escapes | Printed escaped by `accounts list`, `permissions`, `requests` |
 
 ## Other tests named
@@ -285,3 +298,18 @@ and the scan of R15 afterwards. Fixtures: `net-probe` (calls and dumps), `hostil
   `credential`.
 - `catalog`: every sign-in address and page of a catalog credential is under its `reserves`.
 - `pkce`: the challenge of RFC 7636 appendix B's verifier.
+- `secret_free_errors`: a mock store failing with `BadEncoding(<token bytes>)`, and a vault document
+  and a token response that do not parse; the output, errors and log hold no secret.
+- `vault_order`: a slow mock write followed by a read on the vault thread returns the written
+  value; a refresh whose write does not finish marks the account `refresh-failed`.
+- `connectors_type_only`: a widget whose connectors are all `account: true` imports `connectors`
+  as types only; it loads, `connectors` is the stand-in, and its calls work through `accounts`.
+- `keychain_locked_call`: the mock store answering `NoStorageAccess` during a call gives
+  `failed(unavailable)`, naming the keychain; nothing is sent, with or without a credential.
+- `credential_rules`: `subscription-required` drops the response; `account-use-not-declared` at
+  load; a redirect to a host the credential is for keeps it; narrowed access runs without a new
+  approval; a `401` body never reaches the widget; the whole header value echoed is caught.
+- `key_checks`: empty, over 1,024 bytes and outside the bearer-token set refused, through the
+  library function and `read_password_from_bufread`; the CLI's key path in a pseudo-terminal on
+  Linux and macOS.
+- `data_flow`: `permissions` of a widget using an account and another destination prints the line.

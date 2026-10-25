@@ -76,15 +76,15 @@ browser and its address bar, and Principle V keeps plugins out of host windows a
 ## R3. The credential declaration
 
 **Decision**: a connector gains one optional field, `credential`
-([draft](contracts/connector.schema.json)); `credentials` and `auth` stay refused as feature 003
+([draft](contracts/connector-credential.schema.json)); `credentials` and `auth` stay refused as feature 003
 refused them, now naming `credential` as the field to use.
 
 | Field | Rule |
 | --- | --- |
 | `kind` | `account` or `key` |
 | `required` | `true` or `false` (default `false`) |
-| `destinations` | 1–8 keys of the connector's `destinations`, each `https` |
-| `header` | `Authorization` (outside the catalog, the only value); a catalog connector may name another, which its review checks; never one of the names the host forbids (003, R1) |
+| `destinations` | 1–8 keys of the connector's `destinations`. Every destination of a connector with a credential is `https`, not only these (Principle III: only a connector that sends no credential may go without HTTPS) |
+| `header` | `Authorization` (outside the catalog, the only value); a catalog connector may name another, which its review checks; never one of the names the host forbids (003, R1). Header names are compared without regard to case, here and against every header an operation fixes |
 | `scheme` | Required with `Authorization`: 1–32 characters of a token (RFC 9110), such as `Bearer`; the header is `<scheme> <secret>`. Other headers carry the secret alone |
 | `account` | With `kind: account` only: the sign-in (below) |
 | `subscription_required` | 0–4 statuses from 400–499 that mean a paid plan is missing (FR-012) |
@@ -95,10 +95,11 @@ refused them, now naming `credential` as the field to use.
 | --- | --- |
 | `flow` | `authorization-code` (R2) |
 | `client` | The name of the client registration the host uses (R4) |
-| `authorize`, `token`, `revoke` | Absolute `https` addresses without credentials or fragment; `revoke` optional (RFC 7009). Each host is under a domain the connector reserves (catalog) or is the host of one of its destinations (development) |
+| `authorize` | Absolute `https` address without credentials or fragment, on a host under a domain the connector reserves (catalog) or the host of one of its destinations (development): the browser goes there, not the credential |
+| `token`, `revoke` | Absolute `https` addresses whose origin is one of the credential's `destinations`, so a refresh token or a token being revoked goes only where the credential goes (FR-001); `revoke` optional (RFC 7009) |
 | `scopes` | 0–32 scope names sent at sign-in |
 | `access` | 1–32 `{ "name", "level" }` items, `level` `read` or `write`: what the account lets the connector do, shown before approval and before sign-in; a catalog review checks it is the narrowest the service offers (FR-015) |
-| `identity` | `{ "operation", "name", "id" }`: a read operation of the connector, called by the host with the new credential, and JSON pointers to the account's name and stable id in its response |
+| `identity` | Optional `{ "operation", "name", "id" }`, `id` required within: a read operation of the connector on one of the credential's destinations, `GET` without parameters, called by the host with the new credential, and JSON pointers to the account's name and stable id in its response. Without `identity`, the account is named `account`, has no id, and connecting again is refused until it is disconnected, as for a key |
 | `access_page` | Optional `https` address, on the same hosts as above, where the user chooses what the account reaches, printed after sign-in |
 | `revoke_page` | Optional `https` address where the user revokes the account by hand, printed when `revoke` is absent |
 
@@ -148,12 +149,26 @@ written into a connector file others may copy.
 - `runtime/src/vault/` is the only code that touches `keyring-core` or a store, enforced by Clippy
   (R19). It hands out a `Secret` (`zeroize::Zeroizing<String>`, already in the tree) whose
   `Debug` prints `[credential]` and which has no `Display`.
-- Every vault operation runs on a helper thread and is waited on for at most a bound: the call's
-  time limit for a widget's call, 2 minutes for the tool (time for the person to unlock a
-  keychain). One that does not answer fails as `unavailable`, naming the keychain: the D-Bus store
-  can block indefinitely on an unlock prompt, and macOS shows its unlock dialog on its own.
+- Every vault operation runs on **one vault thread per process**, which takes operations from a
+  queue one at a time, in order: the Windows store does not order operations on one entry made from
+  several threads (its README: "setting a password on one thread and then immediately spawning
+  another to get the password may return a `NoEntry` error"). A caller waits at most a bound: the
+  call's time limit for a widget's call, 2 minutes for the tool (time for the person to unlock a
+  keychain). One that does not answer in time fails as `unavailable`, naming the keychain: the
+  D-Bus store can block indefinitely on an unlock prompt, and macOS shows its unlock dialog on its
+  own. An operation given up on still runs in order, so a later one never overtakes it.
+- A write that matters for rotation (a refresh) holds the accounts record's lock until the vault
+  thread has answered, not only until the caller stopped waiting; a refresh whose write fails or
+  does not finish marks the account as needing connecting again (reason `refresh-failed`) and is
+  logged, since the only valid refresh token may then be lost.
 - `NoStorageAccess` and `PlatformFailure` are "keychain unavailable"; `NoEntry` for an account the
   record says is connected marks it as needing connecting again.
+- Errors never carry a secret: `keyring-core`'s `BadEncoding(Vec<u8>)` and `BadDataFormat(Vec<u8>,
+  _)` hold the raw secret bytes and its `Error` derives `Debug`, so `store.rs` maps every error to a
+  payload-free enum of its own before it leaves the module, and the vault's code never formats a
+  `keyring-core` value. Parsing a document that holds a secret (the vault's JSON, a token
+  response) reports fixed text, never the `serde_json` error, which quotes the offending value. A
+  test injects `BadEncoding(<token bytes>)` through the mock's `set_error` and scans the output.
 
 What the spike found (Linux, cargo-deny 0.20.2 with this repository's `deny.toml`): 49 crates in
 the Linux tree, MIT or Apache-2.0 apart from `subtle` (BSD-3-Clause) and `byteorder` (Unlicense OR
@@ -169,7 +184,8 @@ off, and `deny.toml` cannot catch it, so the PR template names it (R19).
 On macOS the item is created with the creating application trusted; another application of the
 same user gets a confirmation prompt unless the user chose "Always Allow" (Apple, access control
 lists). A rebuilt binary counts as another application, so developers see a prompt after each
-rebuild; that is expected and documented.
+rebuild; that is expected and documented. In CI, the binary that creates an entry is the one that
+reads and deletes it (R15), so a headless runner never meets a prompt.
 
 **Rationale**: constitution v2.4.1 names `keyring-core` and its stores; the D-Bus store is
 synchronous, as the host is (003, R5), where the zbus store brings `async-io` executors (126
@@ -249,6 +265,13 @@ without connectors is; with some declared and none granted, the stand-in answers
 `account: true` needs contract 1.3 or later (`contract-too-old`), and the registry records
 `accounts` since 1.3.
 
+A component that calls only `accounts` still imports `connectors`, as a type-only instance (the
+types `accounts` takes by `use`, no `call`): a spike with wit-bindgen 0.63 and wit-component 0.262
+built that way. So `connectors` is never refused as `not-declared` while the manifest declares any
+connector (today's rule, `permissions.rs`), and when every connector is `account: true` it is
+linked to the stand-in; a named test covers a widget whose connectors are all used with an
+account.
+
 **Alternatives considered**: one interface for both kinds of call (the new answers have nowhere
 to go for 1.1.0 types); a status function for the widget to ask whether an account is connected
 (a call already answers that, and the widget learns nothing else).
@@ -264,15 +287,26 @@ to go for 1.1.0 types); a status function for the widget to ask whether an accou
   (FR-007). `build_request` never sees the secret: no template, value or placeholder can reach it.
 - The credential never touches what is logged: the logged target is path and query, which hold
   no credential, and byte counts count it without recording it.
-- After reading a response, before anything reaches the widget or the log: if the body, a
-  declared header or the `Location` header contains the secret, or the whole header value, the
-  call fails as `invalid-response` ("the response carried the credential back"), and a redirect
-  target is not logged. The check is a byte search (`memchr::memmem`, already in the tree through
+- Every credential is in the bearer-token set, letters, digits and `-._~+/=` (RFC 6750's
+  `b64token`): a key outside it is `key-refused`, a token outside it fails the sign-in or refresh.
+  After reading a response, before anything reaches the widget or the log: if the body, a declared
+  header or the `Location` header contains the secret in any of the forms an encoder can give it
+  (as is; with `/` written `\/`; with `+`, `/` and `=` as `\u002b`, `\u002f`, `\u003d` in
+  either case), or the whole header value, the call fails as `invalid-response` ("the response
+  carried the credential back"), and a redirect target is not logged. Restricting the set is what
+  makes the list of forms complete: JSON encoders escape `"`, `\`, `<`, `>` and `&`, none of which
+  a credential holds. The check is a byte search (`memchr::memmem`, already in the tree through
   `regex`) over at most the body limit.
 - A `401` answer to a request that carried the credential: if the account can be refreshed and
   this call has not refreshed yet, the host refreshes (R11) and sends the request once more, as a
-  logged hop; otherwise the account is marked as needing connecting again and the call answers
-  `account-not-connected`. The response of the `401` never reaches the widget.
+  logged hop. A `401` that remains is confirmed with the identity operation (when declared): if
+  identity is refused too, the account is marked as needing connecting again; if it succeeds, the
+  `401` came from this request, not the token, and only this call answers `account-not-connected`,
+  so one widget cannot lock the shared account out for the others (FR-011). The response of the
+  `401` never reaches the widget.
+- The refresh, the resend and the identity confirmation are the host's, one each at most per
+  call; they are not counted against the widget's calls per run or its rate, which bound the calls
+  that cause them, and the destination host's rate counts them.
 - A status listed in `subscription_required` answers `subscription-required`, without the
   response.
 - The host's own requests (token, refresh, revocation, identity) go through the same
@@ -293,27 +327,36 @@ connecting again` (with a reason: refused, refresh failed, missing from the keyc
 than the connector asks for) or absent. For each call through `accounts`, after the grant
 re-check (003 step 7):
 
-1. No account and the credential optional: the request goes without a credential.
-2. No account, or one needing connecting again: `account-not-connected`, nothing sent.
+0. When the widget is linked, the host takes for each connector in the account table the
+   `account_id` connected then, or none. That snapshot is what the run can use: an account
+   connected afterwards, by any process, applies from the next load (Principle II; 003 does the
+   same for a connector turned on by another process), and every check below only takes away.
+1. No account in the snapshot and the credential optional: the request goes without a
+   credential, even if one has been connected since.
+2. No account in the snapshot, or one needing connecting again: `account-not-connected`, nothing
+   sent.
 3. The access recorded at connection lacks an item the connector now declares:
    `account-not-connected` (reason: less access), nothing sent.
 4. The secret is read from the vault once per run of `update` and held until the run ends.
 5. A token that expires within 60 s is refreshed first, under the record's lock (R6), at most once
    per call (FR-011). A failed refresh marks the account and answers `account-not-connected`.
 6. Just before sending and again before handing the response over, the accounts record is read
-   again: a disconnected or replaced account answers `account-not-connected` and the response is
-   dropped (FR-013), as 003 re-reads the grants.
+   again: an account no longer connected with the snapshot's `account_id` answers
+   `account-not-connected` and the response is dropped (FR-013), as 003 re-reads the grants.
 
 ## R12. Disconnecting, replacing and kept data
 
-**Decision**: `accounts disconnect` deletes the vault entry first, then the record's account, then
-asks the service to revoke when it declares `revoke` (with `client_id` and the token), printing
-whether that succeeded, or prints `revoke_page`. Each account
+**Decision**: `accounts disconnect` takes the accounts record's lock and holds it while it deletes
+the vault entry and then the record's account, so no call between the two marks the account as
+missing; then it deletes, at once, the kept data of every widget whose file names that account
+(FR-013: private data must not wait for a load that may never come); then it asks the service to
+revoke when it declares `revoke` (with `client_id` and the token), printing whether that
+succeeded, or prints `revoke_page`. Each account
 gets an account id, 16 random bytes in hex, when a new account is connected; reconnecting the same
 account (same stable id from `identity`) keeps it. Kept data (003, R14) gains, for each connector
 the widget uses with an account, the account id it was fetched with; a load that finds another or
-none discards the file, so private data does not outlive its account, even when another process
-disconnected it. Connecting a different account, or a new key while one is stored, is refused
+none also discards the file, the backstop for a disconnect another process made while a load was
+reading. Connecting a different account, or a new key while one is stored, is refused
 (clarification 2), and the token just obtained is revoked when the service allows, then dropped.
 
 ## R13. Limits
@@ -324,7 +367,7 @@ disconnected it. Connecting a different account, or a new key while one is store
 | Callback request head | 8 KiB, read within 2 s |
 | Sign-in and refresh responses | 64 KiB; each request within the call's time limit (5 s) |
 | Stored secret | 2,560 bytes (the JSON document) |
-| Key | 1–1,024 bytes, characters `!`–`~` only |
+| Key | 1–1,024 bytes of letters, digits and `-._~+/=` |
 | Account name and id shown | 100 characters, then cut |
 | Vault operation | The call's time limit for widgets; 2 min for the tool |
 | Refresh margin | 60 s before expiry |
@@ -335,8 +378,14 @@ disconnected it. Connecting a different account, or a new key while one is store
 **Decision** ([contracts/cli.md](contracts/cli.md)): `runtime accounts connect <connector-id>
 [--client <id>]`, `runtime accounts list` and `runtime accounts disconnect
 <connector-id> [--origin <path>]`; `permissions` shows each connector's credential and the account
-connected; `requests` shows the account of each call and the host's own entries. A key is read
-from the terminal without echo through `rpassword` (only in the binary); the browser is opened
+connected and, for a widget that uses an account, a `data flow:` line saying which other
+destinations of its connectors data read as that account can reach (constitution, Principle III:
+"before approval, the host MUST show … whether data read from one connected account … can reach
+another destination"), next to 003's line for data read from this machine; `requests` shows the
+account of each call and the host's own entries. A key is read from the terminal without echo
+through `rpassword` (only in the binary), whose `read_password` opens `/dev/tty` or `CONIN$`; the
+key's checks live in a library function, tested directly and through `read_password_from_bufread`,
+and the CLI's key path is tested in a pseudo-terminal on Linux and macOS; the browser is opened
 with the `open` crate (only in the binary, with `shellexecute-on-windows`, so no shell parses the
 address on Windows), and the address is always printed too.
 
@@ -352,13 +401,23 @@ address on Windows), and the address is always printed too.
 - The **vault seam**: `Runtime::with_test_network` also takes a credential store, so library tests
   inject `keyring_core::mock::Store` (in-memory, errors injectable). The seam keeps 003's guard:
   only debug builds with `test-network`.
+- **Where each path is tested** (planning session): the CLI keeps 003's rule, no option reaches the
+  seam. The sign-in, the example end to end and every hostile case run as library tests through the
+  seam (test CA, routes, mock or real store). CLI tests cover the `accounts` commands themselves:
+  output, escaping, refusals (`no-client-configured`, `credential-needs-https`,
+  `account-not-connected`, `keychain-unavailable`), a key typed in a pseudo-terminal on Linux and
+  macOS (Windows: the key's checks through the library function only), and `list` and
+  `disconnect` on entries the CLI itself made. No automated test runs `accounts connect` with a
+  sign-in through the binary; the library's sign-in code is the same code the binary calls.
 - **Real keychains**: the CLI tests and a `vault` test file run against the system's keychain on
-  the three CI systems, each test with its own data directory and so its own vault id, deleting
-  its entries at the end; they take a process-wide lock, since Windows does not order operations
-  on one entry from several threads. CI installs `gnome-keyring` and `libdbus-1-dev` on
-  `ubuntu-24.04` and runs `cargo test` inside `dbus-run-session`, after `gnome-keyring-daemon
-  --components=secrets --daemonize --unlock <<< 'ci'` (the recipe of keyring-rs's own CI, which
-  needs the newline the here-string adds); macOS and Windows need no setup.
+  the three CI systems, each test with its own data directory and so its own vault id. Each entry
+  is read and deleted by the binary that created it (the `vault` tests in the test binary, the CLI
+  tests through the CLI's own `accounts disconnect`), since macOS trusts only the creating binary.
+  CI installs `gnome-keyring` and `libdbus-1-dev` on `ubuntu-24.04` and runs the Linux test step
+  as `dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock
+  <<< 'ci'; cargo test --workspace --locked"` (the recipe of keyring-rs's own CI, which needs the
+  newline the here-string adds), a step of its own beside the one macOS and Windows keep;
+  `bench.yml` gets the same packages and session on Linux.
 - **The scan** of FR-019: every token and key the test service issues is a fresh random value;
   after each case the test searches for it in every file under the data directory, the grant
   record, the request log, kept data, stores, the captured output of the host and the tool, and
@@ -403,17 +462,21 @@ only by `src/bin/runtime.rs`. Each must pass `cargo deny` and `cargo audit` in C
 
 ## R18. Measuring
 
-**Decision**: `bench/src/bin/credential_cost.rs` measures, against the test sign-in service on
-loopback HTTPS: the median of 100 calls with and without a credential (SC-006: the difference
-under 5 ms), the first vault read and a refresh, on the three systems through `bench.yml`, into
-`specs/005-plugin-credentials/performance.md`, with the limits of R13 as measured.
+**Decision**: the bench runs in release, where the seam cannot compile (003, R15), so
+`bench/src/bin/credential_cost.rs` measures what a credential adds in-process, with no network:
+the median of 100 requests built and checked with and without a credential (the header added per
+hop and the echo check over a 1 MiB body: SC-006, the difference under 5 ms), and the first read
+of an entry from the system's keychain and a later one, on the three systems through `bench.yml`,
+into `specs/005-plugin-credentials/performance.md`, with the limits of R13 as measured. A refresh
+is a network round trip, timed in the library tests, not benched.
 
 ## R19. Keeping the review on what matters
 
 **Decision**:
 
 - `clippy.toml` disallows `keyring_core` types and the store crates' outside `runtime/src/vault/`,
-  and `std::net::TcpListener` outside `runtime/src/network/`.
+  and `std::net::TcpListener` with `std::net::TcpListener::bind` outside `runtime/src/network/`, as
+  it lists `TcpStream` and its `connect`.
 - The pull request template lists `runtime/src/vault/` and `connectors/` as security core, the
   four vault crates and `libdbus-sys` under `Cargo.lock`, and asks that the `vendored` feature of
   `libdbus-sys` never be turned on (its C sources are AFL-2.1 or GPL-2.0).

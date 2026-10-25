@@ -15,11 +15,12 @@ per redirect hop, only to the destinations it is for, over HTTPS; it refuses any
 carries it back. A widget declares `account: true` on a connector and calls it through a new
 contract 1.3.0 interface, `accounts`, linked over a table of its own built at link time; the new
 answers `account-not-connected` and `subscription-required` live there, since 1.1.0's types
-cannot grow. Accounts are connected only through the development tool, with GitHub's device flow
-for the catalog's GitHub connector (GitHub's redirect flow requires a client secret) and the
-authorization code flow with PKCE on a loopback callback for connectors that declare it.
-GitHub's account is a GitHub App with read access to contents and metadata of the repositories
-the user installs it on. The grant record moves to version 4, a new accounts record holds what
+cannot grow. The account a widget acts as is fixed when it is linked; checks during a run only
+take it away. Accounts are connected only through the development tool, with the authorization
+code flow and PKCE on a loopback callback, never a client secret. No catalog connector gains an
+account yet: GitHub signs in a client without a secret only through its device flow, which was
+left out, so `catalog/github` stays public-only and the example uses a development connector
+against the test sign-in service. The grant record moves to version 4, a new accounts record holds what
 is connected (never a token), and kept data follows the account it was fetched with. Decisions
 and their sources are in [research.md](research.md).
 
@@ -36,10 +37,11 @@ the binary only (R5, R17)
 **Storage**: credentials in the system keychain (development vault, R5); `<data dir>/accounts.json`
 (R6); the grant record moves to version 4 (R8); kept data and the request log gain account fields
 
-**Testing**: `cargo test`, hostile cases on the `net-probe` fixture and a new `token-hunt` crate;
-a test sign-in service on the HTTPS test servers of 003 (R15); the mock store through the test
-seam, and the real keychain in CLI and `vault` tests on ubuntu-24.04 (gnome-keyring in
-`dbus-run-session`), macos-latest and windows-latest; no internet
+**Testing**: `cargo test`; the sign-in, the example and the hostile cases as library tests
+through the seam, with a test sign-in service on the HTTPS test servers of 003 and the mock store;
+CLI tests for the `accounts` commands without the seam (003's rule kept), a key typed in a
+pseudo-terminal on Linux and macOS; the real keychain in CLI and `vault` tests on ubuntu-24.04
+(gnome-keyring in `dbus-run-session`), macos-latest and windows-latest; no internet (R15)
 
 **Target Platform**: host on Windows, macOS and Linux (Linux builds need `libdbus-1-dev`); plugins
 on `wasm32-unknown-unknown` (`token-hunt`'s WASI half on `wasm32-wasip2`)
@@ -47,18 +49,19 @@ on `wasm32-unknown-unknown` (`token-hunt`'s WASI half on `wasm32-wasip2`)
 **Project Type**: Rust library with a CLI binary, inside the existing Cargo workspace
 
 **Performance Goals**: SC-006: a call with a credential within 5 ms of the same call without, once
-read from the keychain (R18)
+read from the keychain, measured in-process in release (R18)
 
 **Constraints**: plugins never receive a credential and never start a sign-in (Principles IV,
 VII, FR-008, FR-009); accounts are connected only through the development tool, into the
 development vault (constitution v2.4.0); everything under `runtime/`, `wit/` and `connectors/`
 gets line-by-line review, the vault included (Principle IX)
 
-**Scale/Scope**: one vault module, sign-in in the network module (two flows and a loopback
-listener), contract 1.3.0 with 1 interface and 2 worlds, grant record v4, accounts record v1, 8
-new error kinds, 3 new CLI subcommands (`accounts connect|list|disconnect`) and account lines in
-`permissions`, `approve`, `requests`, `update`; the GitHub connector 1.1.0; 30 hostile cases and
-7 other named tests; 1 example moved to 1.3.0, 1 fixture extended, 1 hostile crate, 1 bench binary
+**Scale/Scope**: one vault module with one vault thread, sign-in (one flow, a loopback listener
+in the network module), contract 1.3.0 with 1 interface and 2 worlds, grant record v4, accounts
+record v1, 8 new error kinds, 3 new CLI subcommands (`accounts connect|list|disconnect`) and
+account and data-flow lines in `permissions`, `approve`, `requests`, `update`; 32 hostile cases
+and 14 other named tests; 1 new example with its development connector, 1 fixture extended, 1
+hostile crate, 1 bench binary
 
 ## Constitution Check
 
@@ -71,13 +74,13 @@ names keyring-rs's crates); the independent review's findings are in
 | Rule | Status | How the plan complies |
 | --- | --- | --- |
 | I. WebAssembly-only plugins | Pass | Plugins stay components; the vault, sign-in and injection run in the host |
-| II. Zero capabilities by default | Pass | A connector's account is a capability the manifest declares (`account: true`) and the approval covers (`uses`, credential digest, access); `accounts` is linked over a table built at link time from what was granted, the stand-in otherwise, and refused when undeclared; call-time checks (grants, accounts record) only take away (R9, R11). New credentials, wider access and starting to use an account need a new approval (R8) |
-| III. External data only through connectors | Pass | Credentials ride only on connector requests through the host proxy; the host's own sign-in, refresh, identity and revocation requests use the same agents (HTTPS, public addresses, Mozilla's roots, no proxy) and the request log; sign-in addresses must be on reserved (catalog) or declared (development) hosts. The loopback listener receives the browser's callback, it reaches nothing (R2, R10) |
-| IV. Plugins never see secrets | Pass | Credentials live only in the keychain and the host's memory during a run (`Zeroizing`, redacted `Debug`); the header is added per hop only for origins the credential is for, over HTTPS with Mozilla's roots; a response that carries it back is refused; no file, log, kept data, store, error or output holds one, checked after every hostile case by a scan for fresh random tokens (R5, R10, R15) |
+| II. Zero capabilities by default | Pass | A connector's account is a capability the manifest declares (`account: true`) and the approval covers (`uses`, credential digest, access); `accounts` is linked over a table built at link time from what was granted, the stand-in otherwise, and refused when undeclared; the account a widget acts as is a snapshot taken at link time, and call-time checks (grants, accounts record) only take away: an account connected mid-run applies from the next load (R9, R11, `connect-mid-run`). New credentials, wider access and starting to use an account need a new approval (R8) |
+| III. External data only through connectors | Pass | Credentials ride only on connector requests through the host proxy; the host's own token, refresh, identity and revocation requests use the same agents (HTTPS, public addresses, Mozilla's roots, no proxy), the destination's rate and the request log; a connector with a credential has no plain-HTTP destination at all, a local loopback one included (`credential-needs-https`). Before approval, `permissions` shows whether data read as an account can reach another destination (the `data flow:` line, as 003 does for this machine). The loopback listener receives the browser's callback; it reaches nothing (R2, R10, R14) |
+| IV. Plugins never see secrets | Pass | Credentials live only in the keychain and the host's memory during a run (`Zeroizing`, redacted `Debug`); the header is added per hop only for origins the credential is for, over HTTPS with Mozilla's roots; token, revocation and identity requests go only to the credential's own destinations; every credential is in the bearer-token set, so a response that carries it back, raw or escaped, is refused; keychain and parser errors are mapped to secret-free text; no file, log, kept data, store, error or output holds one, checked after every hostile case by a scan for fresh random tokens (R5, R10, R15) |
 | V. Plugins stay inside the host frame | Pass (N/A) | No UI; the sign-in happens in the system browser, which the tool opens, never a plugin |
 | VI. Human confirmation for AI actions | Pass (N/A) | No AI |
-| VII. Trust decisions only in host dialogs | Pass | Accounts are connected, listed and disconnected only by the development tool for local packages, into the development vault (v2.4.0); no plugin can start a sign-in, open a browser or touch the accounts record (`widget-connect`); the tool warns to enter only a code it showed (R1) |
-| VIII. Every security rule has a breaking test | Pass | 30 hostile cases and 7 named tests, on three systems, with the real keychain in CI; the suite of features 001–004 keeps running, with 1.0.0–1.2.0 plugins on the 1.3.0 host |
+| VII. Trust decisions only in host dialogs | Pass | Accounts are connected, listed and disconnected only by the development tool for local packages, into the development vault (v2.4.0); no plugin can start a sign-in, open a browser or touch the accounts record (`widget-connect`) |
+| VIII. Every security rule has a breaking test | Pass | 32 hostile cases and 14 named tests, on three systems, with the real keychain in CI; the suite of features 001–004 keeps running, with 1.0.0–1.2.0 plugins on the 1.3.0 host |
 | IX. Human review of the security core | Pass | The vault in `runtime/src/vault/`, sign-in and injection in `runtime/src/network/`, the contract and schemas in `wit/`, the catalog in `connectors/`; Clippy keeps `keyring-core`, the stores and `TcpListener` in their modules; the vault crates are pinned exactly and listed in the PR template with `libdbus-sys`, whose `vendored` feature must stay off (R19) |
 | Fixed decisions: host app, UI | Pass (N/A) | No change to the Tauri shell or the UI |
 | Fixed decisions: Wasmtime + Component Model (WIT) | Pass | Contract 1.3.0 is WIT; it only adds (a new interface and worlds), checked by a test, 1.2.0 frozen and pinned by hash (R9) |
@@ -91,7 +94,14 @@ names keyring-rs's crates); the independent review's findings are in
 | Workflow: Spec Kit and the Constitution Check | Pass | specify, clarify, plan, this check with an independent review, then tasks |
 | Governance | Pass | v2.4.0 and v2.4.1 were amended before this plan; no exception is taken |
 
-**Post-design re-check**: pending the independent review.
+**Post-design re-check**: Pass, after an independent review against v2.4.1. It found 4 conflicts
+(no data-flow line for data read as an account, which Principle III requires before approval; a
+plain-HTTP destination allowed beside a credential's; token, revocation and identity hosts not
+tied to the credential's destinations; an account connected by another process mid-run that a
+call would start using, against Principle II), 10 risks and 7 gaps. Each was checked at the
+source (the constitution, `keyring-core`, `windows-native-keyring-store` and `rpassword` sources,
+the CLI tests) before the plan changed (R3, R5, R9 to R15, R18, R19); the maintainer chose how the
+CLI, the example and the bench are tested (library tests, 003's seam rule kept, R15).
 
 ## Project Structure
 
@@ -100,14 +110,13 @@ names keyring-rs's crates); the independent review's findings are in
 ```text
 specs/005-plugin-credentials/
 ├── plan.md              # This file
-├── research.md          # Phase 0: decisions, GitHub's documentation, the vault spike
+├── research.md          # Phase 0: decisions, GitHub's documentation, the vault spike, the review
 ├── data-model.md        # Phase 1: credential, account use, records, states, call and sign-in steps, cases
-├── quickstart.md        # Phase 1: validation guide, with a real GitHub App by hand
+├── quickstart.md        # Phase 1: validation guide
 ├── contracts/
 │   ├── cli.md                             # accounts commands; account lines elsewhere
 │   ├── widget-v1.3.wit                    # What wit/v1/widget.wit adds in 1.3.0
 │   ├── connector-credential.schema.json   # What wit/connector.schema.json adds
-│   └── catalog-github.json                # catalog/github 1.1.0
 ├── checklists/requirements.md
 ├── performance.md       # Created during implementation (SC-006, R13, R18)
 └── tasks.md             # Phase 2 output (/speckit-tasks)
@@ -123,18 +132,16 @@ wit/                            # Security core: contracts
 ├── v1/widget.wit               # 1.3.0: accounts, worlds account-widget and account-stored-widget
 └── history/1.2.0/widget.wit    # New: published 1.2.0, frozen
 
-connectors/catalog/github.json  # 1.1.0: the account credential, get-user (R16)
-
 runtime/                        # Security core
 ├── Cargo.toml                  # + keyring-core and the three stores (per target), zeroize, memchr, httparse; rpassword, open (binary)
 ├── src/
 │   ├── vault/
-│   │   ├── mod.rs              # Secret, entries, the bounded helper thread, the injected store (R5)
-│   │   └── store.rs            # The only keyring use: builds each system's store
+│   │   ├── mod.rs              # Secret, entries, the vault thread, bounded waits, the injected store (R5)
+│   │   └── store.rs            # The only keyring use: builds each system's store; secret-free errors
 │   ├── accounts.rs             # Accounts record, states, client registrations, refresh lock (R6, R11, R12)
-│   ├── signin.rs               # Both flows, identity, comparison, write order (R2; data model, Sign-in)
+│   ├── signin.rs               # The sign-in, identity, comparison, write order (R2; data model, Sign-in)
 │   ├── network/
-│   │   ├── mod.rs              # + credential per hop, echo check, form requests for the host's own calls (R10)
+│   │   ├── mod.rs              # + credential per hop, echo check (escaped forms), form requests for the host's own calls (R10)
 │   │   └── callback.rs         # New: the loopback listener (R2)
 │   ├── connector.rs            # + credential parsing and checks (data model, Connector)
 │   ├── calls.rs                # + the account table and steps 7a–12a
@@ -146,7 +153,7 @@ runtime/                        # Security core
 │   ├── requests.rs             # + account; host entries
 │   ├── limits.rs               # + R13
 │   ├── error.rs                # + the new kinds
-│   └── bin/runtime.rs          # + accounts connect|list|disconnect; account lines
+│   └── bin/runtime.rs          # + accounts connect|list|disconnect; account and data-flow lines
 └── tests/
     ├── common/signin.rs        # The test sign-in service (R15)
     ├── accounts.rs             # Connect, refresh, disconnect, states, records (US1, US4)
@@ -157,23 +164,25 @@ runtime/                        # Security core
     ├── manifest_schema.rs      # + account; connector credential
     ├── cli.rs                  # + accounts commands
     ├── hostile.rs              # + mod credentials
-    └── hostile/credentials.rs  # The 30 cases of FR-019
+    └── hostile/credentials.rs  # The 32 cases of FR-019
 
 bench/src/bin/credential_cost.rs  # New (R18)
 
 plugins/
 ├── Cargo.toml                  # + the new crates
-├── examples/github-releases/   # Contract 1.3.0, account-widget, account: true (R16)
+├── examples/private-notes/     # New: contract 1.3.0, account-widget, with connectors/notes.json (R16)
 ├── fixtures/net-probe/         # + calls through accounts; dump mode
-└── hostile/token-hunt/         # New: looks for credentials everywhere it can (wasm32-wasip2 half)
+├── hostile/token-hunt/         # New: looks for credentials everywhere it can (wasm32-wasip2 half)
+└── hostile/connectors/         # New: connector files of the load-time cases (plain-http-key.json, …)
 
 docs/plugin-authors.md          # + using an account, the new answers, contract 1.3.0
 docs/connectors.md              # + declaring a credential, the narrowest access, a development app
 connectors/README.md            # + credentials in catalog review
-docs/threat-model.md            # + credential threats, device-code phishing, their tests
+docs/threat-model.md            # + credential threats and their tests
 SECURITY.md                     # Scope names the vault and accounts
 plugins/hostile/README.md       # + credential cases
-.github/workflows/ci.yml        # Linux: gnome-keyring, libdbus-1-dev, dbus-run-session
+.github/workflows/ci.yml        # Linux: gnome-keyring, libdbus-1-dev, the test step in dbus-run-session
+.github/workflows/bench.yml     # Linux: the same packages and session
 .github/pull_request_template.md  # vault in the core; Cargo.lock: vault crates, libdbus-sys (never vendored)
 clippy.toml                     # keyring only in runtime/src/vault/; TcpListener only in runtime/src/network/
 ```
@@ -182,7 +191,7 @@ clippy.toml                     # keyring only in runtime/src/vault/; TcpListene
 touches keyring-rs, so its review covers every keychain call; the loopback listener sits in the
 network module, which stays the only code that opens sockets. The 1.2.0 plugins (`update-counter`,
 `store-probe`) move to build from `wit/history/1.2.0`, so the suite keeps running them as 1.2.0
-plugins on the 1.3.0 host, and `github-releases` moves to 1.3.0.
+plugins on the 1.3.0 host; `github-releases` stays on 1.1.0 and `catalog/github` on 1.0.0.
 
 ## Complexity Tracking
 
