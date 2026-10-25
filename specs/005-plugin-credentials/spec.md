@@ -78,6 +78,23 @@ that need a credential and certificates accepted at first use (right after 005);
 PKCE and, if GitHub needs it, the device flow; registering the project's GitHub app (Phase 6);
 sync or export of the vault; the TypeScript example (separate Phase 2 item)."
 
+## Clarifications
+
+### Session 2026-10-24
+
+- Q: When a development connector's file is moved or deleted, should the tool still list its
+  account and let the maintainer disconnect it? → A: Yes: the tool lists every account with its
+  connector id and origin, marks it when the origin's file no longer exists, and disconnects by id
+  and origin whether or not that file exists (FR-014).
+- Q: When the maintainer connects a connector that already has an account, may the tool switch to
+  a different account, or must the current one be disconnected first? → A: Connecting again is
+  allowed only when the service reports the same account (to reconnect or to hold more access); a
+  different account, or a new key, is refused, naming the current account, until it is
+  disconnected (FR-014).
+- Q: For each call that carried a credential, should the request log record the name of the
+  account it acted as, or only that a credential was sent? → A: The account's name, escaped when
+  shown, or that it was a key; never the credential (FR-007).
+
 ## User Scenarios & Testing *(mandatory)*
 
 The people using this feature are the maintainer, who connects accounts and approves widgets
@@ -120,7 +137,7 @@ the host's files or the tool's output.
    the account connected now or that none is.
 3. **Given** the widget is approved and an account is connected, **When** an update calls an
    operation, **Then** the request reaches the destination with the credential, the widget gets
-   the response, and the request log records that the call carried the account, never the
+   the response, and the request log records the call with the name of the account it acted as, never the
    credential itself.
 4. **Given** a connector that takes a key instead of an account, **When** the maintainer connects
    it, **Then** the tool reads the key from the terminal without showing it, and calls carry the
@@ -247,6 +264,10 @@ and replayed callbacks during a sign-in and check that nothing is connected.
    nothing connected and any account connected before stays as it was.
 6. **Given** an account name or a service's error text with line breaks or terminal escapes,
    **When** the tool prints it, **Then** it is escaped and cannot pass for the tool's own output.
+7. **Given** an account whose development connector file was moved or deleted, **When** the
+   maintainer lists accounts, **Then** it appears with its connector id and origin, marked as having
+   no file; **when** the maintainer disconnects it by id and origin, **Then** its credential is
+   deleted from the keychain and no other account changes.
 
 ---
 
@@ -334,9 +355,12 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
 - A connector version asks for less access than the account holds: no new approval and no new
   sign-in; the tool shows that the account holds more than the connector asks for and offers to
   connect it again.
-- The maintainer connects a different account to a connector: every widget approved to use the
-  account now acts as the new one; the tool lists those widgets when connecting, and the data the
-  host kept from them is discarded. Several accounts for one connector are out of scope.
+- The maintainer signs in again to a connector that has an account: when the service reports the
+  same account, the new credential replaces the old one and widgets keep acting as that account;
+  when it reports a different account, or the connector cannot tell which account it is, the new
+  credential is discarded (revoked when the service offers that), the tool names the current
+  account and says to disconnect it first, and nothing changes. A new key is refused the same way
+  while one is stored. Several accounts for one connector are out of scope.
 - Connecting an account grants nothing to any widget, and approving a widget connects nothing:
   the two are separate actions.
 - Two widgets use the same connector's account: each needs its own approval to use it; the
@@ -360,7 +384,7 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
 - The service's response to a sign-in or a refresh holds an error text: the tool shows the error
   code and text escaped and cut, never the code, token or secret of the exchange.
 - A widget's kept data from before an account was connected: kept; data fetched with an account is
-  discarded when the account is disconnected or replaced.
+  discarded when the account is disconnected.
 - The host is stopped during a sign-in: nothing is connected, and no code or secret of the sign-in
   is left on disk.
 - A widget built for 1.2.0 or older uses a connector that now declares an optional credential: it
@@ -422,7 +446,9 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   host it is for; to another host of the connector, the redirect is followed without it, and any
   other target is not followed, as in feature 003. A connector that declares a credential MUST be
   refused when any destination the credential is for is not HTTPS, including a development
-  connector on a loopback address without HTTPS.
+  connector on a loopback address without HTTPS. The request log of feature 003 MUST record, for
+  each call that carried a credential, the name of the account it acted as, or that it was a key,
+  escaped when shown, and never the credential.
 - **FR-008**: Plugins MUST NOT receive a credential by any means: no capability, environment
   variable, argument, configuration value or file carries one. The host MUST withhold from the
   widget any response whose body or declared headers contain the credential its request carried,
@@ -455,15 +481,20 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
 - **FR-013**: Disconnecting an account, removing a widget's approval or turning off its connector,
   from any process, MUST take effect from the widget's next call, even within an update already
   running; a request already sent MAY finish within its time limit, but its response MUST NOT
-  reach the widget, and no later request MAY carry the credential. Disconnecting or replacing an
-  account MUST discard the data the host kept from every widget that used it.
+  reach the widget, and no later request MAY carry the credential. Disconnecting an account
+  MUST discard the data the host kept from every widget that used it.
 - **FR-014**: The development tool MUST connect an account (sign-in in the system browser, or a key
-  read under FR-010), list accounts (connector, origin, kind, account name, access asked for and
-  held, when connected, whether it needs connecting again), and disconnect one, deleting its
-  credential from the keychain and asking the service to revoke it when it offers that, saying
-  whether revocation succeeded. It MUST escape every text a service or a connector wrote, and
-  never print a credential. When connecting replaces an account, it MUST list the widgets that will
-  act as the new one. In this phase, accounts live in a development vault, in the operating
+  read under FR-010), list every account in the development vault (connector id, origin, kind,
+  account name, access asked for and held, when connected, whether it needs connecting again, and
+  whether the origin's file still exists), and disconnect one by connector id and origin, whether
+  or not that file exists, deleting its credential from the keychain and asking the service to
+  revoke it when it offers that, saying whether revocation succeeded (or that it could not be
+  asked because the connector's file is gone). It MUST escape every text a service or a connector wrote, and
+  never print a credential. Connecting a connector that already has an account MUST succeed only
+  when the service reports the same account, the new credential then replacing the old; a
+  different account, an account the connector cannot identify, or a new key while one is stored
+  MUST be refused, naming the current account, with the new credential discarded and nothing
+  changed, until the maintainer disconnects the current one. In this phase, accounts live in a development vault, in the operating
   system's keychain, and their records in the development data directory, which installed plugins
   never use (constitution v2.4.0); accounts for installed plugins arrive with installation in
   Phase 3.
@@ -491,8 +522,8 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   connector or widget loads or is approved: invalid connector (credential declaration, header,
   sign-in addresses), credential needs HTTPS, account use not declared, contract too old, needs a
   new approval (credential, access, destination or header), approval changed; and in the tool:
-  sign-in failed (state, code, time limit, the service's error), key refused, keychain
-  unavailable, no app configured.
+  sign-in failed (state, code, time limit, the service's error), another account connected, key
+  refused, keychain unavailable, no app configured.
 - **FR-019**: The hostile suite MUST gain one case per rule, each run with an account connected
   through the test sign-in service: looking for the credential (FR-008), a destination that sends
   it back (FR-008), a second destination (FR-007), values that try to add a header or name the
