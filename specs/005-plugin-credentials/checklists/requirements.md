@@ -45,9 +45,9 @@
   1. A widget declares whether it uses a connector's account (FR-003), so a widget that only
      shows public data never acts as the user even when an account is connected (least
      privilege, Principle II). The description had every widget granted the connector use it.
-  2. GitHub's account asks for read access to the repositories the user picks (FR-015), after a
-     note that a classic OAuth app reads private repositories only with full access to all of
-     them; the plan picks the kind of GitHub app.
+  2. No GitHub account in this feature (FR-015, planning session): GitHub's browser-redirect flow
+     needs a client secret and the device flow was left out, so the catalog's GitHub connector
+     stays public-only and the example uses a development connector (FR-020).
   3. A redirect carries the credential only to a host it is for, and drops it for another host of
      the connector (FR-007). The description said "never past a redirect (already refused)", but
      feature 003 follows redirects to the connector's own hosts.
