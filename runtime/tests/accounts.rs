@@ -40,7 +40,11 @@ impl Setup {
         match self
             .world
             .runtime
-            .connect_account("local/notes", Some("dashboard-dev"), &self.service.browser())
+            .connect_account(
+                "local/notes",
+                Some("dashboard-dev"),
+                &self.service.browser(),
+            )
             .unwrap_or_else(|error| panic!("signing in: {error}"))
         {
             Connected::New(account) | Connected::Again(account) => account,
@@ -49,7 +53,10 @@ impl Setup {
 
     /// Fails when a secret of the service is in the data directory, the grant record or `outputs`.
     fn scan(&self, outputs: &[(&str, String)]) {
-        let outputs: Vec<(&str, &str)> = outputs.iter().map(|(name, text)| (*name, text.as_str())).collect();
+        let outputs: Vec<(&str, &str)> = outputs
+            .iter()
+            .map(|(name, text)| (*name, text.as_str()))
+            .collect();
         signin::scan(&[self.world.data.path()], &outputs, &self.service.secrets());
     }
 }
@@ -79,11 +86,18 @@ fn private_notes() {
     let package = fixture("private-notes");
     let plugin = setup.world.approve_and_load(&package);
     let update = plugin.update("{}");
-    let data = update.result.as_ref().unwrap_or_else(|error| panic!("update: {error}")).clone();
+    let data = update
+        .result
+        .as_ref()
+        .unwrap_or_else(|error| panic!("update: {error}"))
+        .clone();
     assert_eq!(data["notes"].as_array().unwrap().len(), 2, "{data}");
     let render = plugin.render("{}");
     let content = render.result.as_ref().unwrap().clone();
-    assert!(titles(&content).contains(&"Ada's own note".to_owned()), "{content}");
+    assert!(
+        titles(&content).contains(&"Ada's own note".to_owned()),
+        "{content}"
+    );
 
     // The request log: the host's own token and identity requests, and the call as the account
     let entries = setup.world.runtime.read_requests(100, None).unwrap();
@@ -99,7 +113,11 @@ fn private_notes() {
         .expect("the widget's call");
     assert_eq!(call.account.as_deref(), Some("ada"));
     let notes_request = setup.service.requests_to("/notes");
-    assert!(notes_request[0].header("authorization").is_some_and(|value| value.starts_with("Bearer at_")));
+    assert!(
+        notes_request[0]
+            .header("authorization")
+            .is_some_and(|value| value.starts_with("Bearer at_"))
+    );
 
     // Disconnecting: the kept data read as the account goes at once, the token is revoked
     let gone = setup
@@ -116,10 +134,27 @@ fn private_notes() {
     // Loaded again, the optional credential is not sent and only the public notes come
     let plugin = setup.world.load(&package);
     let render = plugin.render("{}");
-    assert_eq!(render.result.as_ref().unwrap()["text"], json!("No notes yet"));
+    assert_eq!(
+        render.result.as_ref().unwrap()["text"],
+        json!("No notes yet")
+    );
     let update = plugin.update("{}");
-    assert_eq!(update.result.as_ref().unwrap()["notes"].as_array().unwrap().len(), 1);
-    assert!(setup.service.requests_to("/notes").last().unwrap().header("authorization").is_none());
+    assert_eq!(
+        update.result.as_ref().unwrap()["notes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        setup
+            .service
+            .requests_to("/notes")
+            .last()
+            .unwrap()
+            .header("authorization")
+            .is_none()
+    );
 
     setup.scan(&[
         ("updates and renders", format!("{update:?} {render:?}")),
@@ -138,7 +173,11 @@ fn a_key_is_sent_as_its_connector_says() {
         "header": "Authorization", "scheme": "Bearer"
     });
     setup.world.write_connector("keyed", &keyed);
-    setup.world.runtime.connect_key("local/keyed", "k3y-123_abc").unwrap();
+    setup
+        .world
+        .runtime
+        .connect_key("local/keyed", "k3y-123_abc")
+        .unwrap();
     let manifest = json!({
         "manifest_version": 1, "id": "local/keyed-probe", "version": "0.1.0", "author": "A",
         "permissions": [],

@@ -134,7 +134,9 @@ mod tests {
     /// Sends `request` to `port` and returns the response, if one comes.
     fn send(port: u16, request: &[u8]) -> String {
         let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
-        stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
         stream.write_all(request).unwrap();
         let mut response = String::new();
         let _ = stream.read_to_string(&mut response);
@@ -176,7 +178,10 @@ mod tests {
         );
         assert!(page.starts_with("HTTP/1.1 200"), "{page}");
         assert!(page.contains("Cache-Control: no-store"), "{page}");
-        assert!(!page.contains("c0de") && !page.contains("<script>"), "{page}");
+        assert!(
+            !page.contains("c0de") && !page.contains("<script>"),
+            "{page}"
+        );
         assert_eq!(
             waiter.join().unwrap().as_deref(),
             Some("code=c0de&state=<script>x</script>")

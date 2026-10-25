@@ -171,7 +171,9 @@ pub(crate) struct Vault {
 
 impl fmt::Debug for Vault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Vault").field("service", &self.service).finish()
+        f.debug_struct("Vault")
+            .field("service", &self.service)
+            .finish()
     }
 }
 
@@ -190,9 +192,9 @@ impl<T> Pending<T> {
                 "it did not answer within {} s",
                 bound.as_secs()
             ))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(VaultError::Unavailable(
-                "its thread stopped".to_owned(),
-            )),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(VaultError::Unavailable("its thread stopped".to_owned()))
+            }
         }
     }
 }
@@ -279,7 +281,9 @@ impl Vault {
         });
         if self.jobs.send(job).is_err() {
             let (sender, answer) = mpsc::sync_channel(1);
-            let _ = sender.send(Err(VaultError::Unavailable("its thread stopped".to_owned())));
+            let _ = sender.send(Err(VaultError::Unavailable(
+                "its thread stopped".to_owned(),
+            )));
             return Pending { answer };
         }
         Pending { answer }
@@ -327,8 +331,14 @@ mod tests {
         let digest = Sha256::digest(b"local/notes\n/home/ada/notes.json");
         let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
         assert_eq!(user, format!("5f0c:{hex}"));
-        assert_ne!(user, entry_user("5f0c", "local/notes", "/home/ada/other.json"));
-        assert_ne!(user, entry_user("9a1b", "local/notes", "/home/ada/notes.json"));
+        assert_ne!(
+            user,
+            entry_user("5f0c", "local/notes", "/home/ada/other.json")
+        );
+        assert_ne!(
+            user,
+            entry_user("9a1b", "local/notes", "/home/ada/notes.json")
+        );
     }
 
     #[test]
@@ -344,7 +354,10 @@ mod tests {
         vault.write("b", &key).within(WAIT).unwrap();
         assert_eq!(vault.read("b").within(WAIT).unwrap(), key);
         // An account without a refresh token is kept as one
-        vault.write("a", &account(TOKEN, None)).within(WAIT).unwrap();
+        vault
+            .write("a", &account(TOKEN, None))
+            .within(WAIT)
+            .unwrap();
         assert_eq!(vault.read("a").within(WAIT).unwrap(), account(TOKEN, None));
         assert_eq!(vault.delete("a").within(WAIT), Ok(true));
         assert_eq!(vault.delete("a").within(WAIT), Ok(false));
@@ -390,7 +403,10 @@ mod tests {
     #[test]
     fn a_locked_or_failing_keychain_is_unavailable() {
         let vault = vault();
-        vault.write("a", &account(TOKEN, None)).within(WAIT).unwrap();
+        vault
+            .write("a", &account(TOKEN, None))
+            .within(WAIT)
+            .unwrap();
         vault.fail_next("a", store::Failure::NoStorageAccess);
         assert!(matches!(
             vault.read("a").within(WAIT),
@@ -410,7 +426,10 @@ mod tests {
     #[test]
     fn errors_never_hold_the_secret() {
         let vault = vault();
-        vault.write("a", &account(TOKEN, None)).within(WAIT).unwrap();
+        vault
+            .write("a", &account(TOKEN, None))
+            .within(WAIT)
+            .unwrap();
         for failure in [
             store::Failure::BadEncoding(TOKEN.as_bytes().to_vec()),
             store::Failure::BadDataFormat(TOKEN.as_bytes().to_vec()),
@@ -422,7 +441,10 @@ mod tests {
                 assert!(!text.contains("7f3a9c1e"), "{text}");
             }
         }
-        vault.write_raw("b", format!("{{\"access\": \"{TOKEN}\", \"extra\": 1}}").into_bytes());
+        vault.write_raw(
+            "b",
+            format!("{{\"access\": \"{TOKEN}\", \"extra\": 1}}").into_bytes(),
+        );
         let error = vault.read("b").within(WAIT).unwrap_err();
         assert_eq!(error, VaultError::Unreadable);
         assert!(!format!("{error} {error:?}").contains(TOKEN));

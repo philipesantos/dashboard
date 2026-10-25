@@ -156,9 +156,7 @@ impl ConnectorTable {
     ) -> Option<ConnectorTable> {
         let executors: BTreeMap<String, Executor> = loaded
             .iter()
-            .filter(|(id, _, connector)| {
-                entry.uses_account(id) && connector.credential().is_some()
-            })
+            .filter(|(id, _, connector)| entry.uses_account(id) && connector.credential().is_some())
             .filter_map(|(id, origin, connector)| {
                 let request = manifest.connector(id).filter(|request| request.account)?;
                 Some((
@@ -186,7 +184,10 @@ impl ConnectorTable {
                 let binding = executor.account.as_ref()?;
                 Some((
                     id.clone(),
-                    binding.account.as_ref().map(|account| account.account_id.clone()),
+                    binding
+                        .account
+                        .as_ref()
+                        .map(|account| account.account_id.clone()),
                 ))
             })
             .collect()
@@ -200,7 +201,7 @@ impl ConnectorTable {
 }
 
 /// How a run's connector calls went, for the update report.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CallCounts {
     pub calls: u64,
     pub not_granted: u64,
@@ -208,6 +209,8 @@ pub struct CallCounts {
     pub failed: u64,
     /// Bytes of response bodies received, redirects included.
     pub received_bytes: u64,
+    /// The connectors whose calls answered `account-not-connected`, sorted, each once.
+    pub needs_connecting: Vec<String>,
 }
 
 /// The call limits of one run of `update` or `render`, and its request log entries: what both
@@ -240,15 +243,31 @@ impl RunLog {
     }
 
     /// Logs a call's entries, or counts it in the summary when it was past the limit.
-    fn record(&mut self, past: bool, answer: &Answer, entries: Vec<requests::Entry>) {
+    fn record(
+        &mut self,
+        past: bool,
+        connector: &str,
+        answer: &Answer,
+        entries: Vec<requests::Entry>,
+    ) {
         self.counts.calls += 1;
         match answer {
             Answer::Ok(_) => {}
             Answer::NotGranted => self.counts.not_granted += 1,
-            Answer::Refused(..)
-            | Answer::AccountNotConnected(_)
-            | Answer::SubscriptionRequired => self.counts.refused += 1,
+            Answer::Refused(..) | Answer::AccountNotConnected(_) | Answer::SubscriptionRequired => {
+                self.counts.refused += 1
+            }
             Answer::Failed(..) => self.counts.failed += 1,
+        }
+        if let Answer::AccountNotConnected(_) = answer
+            && let Err(at) = self
+                .counts
+                .needs_connecting
+                .binary_search_by(|id| id.as_str().cmp(connector))
+        {
+            self.counts
+                .needs_connecting
+                .insert(at, connector.to_owned());
         }
         self.counts.received_bytes += entries
             .iter()
@@ -311,7 +330,7 @@ impl RunLog {
         let past = self.count();
         let answer = Answer::NotGranted;
         let entry = entry(&self.plugin, connector, operation, &[], &answer);
-        self.record(past, &answer, vec![entry]);
+        self.record(past, connector, &answer, vec![entry]);
         answer
     }
 }
@@ -418,7 +437,7 @@ impl Calls {
         // Step 0
         let past = run.count();
         let (answer, entries) = self.answer(connector, operation, &arguments, past);
-        run.record(past, &answer, entries);
+        run.record(past, connector, &answer, entries);
         answer
     }
 
@@ -512,7 +531,13 @@ impl Calls {
         let mut refreshed = false;
         let credential = match (&binding, &declared_credential) {
             (Some(binding), Some(declared)) => {
-                match self.credential(connector_id, binding, declared, &mut refreshed, &mut host_entries) {
+                match self.credential(
+                    connector_id,
+                    binding,
+                    declared,
+                    &mut refreshed,
+                    &mut host_entries,
+                ) {
                     Ok(credential) => credential,
                     Err(stop) => {
                         let (answer, mut entries) = logged(stop, kind);
@@ -561,28 +586,29 @@ impl Calls {
                 unreachable!("only an account call carries a credential");
             };
             let mut retried = None;
-            if !refreshed && declared.account().is_some() {
-                if let Ok(Some(credential)) = self.refreshed_credential(
+            if !refreshed
+                && declared.account().is_some()
+                && let Ok(Some(credential)) = self.refreshed_credential(
                     connector_id,
                     binding,
                     declared,
                     &mut refreshed,
                     &mut host_entries,
-                ) {
-                    let mut again = resend.clone();
-                    again.credential = Some(credential);
-                    let Some(session) = &self.session else {
-                        unreachable!("an update has a session");
-                    };
-                    let second = session.send(
-                        &connector,
-                        operation,
-                        again,
-                        self.deadline,
-                        &mut self.update_bytes_left,
-                    );
-                    retried = Some(second);
-                }
+                )
+            {
+                let mut again = resend.clone();
+                again.credential = Some(credential);
+                let Some(session) = &self.session else {
+                    unreachable!("an update has a session");
+                };
+                let second = session.send(
+                    &connector,
+                    operation,
+                    again,
+                    self.deadline,
+                    &mut self.update_bytes_left,
+                );
+                retried = Some(second);
             }
             if let Some(second) = retried {
                 let mut hops = std::mem::take(&mut exchange.hops);
@@ -606,10 +632,9 @@ impl Calls {
             (Some(stop), _) => stop,
             (None, Ok(response)) => {
                 // Step 11b: a status that means a paid plan is missing
-                if declared_credential
-                    .as_ref()
-                    .is_some_and(|declared| binding.is_some() && declared.subscription_required().contains(&response.status))
-                {
+                if declared_credential.as_ref().is_some_and(|declared| {
+                    binding.is_some() && declared.subscription_required().contains(&response.status)
+                }) {
                     Answer::SubscriptionRequired
                 } else {
                     Answer::Ok(response)
@@ -647,10 +672,12 @@ impl Calls {
                         detail: detail.clone(),
                     },
                     (Ok(_), true, Answer::NotGranted) => requests::Outcome::not_granted(),
-                    (Ok(_), true, Answer::AccountNotConnected(detail)) => requests::Outcome::Refused {
-                        refused: ACCOUNT_NOT_CONNECTED.to_owned(),
-                        detail: detail.clone(),
-                    },
+                    (Ok(_), true, Answer::AccountNotConnected(detail)) => {
+                        requests::Outcome::Refused {
+                            refused: ACCOUNT_NOT_CONNECTED.to_owned(),
+                            detail: detail.clone(),
+                        }
+                    }
                     (Ok(status), _, _) => requests::Outcome::Status { status: *status },
                 };
                 let account = hop
@@ -777,8 +804,17 @@ impl Calls {
     }
 
     /// The account's vault entry, read once per run; a missing one marks the account.
-    fn stored(&mut self, id: &str, binding: &AccountBinding, snapshot: &Account) -> Result<Stored, Stop> {
-        if let Some(stored) = self.account.as_ref().and_then(|access| access.secrets.get(id)) {
+    fn stored(
+        &mut self,
+        id: &str,
+        binding: &AccountBinding,
+        snapshot: &Account,
+    ) -> Result<Stored, Stop> {
+        if let Some(stored) = self
+            .account
+            .as_ref()
+            .and_then(|access| access.secrets.get(id))
+        {
             return Ok(stored.clone());
         }
         let user = self.vault_user(id, binding)?;
@@ -840,7 +876,9 @@ impl Calls {
         host_entries: &mut Vec<requests::Entry>,
     ) -> Result<Option<RequestCredential>, Stop> {
         let Some(snapshot) = binding.account.clone() else {
-            return Err(Answer::AccountNotConnected(format!("no account is connected to {id}")));
+            return Err(Answer::AccountNotConnected(format!(
+                "no account is connected to {id}"
+            )));
         };
         if *refreshed {
             return Err(Answer::AccountNotConnected(format!(
@@ -850,7 +888,9 @@ impl Calls {
         *refreshed = true;
         let user = self.vault_user(id, binding)?;
         let Some(account_decl) = declared.account().cloned() else {
-            return Err(Answer::AccountNotConnected(format!("a key of {id} cannot be refreshed")));
+            return Err(Answer::AccountNotConnected(format!(
+                "a key of {id} cannot be refreshed"
+            )));
         };
         let (Some(access), Some(session)) = (&self.account, &self.session) else {
             unreachable!("an account call in an update has its access and its session");
@@ -861,68 +901,96 @@ impl Calls {
         let max_bytes = self.limits.max_sign_in_response_bytes;
         let plugin = self.plugin.to_string();
         let cached = access.secrets.get(id).cloned();
-        let result = access.store.with_account_locked(id, &binding.origin, |current| {
-            let Some(current) = current.filter(|current| current.account_id == snapshot.account_id) else {
-                return Ok((Err(format!("the account of {id} was disconnected or replaced")), None));
-            };
-            let stored = match vault.read(&user).within(wait) {
-                Ok(stored) => stored,
-                Err(error) => return Ok((Err(error.to_string()), None)),
-            };
-            // Another process refreshed since this run read the secret: use what it kept
-            if current.refreshed_at_ms > snapshot.refreshed_at_ms && Some(&stored) != cached.as_ref() {
-                return Ok((Ok(stored), None));
-            }
-            let mut failed = current.clone();
-            failed.needs_connecting = Some(crate::accounts::NeedsConnecting {
-                reason: Reason::RefreshFailed,
-                at_ms: now_ms(),
+        let result = access
+            .store
+            .with_account_locked(id, &binding.origin, |current| {
+                let Some(current) =
+                    current.filter(|current| current.account_id == snapshot.account_id)
+                else {
+                    return Ok((
+                        Err(format!("the account of {id} was disconnected or replaced")),
+                        None,
+                    ));
+                };
+                let stored = match vault.read(&user).within(wait) {
+                    Ok(stored) => stored,
+                    Err(error) => return Ok((Err(error.to_string()), None)),
+                };
+                // Another process refreshed since this run read the secret: use what it kept
+                if current.refreshed_at_ms > snapshot.refreshed_at_ms
+                    && Some(&stored) != cached.as_ref()
+                {
+                    return Ok((Ok(stored), None));
+                }
+                let mut failed = current.clone();
+                failed.needs_connecting = Some(crate::accounts::NeedsConnecting {
+                    reason: Reason::RefreshFailed,
+                    at_ms: now_ms(),
+                });
+                let Stored::Account {
+                    refresh: Some(refresh_token),
+                    ..
+                } = &stored
+                else {
+                    return Ok((
+                        Err(format!("the account of {id} has no refresh token")),
+                        Some(failed),
+                    ));
+                };
+                let Some(client) = &current.client else {
+                    return Ok((
+                        Err(format!("the account of {id} has no client registration")),
+                        Some(failed),
+                    ));
+                };
+                let started = now_ms();
+                let answer = session.host_post(
+                    account_decl.token(),
+                    &[
+                        ("grant_type", "refresh_token"),
+                        ("refresh_token", refresh_token.expose()),
+                        ("client_id", &client.client_id),
+                    ],
+                    deadline,
+                    max_bytes,
+                );
+                host_entries.push(host_entry(
+                    &plugin,
+                    id,
+                    "refresh",
+                    account_decl.token(),
+                    started,
+                    &answer,
+                ));
+                let tokens = match answer {
+                    Ok(answer) => {
+                        signin::tokens(answer.status, &answer.body, &[refresh_token.expose()])
+                    }
+                    Err(failure) => Err(failure.detail),
+                };
+                let tokens = match tokens {
+                    Ok(tokens) => tokens,
+                    Err(why) => return Ok((Err(why), Some(failed))),
+                };
+                let renewed = Stored::Account {
+                    access: tokens.access,
+                    refresh: tokens.refresh.or_else(|| Some(refresh_token.clone())),
+                };
+                // The lock is held until the vault answered: the old refresh token may be dead now
+                if let Err(error) = vault.write(&user, &renewed).within(wait) {
+                    return Ok((Err(error.to_string()), Some(failed)));
+                }
+                let now = now_ms();
+                let mut updated = current.clone();
+                updated.refreshed_at_ms = now;
+                updated.expires_at_ms = tokens
+                    .expires_in_s
+                    .map(|seconds| now.saturating_add(seconds.saturating_mul(1000)));
+                if !tokens.scopes.is_empty() {
+                    updated.access_reported = tokens.scopes;
+                }
+                Ok((Ok(renewed), Some(updated)))
             });
-            let Stored::Account { refresh: Some(refresh_token), .. } = &stored else {
-                return Ok((Err(format!("the account of {id} has no refresh token")), Some(failed)));
-            };
-            let Some(client) = &current.client else {
-                return Ok((Err(format!("the account of {id} has no client registration")), Some(failed)));
-            };
-            let started = now_ms();
-            let answer = session.host_post(
-                account_decl.token(),
-                &[
-                    ("grant_type", "refresh_token"),
-                    ("refresh_token", refresh_token.expose()),
-                    ("client_id", &client.client_id),
-                ],
-                deadline,
-                max_bytes,
-            );
-            host_entries.push(host_entry(&plugin, id, "refresh", account_decl.token(), started, &answer));
-            let tokens = match answer {
-                Ok(answer) => signin::tokens(answer.status, &answer.body, &[refresh_token.expose()]),
-                Err(failure) => Err(failure.detail),
-            };
-            let tokens = match tokens {
-                Ok(tokens) => tokens,
-                Err(why) => return Ok((Err(why), Some(failed))),
-            };
-            let renewed = Stored::Account {
-                access: tokens.access,
-                refresh: tokens.refresh.or_else(|| Some(refresh_token.clone())),
-            };
-            // The lock is held until the vault answered: the old refresh token may be dead now
-            if let Err(error) = vault.write(&user, &renewed).within(wait) {
-                return Ok((Err(error.to_string()), Some(failed)));
-            }
-            let now = now_ms();
-            let mut updated = current.clone();
-            updated.refreshed_at_ms = now;
-            updated.expires_at_ms = tokens
-                .expires_in_s
-                .map(|seconds| now.saturating_add(seconds.saturating_mul(1000)));
-            if !tokens.scopes.is_empty() {
-                updated.access_reported = tokens.scopes;
-            }
-            Ok((Ok(renewed), Some(updated)))
-        });
         match result {
             Ok(Ok(stored)) => {
                 if let Some(access) = &mut self.account {
@@ -963,7 +1031,12 @@ impl Calls {
                 match (stored, operation, &self.session) {
                     (Some(stored), Some(operation), Some(session)) => {
                         match (
-                            network::build_request(connector, operation, &BTreeMap::new(), &self.limits),
+                            network::build_request(
+                                connector,
+                                operation,
+                                &BTreeMap::new(),
+                                &self.limits,
+                            ),
                             request_credential(declared, &stored),
                         ) {
                             (Ok(mut request), Ok(credential)) => {
@@ -977,7 +1050,8 @@ impl Calls {
                                     self.deadline,
                                     &mut self.update_bytes_left,
                                 );
-                                let status = exchange.result.as_ref().map(|response| response.status);
+                                let status =
+                                    exchange.result.as_ref().map(|response| response.status);
                                 host_entries.push(identity_entry(
                                     id,
                                     &url,
@@ -1106,9 +1180,9 @@ pub(crate) fn host_entry(
         },
         sent_bytes: answer.as_ref().map_or(0, |answer| answer.sent_bytes),
         received_bytes: answer.as_ref().map_or(0, |answer| answer.body.len() as u64),
-        duration_ms: answer
-            .as_ref()
-            .map_or(0, |answer| u64::try_from(answer.duration.as_millis()).unwrap_or(u64::MAX)),
+        duration_ms: answer.as_ref().map_or(0, |answer| {
+            u64::try_from(answer.duration.as_millis()).unwrap_or(u64::MAX)
+        }),
         redirect_of: None,
         summary: None,
         account: None,
@@ -1619,8 +1693,16 @@ mod tests {
         )
         .unwrap();
         let loaded = vec![
-            ("local/notes".to_owned(), NOTES_ORIGIN.to_owned(), notes(required)),
-            ("local/echo".to_owned(), "/dev/local/echo.json".to_owned(), echo("local/echo")),
+            (
+                "local/notes".to_owned(),
+                NOTES_ORIGIN.to_owned(),
+                notes(required),
+            ),
+            (
+                "local/echo".to_owned(),
+                "/dev/local/echo.json".to_owned(),
+                echo("local/echo"),
+            ),
         ];
         let states: Vec<ConnectorState> = loaded
             .iter()
@@ -1693,7 +1775,12 @@ mod tests {
                             },
                         )
                         .within(std::time::Duration::from_secs(5))
-                        .map_err(|error| crate::RuntimeError::new(crate::ErrorKind::KeychainUnavailable, error.to_string()))
+                        .map_err(|error| {
+                            crate::RuntimeError::new(
+                                crate::ErrorKind::KeychainUnavailable,
+                                error.to_string(),
+                            )
+                        })
                 })
                 .unwrap();
             match connected {
@@ -1753,28 +1840,41 @@ mod tests {
     #[test]
     fn a_connector_is_in_the_account_table_or_the_other_never_both() {
         let fixture = account_fixture(false);
-        let entry = fixture.grants.entry(fixture.manifest.id()).unwrap().unwrap();
+        let entry = fixture
+            .grants
+            .entry(fixture.manifest.id())
+            .unwrap()
+            .unwrap();
         let plain: Vec<(String, Arc<Connector>)> = fixture
             .loaded
             .iter()
             .map(|(id, _, connector)| (id.clone(), Arc::clone(connector)))
             .collect();
         assert_eq!(
-            ConnectorTable::build(&fixture.manifest, &plain, &entry).unwrap().keys(),
+            ConnectorTable::build(&fixture.manifest, &plain, &entry)
+                .unwrap()
+                .keys(),
             ["local/echo"]
         );
         assert_eq!(fixture.account_table().unwrap().keys(), ["local/notes"]);
         // wrong-interface: through accounts, a connector declared without an account misses
         let (mut calls, mut run) = fixture.calls();
-        assert_eq!(calls.call(&mut run, "local/echo", "get", text("a")), Answer::NotGranted);
+        assert_eq!(
+            calls.call(&mut run, "local/echo", "get", text("a")),
+            Answer::NotGranted
+        );
     }
 
     #[test]
-    fn without_an_account_a_required_credential_answers_not_connected_and_an_optional_one_sends_without() {
+    fn without_an_account_a_required_credential_answers_not_connected_and_an_optional_one_sends_without()
+     {
         let fixture = account_fixture(true);
         let (mut calls, mut run) = fixture.calls();
         let answer = calls.call(&mut run, "local/notes", "get", text("a"));
-        assert!(account_not_connected(&answer).contains("required"), "{answer:?}");
+        assert!(
+            account_not_connected(&answer).contains("required"),
+            "{answer:?}"
+        );
 
         let fixture = account_fixture(false);
         let (mut calls, mut run) = fixture.calls();
@@ -1792,7 +1892,10 @@ mod tests {
         let (mut calls, mut run) = fixture.calls();
         fixture.connect(AccountFixture::read_notes());
         let answer = calls.call(&mut run, "local/notes", "get", text("a"));
-        assert!(account_not_connected(&answer).contains("no account"), "{answer:?}");
+        assert!(
+            account_not_connected(&answer).contains("no account"),
+            "{answer:?}"
+        );
         // Linked again, it is used
         let (mut calls, mut run) = fixture.calls();
         assert!(matches!(
@@ -1808,10 +1911,19 @@ mod tests {
         let (mut calls, mut run) = fixture.calls();
         fixture
             .store()
-            .mark_needs_connecting("local/notes", NOTES_ORIGIN, &account.account_id, Reason::Refused, 1)
+            .mark_needs_connecting(
+                "local/notes",
+                NOTES_ORIGIN,
+                &account.account_id,
+                Reason::Refused,
+                1,
+            )
             .unwrap();
         let answer = calls.call(&mut run, "local/notes", "get", text("a"));
-        assert!(account_not_connected(&answer).contains("connected again"), "{answer:?}");
+        assert!(
+            account_not_connected(&answer).contains("connected again"),
+            "{answer:?}"
+        );
 
         let fixture = account_fixture(true);
         fixture.connect(AccountFixture::read_notes());
@@ -1821,7 +1933,10 @@ mod tests {
             .disconnect("local/notes", NOTES_ORIGIN, |_, _| Ok(()))
             .unwrap();
         let answer = calls.call(&mut run, "local/notes", "get", text("a"));
-        assert!(account_not_connected(&answer).contains("disconnected"), "{answer:?}");
+        assert!(
+            account_not_connected(&answer).contains("disconnected"),
+            "{answer:?}"
+        );
     }
 
     #[test]
@@ -1830,8 +1945,15 @@ mod tests {
         fixture.connect(Vec::new());
         let (mut calls, mut run) = fixture.calls();
         let answer = calls.call(&mut run, "local/notes", "get", text("a"));
-        assert!(account_not_connected(&answer).contains("notes read"), "{answer:?}");
-        let account = fixture.store().get("local/notes", NOTES_ORIGIN).unwrap().unwrap();
+        assert!(
+            account_not_connected(&answer).contains("notes read"),
+            "{answer:?}"
+        );
+        let account = fixture
+            .store()
+            .get("local/notes", NOTES_ORIGIN)
+            .unwrap()
+            .unwrap();
         assert_eq!(account.needs_connecting.unwrap().reason, Reason::LessAccess);
     }
 
@@ -1839,7 +1961,11 @@ mod tests {
     fn a_credential_missing_from_the_keychain_marks_the_account() {
         let fixture = account_fixture(true);
         let account = fixture.connect(AccountFixture::read_notes());
-        let user = entry_user(&fixture.store().vault_id().unwrap(), "local/notes", NOTES_ORIGIN);
+        let user = entry_user(
+            &fixture.store().vault_id().unwrap(),
+            "local/notes",
+            NOTES_ORIGIN,
+        );
         fixture
             .vault
             .delete(&user)
@@ -1847,10 +1973,20 @@ mod tests {
             .unwrap();
         let (mut calls, mut run) = fixture.calls();
         let answer = calls.call(&mut run, "local/notes", "get", text("a"));
-        assert!(account_not_connected(&answer).contains("keychain"), "{answer:?}");
-        let marked = fixture.store().get("local/notes", NOTES_ORIGIN).unwrap().unwrap();
+        assert!(
+            account_not_connected(&answer).contains("keychain"),
+            "{answer:?}"
+        );
+        let marked = fixture
+            .store()
+            .get("local/notes", NOTES_ORIGIN)
+            .unwrap()
+            .unwrap();
         assert_eq!(marked.account_id, account.account_id);
-        assert_eq!(marked.needs_connecting.unwrap().reason, Reason::MissingFromKeychain);
+        assert_eq!(
+            marked.needs_connecting.unwrap().reason,
+            Reason::MissingFromKeychain
+        );
     }
 
     /// keychain_locked_call: a keychain that refuses access fails the call as unavailable,
@@ -1859,11 +1995,19 @@ mod tests {
     fn a_locked_keychain_fails_the_call_and_sends_nothing() {
         let fixture = account_fixture(false);
         fixture.connect(AccountFixture::read_notes());
-        let user = entry_user(&fixture.store().vault_id().unwrap(), "local/notes", NOTES_ORIGIN);
-        fixture.vault.fail_next(&user, crate::vault::Failure::NoStorageAccess);
+        let user = entry_user(
+            &fixture.store().vault_id().unwrap(),
+            "local/notes",
+            NOTES_ORIGIN,
+        );
+        fixture
+            .vault
+            .fail_next(&user, crate::vault::Failure::NoStorageAccess);
         let (mut calls, mut run) = fixture.calls();
         match calls.call(&mut run, "local/notes", "get", text("a")) {
-            Answer::Failed(Rule::Unavailable, detail) => assert!(detail.contains("keychain"), "{detail}"),
+            Answer::Failed(Rule::Unavailable, detail) => {
+                assert!(detail.contains("keychain"), "{detail}")
+            }
             other => panic!("expected the keychain to be unavailable, got {other:?}"),
         }
     }

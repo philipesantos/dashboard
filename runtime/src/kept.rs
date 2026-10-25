@@ -82,7 +82,7 @@ pub(crate) enum Outcome {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Found {
     /// Data that matches the package and its approval, or `None` when there is none yet.
-    Current(Option<Kept>),
+    Current(Option<Box<Kept>>),
     /// A file that no longer matched, now deleted: why.
     Discarded(String),
     /// A file that cannot be read, counted as no data: why. It stays for the user to look at,
@@ -143,7 +143,7 @@ impl KeptStore {
             None
         };
         match why {
-            None => Found::Current(Some(kept)),
+            None => Found::Current(Some(Box::new(kept))),
             Some(why) => {
                 let _ = fs::remove_file(&path);
                 Found::Discarded(why.to_owned())
@@ -183,7 +183,11 @@ impl KeptStore {
 
     /// Removes every kept data file fetched as the account `account_id` of `connector`, at once
     /// (FR-013): the ids of the widgets whose data went.
-    pub(crate) fn discard_account(&self, connector: &str, account_id: &str) -> io::Result<Vec<String>> {
+    pub(crate) fn discard_account(
+        &self,
+        connector: &str,
+        account_id: &str,
+    ) -> io::Result<Vec<String>> {
         let entries = match fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -195,7 +199,11 @@ impl KeptStore {
             let Ok(Some(kept)) = self.read_file(&path) else {
                 continue;
             };
-            if kept.accounts.get(connector).is_some_and(|fetched| fetched.as_deref() == Some(account_id)) {
+            if kept
+                .accounts
+                .get(connector)
+                .is_some_and(|fetched| fetched.as_deref() == Some(account_id))
+            {
                 fs::remove_file(&path)?;
                 discarded.push(kept.id);
             }
@@ -234,7 +242,7 @@ impl KeptStore {
     /// The file of `key`, current, or a new one under `key`'s approval.
     fn current(&self, key: &Key) -> Kept {
         match self.read(key) {
-            Found::Current(Some(kept)) => kept,
+            Found::Current(Some(kept)) => *kept,
             _ => Kept {
                 id: key.id.clone(),
                 origin: key.origin.clone(),
@@ -476,7 +484,7 @@ mod tests {
             panic!("kept data")
         };
         assert_eq!(
-            render_document(json!({"owner": "rust-lang"}), kept.as_ref()),
+            render_document(json!({"owner": "rust-lang"}), kept.as_deref()),
             json!({
                 "config": {"owner": "rust-lang"},
                 "data": {"releases": []},

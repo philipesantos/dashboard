@@ -35,7 +35,9 @@ use ureq::unversioned::transport::DefaultConnector;
 
 use zeroize::Zeroizing;
 
-use crate::connector::{ArgValue, Connector, Credential, Format, Method, Operation, Origin, Template};
+use crate::connector::{
+    ArgValue, Connector, Credential, Format, Method, Operation, Origin, Template,
+};
 use crate::limits::Limits;
 use crate::vault::Secret;
 
@@ -170,7 +172,10 @@ pub(crate) const NOT_A_BEARER_TOKEN: &str =
 impl RequestCredential {
     /// The credential of `declaration` with `secret`, refused unless every character of it is
     /// in the bearer-token set, which makes the forms of [`echo_forms`] complete.
-    pub(crate) fn new(declaration: &Credential, secret: &Secret) -> Result<RequestCredential, &'static str> {
+    pub(crate) fn new(
+        declaration: &Credential,
+        secret: &Secret,
+    ) -> Result<RequestCredential, &'static str> {
         if !is_bearer_token(secret.expose()) {
             return Err(NOT_A_BEARER_TOKEN);
         }
@@ -711,7 +716,9 @@ impl Session {
         if let Some(credential) = &request.credential {
             let carried = credential.is_in(&body)
                 || headers.iter().any(|(_, value)| {
-                    value.as_deref().is_some_and(|value| credential.is_in(value.as_bytes()))
+                    value
+                        .as_deref()
+                        .is_some_and(|value| credential.is_in(value.as_bytes()))
                 })
                 || location
                     .as_deref()
@@ -891,7 +898,9 @@ fn sent_bytes(request: &Request) -> u64 {
         .credential
         .as_ref()
         .filter(|credential| credential.applies_to(&request.url))
-        .map_or(0, |credential| credential.header.len() + credential.value.expose().len());
+        .map_or(0, |credential| {
+            credential.header.len() + credential.value.expose().len()
+        });
     (line + headers + credential + request.body.as_ref().map_or(0, Vec::len)) as u64
 }
 
@@ -1265,14 +1274,25 @@ mod tests {
             .unwrap();
         let request = build_request(&echo, operation, &arguments, &Limits::default()).unwrap();
         assert!(request.credential.is_none());
-        assert!(!request.headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("authorization")));
+        assert!(
+            !request
+                .headers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        );
     }
 
     #[test]
     fn a_credential_applies_only_to_its_origins_over_https() {
         let credential = request_credential("tok3n");
-        for url in ["https://api.echo.test/v1/a", "https://API.echo.test:443/x?y=1"] {
-            assert!(credential.applies_to(&url::Url::parse(url).unwrap()), "{url}");
+        for url in [
+            "https://api.echo.test/v1/a",
+            "https://API.echo.test:443/x?y=1",
+        ] {
+            assert!(
+                credential.applies_to(&url::Url::parse(url).unwrap()),
+                "{url}"
+            );
         }
         for url in [
             "https://files.echo.test:8443/f",
@@ -1280,16 +1300,27 @@ mod tests {
             "http://api.echo.test/v1",
             "https://elsewhere.test/",
         ] {
-            assert!(!credential.applies_to(&url::Url::parse(url).unwrap()), "{url}");
+            assert!(
+                !credential.applies_to(&url::Url::parse(url).unwrap()),
+                "{url}"
+            );
         }
         // Carried across a redirect, each hop deciding again
         let echo = with_credential();
         let mut from = request("https://api.echo.test/v1/a", Method::Get);
         from.credential = Some(credential);
         let next = follow(&echo, &from, 302, "https://files.echo.test:8443/f").unwrap();
-        assert!(next.credential.as_ref().is_some_and(|c| !c.applies_to(&next.url)));
+        assert!(
+            next.credential
+                .as_ref()
+                .is_some_and(|c| !c.applies_to(&next.url))
+        );
         let back = follow(&echo, &next, 302, "https://api.echo.test/v1/b").unwrap();
-        assert!(back.credential.as_ref().is_some_and(|c| c.applies_to(&back.url)));
+        assert!(
+            back.credential
+                .as_ref()
+                .is_some_and(|c| c.applies_to(&back.url))
+        );
         // Counted in the bytes sent only on a hop it applies to
         let without = |request: &Request| Request {
             credential: None,
@@ -1311,7 +1342,8 @@ mod tests {
             assert!(!is_bearer_token(token), "{token:?}");
             let echo = with_credential();
             assert_eq!(
-                RequestCredential::new(echo.credential().unwrap(), &Secret::new(token.to_owned())).err(),
+                RequestCredential::new(echo.credential().unwrap(), &Secret::new(token.to_owned()))
+                    .err(),
                 Some(NOT_A_BEARER_TOKEN)
             );
         }

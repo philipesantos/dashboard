@@ -76,17 +76,17 @@ pub(crate) fn link_connectors(linker: &mut Linker<HostState>, link: Link) -> was
 /// `not-granted` to every call (`specs/005-plugin-credentials/research.md`, R9).
 pub(crate) fn link_accounts(linker: &mut Linker<HostState>, link: Link) -> wasmtime::Result<()> {
     match link {
-        Link::Real => accounts_wit::add_to_linker::<_, RealAccountsMarker>(linker, |state| {
-            RealAccounts {
+        Link::Real => {
+            accounts_wit::add_to_linker::<_, RealAccountsMarker>(linker, |state| RealAccounts {
                 run: &mut state.run,
                 calls: state.account_calls.as_mut(),
-            }
-        }),
-        Link::StandIn => {
-            accounts_wit::add_to_linker::<_, AccountsStandInMarker>(linker, |state| AccountsStandIn {
-                run: &mut state.run,
             })
         }
+        Link::StandIn => accounts_wit::add_to_linker::<_, AccountsStandInMarker>(linker, |state| {
+            AccountsStandIn {
+                run: &mut state.run,
+            }
+        }),
     }
 }
 

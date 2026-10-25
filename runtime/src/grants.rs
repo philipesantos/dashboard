@@ -26,8 +26,8 @@ use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ErrorKind, RuntimeError};
 use crate::connector::Access;
+use crate::error::{ErrorKind, RuntimeError};
 use crate::manifest::{Manifest, PluginId};
 use crate::permissions;
 use crate::records;
@@ -122,7 +122,11 @@ impl Entry {
     /// linked to it through `accounts` only when its manifest also says `account: true`.
     pub fn uses_account(&self, id: &str) -> bool {
         self.connectors.get(id).is_some_and(|connector| {
-            connector.granted && connector.account.as_ref().is_some_and(|account| account.uses)
+            connector.granted
+                && connector
+                    .account
+                    .as_ref()
+                    .is_some_and(|account| account.uses)
         })
     }
 
@@ -370,9 +374,9 @@ impl GrantRecord {
             .get("record_version")
             .and_then(serde_json::Value::as_u64)
         {
-            Some(version @ (RECORD_VERSION_1 | RECORD_VERSION_2 | RECORD_VERSION_3 | RECORD_VERSION)) => {
-                version
-            }
+            Some(
+                version @ (RECORD_VERSION_1 | RECORD_VERSION_2 | RECORD_VERSION_3 | RECORD_VERSION),
+            ) => version,
             Some(version) if version > RECORD_VERSION => {
                 return Err(format!(
                     "record_version {version} is newer than this host's {RECORD_VERSION}"
@@ -524,6 +528,24 @@ impl GrantStore {
     /// the record cannot be used.
     pub fn entry(&self, id: &PluginId) -> Result<Option<Entry>, RuntimeError> {
         Ok(self.read()?.plugins.remove(id.as_str()))
+    }
+
+    /// The plugins approved to use the account of the connector `id` from `origin`, sorted by
+    /// id. Refused as `not-granted` when the record cannot be used.
+    pub fn using_account(&self, id: &str, origin: &str) -> Result<Vec<String>, RuntimeError> {
+        Ok(self
+            .read()?
+            .plugins
+            .into_iter()
+            .filter(|(_, entry)| {
+                entry.uses_account(id)
+                    && entry
+                        .connectors
+                        .get(id)
+                        .is_some_and(|connector| connector.origin == origin)
+            })
+            .map(|(plugin, _)| plugin)
+            .collect())
     }
 
     /// What the manifest requests and what the plugin's approval grants to packages from
@@ -2153,14 +2175,23 @@ mod tests {
         // In the file, `account` appears only for a connector with a credential
         let (_dir, store) = file_store();
         approve_connected(&store, &notes_manifest(false), &[notes_state(false)]);
-        approve_connected(&store, &connected_manifest(&["forecast"]), &[github_state(), weather_state()]);
-        let record: Value = serde_json::from_slice(&fs::read(store.path().unwrap()).unwrap()).unwrap();
+        approve_connected(
+            &store,
+            &connected_manifest(&["forecast"]),
+            &[github_state(), weather_state()],
+        );
+        let record: Value =
+            serde_json::from_slice(&fs::read(store.path().unwrap()).unwrap()).unwrap();
         assert_eq!(record["record_version"], 4);
         assert_eq!(
             record["plugins"]["local/private-notes"]["connectors"]["local/notes"]["account"],
             json!({ "uses": false, "credential": "sha256:4d1a", "access": [{ "name": "notes", "level": "read" }] })
         );
-        assert!(record["plugins"][CONNECTED]["connectors"]["catalog/github"].get("account").is_none());
+        assert!(
+            record["plugins"][CONNECTED]["connectors"]["catalog/github"]
+                .get("account")
+                .is_none()
+        );
     }
 
     #[test]
@@ -2168,7 +2199,10 @@ mod tests {
         let (_dir, store, path) = store_with_text(&format!(
             r#"{{"record_version":3,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{"catalog/github":{{"origin":"catalog","version":"1.0.0","granted":true,"destinations":[],"operations":{{}}}}}}}}}}}}"#
         ));
-        assert_eq!(entry(&store, "local/probe").unwrap().connectors["catalog/github"].account, None);
+        assert_eq!(
+            entry(&store, "local/probe").unwrap().connectors["catalog/github"].account,
+            None
+        );
         store
             .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
             .expect("approved");
@@ -2217,7 +2251,10 @@ mod tests {
             approved.connector_changes(&notes_manifest(account), &[state])
         };
         assert!(changes(|_| {}, true).is_empty());
-        let change = changes(|s| s.account.as_mut().unwrap().credential = "sha256:ff".to_owned(), true);
+        let change = changes(
+            |s| s.account.as_mut().unwrap().credential = "sha256:ff".to_owned(),
+            true,
+        );
         assert_eq!(change, ["credential changed: local/notes"]);
         let change = changes(
             |s| {
@@ -2229,7 +2266,10 @@ mod tests {
             true,
         );
         assert_eq!(change, ["access added: local/notes drafts read"]);
-        let change = changes(|s| s.account.as_mut().unwrap().access[0].level = crate::connector::Level::Write, true);
+        let change = changes(
+            |s| s.account.as_mut().unwrap().access[0].level = crate::connector::Level::Write,
+            true,
+        );
         assert_eq!(change, ["access added: local/notes notes write"]);
         // Narrowed access, or no longer using the account: nothing to approve
         assert!(changes(|s| s.account.as_mut().unwrap().access.clear(), true).is_empty());
@@ -2255,7 +2295,11 @@ mod tests {
         // A credential the widget neither uses nor needs changes nothing
         let mut unused = notes_state(false);
         unused.account.as_mut().unwrap().credential = "sha256:ff".to_owned();
-        assert!(approved.connector_changes(&notes_manifest(false), &[unused]).is_empty());
+        assert!(
+            approved
+                .connector_changes(&notes_manifest(false), &[unused])
+                .is_empty()
+        );
     }
 
     #[test]

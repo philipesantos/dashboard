@@ -611,7 +611,10 @@ impl Runtime {
 
     /// The connector `connector_id` as found now, for the tool's output: its declaration and
     /// origin.
-    pub fn find_connector(&self, connector_id: &str) -> Result<(Arc<Connector>, String), RuntimeError> {
+    pub fn find_connector(
+        &self,
+        connector_id: &str,
+    ) -> Result<(Arc<Connector>, String), RuntimeError> {
         self.connectors().find(connector_id)
     }
 
@@ -641,27 +644,36 @@ impl Runtime {
         };
         let context = self.signin_context();
         let mut token = None;
-        let removed = context.accounts.disconnect(connector_id, &origin, |account, vault_id| {
-            let user = vault::entry_user(vault_id, connector_id, &origin);
-            let wait = self.limits.vault_wait_tool;
-            if let Ok(vault::Stored::Account { access, .. }) = self.vault.read(&user).within(wait) {
-                token = Some(access);
-            }
-            let _ = account;
-            self.vault
-                .delete(&user)
-                .within(wait)
-                .map(drop)
-                .map_err(|error| RuntimeError::new(ErrorKind::KeychainUnavailable, error.to_string()))
-        })?;
+        let removed = context
+            .accounts
+            .disconnect(connector_id, &origin, |account, vault_id| {
+                let user = vault::entry_user(vault_id, connector_id, &origin);
+                let wait = self.limits.vault_wait_tool;
+                if let Ok(vault::Stored::Account { access, .. }) =
+                    self.vault.read(&user).within(wait)
+                {
+                    token = Some(access);
+                }
+                let _ = account;
+                self.vault
+                    .delete(&user)
+                    .within(wait)
+                    .map(drop)
+                    .map_err(|error| {
+                        RuntimeError::new(ErrorKind::KeychainUnavailable, error.to_string())
+                    })
+            })?;
         let Some(account) = removed else {
             return Ok(None);
         };
-        let kept_discarded = KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes)
-            .discard_account(connector_id, &account.account_id)
-            .unwrap_or_default();
+        let kept_discarded =
+            KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes)
+                .discard_account(connector_id, &account.account_id)
+                .unwrap_or_default();
         let revoked = match (&found, &token, &account.client) {
-            (Some((connector, found_origin)), Some(token), Some(client)) if *found_origin == origin => {
+            (Some((connector, found_origin)), Some(token), Some(client))
+                if *found_origin == origin =>
+            {
                 signin::revoke(&context, connector, &client.client_id, token)
             }
             _ => None,
@@ -962,14 +974,18 @@ impl Connectors<'_> {
                 return Err(RuntimeError::with_names(
                     ErrorKind::InvalidManifest,
                     names(),
-                    Some("the manifest says the widget uses this connector's account, and the connector declares no credential"),
+                    Some(
+                        "the manifest says the widget uses this connector's account, and the connector declares no credential",
+                    ),
                 ));
             }
             Some(credential) if credential.required() && !request.account => {
                 return Err(RuntimeError::with_names(
                     ErrorKind::AccountUseNotDeclared,
                     names(),
-                    Some("this connector's credential is required, so the widget must declare \"account\": true and call it through accounts"),
+                    Some(
+                        "this connector's credential is required, so the widget must declare \"account\": true and call it through accounts",
+                    ),
                 ));
             }
             _ => {}
@@ -1489,7 +1505,13 @@ impl Plugin {
             .collect();
         connectors_on.sort();
         // The accounts its account calls act as, from the table it was linked with
-        let accounts = match self.linked.lock().unwrap_or_else(PoisonError::into_inner).prepared.as_deref() {
+        let accounts = match self
+            .linked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .prepared
+            .as_deref()
+        {
             Ok(Prepared::V1(V1Pre {
                 account_table: Some(table),
                 ..
@@ -1516,7 +1538,7 @@ impl Plugin {
             return None;
         };
         match self.kept.read(&key) {
-            Found::Current(kept) => kept,
+            Found::Current(kept) => kept.map(|kept| *kept),
             Found::Discarded(_) | Found::Damaged(_) => None,
         }
     }

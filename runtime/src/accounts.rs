@@ -162,7 +162,10 @@ impl AccountStore {
 
     /// Every account, sorted by connector id and origin.
     pub fn list(&self) -> Result<Vec<Account>, RuntimeError> {
-        let mut accounts = self.read()?.map(|record| record.accounts).unwrap_or_default();
+        let mut accounts = self
+            .read()?
+            .map(|record| record.accounts)
+            .unwrap_or_default();
         accounts.sort_by(|a, b| (&a.connector, &a.origin).cmp(&(&b.connector, &b.origin)));
         Ok(accounts)
     }
@@ -271,7 +274,10 @@ impl AccountStore {
         now_ms: u64,
     ) -> Result<(), RuntimeError> {
         self.update(connector, origin, account_id, |account| {
-            account.needs_connecting = Some(NeedsConnecting { reason, at_ms: now_ms });
+            account.needs_connecting = Some(NeedsConnecting {
+                reason,
+                at_ms: now_ms,
+            });
         })
         .map(|_| ())
     }
@@ -362,7 +368,10 @@ impl AccountStore {
             records::write_atomic(&self.path, &json).map_err(|error| {
                 RuntimeError::new(
                     ErrorKind::AccountNotConnected,
-                    format!("cannot write the accounts record {}: {error}", self.path.display()),
+                    format!(
+                        "cannot write the accounts record {}: {error}",
+                        self.path.display()
+                    ),
                 )
             })?;
         }
@@ -505,13 +514,23 @@ mod tests {
     fn the_record_follows_the_data_model() {
         let (_dir, store) = new_store();
         assert!(store.list().unwrap().is_empty());
-        assert!(!store.path().exists(), "nothing is written until something is connected");
+        assert!(
+            !store.path().exists(),
+            "nothing is written until something is connected"
+        );
         let vault = store.vault_id().unwrap();
         assert_eq!(vault.len(), 32);
         assert!(vault.bytes().all(|b| b.is_ascii_hexdigit()));
-        assert_eq!(store.vault_id().unwrap(), vault, "the vault id never changes");
+        assert_eq!(
+            store.vault_id().unwrap(),
+            vault,
+            "the vault id never changes"
+        );
 
-        let Connected::New(account) = store.connect(new_account(Some("1234567"), "ada"), ok).unwrap() else {
+        let Connected::New(account) = store
+            .connect(new_account(Some("1234567"), "ada"), ok)
+            .unwrap()
+        else {
             panic!("a new account");
         };
         assert_eq!(account.account_id.len(), 32);
@@ -537,8 +556,14 @@ mod tests {
                 "needs_connecting": null
             })
         );
-        assert_eq!(store.get("local/notes", "/home/ada/notes.json").unwrap(), Some(account));
-        assert_eq!(store.get("local/notes", "/elsewhere/notes.json").unwrap(), None);
+        assert_eq!(
+            store.get("local/notes", "/home/ada/notes.json").unwrap(),
+            Some(account)
+        );
+        assert_eq!(
+            store.get("local/notes", "/elsewhere/notes.json").unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -558,7 +583,10 @@ mod tests {
     #[test]
     fn a_long_name_is_cut_to_100_characters() {
         let (_dir, store) = new_store();
-        let Connected::New(account) = store.connect(new_account(Some("1"), &"é".repeat(150)), ok).unwrap() else {
+        let Connected::New(account) = store
+            .connect(new_account(Some("1"), &"é".repeat(150)), ok)
+            .unwrap()
+        else {
             panic!("a new account");
         };
         assert_eq!(account.name.chars().count(), 100);
@@ -569,7 +597,10 @@ mod tests {
     #[test]
     fn only_the_same_account_connects_again() {
         let (_dir, store) = new_store();
-        let Connected::New(first) = store.connect(new_account(Some("1234567"), "ada"), ok).unwrap() else {
+        let Connected::New(first) = store
+            .connect(new_account(Some("1234567"), "ada"), ok)
+            .unwrap()
+        else {
             panic!("a new account");
         };
         let mut again = new_account(Some("1234567"), "ada-renamed");
@@ -578,11 +609,19 @@ mod tests {
             panic!("the same account again");
         };
         assert_eq!(second.account_id, first.account_id);
-        assert_eq!((second.name.as_str(), second.connected_at_ms), ("ada-renamed", 5_000));
+        assert_eq!(
+            (second.name.as_str(), second.connected_at_ms),
+            ("ada-renamed", 5_000)
+        );
 
         let before = fs::read(store.path()).unwrap();
-        for other in [new_account(Some("7654321"), "bob"), new_account(None, "account")] {
-            let error = store.connect(other, |_, _| panic!("the vault is never written")).unwrap_err();
+        for other in [
+            new_account(Some("7654321"), "bob"),
+            new_account(None, "account"),
+        ] {
+            let error = store
+                .connect(other, |_, _| panic!("the vault is never written"))
+                .unwrap_err();
             assert_eq!(error.kind(), ErrorKind::AnotherAccountConnected);
             assert!(error.detail().contains("ada-renamed"), "{error}");
             assert!(error.detail().contains("disconnect"), "{error}");
@@ -592,7 +631,9 @@ mod tests {
         // A key: never replaced while one is stored
         let (_dir, store) = new_store();
         store.connect(key(), ok).unwrap();
-        let error = store.connect(key(), |_, _| panic!("the vault is never written")).unwrap_err();
+        let error = store
+            .connect(key(), |_, _| panic!("the vault is never written"))
+            .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::AnotherAccountConnected);
     }
 
@@ -601,7 +642,9 @@ mod tests {
         let (_dir, store) = new_store();
         let error = RuntimeError::new(ErrorKind::KeychainUnavailable, "locked");
         assert_eq!(
-            store.connect(new_account(Some("1"), "ada"), |_, _| Err(error.clone())).unwrap_err(),
+            store
+                .connect(new_account(Some("1"), "ada"), |_, _| Err(error.clone()))
+                .unwrap_err(),
             error
         );
         assert!(store.list().unwrap().is_empty());
@@ -623,28 +666,51 @@ mod tests {
         assert_eq!((gone.name.as_str(), seen.as_deref()), ("ada", Some("ada")));
         assert!(store.list().unwrap().is_empty());
         assert_eq!(
-            store.disconnect("local/notes", "/home/ada/notes.json", |_, _| panic!("nothing to delete")).unwrap(),
+            store
+                .disconnect("local/notes", "/home/ada/notes.json", |_, _| panic!(
+                    "nothing to delete"
+                ))
+                .unwrap(),
             None
         );
         // A vault that cannot delete leaves the account connected
         store.connect(new_account(Some("1"), "ada"), ok).unwrap();
         let locked = RuntimeError::new(ErrorKind::KeychainUnavailable, "locked");
-        assert!(store.disconnect("local/notes", "/home/ada/notes.json", |_, _| Err(locked.clone())).is_err());
+        assert!(
+            store
+                .disconnect("local/notes", "/home/ada/notes.json", |_, _| Err(
+                    locked.clone()
+                ))
+                .is_err()
+        );
         assert_eq!(store.list().unwrap().len(), 1);
     }
 
     #[test]
     fn an_account_is_marked_only_while_it_is_the_same_one() {
         let (_dir, store) = new_store();
-        let Connected::New(account) = store.connect(new_account(Some("1"), "ada"), ok).unwrap() else {
+        let Connected::New(account) = store.connect(new_account(Some("1"), "ada"), ok).unwrap()
+        else {
             panic!("a new account");
         };
         store
-            .mark_needs_connecting("local/notes", "/home/ada/notes.json", "another-id", Reason::Refused, 9)
+            .mark_needs_connecting(
+                "local/notes",
+                "/home/ada/notes.json",
+                "another-id",
+                Reason::Refused,
+                9,
+            )
             .unwrap();
         assert_eq!(store.list().unwrap()[0].needs_connecting, None);
         store
-            .mark_needs_connecting("local/notes", "/home/ada/notes.json", &account.account_id, Reason::RefreshFailed, 9)
+            .mark_needs_connecting(
+                "local/notes",
+                "/home/ada/notes.json",
+                &account.account_id,
+                Reason::RefreshFailed,
+                9,
+            )
             .unwrap();
         assert_eq!(
             store.list().unwrap()[0].needs_connecting,
@@ -653,7 +719,10 @@ mod tests {
                 at_ms: 9
             })
         );
-        assert_eq!(record(&store)["accounts"][0]["needs_connecting"]["reason"], json!("refresh-failed"));
+        assert_eq!(
+            record(&store)["accounts"][0]["needs_connecting"]["reason"],
+            json!("refresh-failed")
+        );
     }
 
     /// Clarification 1: an account whose connector file is gone is still listed, and found.
@@ -671,7 +740,10 @@ mod tests {
             .iter()
             .map(|account| (account.name.as_str(), account.origin_exists()))
             .collect();
-        assert!(exists.contains(&("ada", true)) && exists.contains(&("bob", false)), "{exists:?}");
+        assert!(
+            exists.contains(&("ada", true)) && exists.contains(&("bob", false)),
+            "{exists:?}"
+        );
     }
 
     #[test]

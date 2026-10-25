@@ -345,7 +345,11 @@ impl Server {
 
     /// Answers `path` with what `answer` computes from each request, such as the test sign-in
     /// service's tokens (`specs/005-plugin-credentials/research.md`, R15).
-    pub fn route_with(&self, path: &str, answer: impl Fn(&Received) -> Reply + Send + Sync + 'static) {
+    pub fn route_with(
+        &self,
+        path: &str,
+        answer: impl Fn(&Received) -> Reply + Send + Sync + 'static,
+    ) {
         self.routes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

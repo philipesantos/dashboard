@@ -263,7 +263,9 @@ fn credentials() {
     }
     gate.connector(
         "echo",
-        &local("echo", "https://api.echo.test", |c| c["credential"] = json!("token")),
+        &local("echo", "https://api.echo.test", |c| {
+            c["credential"] = json!("token")
+        }),
     );
     assert_kind(
         &gate.load_error(&probe_of("echo", &["get"])),

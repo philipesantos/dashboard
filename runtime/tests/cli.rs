@@ -322,7 +322,7 @@ fn login_providers_are_shown_and_give_nothing() {
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     assert!(
         stdout(&output)
-            .contains("login providers: github (connecting accounts arrives in feature 005)\n"),
+            .contains("login providers: github (obsolete: accounts come from connectors)\n"),
         "{}",
         stdout(&output)
     );
@@ -1919,4 +1919,221 @@ fn a_relative_data_directory_holds_its_stores() {
             .extension()
             .is_some_and(|extension| extension == "sqlite")
     );
+}
+
+// Accounts (specs/005-plugin-credentials/contracts/cli.md). No seam: nothing here signs in, and
+// nothing reaches a service; the accounts record is in the temporary data directory.
+
+/// A data directory with `local/notes` as shipped beside `private-notes`, and `plugin` copied
+/// into it, so its origin is a file of the test.
+struct Accounts {
+    dir: TempDir,
+    grants: PathBuf,
+    plugin: PathBuf,
+}
+
+const NOTES: &str = include_str!("../../plugins/examples/private-notes/connectors/notes.json");
+
+impl Accounts {
+    fn new(package: &[u8]) -> Accounts {
+        let dir = TempDir::new().unwrap();
+        let connectors = dir.path().join("connectors");
+        std::fs::create_dir_all(&connectors).unwrap();
+        std::fs::write(connectors.join("notes.json"), NOTES).unwrap();
+        let plugin = dir.path().join("widget.wasm");
+        std::fs::write(&plugin, package).unwrap();
+        let grants = dir.path().join("grants.json");
+        Accounts {
+            dir,
+            grants,
+            plugin,
+        }
+    }
+
+    fn private_notes() -> Accounts {
+        Accounts::new(&std::fs::read(fixture_path("private-notes")).unwrap())
+    }
+
+    fn run(&self, args: &[&str]) -> Output {
+        let mut args = args.to_vec();
+        args.extend([
+            "--grants",
+            path_str(&self.grants),
+            "--data",
+            path_str(self.dir.path()),
+        ]);
+        runtime(&args)
+    }
+
+    fn connector_file(&self, name: &str) -> PathBuf {
+        std::fs::canonicalize(self.dir.path().join("connectors").join(name)).unwrap()
+    }
+
+    fn permissions(&self) -> String {
+        let output = self.run(&["permissions", path_str(&self.plugin)]);
+        assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+        stdout(&output)
+    }
+}
+
+#[test]
+fn permissions_shows_the_credential_and_whom_the_widget_acts_as() {
+    let accounts = Accounts::private_notes();
+    let text = accounts.permissions();
+    let block = format!(
+        "  local/notes 1.0.0  required  not granted
+    from: local file {} (development)
+    destinations: https://notes.test
+    credential: account (optional), Authorization: Bearer, sent to https://notes.test
+      sign-in: https://notes.test/oauth/authorize
+      token: https://notes.test/oauth/token
+      asks for: notes read (declared by the developer)
+      this widget acts as the account: none connected (calls go without one)
+    list-notes  read (declared by the developer)  GET https://notes.test/notes
+",
+        accounts.connector_file("notes.json").display()
+    );
+    assert!(text.contains(&block), "{text}");
+    assert!(text.contains("\nlogin providers: none\n"), "{text}");
+    // One connector, whose only destination is the credential's: no data-flow line
+    assert!(!text.contains("data flow:"), "{text}");
+}
+
+#[test]
+fn accounts_list_says_when_nothing_is_connected() {
+    let accounts = Accounts::private_notes();
+    let output = accounts.run(&["accounts", "list"]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "nothing connected\n");
+    assert!(!accounts.dir.path().join("accounts.json").exists());
+}
+
+#[test]
+fn accounts_connect_without_a_client_fails_naming_the_option() {
+    let accounts = Accounts::private_notes();
+    let output = accounts.run(&["accounts", "connect", "local/notes", "--no-browser"]);
+    assert_eq!(output.status.code(), Some(1), "stdout: {}", stdout(&output));
+    let error = stderr(&output);
+    assert!(
+        error.starts_with("error: no-client-configured: "),
+        "{error}"
+    );
+    assert!(error.contains("--client"), "{error}");
+    // Nothing was opened, and nothing waited for a browser
+    assert!(!stdout(&output).contains("waiting"), "{}", stdout(&output));
+}
+
+#[test]
+fn accounts_connect_refuses_a_credential_over_plain_http() {
+    let accounts = Accounts::private_notes();
+    let hostile = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../plugins/hostile/connectors/plain-http-key.json");
+    std::fs::copy(
+        hostile,
+        accounts.dir.path().join("connectors/plain-http-key.json"),
+    )
+    .unwrap();
+    let output = accounts.run(&["accounts", "connect", "local/plain-http-key"]);
+    assert_eq!(output.status.code(), Some(1), "stdout: {}", stdout(&output));
+    assert!(
+        stderr(&output).starts_with("error: credential-needs-https: "),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(stdout(&output), "");
+}
+
+#[test]
+fn accounts_disconnect_with_nothing_connected_fails() {
+    let accounts = Accounts::private_notes();
+    let output = accounts.run(&["accounts", "disconnect", "local/notes"]);
+    assert_eq!(output.status.code(), Some(1), "stdout: {}", stdout(&output));
+    assert!(
+        stderr(&output).starts_with("error: account-not-connected: "),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn approve_names_the_account_use() {
+    let accounts = Accounts::private_notes();
+    let digest = accounts
+        .permissions()
+        .lines()
+        .find_map(|line| line.strip_prefix("approval digest: ").map(str::to_owned))
+        .expect("a digest");
+    let output = accounts.run(&["approve", path_str(&accounts.plugin), "--expect", &digest]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "approved local/private-notes 0.1.0
+connectors: local/notes (https://notes.test)
+account use: local/notes (notes read)
+"
+    );
+    let text = accounts.permissions();
+    assert!(
+        text.contains("  local/notes 1.0.0  required  granted\n"),
+        "{text}"
+    );
+}
+
+/// `data_flow`: data read as the account can reach the widget's other destinations (FR-005).
+#[test]
+fn data_flow() {
+    let manifest = json!({
+        "manifest_version": 1, "id": "local/flow-probe", "version": "0.1.0", "author": "A",
+        "permissions": [],
+        "connectors": [
+            { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true },
+            { "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": false }
+        ]
+    });
+    let package = runtime::package::pack(
+        &common::fixture("account-probe"),
+        manifest.to_string().as_bytes(),
+    )
+    .expect("the manifest is valid");
+    let accounts = Accounts::new(&package);
+    let text = accounts.permissions();
+    assert!(
+        text.contains(
+            "data flow: data read as the account of local/notes can reach https://api.github.com\n"
+        ),
+        "{text}"
+    );
+    // The widget that does not use the account says so in its credential block
+    let mut plain = manifest.clone();
+    plain["connectors"][0]["account"] = json!(false);
+    plain["connectors"][1] = json!({ "id": "local/other", "major": 1, "operations": ["list-notes"], "required": true, "account": true });
+    let mut other: serde_json::Value = serde_json::from_str(NOTES).unwrap();
+    other["id"] = json!("local/other");
+    other["destinations"]["api"] = json!("https://other.test");
+    other["credential"]["account"]["authorize"] = json!("https://other.test/oauth/authorize");
+    other["credential"]["account"]["token"] = json!("https://other.test/oauth/token");
+    other["credential"]["account"]["revoke"] = json!("https://other.test/oauth/revoke");
+    let package = runtime::package::pack(
+        &common::fixture("account-probe"),
+        plain.to_string().as_bytes(),
+    )
+    .expect("the manifest is valid");
+    let accounts = Accounts::new(&package);
+    std::fs::write(
+        accounts.dir.path().join("connectors/other.json"),
+        other.to_string(),
+    )
+    .unwrap();
+    let text = accounts.permissions();
+    assert!(
+        text.contains("      this widget does not use the account\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "data flow: data read as the account of local/other can reach https://notes.test\n"
+        ),
+        "{text}"
+    );
+    assert!(!text.contains("account of local/notes"), "{text}");
 }

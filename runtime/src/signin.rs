@@ -45,7 +45,10 @@ pub(crate) fn connect(
     let failed = |why: String| RuntimeError::new(ErrorKind::SignInFailed, format!("{id}: {why}"));
     // Step 1
     let declared = connector.credential().ok_or_else(|| {
-        RuntimeError::new(ErrorKind::InvalidConnector, format!("{id} declares no credential"))
+        RuntimeError::new(
+            ErrorKind::InvalidConnector,
+            format!("{id} declares no credential"),
+        )
     })?;
     let Some(account) = declared.account() else {
         return Err(RuntimeError::new(
@@ -69,7 +72,10 @@ pub(crate) fn connect(
                 )
             })?,
     };
-    if client.is_empty() || client.chars().count() > 100 || client.chars().any(|c| !c.is_ascii_graphic()) {
+    if client.is_empty()
+        || client.chars().count() > 100
+        || client.chars().any(|c| !c.is_ascii_graphic())
+    {
         return Err(RuntimeError::new(
             ErrorKind::NoClientConfigured,
             "a client id is 1 to 100 visible ASCII characters",
@@ -148,9 +154,14 @@ pub(crate) fn connect(
         Instant::now() + context.limits.call_time_limit,
         context.limits.max_sign_in_response_bytes,
     );
-    let _ = context
-        .log
-        .append(calls::host_entry("", id, "token", account.token(), started, &answer));
+    let _ = context.log.append(calls::host_entry(
+        "",
+        id,
+        "token",
+        account.token(),
+        started,
+        &answer,
+    ));
     let answer = answer.map_err(|failure| failed(failure.detail))?;
     let tokens = tokens(answer.status, &answer.body, &[code, &verifier]).map_err(failed)?;
     // Step 6
@@ -211,9 +222,11 @@ fn identity(
     let operation = connector
         .operation(identity.operation())
         .expect("a checked identity names an operation");
-    let mut request = network::build_request(connector, operation, &BTreeMap::new(), context.limits)
-        .map_err(|network::Refusal(why)| failed(why))?;
-    request.credential = Some(RequestCredential::new(declared, access).map_err(|why| failed(why.to_owned()))?);
+    let mut request =
+        network::build_request(connector, operation, &BTreeMap::new(), context.limits)
+            .map_err(|network::Refusal(why)| failed(why))?;
+    request.credential =
+        Some(RequestCredential::new(declared, access).map_err(|why| failed(why.to_owned()))?);
     let mut budget = context.limits.max_response_body_bytes;
     let url = request.url.clone();
     let started = now_ms();
@@ -236,8 +249,9 @@ fn identity(
             response.status
         )));
     }
-    let document: serde_json::Value = serde_json::from_slice(&response.body)
-        .map_err(|_| failed("the identity operation answered something other than JSON".to_owned()))?;
+    let document: serde_json::Value = serde_json::from_slice(&response.body).map_err(|_| {
+        failed("the identity operation answered something other than JSON".to_owned())
+    })?;
     let text_at = |pointer: &str| {
         document.pointer(pointer).and_then(|value| match value {
             serde_json::Value::String(text) => Some(text.clone()),
@@ -254,13 +268,23 @@ fn identity(
             .chars()
             .take(context.limits.max_account_name_chars)
             .collect(),
-        Some(service_id.chars().take(context.limits.max_account_name_chars).collect()),
+        Some(
+            service_id
+                .chars()
+                .take(context.limits.max_account_name_chars)
+                .collect(),
+        ),
     ))
 }
 
 /// Asks the service to revoke `token` when the connector declares where (RFC 7009); whether it
 /// did. A key, or a connector without `revoke`, revokes nothing.
-pub(crate) fn revoke(context: &Context<'_>, connector: &Connector, client: &str, token: &Secret) -> Option<Result<(), String>> {
+pub(crate) fn revoke(
+    context: &Context<'_>,
+    connector: &Connector,
+    client: &str,
+    token: &Secret,
+) -> Option<Result<(), String>> {
     let revoke = connector.credential()?.account()?.revoke()?;
     let started = now_ms();
     let answer = context.session.host_post(
@@ -269,9 +293,14 @@ pub(crate) fn revoke(context: &Context<'_>, connector: &Connector, client: &str,
         Instant::now() + context.limits.call_time_limit,
         context.limits.max_sign_in_response_bytes,
     );
-    let _ = context
-        .log
-        .append(calls::host_entry("", connector.id(), "revoke", revoke, started, &answer));
+    let _ = context.log.append(calls::host_entry(
+        "",
+        connector.id(),
+        "revoke",
+        revoke,
+        started,
+        &answer,
+    ));
     Some(match answer {
         Ok(answer) if (200..300).contains(&answer.status) => Ok(()),
         Ok(answer) => Err(format!("the service answered {}", answer.status)),
@@ -302,7 +331,10 @@ pub(crate) fn connect_key(
 ) -> Result<Connected, RuntimeError> {
     let id = connector.id();
     let declared = connector.credential().ok_or_else(|| {
-        RuntimeError::new(ErrorKind::InvalidConnector, format!("{id} declares no credential"))
+        RuntimeError::new(
+            ErrorKind::InvalidConnector,
+            format!("{id} declares no credential"),
+        )
     })?;
     if declared.kind() != CredentialKind::Key {
         return Err(RuntimeError::new(
@@ -341,7 +373,10 @@ fn random_token() -> Result<String, RuntimeError> {
     use ring::rand::{SecureRandom, SystemRandom};
     let mut bytes = Zeroizing::new([0u8; 32]);
     SystemRandom::new().fill(bytes.as_mut()).map_err(|_| {
-        RuntimeError::new(ErrorKind::SignInFailed, "the system's random source is unavailable")
+        RuntimeError::new(
+            ErrorKind::SignInFailed,
+            "the system's random source is unavailable",
+        )
     })?;
     Ok(base64url(bytes.as_ref()))
 }
@@ -492,7 +527,13 @@ mod tests {
     fn a_key_is_checked_before_it_reaches_the_vault() {
         assert!(check_key("k3y-ok.~+/=", 1024).is_ok());
         assert!(check_key(&"a".repeat(1024), 1024).is_ok());
-        for key in [String::new(), "a".repeat(1025), "has space".to_owned(), "é".to_owned(), "a\nb".to_owned()] {
+        for key in [
+            String::new(),
+            "a".repeat(1025),
+            "has space".to_owned(),
+            "é".to_owned(),
+            "a\nb".to_owned(),
+        ] {
             let error = check_key(&key, 1024).unwrap_err();
             assert_eq!(error.kind(), ErrorKind::KeyRefused);
             assert!(key.is_empty() || !error.detail().contains(&key), "{error}");
@@ -511,7 +552,8 @@ mod tests {
         assert_eq!(tokens.refresh.as_ref().map(Secret::expose), Some("rt-1"));
         assert_eq!(tokens.expires_in_s, Some(3600));
         assert_eq!(tokens.scopes, ["notes:read", "x"]);
-        let bare = super::tokens(200, br#"{"access_token":"a","token_type":"bearer"}"#, &[]).unwrap();
+        let bare =
+            super::tokens(200, br#"{"access_token":"a","token_type":"bearer"}"#, &[]).unwrap();
         assert!(bare.refresh.is_none() && bare.expires_in_s.is_none() && bare.scopes.is_empty());
     }
 
@@ -524,15 +566,27 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("invalid_grant"), "{error}");
-        assert!(!error.contains("c0de-123") && error.contains("[secret]"), "{error}");
-        assert!(!error.contains('\n') && !error.contains('\u{1b}'), "{error:?}");
+        assert!(
+            !error.contains("c0de-123") && error.contains("[secret]"),
+            "{error}"
+        );
+        assert!(
+            !error.contains('\n') && !error.contains('\u{1b}'),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn anything_else_is_refused_with_fixed_text() {
         for (status, body) in [
-            (200, &br#"{"access_token":"has space","token_type":"bearer"}"#[..]),
-            (200, br#"{"access_token":"a","token_type":"bearer","refresh_token":"r\"x"}"#),
+            (
+                200,
+                &br#"{"access_token":"has space","token_type":"bearer"}"#[..],
+            ),
+            (
+                200,
+                br#"{"access_token":"a","token_type":"bearer","refresh_token":"r\"x"}"#,
+            ),
             (200, br#"{"access_token":"a","token_type":"mac"}"#),
             (200, br#"{"access_token":"a"}"#),
             (500, br#"{"access_token":"a","token_type":"bearer"}"#),
@@ -541,7 +595,10 @@ mod tests {
             (200, br#"{"access_token": 7}"#),
         ] {
             let error = tokens(status, body, &[]).unwrap_err();
-            assert!(!error.contains("gho_leaked") && !error.contains("has space"), "{error}");
+            assert!(
+                !error.contains("gho_leaked") && !error.contains("has space"),
+                "{error}"
+            );
         }
     }
 }

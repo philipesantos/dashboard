@@ -141,6 +141,12 @@ impl Credential {
         &self.header
     }
 
+    /// `Bearer` or `token` before the secret in `Authorization`; `None` with a catalog
+    /// connector's own header.
+    pub fn scheme(&self) -> Option<&str> {
+        self.scheme.as_deref()
+    }
+
     /// The header's value for `secret`: `<scheme> <secret>` with `Authorization`, the secret
     /// alone with a catalog connector's own header.
     pub fn header_value(&self, secret: &str) -> String {
@@ -1625,7 +1631,10 @@ fn check_credential(
     };
     match (kind, &raw.account, &raw.access) {
         (CredentialKind::Account, None, _) => {
-            return Err(field("credential.account", "an account declares how it signs in"));
+            return Err(field(
+                "credential.account",
+                "an account declares how it signs in",
+            ));
         }
         (CredentialKind::Account, Some(_), Some(_)) => {
             return Err(field(
@@ -1634,7 +1643,10 @@ fn check_credential(
             ));
         }
         (CredentialKind::Key, Some(_), _) => {
-            return Err(field("credential.account", "only an account signs in; a key does not"));
+            return Err(field(
+                "credential.account",
+                "only an account signs in; a key does not",
+            ));
         }
         _ => {}
     }
@@ -1654,7 +1666,10 @@ fn check_credential(
     let mut origins = Vec::new();
     for (index, name) in raw.destinations.iter().enumerate() {
         if raw.destinations[..index].contains(name) {
-            return Err(field("credential.destinations", format!("`{name}` is listed twice")));
+            return Err(field(
+                "credential.destinations",
+                format!("`{name}` is listed twice"),
+            ));
         }
         let origin = destinations.get(name).ok_or_else(|| {
             field(
@@ -1729,7 +1744,10 @@ fn check_credential(
 fn check_statuses(statuses: Vec<u64>) -> Result<Vec<u16>, RuntimeError> {
     let at = "credential.subscription_required";
     if statuses.len() > MAX_SUBSCRIPTION_STATUSES {
-        return Err(field(at, format!("at most {MAX_SUBSCRIPTION_STATUSES} statuses")));
+        return Err(field(
+            at,
+            format!("at most {MAX_SUBSCRIPTION_STATUSES} statuses"),
+        ));
     }
     let mut kept: Vec<u16> = Vec::new();
     for status in statuses {
@@ -1751,7 +1769,11 @@ fn check_access(access: Vec<Object<Access>>, at: &str) -> Result<Vec<Access>, Ru
     }
     let mut items: Vec<Access> = Vec::new();
     for (index, Object(item)) in access.into_iter().enumerate() {
-        check_shown_text(&format!("{at}[{index}].name"), &item.name, MAX_ACCESS_NAME_CHARS)?;
+        check_shown_text(
+            &format!("{at}[{index}].name"),
+            &item.name,
+            MAX_ACCESS_NAME_CHARS,
+        )?;
         if items.iter().any(|kept| kept.name == item.name) {
             return Err(field(at, format!("`{}` is listed twice", item.name)));
         }
@@ -1769,9 +1791,14 @@ fn check_credential_header(
     operations: &BTreeMap<String, Operation>,
     source: Source,
 ) -> Result<String, RuntimeError> {
-    let well_formed = header.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+    let well_formed = header
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
         && header.chars().count() <= MAX_HEADER_NAME_CHARS
-        && header.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+        && header
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !well_formed {
         return Err(field(
             "credential.header",
@@ -1868,9 +1895,11 @@ fn check_account(
     for (index, scope) in scopes.iter().enumerate() {
         // RFC 6749's scope-token: %x21 / %x23-5B / %x5D-7E
         let valid = (1..=MAX_SCOPE_CHARS).contains(&scope.chars().count())
-            && scope
-                .chars()
-                .all(|c| c == '\u{21}' || ('\u{23}'..='\u{5b}').contains(&c) || ('\u{5d}'..='\u{7e}').contains(&c));
+            && scope.chars().all(|c| {
+                c == '\u{21}'
+                    || ('\u{23}'..='\u{5b}').contains(&c)
+                    || ('\u{5d}'..='\u{7e}').contains(&c)
+            });
         if !valid {
             return Err(field(
                 &format!("credential.account.scopes[{index}]"),
@@ -1952,7 +1981,13 @@ fn check_account(
         Some(Object(identity)) => {
             let at = "credential.account.identity";
             let operation = operations.get(&identity.operation).ok_or_else(|| {
-                field(at, format!("`{}` is not an operation of the connector", identity.operation))
+                field(
+                    at,
+                    format!(
+                        "`{}` is not an operation of the connector",
+                        identity.operation
+                    ),
+                )
             })?;
             if operation.kind != Kind::Read
                 || operation.method != Method::Get
@@ -1960,7 +1995,10 @@ fn check_account(
             {
                 return Err(field(
                     at,
-                    format!("`{}` must be a GET read without parameters", identity.operation),
+                    format!(
+                        "`{}` must be a GET read without parameters",
+                        identity.operation
+                    ),
                 ));
             }
             if !credential_destinations.contains(&operation.destination) {
@@ -1976,13 +2014,15 @@ fn check_account(
                 let segments: Vec<&str> = pointer.split('/').skip(1).collect();
                 let valid = pointer.starts_with('/')
                     && (1..=MAX_POINTER_SEGMENTS).contains(&segments.len())
-                    && segments
-                        .iter()
-                        .all(|segment| (1..=MAX_POINTER_SEGMENT_CHARS).contains(&segment.chars().count()));
+                    && segments.iter().all(|segment| {
+                        (1..=MAX_POINTER_SEGMENT_CHARS).contains(&segment.chars().count())
+                    });
                 if !valid {
                     return Err(field(
                         &format!("{at}.{name}"),
-                        format!("`{pointer}` must be a JSON pointer of 1 to {MAX_POINTER_SEGMENTS} parts"),
+                        format!(
+                            "`{pointer}` must be a JSON pointer of 1 to {MAX_POINTER_SEGMENTS} parts"
+                        ),
                     ));
                 }
             }
@@ -2010,7 +2050,10 @@ fn check_account(
 /// An absolute `https` address with a DNS name, no user, password or fragment.
 fn https_address(name: &str, address: &str) -> Result<url::Url, RuntimeError> {
     if address.chars().count() > MAX_ADDRESS_CHARS {
-        return Err(field(name, format!("longer than {MAX_ADDRESS_CHARS} characters")));
+        return Err(field(
+            name,
+            format!("longer than {MAX_ADDRESS_CHARS} characters"),
+        ));
     }
     let url = url::Url::parse(address)
         .map_err(|error| field(name, format!("`{address}` is not an address: {error}")))?;
@@ -2971,15 +3014,25 @@ mod tests {
         assert_eq!(credential.kind(), CredentialKind::Account);
         assert!(!credential.required());
         assert_eq!(
-            credential.origins().iter().map(|o| o.serialization()).collect::<Vec<_>>(),
+            credential
+                .origins()
+                .iter()
+                .map(|o| o.serialization())
+                .collect::<Vec<_>>(),
             ["https://api.weather.test"]
         );
         assert_eq!(credential.header(), "Authorization");
         assert_eq!(credential.header_value("t0k"), "Bearer t0k");
         let account = credential.account().expect("an account");
         assert_eq!(account.client(), "weather");
-        assert_eq!(account.authorize().as_str(), "https://api.weather.test/oauth/authorize");
-        assert_eq!(account.token().as_str(), "https://api.weather.test/oauth/token");
+        assert_eq!(
+            account.authorize().as_str(),
+            "https://api.weather.test/oauth/authorize"
+        );
+        assert_eq!(
+            account.token().as_str(),
+            "https://api.weather.test/oauth/token"
+        );
         assert_eq!(
             account.revoke().map(url::Url::as_str),
             Some("https://api.weather.test/oauth/revoke")
@@ -3013,13 +3066,19 @@ mod tests {
 
     #[test]
     fn a_credential_follows_its_schema() {
-        assert_invalid_account(|c| c["credential"]["kind"] = json!("password"), &["credential.kind"]);
+        assert_invalid_account(
+            |c| c["credential"]["kind"] = json!("password"),
+            &["credential.kind"],
+        );
         assert_invalid_account(
             |c| c["credential"]["account"]["flow"] = json!("device"),
             &["credential.account.flow"],
         );
         // account only with kind: account, and required with it
-        assert_invalid_account(|c| c["credential"]["kind"] = json!("key"), &["credential.account"]);
+        assert_invalid_account(
+            |c| c["credential"]["kind"] = json!("key"),
+            &["credential.account"],
+        );
         assert_invalid_account(
             |c| {
                 c["credential"].as_object_mut().unwrap().remove("account");
@@ -3039,11 +3098,17 @@ mod tests {
             &["credential.account.access"],
         );
         assert_invalid_account(
-            |c| c["credential"]["account"]["access"] = json!([{ "name": "notes", "level": "admin" }]),
+            |c| {
+                c["credential"]["account"]["access"] =
+                    json!([{ "name": "notes", "level": "admin" }])
+            },
             &["credential.account.access"],
         );
         assert_invalid_account(
-            |c| c["credential"]["account"]["access"] = json!([{ "name": "x".repeat(65), "level": "read" }]),
+            |c| {
+                c["credential"]["account"]["access"] =
+                    json!([{ "name": "x".repeat(65), "level": "read" }])
+            },
             &["credential.account.access"],
         );
         for status in [399, 500, 200] {
@@ -3237,22 +3302,40 @@ mod tests {
         );
         // Without identity the account is named `account` and cannot be compared
         let connector = parse_account(|c| {
-            c["credential"]["account"].as_object_mut().unwrap().remove("identity");
+            c["credential"]["account"]
+                .as_object_mut()
+                .unwrap()
+                .remove("identity");
         })
         .unwrap();
-        assert!(connector.credential().unwrap().account().unwrap().identity().is_none());
+        assert!(
+            connector
+                .credential()
+                .unwrap()
+                .account()
+                .unwrap()
+                .identity()
+                .is_none()
+        );
     }
 
     #[test]
     fn the_credential_digest_leaves_out_access_and_follows_the_rest() {
-        let digest = |edit: fn(&mut Value)| parse_account(edit).unwrap().credential().unwrap().digest();
+        let digest =
+            |edit: fn(&mut Value)| parse_account(edit).unwrap().credential().unwrap().digest();
         let base = digest(|_| {});
         assert!(base.starts_with("sha256:"));
-        assert_eq!(base, digest(|c| c["credential"]["account"]["access"] = json!([{ "name": "forecasts", "level": "write" }])));
+        assert_eq!(
+            base,
+            digest(|c| c["credential"]["account"]["access"] =
+                json!([{ "name": "forecasts", "level": "write" }]))
+        );
         for edit in [
             (|c: &mut Value| c["credential"]["required"] = json!(true)) as fn(&mut Value),
             |c| c["credential"]["scheme"] = json!("Token"),
-            |c| c["credential"]["account"]["token"] = json!("https://api.weather.test/oauth/token2"),
+            |c| {
+                c["credential"]["account"]["token"] = json!("https://api.weather.test/oauth/token2")
+            },
             |c| c["credential"]["account"]["scopes"] = json!(["forecast:read", "x"]),
             |c| c["credential"]["subscription_required"] = json!([]),
             |c| c["credential"]["account"]["identity"]["name"] = json!("/login"),

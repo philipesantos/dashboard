@@ -199,22 +199,31 @@ impl SignInService {
                     }
                     let code = form.get("code").cloned().unwrap_or_default();
                     let verifier = form.get("code_verifier").cloned().unwrap_or_default();
-                    let Some((challenge, redirect, client, used)) = state.codes.get(&code).cloned() else {
+                    let Some((challenge, redirect, client, used)) = state.codes.get(&code).cloned()
+                    else {
                         return refusal("invalid_grant", "unknown code");
                     };
                     if used {
-                        return refusal("invalid_grant", &format!("the code {code} was already used"));
+                        return refusal(
+                            "invalid_grant",
+                            &format!("the code {code} was already used"),
+                        );
                     }
                     if s256(&verifier) != challenge
                         || form.get("redirect_uri") != Some(&redirect)
                         || form.get("client_id") != Some(&client)
                     {
-                        return refusal("invalid_grant", "the verifier, redirect or client does not match");
+                        return refusal(
+                            "invalid_grant",
+                            "the verifier, redirect or client does not match",
+                        );
                     }
                     if form.contains_key("client_secret") {
                         return refusal("invalid_request", "a public client sends no secret");
                     }
-                    state.codes.insert(code, (challenge, redirect, client, true));
+                    state
+                        .codes
+                        .insert(code, (challenge, redirect, client, true));
                     let account = match state.script.other_account.take() {
                         Some(other) => {
                             state.account = other.clone();
@@ -275,7 +284,10 @@ impl SignInService {
                 return Reply::json(&public.to_string());
             };
             if let Some(echo) = state.script.echo {
-                let header = request.header("authorization").unwrap_or_default().to_owned();
+                let header = request
+                    .header("authorization")
+                    .unwrap_or_default()
+                    .to_owned();
                 return match echo {
                     Echo::Body => Reply::json(&serde_json::json!({ "seen": header }).to_string()),
                     Echo::Header => Reply::json("[]").header("ETag", &header),
@@ -354,7 +366,10 @@ fn base64url(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut text = String::new();
     for chunk in bytes.chunks(3) {
-        let n = chunk.iter().fold(0u32, |n, byte| (n << 8) | u32::from(*byte)) << (8 * (3 - chunk.len()));
+        let n = chunk
+            .iter()
+            .fold(0u32, |n, byte| (n << 8) | u32::from(*byte))
+            << (8 * (3 - chunk.len()));
         for index in 0..=chunk.len() {
             text.push(ALPHABET[(n >> (18 - 6 * index)) as usize & 63] as char);
         }
@@ -366,7 +381,9 @@ fn base64url(bytes: &[u8]) -> String {
 fn random(kind: &str) -> String {
     use ring::rand::{SecureRandom, SystemRandom};
     let mut bytes = [0u8; 18];
-    SystemRandom::new().fill(&mut bytes).expect("the system's random source");
+    SystemRandom::new()
+        .fill(&mut bytes)
+        .expect("the system's random source");
     format!("{kind}_{}", base64url(&bytes))
 }
 
@@ -390,7 +407,10 @@ pub fn scan(dirs: &[&Path], outputs: &[(&str, &str)], secrets: &[String]) {
     }
     for (name, output) in outputs {
         for secret in &secrets {
-            assert!(!output.contains(secret.as_str()), "{name} holds a secret ({secret})");
+            assert!(
+                !output.contains(secret.as_str()),
+                "{name} holds a secret ({secret})"
+            );
         }
     }
 }
@@ -415,5 +435,7 @@ fn files(dir: &Path) -> Vec<std::path::PathBuf> {
 }
 
 fn memchr_find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }

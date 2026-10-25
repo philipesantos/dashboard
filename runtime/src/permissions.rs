@@ -419,7 +419,11 @@ pub(crate) fn check_component(
             continue;
         }
         if contract.has_accounts() && is_accounts(import) {
-            if !manifest.connectors().iter().any(|connector| connector.account) {
+            if !manifest
+                .connectors()
+                .iter()
+                .any(|connector| connector.account)
+            {
                 undeclared.push("accounts".to_owned());
             }
             continue;
@@ -1131,20 +1135,29 @@ mod tests {
     #[test]
     fn a_1_3_plugin_runs_at_its_version_and_minors_are_not_mixed() {
         let checked = check_component(
-            &component(&[CONNECTORS_V1_3, ACCOUNTS_V1_3], &[RENDERER_V1_3, UPDATER_V1_3]),
+            &component(
+                &[CONNECTORS_V1_3, ACCOUNTS_V1_3],
+                &[RENDERER_V1_3, UPDATER_V1_3],
+            ),
             &account_manifest(true, false),
         )
         .unwrap();
         assert_eq!(checked.version, semver::Version::new(1, 3, 0));
         assert!(checked.has_accounts() && checked.has_storage() && checked.has_connectors());
         let error = check_component(
-            &component(&["dashboard:widget/connectors@1.2.0", ACCOUNTS_V1_3], &[RENDERER_V1_3, UPDATER_V1_3]),
+            &component(
+                &["dashboard:widget/connectors@1.2.0", ACCOUNTS_V1_3],
+                &[RENDERER_V1_3, UPDATER_V1_3],
+            ),
             &account_manifest(true, false),
         )
         .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::ContractMismatch, "{error}");
         assert!(error.detail().contains("1.3.0"), "{error}");
-        assert!(error.names().iter().any(|name| name.contains("1.2.0")), "{error:?}");
+        assert!(
+            error.names().iter().any(|name| name.contains("1.2.0")),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -1152,7 +1165,10 @@ mod tests {
         let error = check_component(
             &component(
                 &["dashboard:widget/connectors@1.2.0"],
-                &["dashboard:widget/renderer@1.2.0", "dashboard:widget/updater@1.2.0"],
+                &[
+                    "dashboard:widget/renderer@1.2.0",
+                    "dashboard:widget/updater@1.2.0",
+                ],
             ),
             &account_manifest(true, false),
         )
@@ -1165,7 +1181,10 @@ mod tests {
             check_component(
                 &component(
                     &["dashboard:widget/connectors@1.2.0"],
-                    &["dashboard:widget/renderer@1.2.0", "dashboard:widget/updater@1.2.0"],
+                    &[
+                        "dashboard:widget/renderer@1.2.0",
+                        "dashboard:widget/updater@1.2.0"
+                    ],
                 ),
                 &account_manifest(false, false),
             )
@@ -1177,7 +1196,10 @@ mod tests {
     fn importing_accounts_without_a_connector_used_with_its_account_is_not_declared() {
         for manifest in [account_manifest(false, true), manifest(None)] {
             let (kind, names) = refusal(check_component(
-                &component(&[CONNECTORS_V1_3, ACCOUNTS_V1_3], &[RENDERER_V1_3, UPDATER_V1_3]),
+                &component(
+                    &[CONNECTORS_V1_3, ACCOUNTS_V1_3],
+                    &[RENDERER_V1_3, UPDATER_V1_3],
+                ),
                 &manifest,
             ));
             assert_eq!(kind, ErrorKind::NotDeclared);
@@ -1189,7 +1211,10 @@ mod tests {
     /// imports `connectors`, for the types `accounts` uses, and is accepted; both are linked.
     #[test]
     fn a_type_only_connectors_import_is_accepted_beside_accounts() {
-        let interfaces = component(&[CONNECTORS_V1_3, ACCOUNTS_V1_3], &[RENDERER_V1_3, UPDATER_V1_3]);
+        let interfaces = component(
+            &[CONNECTORS_V1_3, ACCOUNTS_V1_3],
+            &[RENDERER_V1_3, UPDATER_V1_3],
+        );
         let manifest = account_manifest(true, false);
         check_component(&interfaces, &manifest).unwrap();
         let store = GrantStore::in_memory();

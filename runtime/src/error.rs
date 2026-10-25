@@ -266,7 +266,10 @@ mod tests {
             (ErrorKind::CredentialNeedsHttps, "credential-needs-https"),
             (ErrorKind::AccountUseNotDeclared, "account-use-not-declared"),
             (ErrorKind::SignInFailed, "sign-in-failed"),
-            (ErrorKind::AnotherAccountConnected, "another-account-connected"),
+            (
+                ErrorKind::AnotherAccountConnected,
+                "another-account-connected",
+            ),
             (ErrorKind::KeyRefused, "key-refused"),
             (ErrorKind::KeychainUnavailable, "keychain-unavailable"),
             (ErrorKind::NoClientConfigured, "no-client-configured"),

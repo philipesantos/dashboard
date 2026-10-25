@@ -72,7 +72,12 @@ impl Opened {
         self.entry(service, user)?.get_secret().map_err(map)
     }
 
-    pub(crate) fn set(&mut self, service: &str, user: &str, secret: &[u8]) -> Result<(), VaultError> {
+    pub(crate) fn set(
+        &mut self,
+        service: &str,
+        user: &str,
+        secret: &[u8],
+    ) -> Result<(), VaultError> {
         self.entry(service, user)?.set_secret(secret).map_err(map)
     }
 
@@ -113,11 +118,11 @@ fn platform(text: &str) -> Box<dyn std::error::Error + Send + Sync> {
 /// The keychain of this system (research R5).
 fn system_store() -> Result<Arc<CredentialStore>, VaultError> {
     #[cfg(target_os = "linux")]
-    let store = dbus_secret_service_keyring_store::Store::new()
-        .map(|store| store as Arc<CredentialStore>);
+    let store =
+        dbus_secret_service_keyring_store::Store::new().map(|store| store as Arc<CredentialStore>);
     #[cfg(windows)]
-    let store = windows_native_keyring_store::Store::new()
-        .map(|store| store as Arc<CredentialStore>);
+    let store =
+        windows_native_keyring_store::Store::new().map(|store| store as Arc<CredentialStore>);
     #[cfg(target_os = "macos")]
     let store = apple_native_keyring_store::keychain::Store::new()
         .map(|store| store as Arc<CredentialStore>);
