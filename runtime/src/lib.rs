@@ -641,9 +641,8 @@ impl Runtime {
         };
         let context = self.signin_context();
         let mut token = None;
-        let removed = context.accounts.disconnect(connector_id, &origin, |account| {
-            let vault_id = context.accounts.vault_id()?;
-            let user = vault::entry_user(&vault_id, connector_id, &origin);
+        let removed = context.accounts.disconnect(connector_id, &origin, |account, vault_id| {
+            let user = vault::entry_user(vault_id, connector_id, &origin);
             let wait = self.limits.vault_wait_tool;
             if let Ok(vault::Stored::Account { access, .. }) = self.vault.read(&user).within(wait) {
                 token = Some(access);

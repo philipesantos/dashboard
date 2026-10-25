@@ -179,11 +179,10 @@ pub(crate) fn connect(
         access: tokens.access.clone(),
         refresh: tokens.refresh.clone(),
     };
-    let connected = context.accounts.connect(new, |_| {
-        let vault_id = context.accounts.vault_id()?;
+    let connected = context.accounts.connect(new, |_, vault_id| {
         context
             .vault
-            .write(&entry_user(&vault_id, id, origin), &stored)
+            .write(&entry_user(vault_id, id, origin), &stored)
             .within(context.limits.vault_wait_tool)
             .map_err(|error| RuntimeError::new(ErrorKind::KeychainUnavailable, error.to_string()))
     });
@@ -216,6 +215,8 @@ fn identity(
         .map_err(|network::Refusal(why)| failed(why))?;
     request.credential = Some(RequestCredential::new(declared, access).map_err(|why| failed(why.to_owned()))?);
     let mut budget = context.limits.max_response_body_bytes;
+    let url = request.url.clone();
+    let started = now_ms();
     let exchange = context.session.send(
         connector,
         operation,
@@ -223,6 +224,9 @@ fn identity(
         Instant::now() + context.limits.call_time_limit,
         &mut budget,
     );
+    let _ = context
+        .log
+        .append(calls::identity_entry(id, &url, started, &exchange, None));
     let response = exchange
         .result
         .map_err(|failure| failed(format!("the identity operation failed: {}", failure.detail)))?;
@@ -323,11 +327,10 @@ pub(crate) fn connect_key(
     let stored = Stored::Key {
         key: Secret::new(key.to_owned()),
     };
-    context.accounts.connect(new, |_| {
-        let vault_id = context.accounts.vault_id()?;
+    context.accounts.connect(new, |_, vault_id| {
         context
             .vault
-            .write(&entry_user(&vault_id, id, origin), &stored)
+            .write(&entry_user(vault_id, id, origin), &stored)
             .within(context.limits.vault_wait_tool)
             .map_err(|error| RuntimeError::new(ErrorKind::KeychainUnavailable, error.to_string()))
     })

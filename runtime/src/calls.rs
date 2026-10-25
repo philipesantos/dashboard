@@ -978,30 +978,13 @@ impl Calls {
                                     &mut self.update_bytes_left,
                                 );
                                 let status = exchange.result.as_ref().map(|response| response.status);
-                                host_entries.push(requests::Entry {
-                                    at_ms: started,
-                                    plugin: HOST.to_owned(),
-                                    connector: id.to_owned(),
-                                    operation: "identity".to_owned(),
-                                    kind: None,
-                                    method: Some("GET".to_owned()),
-                                    host: url.host_str().map(str::to_owned),
-                                    path: Some(url.path().to_owned()),
-                                    arguments: BTreeMap::new(),
-                                    outcome: match &status {
-                                        Ok(status) => requests::Outcome::Status { status: *status },
-                                        Err(failure) => requests::Outcome::Failed {
-                                            failed: Rule::from(failure.rule).as_str().to_owned(),
-                                            detail: failure.detail.clone(),
-                                        },
-                                    },
-                                    sent_bytes: exchange.hops.iter().map(|hop| hop.sent_bytes).sum(),
-                                    received_bytes: exchange.hops.iter().map(|hop| hop.received_bytes).sum(),
-                                    duration_ms: 0,
-                                    redirect_of: None,
-                                    summary: None,
-                                    account: account_name(Some(binding)),
-                                });
+                                host_entries.push(identity_entry(
+                                    id,
+                                    &url,
+                                    started,
+                                    &exchange,
+                                    account_name(Some(binding)),
+                                ));
                                 matches!(status, Ok(401))
                             }
                             _ => true,
@@ -1053,6 +1036,43 @@ fn request_credential(declared: &Credential, stored: &Stored) -> Result<RequestC
     };
     RequestCredential::new(declared, secret)
         .map_err(|why| Answer::Failed(Rule::Unavailable, why.to_owned()))
+}
+
+/// The request log's entry of the host's own identity request, made with the account's
+/// credential: never a body, and no query.
+pub(crate) fn identity_entry(
+    connector: &str,
+    url: &url::Url,
+    started: u64,
+    exchange: &network::Exchange,
+    account: Option<String>,
+) -> requests::Entry {
+    requests::Entry {
+        at_ms: started,
+        plugin: HOST.to_owned(),
+        connector: connector.to_owned(),
+        operation: "identity".to_owned(),
+        kind: None,
+        method: Some("GET".to_owned()),
+        host: url.host_str().map(str::to_owned),
+        path: Some(url.path().to_owned()),
+        arguments: BTreeMap::new(),
+        outcome: match &exchange.result {
+            Ok(response) => requests::Outcome::Status {
+                status: response.status,
+            },
+            Err(failure) => requests::Outcome::Failed {
+                failed: Rule::from(failure.rule).as_str().to_owned(),
+                detail: failure.detail.clone(),
+            },
+        },
+        sent_bytes: exchange.hops.iter().map(|hop| hop.sent_bytes).sum(),
+        received_bytes: exchange.hops.iter().map(|hop| hop.received_bytes).sum(),
+        duration_ms: 0,
+        redirect_of: None,
+        summary: None,
+        account,
+    }
 }
 
 /// The request log's entry of one of the host's own requests: never a body, and no query.
@@ -1663,7 +1683,7 @@ mod tests {
             let user = entry_user(&vault_id, "local/notes", NOTES_ORIGIN);
             let connected = self
                 .store()
-                .connect(new, |_| {
+                .connect(new, |_, _| {
                     vault
                         .write(
                             &user,
@@ -1798,7 +1818,7 @@ mod tests {
         let (mut calls, mut run) = fixture.calls();
         fixture
             .store()
-            .disconnect("local/notes", NOTES_ORIGIN, |_| Ok(()))
+            .disconnect("local/notes", NOTES_ORIGIN, |_, _| Ok(()))
             .unwrap();
         let answer = calls.call(&mut run, "local/notes", "get", text("a"));
         assert!(account_not_connected(&answer).contains("disconnected"), "{answer:?}");

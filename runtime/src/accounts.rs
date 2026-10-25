@@ -171,11 +171,11 @@ impl AccountStore {
     /// account id; another account, one the connector cannot identify, or a key while one is
     /// stored is `another-account-connected`, naming the current one, and nothing changes.
     /// `write_vault` runs, still under the lock, after the comparison and before the record is
-    /// written; when it fails, the record is left as it was.
+    /// written, with the record's vault id; when it fails, the record is left as it was.
     pub fn connect(
         &self,
         new: NewAccount,
-        write_vault: impl FnOnce(&Account) -> Result<(), RuntimeError>,
+        write_vault: impl FnOnce(&Account, &str) -> Result<(), RuntimeError>,
     ) -> Result<Connected, RuntimeError> {
         self.change(|record| {
             let position = record
@@ -220,7 +220,7 @@ impl AccountStore {
                 expires_at_ms: new.expires_at_ms,
                 needs_connecting: None,
             };
-            write_vault(&account)?;
+            write_vault(&account, &record.vault)?;
             let connected = match position {
                 Some(index) => {
                     record.accounts[index] = account.clone();
@@ -235,14 +235,14 @@ impl AccountStore {
         })
     }
 
-    /// Disconnects the account under the record's lock: `delete_vault` runs first, then the
-    /// account leaves the record, so no call between the two can mark it as missing. `None` when
-    /// nothing is connected.
+    /// Disconnects the account under the record's lock: `delete_vault` runs first, with the
+    /// record's vault id, then the account leaves the record, so no call between the two can
+    /// mark it as missing. `None` when nothing is connected.
     pub fn disconnect(
         &self,
         connector: &str,
         origin: &str,
-        delete_vault: impl FnOnce(&Account) -> Result<(), RuntimeError>,
+        delete_vault: impl FnOnce(&Account, &str) -> Result<(), RuntimeError>,
     ) -> Result<Option<Account>, RuntimeError> {
         if self.read()?.is_none() {
             return Ok(None);
@@ -255,7 +255,7 @@ impl AccountStore {
             else {
                 return Ok((None, false));
             };
-            delete_vault(&record.accounts[index])?;
+            delete_vault(&record.accounts[index], &record.vault)?;
             Ok((Some(record.accounts.remove(index)), true))
         })
     }
@@ -493,7 +493,7 @@ mod tests {
         (dir, store)
     }
 
-    fn ok(_: &Account) -> Result<(), RuntimeError> {
+    fn ok(_: &Account, _: &str) -> Result<(), RuntimeError> {
         Ok(())
     }
 
@@ -582,7 +582,7 @@ mod tests {
 
         let before = fs::read(store.path()).unwrap();
         for other in [new_account(Some("7654321"), "bob"), new_account(None, "account")] {
-            let error = store.connect(other, |_| panic!("the vault is never written")).unwrap_err();
+            let error = store.connect(other, |_, _| panic!("the vault is never written")).unwrap_err();
             assert_eq!(error.kind(), ErrorKind::AnotherAccountConnected);
             assert!(error.detail().contains("ada-renamed"), "{error}");
             assert!(error.detail().contains("disconnect"), "{error}");
@@ -592,7 +592,7 @@ mod tests {
         // A key: never replaced while one is stored
         let (_dir, store) = new_store();
         store.connect(key(), ok).unwrap();
-        let error = store.connect(key(), |_| panic!("the vault is never written")).unwrap_err();
+        let error = store.connect(key(), |_, _| panic!("the vault is never written")).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::AnotherAccountConnected);
     }
 
@@ -601,7 +601,7 @@ mod tests {
         let (_dir, store) = new_store();
         let error = RuntimeError::new(ErrorKind::KeychainUnavailable, "locked");
         assert_eq!(
-            store.connect(new_account(Some("1"), "ada"), |_| Err(error.clone())).unwrap_err(),
+            store.connect(new_account(Some("1"), "ada"), |_, _| Err(error.clone())).unwrap_err(),
             error
         );
         assert!(store.list().unwrap().is_empty());
@@ -613,7 +613,7 @@ mod tests {
         store.connect(new_account(Some("1"), "ada"), ok).unwrap();
         let mut seen = None;
         let gone = store
-            .disconnect("local/notes", "/home/ada/notes.json", |account| {
+            .disconnect("local/notes", "/home/ada/notes.json", |account, _| {
                 // Still in the record while the vault entry is deleted
                 seen = Some(account.name.clone());
                 Ok(())
@@ -623,13 +623,13 @@ mod tests {
         assert_eq!((gone.name.as_str(), seen.as_deref()), ("ada", Some("ada")));
         assert!(store.list().unwrap().is_empty());
         assert_eq!(
-            store.disconnect("local/notes", "/home/ada/notes.json", |_| panic!("nothing to delete")).unwrap(),
+            store.disconnect("local/notes", "/home/ada/notes.json", |_, _| panic!("nothing to delete")).unwrap(),
             None
         );
         // A vault that cannot delete leaves the account connected
         store.connect(new_account(Some("1"), "ada"), ok).unwrap();
         let locked = RuntimeError::new(ErrorKind::KeychainUnavailable, "locked");
-        assert!(store.disconnect("local/notes", "/home/ada/notes.json", |_| Err(locked.clone())).is_err());
+        assert!(store.disconnect("local/notes", "/home/ada/notes.json", |_, _| Err(locked.clone())).is_err());
         assert_eq!(store.list().unwrap().len(), 1);
     }
 
@@ -678,7 +678,7 @@ mod tests {
     fn the_record_never_holds_a_credential() {
         let (_dir, store) = new_store();
         store
-            .connect(new_account(Some("1"), "ada"), |_| {
+            .connect(new_account(Some("1"), "ada"), |_, _| {
                 // The vault is where a token goes; nothing of it reaches the record
                 let _ = TOKEN;
                 Ok(())
