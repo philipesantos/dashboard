@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -49,12 +49,26 @@ pub struct Connector {
     reserves: Vec<String>,
     destinations: BTreeMap<String, Origin>,
     operations: BTreeMap<String, Operation>,
+    credential: Option<Credential>,
 }
 
 /// What a connector declares about the credential its operations need
 /// (`specs/005-plugin-credentials/data-model.md`, Connector: `credential`).
 #[derive(Debug, Clone)]
-pub struct Credential {}
+pub struct Credential {
+    kind: CredentialKind,
+    required: bool,
+    /// The origins of the destinations the credential is for, sorted, each once.
+    origins: Vec<Origin>,
+    /// `Authorization`, whatever case the connector wrote, or a catalog connector's own header.
+    header: String,
+    scheme: Option<String>,
+    account: Option<AccountDecl>,
+    /// A key's access, when declared; an account's is in [`AccountDecl`].
+    access: Vec<Access>,
+    subscription_required: Vec<u16>,
+    digest: String,
+}
 
 /// An account the user connects, or a key the user enters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,93 +77,151 @@ pub enum CredentialKind {
     Key,
 }
 
-/// How an account signs in.
+/// How an account signs in: the authorization code with PKCE (research R2).
 #[derive(Debug, Clone)]
-pub struct AccountDecl {}
+pub struct AccountDecl {
+    client: String,
+    authorize: url::Url,
+    token: url::Url,
+    revoke: Option<url::Url>,
+    scopes: Vec<String>,
+    access: Vec<Access>,
+    identity: Option<Identity>,
+    access_page: Option<url::Url>,
+    revoke_page: Option<url::Url>,
+}
 
-/// The operation that tells the account's name and stable id.
+/// The operation that tells the account's name and stable id, and where they are in its answer.
 #[derive(Debug, Clone)]
-pub struct Identity {}
+pub struct Identity {
+    operation: String,
+    name: String,
+    id: String,
+}
 
-/// One item of what the account lets the connector do.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// One item of what the account lets the connector do, shown before approval and before sign-in.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Access {
     pub name: String,
     pub level: Level,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Level {
     Read,
     Write,
 }
 
+impl Level {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Level::Read => "read",
+            Level::Write => "write",
+        }
+    }
+}
+
 impl Credential {
     pub fn kind(&self) -> CredentialKind {
-        todo!("T017")
+        self.kind
     }
+
     pub fn required(&self) -> bool {
-        todo!("T017")
+        self.required
     }
+
+    /// The origins the credential is sent to, sorted.
     pub fn origins(&self) -> &[Origin] {
-        todo!("T017")
+        &self.origins
     }
+
     pub fn header(&self) -> &str {
-        todo!("T017")
+        &self.header
     }
+
+    /// The header's value for `secret`: `<scheme> <secret>` with `Authorization`, the secret
+    /// alone with a catalog connector's own header.
     pub fn header_value(&self, secret: &str) -> String {
-        todo!("T017: {secret}")
+        match &self.scheme {
+            Some(scheme) => format!("{scheme} {secret}"),
+            None => secret.to_owned(),
+        }
     }
+
     pub fn account(&self) -> Option<&AccountDecl> {
-        todo!("T017")
+        self.account.as_ref()
     }
+
+    /// What the credential lets the connector do: an account's access, or a key's when declared.
     pub fn access(&self) -> &[Access] {
-        todo!("T017")
+        match &self.account {
+            Some(account) => &account.access,
+            None => &self.access,
+        }
     }
+
+    /// The statuses that mean a paid plan is missing.
     pub fn subscription_required(&self) -> &[u16] {
-        todo!("T017")
+        &self.subscription_required
     }
+
+    /// `sha256:` and the hex SHA-256 of the canonical declaration without its access, with each
+    /// destination replaced by its origin (research R8): what an approval of it covers, apart
+    /// from the access it compares item by item.
     pub fn digest(&self) -> String {
-        todo!("T017")
+        self.digest.clone()
     }
 }
 
 impl AccountDecl {
     pub fn client(&self) -> &str {
-        todo!("T017")
+        &self.client
     }
+
     pub fn authorize(&self) -> &url::Url {
-        todo!("T017")
+        &self.authorize
     }
+
     pub fn token(&self) -> &url::Url {
-        todo!("T017")
+        &self.token
     }
+
     pub fn revoke(&self) -> Option<&url::Url> {
-        todo!("T017")
+        self.revoke.as_ref()
     }
+
     pub fn scopes(&self) -> &[String] {
-        todo!("T017")
+        &self.scopes
     }
+
     pub fn identity(&self) -> Option<&Identity> {
-        todo!("T017")
+        self.identity.as_ref()
     }
+
     pub fn access_page(&self) -> Option<&url::Url> {
-        todo!("T017")
+        self.access_page.as_ref()
     }
+
     pub fn revoke_page(&self) -> Option<&url::Url> {
-        todo!("T017")
+        self.revoke_page.as_ref()
     }
 }
 
 impl Identity {
     pub fn operation(&self) -> &str {
-        todo!("T017")
+        &self.operation
     }
+
+    /// JSON pointer to the account's name in the operation's answer.
     pub fn name(&self) -> &str {
-        todo!("T017")
+        &self.name
     }
+
+    /// JSON pointer to the account's stable id.
     pub fn id(&self) -> &str {
-        todo!("T017")
+        &self.id
     }
 }
 
@@ -309,7 +381,7 @@ impl Connector {
 
     /// The credential its operations need, if any.
     pub fn credential(&self) -> Option<&Credential> {
-        todo!("T017")
+        self.credential.as_ref()
     }
 
     /// The origin of the destination named `name`.
@@ -569,7 +641,8 @@ const MAX_OPERATION_NAME_CHARS: usize = 64;
 /// `[a-z][a-z0-9_]{0,31}`
 const MAX_PARAMETER_NAME_CHARS: usize = 32;
 
-/// Field names that declare a credential, refused anywhere until feature 005 (FR-017).
+/// Field names that declare a credential, refused anywhere but the top-level `credential`
+/// (feature 003's FR-017, feature 005's research R3).
 const CREDENTIAL_FIELDS: &[&str] = &["credential", "credentials", "auth"];
 
 const CATALOG_PREFIX: &str = "catalog/";
@@ -593,6 +666,9 @@ struct RawConnector {
     destinations: BTreeMap<String, String>,
     /// Read as JSON first, so each operation keeps its declaration as written for its digest.
     operations: BTreeMap<String, Value>,
+    /// Read as JSON first, so the credential keeps its declaration as written for its digest.
+    #[serde(default, deserialize_with = "present")]
+    credential: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -761,6 +837,17 @@ impl RawConnector {
             operations.insert(name, operation);
         }
 
+        let credential = match self.credential {
+            Some(declaration) => Some(check_credential(
+                declaration,
+                &destinations,
+                &operations,
+                &reserves,
+                source,
+            )?),
+            None => None,
+        };
+
         Ok(Connector {
             id: self.id,
             version,
@@ -769,6 +856,7 @@ impl RawConnector {
             reserves,
             destinations,
             operations,
+            credential,
         })
     }
 }
@@ -1424,6 +1512,523 @@ fn check_response(response: RawResponse, at: &str) -> Result<ResponseSpec, Runti
     Ok(ResponseSpec { format, headers })
 }
 
+/// The credential as written (`data-model.md`, Connector: `credential`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCredential {
+    kind: RawCredentialKind,
+    #[serde(default)]
+    required: bool,
+    destinations: Vec<String>,
+    header: String,
+    #[serde(default, deserialize_with = "present")]
+    scheme: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    account: Option<Object<RawAccount>>,
+    #[serde(default, deserialize_with = "present")]
+    access: Option<Vec<Object<Access>>>,
+    #[serde(default, deserialize_with = "present")]
+    subscription_required: Option<Vec<u64>>,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum RawCredentialKind {
+    Account,
+    Key,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAccount {
+    flow: RawFlow,
+    client: String,
+    authorize: String,
+    token: String,
+    #[serde(default, deserialize_with = "present")]
+    revoke: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    scopes: Option<Vec<String>>,
+    access: Vec<Object<Access>>,
+    #[serde(default, deserialize_with = "present")]
+    identity: Option<Object<RawIdentity>>,
+    #[serde(default, deserialize_with = "present")]
+    access_page: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    revoke_page: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+enum RawFlow {
+    #[serde(rename = "authorization-code")]
+    AuthorizationCode,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawIdentity {
+    operation: String,
+    name: String,
+    id: String,
+}
+
+const MAX_CREDENTIAL_DESTINATIONS: usize = 8;
+const MAX_HEADER_NAME_CHARS: usize = 64;
+const MAX_SCHEME_CHARS: usize = 32;
+const MAX_SCOPES: usize = 32;
+const MAX_SCOPE_CHARS: usize = 64;
+const MAX_ACCESS: usize = 32;
+const MAX_ACCESS_NAME_CHARS: usize = 64;
+const MAX_SUBSCRIPTION_STATUSES: usize = 4;
+const MAX_CLIENT_CHARS: usize = 32;
+const MAX_POINTER_SEGMENTS: usize = 8;
+const MAX_POINTER_SEGMENT_CHARS: usize = 64;
+const MAX_ADDRESS_CHARS: usize = 2048;
+/// Headers the host sets or forbids itself: no credential travels in one (feature 003, R1).
+const HOST_HEADERS: &[&str] = &[
+    "accept",
+    "accept-language",
+    "accept-encoding",
+    "connection",
+    "content-length",
+    "content-type",
+    "cookie",
+    "host",
+    "te",
+    "transfer-encoding",
+    "upgrade",
+    "user-agent",
+];
+const AUTHORIZATION: &str = "Authorization";
+
+/// Checks a connector's `credential` in the order of `data-model.md` (Connector: `credential`).
+fn check_credential(
+    declaration: Value,
+    destinations: &BTreeMap<String, Origin>,
+    operations: &BTreeMap<String, Operation>,
+    reserves: &[String],
+    source: Source,
+) -> Result<Credential, RuntimeError> {
+    let at = |path: &str| {
+        if path == "." {
+            "credential".to_owned()
+        } else {
+            format!("credential.{path}")
+        }
+    };
+    // 1. The schema
+    let Object(raw): Object<RawCredential> = serde_path_to_error::deserialize(declaration.clone())
+        .map_err(|error| field(&at(&error.path().to_string()), error.inner()))?;
+    let kind = match raw.kind {
+        RawCredentialKind::Account => CredentialKind::Account,
+        RawCredentialKind::Key => CredentialKind::Key,
+    };
+    match (kind, &raw.account, &raw.access) {
+        (CredentialKind::Account, None, _) => {
+            return Err(field("credential.account", "an account declares how it signs in"));
+        }
+        (CredentialKind::Account, Some(_), Some(_)) => {
+            return Err(field(
+                "credential.access",
+                "an account declares its access in credential.account.access",
+            ));
+        }
+        (CredentialKind::Key, Some(_), _) => {
+            return Err(field("credential.account", "only an account signs in; a key does not"));
+        }
+        _ => {}
+    }
+    let subscription_required = check_statuses(raw.subscription_required.unwrap_or_default())?;
+    let key_access = match raw.access {
+        Some(access) => check_access(access, "credential.access")?,
+        None => Vec::new(),
+    };
+
+    // 2. The destinations it is for, and HTTPS for every destination of the connector
+    if !(1..=MAX_CREDENTIAL_DESTINATIONS).contains(&raw.destinations.len()) {
+        return Err(field(
+            "credential.destinations",
+            format!("must have 1 to {MAX_CREDENTIAL_DESTINATIONS} entries"),
+        ));
+    }
+    let mut origins = Vec::new();
+    for (index, name) in raw.destinations.iter().enumerate() {
+        if raw.destinations[..index].contains(name) {
+            return Err(field("credential.destinations", format!("`{name}` is listed twice")));
+        }
+        let origin = destinations.get(name).ok_or_else(|| {
+            field(
+                "credential.destinations",
+                format!("`{name}` is not one of the connector's destinations"),
+            )
+        })?;
+        origins.push(origin.clone());
+    }
+    origins.sort();
+    origins.dedup();
+    if let Some((name, origin)) = destinations.iter().find(|(_, origin)| !origin.is_https()) {
+        return Err(RuntimeError::new(
+            ErrorKind::CredentialNeedsHttps,
+            format!(
+                "destinations.{name}: {origin} is not HTTPS; a connector that declares a credential reaches every destination over HTTPS, since only one that sends no credential may go without it"
+            ),
+        ));
+    }
+
+    // 3. The header, which the host alone writes
+    let header = check_credential_header(&raw.header, raw.scheme.as_deref(), operations, source)?;
+    let scheme = if header == AUTHORIZATION {
+        raw.scheme
+    } else {
+        None
+    };
+
+    // 4–6. The account: addresses, identity, client
+    let account = match raw.account {
+        None => None,
+        Some(Object(account)) => Some(check_account(
+            account,
+            destinations,
+            &origins,
+            &raw.destinations,
+            operations,
+            reserves,
+            source,
+        )?),
+    };
+
+    let mut digested = declaration;
+    if let Value::Object(fields) = &mut digested {
+        fields.remove("access");
+        if let Some(Value::Object(account)) = fields.get_mut("account") {
+            account.remove("access");
+        }
+        fields.insert(
+            "destinations".to_owned(),
+            Value::Array(
+                origins
+                    .iter()
+                    .map(|origin| Value::String(origin.serialization()))
+                    .collect(),
+            ),
+        );
+    }
+    Ok(Credential {
+        kind,
+        required: raw.required,
+        origins,
+        header,
+        scheme,
+        account,
+        access: key_access,
+        subscription_required,
+        digest: sha256(canonical(&digested).as_bytes()),
+    })
+}
+
+fn check_statuses(statuses: Vec<u64>) -> Result<Vec<u16>, RuntimeError> {
+    let at = "credential.subscription_required";
+    if statuses.len() > MAX_SUBSCRIPTION_STATUSES {
+        return Err(field(at, format!("at most {MAX_SUBSCRIPTION_STATUSES} statuses")));
+    }
+    let mut kept: Vec<u16> = Vec::new();
+    for status in statuses {
+        let status = u16::try_from(status)
+            .ok()
+            .filter(|status| (400..=499).contains(status))
+            .ok_or_else(|| field(at, format!("{status} is not a status from 400 to 499")))?;
+        if kept.contains(&status) {
+            return Err(field(at, format!("{status} is listed twice")));
+        }
+        kept.push(status);
+    }
+    Ok(kept)
+}
+
+fn check_access(access: Vec<Object<Access>>, at: &str) -> Result<Vec<Access>, RuntimeError> {
+    if !(1..=MAX_ACCESS).contains(&access.len()) {
+        return Err(field(at, format!("must have 1 to {MAX_ACCESS} items")));
+    }
+    let mut items: Vec<Access> = Vec::new();
+    for (index, Object(item)) in access.into_iter().enumerate() {
+        check_shown_text(&format!("{at}[{index}].name"), &item.name, MAX_ACCESS_NAME_CHARS)?;
+        if items.iter().any(|kept| kept.name == item.name) {
+            return Err(field(at, format!("`{}` is listed twice", item.name)));
+        }
+        items.push(item);
+    }
+    items.sort();
+    Ok(items)
+}
+
+/// `Authorization` with a scheme, or in the catalog another header; never one the host sets or
+/// forbids, and never one an operation fixes, compared without regard to case.
+fn check_credential_header(
+    header: &str,
+    scheme: Option<&str>,
+    operations: &BTreeMap<String, Operation>,
+    source: Source,
+) -> Result<String, RuntimeError> {
+    let well_formed = header.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && header.chars().count() <= MAX_HEADER_NAME_CHARS
+        && header.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if !well_formed {
+        return Err(field(
+            "credential.header",
+            format!("`{header}` must be a letter, then up to 63 letters, digits or hyphens"),
+        ));
+    }
+    let lower = header.to_ascii_lowercase();
+    let header = if header.eq_ignore_ascii_case(AUTHORIZATION) {
+        let scheme = scheme.ok_or_else(|| {
+            field(
+                "credential.scheme",
+                "a credential in Authorization names its scheme, such as Bearer",
+            )
+        })?;
+        let token = (1..=MAX_SCHEME_CHARS).contains(&scheme.chars().count())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "!#$%&'*+.^_`|~-".contains(c));
+        if !token {
+            return Err(field(
+                "credential.scheme",
+                format!("`{scheme}` must be 1 to {MAX_SCHEME_CHARS} characters of an HTTP token"),
+            ));
+        }
+        AUTHORIZATION.to_owned()
+    } else {
+        if source != Source::Catalog {
+            return Err(field(
+                "credential.header",
+                format!(
+                    "`{header}`: outside the catalog a credential travels only in Authorization; another header needs the catalog's review"
+                ),
+            ));
+        }
+        if HOST_HEADERS.contains(&lower.as_str())
+            || lower.starts_with("proxy-")
+            || lower.starts_with("content-")
+        {
+            return Err(field(
+                "credential.header",
+                format!("`{header}` is a header the host sets or forbids"),
+            ));
+        }
+        if scheme.is_some() {
+            return Err(field(
+                "credential.scheme",
+                "only a credential in Authorization has a scheme",
+            ));
+        }
+        header.to_owned()
+    };
+    for (name, operation) in operations {
+        if let Some((fixed, _)) = operation
+            .headers
+            .iter()
+            .find(|(fixed, _)| fixed.eq_ignore_ascii_case(&header))
+        {
+            return Err(field(
+                &format!("operations.{name}.headers"),
+                format!("`{fixed}` is the credential's header, which only the host writes"),
+            ));
+        }
+    }
+    Ok(header)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_account(
+    account: RawAccount,
+    destinations: &BTreeMap<String, Origin>,
+    origins: &[Origin],
+    credential_destinations: &[String],
+    operations: &BTreeMap<String, Operation>,
+    reserves: &[String],
+    source: Source,
+) -> Result<AccountDecl, RuntimeError> {
+    let RawFlow::AuthorizationCode = account.flow;
+    if !is_name(&account.client, MAX_CLIENT_CHARS, '-') {
+        return Err(field(
+            "credential.account.client",
+            format!(
+                "`{}` must be a lowercase letter, then up to 31 lowercase letters, digits or hyphens",
+                account.client
+            ),
+        ));
+    }
+    let scopes = account.scopes.unwrap_or_default();
+    if scopes.len() > MAX_SCOPES {
+        return Err(field(
+            "credential.account.scopes",
+            format!("at most {MAX_SCOPES} scopes"),
+        ));
+    }
+    for (index, scope) in scopes.iter().enumerate() {
+        // RFC 6749's scope-token: %x21 / %x23-5B / %x5D-7E
+        let valid = (1..=MAX_SCOPE_CHARS).contains(&scope.chars().count())
+            && scope
+                .chars()
+                .all(|c| c == '\u{21}' || ('\u{23}'..='\u{5b}').contains(&c) || ('\u{5d}'..='\u{7e}').contains(&c));
+        if !valid {
+            return Err(field(
+                &format!("credential.account.scopes[{index}]"),
+                format!("`{scope}` must be 1 to {MAX_SCOPE_CHARS} characters of an OAuth scope"),
+            ));
+        }
+        if scopes[..index].contains(scope) {
+            return Err(field(
+                "credential.account.scopes",
+                format!("`{scope}` is listed twice"),
+            ));
+        }
+    }
+    let access = check_access(account.access, "credential.account.access")?;
+
+    // Where the browser goes: a host the connector reserves (catalog) or declares (development)
+    let browser_host = |name: &str, address: &str| -> Result<url::Url, RuntimeError> {
+        let url = https_address(name, address)?;
+        let host = url.host_str().unwrap_or_default();
+        let allowed = match source {
+            Source::Catalog => reserves.iter().any(|domain| is_under(host, domain)),
+            _ => destinations.values().any(|origin| origin.host == host),
+        };
+        if !allowed {
+            return Err(field(
+                name,
+                format!(
+                    "{host} is not a host the connector {}",
+                    if source == Source::Catalog {
+                        "reserves"
+                    } else {
+                        "declares"
+                    }
+                ),
+            ));
+        }
+        Ok(url)
+    };
+    // Where a credential goes: one of the credential's own destinations
+    let credential_origin = |name: &str, address: &str| -> Result<url::Url, RuntimeError> {
+        let url = https_address(name, address)?;
+        let port = url.port_or_known_default().unwrap_or(443);
+        let host = url.host_str().unwrap_or_default();
+        if !origins
+            .iter()
+            .any(|origin| origin.https && origin.host == host && origin.port == port)
+        {
+            return Err(field(
+                name,
+                format!(
+                    "{} is not one of the destinations the credential is for, so a refresh token or a token being revoked would reach a host the credential is not for",
+                    url.origin().ascii_serialization()
+                ),
+            ));
+        }
+        Ok(url)
+    };
+
+    let authorize = browser_host("credential.account.authorize", &account.authorize)?;
+    let token = credential_origin("credential.account.token", &account.token)?;
+    let revoke = account
+        .revoke
+        .as_deref()
+        .map(|address| credential_origin("credential.account.revoke", address))
+        .transpose()?;
+    let access_page = account
+        .access_page
+        .as_deref()
+        .map(|address| browser_host("credential.account.access_page", address))
+        .transpose()?;
+    let revoke_page = account
+        .revoke_page
+        .as_deref()
+        .map(|address| browser_host("credential.account.revoke_page", address))
+        .transpose()?;
+
+    let identity = match account.identity {
+        None => None,
+        Some(Object(identity)) => {
+            let at = "credential.account.identity";
+            let operation = operations.get(&identity.operation).ok_or_else(|| {
+                field(at, format!("`{}` is not an operation of the connector", identity.operation))
+            })?;
+            if operation.kind != Kind::Read
+                || operation.method != Method::Get
+                || !operation.parameters.is_empty()
+            {
+                return Err(field(
+                    at,
+                    format!("`{}` must be a GET read without parameters", identity.operation),
+                ));
+            }
+            if !credential_destinations.contains(&operation.destination) {
+                return Err(field(
+                    at,
+                    format!(
+                        "`{}` goes to `{}`, a destination the credential is not for",
+                        identity.operation, operation.destination
+                    ),
+                ));
+            }
+            for (name, pointer) in [("name", &identity.name), ("id", &identity.id)] {
+                let segments: Vec<&str> = pointer.split('/').skip(1).collect();
+                let valid = pointer.starts_with('/')
+                    && (1..=MAX_POINTER_SEGMENTS).contains(&segments.len())
+                    && segments
+                        .iter()
+                        .all(|segment| (1..=MAX_POINTER_SEGMENT_CHARS).contains(&segment.chars().count()));
+                if !valid {
+                    return Err(field(
+                        &format!("{at}.{name}"),
+                        format!("`{pointer}` must be a JSON pointer of 1 to {MAX_POINTER_SEGMENTS} parts"),
+                    ));
+                }
+            }
+            Some(Identity {
+                operation: identity.operation,
+                name: identity.name,
+                id: identity.id,
+            })
+        }
+    };
+
+    Ok(AccountDecl {
+        client: account.client,
+        authorize,
+        token,
+        revoke,
+        scopes,
+        access,
+        identity,
+        access_page,
+        revoke_page,
+    })
+}
+
+/// An absolute `https` address with a DNS name, no user, password or fragment.
+fn https_address(name: &str, address: &str) -> Result<url::Url, RuntimeError> {
+    if address.chars().count() > MAX_ADDRESS_CHARS {
+        return Err(field(name, format!("longer than {MAX_ADDRESS_CHARS} characters")));
+    }
+    let url = url::Url::parse(address)
+        .map_err(|error| field(name, format!("`{address}` is not an address: {error}")))?;
+    let domain = matches!(url.host(), Some(url::Host::Domain(domain)) if !domain.ends_with('.'));
+    if url.scheme() != "https"
+        || !domain
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(field(
+            name,
+            format!("`{address}` must be https://<domain>/…, with no user, password or fragment"),
+        ));
+    }
+    Ok(url)
+}
+
 /// A credential field anywhere, at `path` or under it.
 fn refuse_credentials(value: &Value, path: &str) -> Result<(), RuntimeError> {
     match value {
@@ -1434,13 +2039,17 @@ fn refuse_credentials(value: &Value, path: &str) -> Result<(), RuntimeError> {
                 } else {
                     format!("{path}.{name}")
                 };
-                if CREDENTIAL_FIELDS.contains(&name.as_str()) {
+                let top_level_credential = path.is_empty() && name == "credential";
+                if CREDENTIAL_FIELDS.contains(&name.as_str()) && !top_level_credential {
                     return Err(RuntimeError::new(
                         ErrorKind::CredentialsNotSupported,
                         format!(
-                            "{here}: connectors with credentials arrive with feature 005; this one cannot be used yet"
+                            "{here}: a connector declares its credential only in the top-level `credential` field"
                         ),
                     ));
+                }
+                if top_level_credential {
+                    continue;
                 }
                 refuse_credentials(item, &here)?;
             }
