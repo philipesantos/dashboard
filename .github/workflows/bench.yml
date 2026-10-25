@@ -51,6 +51,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
+      # The runtime's Secret Service store links libdbus; the vault bench reads the real
+      # keychain, so GNOME Keyring runs it on Linux (specs/005-plugin-credentials/research.md, R15)
+      - name: Install the vault's system dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: |
+          apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          sudo apt-get $apt_options update
+          sudo apt-get $apt_options install -y libdbus-1-dev pkg-config gnome-keyring
+
       - run: cargo xtask plugins --locked
 
       # A plugin runs only once approved; the approval goes to a record of this job alone
