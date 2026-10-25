@@ -732,6 +732,82 @@ fn accounts_record() {
     );
 }
 
+/// `accounts_record` concurrency, the window of [`accounts_record`] held open: one runtime reads
+/// the record (its token about to expire) and, before it reads the keychain, another refreshes;
+/// the first then reads the refreshed token and sends it, without a second refresh.
+#[test]
+fn accounts_record_refreshed_between_reads() {
+    let pki = TestPki::new();
+    let service = SignInService::start(&pki);
+    let test = seam_from(&service.server.address().to_string(), pki.root());
+    let data = tempfile::TempDir::new().unwrap();
+    let dir = data.path().to_owned();
+    let open = || {
+        runtime::Runtime::with_test_network_on_keychain(
+            runtime::Limits::default(),
+            runtime::RuntimeOptions::new(&dir).development(true),
+            test.clone(),
+        )
+        .unwrap()
+    };
+    let world = World {
+        grants: std::sync::Arc::new(runtime::grants::GrantStore::open(dir.join("grants.json"))),
+        data,
+        runtime: open(),
+    };
+    world.write_connector("notes", &serde_json::from_str(NOTES).unwrap());
+    service.script(|script| script.expires_in = Some(1));
+    world
+        .runtime
+        .connect_account("local/notes", Some("dashboard-dev"), &service.browser())
+        .unwrap();
+    let _disconnect = Disconnect(&world.runtime);
+    service.script(|script| script.expires_in = None);
+    let package = repack(
+        &fixture("account-probe"),
+        &json!({
+            "manifest_version": 1, "id": "local/between-probe", "version": "0.1.0", "author": "A",
+            "permissions": [],
+            "connectors": [{ "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }]
+        })
+        .to_string(),
+    );
+    world.approve(&package);
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let late = open();
+    let late_plugin = late
+        .load(
+            &package,
+            common::TEST_ORIGIN,
+            std::sync::Arc::clone(&world.grants),
+        )
+        .unwrap();
+    let early = world.load(&package);
+    // The late runtime's keychain waits, so its read comes after the early runtime's refresh
+    late.test_vault_delay_next(std::time::Duration::from_millis(2500));
+    let (here, there) = std::thread::scope(|scope| {
+        let there = scope.spawn(|| late_plugin.update(&list_notes()));
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        (early.update(&list_notes()), there.join().unwrap())
+    });
+    for report in [&here, &there] {
+        assert!(
+            common::answers(report.result.as_ref().unwrap())[0]
+                .get("ok")
+                .is_some(),
+            "{report:?}"
+        );
+    }
+    let refreshes = service
+        .requests_to("/oauth/token")
+        .iter()
+        .filter(|request| {
+            String::from_utf8_lossy(&request.body).contains("grant_type=refresh_token")
+        })
+        .count();
+    assert_eq!(refreshes, 1, "the late runtime used the refreshed token");
+}
+
 /// The child half of [`accounts_record`], in a process of its own. Ignored when the suite runs.
 #[test]
 #[ignore = "run by accounts_record in a child process"]

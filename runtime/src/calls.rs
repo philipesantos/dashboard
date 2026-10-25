@@ -592,6 +592,7 @@ impl Calls {
                     connector_id,
                     binding,
                     declared,
+                    None,
                     &mut refreshed,
                     &mut host_entries,
                 )
@@ -767,7 +768,14 @@ impl Calls {
             .expires_at_ms
             .is_some_and(|expires| expires <= now_ms().saturating_add(margin));
         if expiring && declared.account().is_some() {
-            return self.refreshed_credential(id, binding, declared, refreshed, host_entries);
+            return self.refreshed_credential(
+                id,
+                binding,
+                declared,
+                Some(current.refreshed_at_ms),
+                refreshed,
+                host_entries,
+            );
         }
         request_credential(declared, &stored).map(Some)
     }
@@ -865,13 +873,15 @@ impl Calls {
 
     /// Refreshes the token under the accounts record's lock (research R6, R11 step 5), at most
     /// once per call, and returns the credential to send; a refresh another process made
-    /// meanwhile is used as it is. A refresh that fails, or whose new token the vault does not
-    /// keep, marks the account.
+    /// meanwhile is used as it is. `expiring_at` is the `refreshed_at_ms` of the record that
+    /// showed the token about to expire, `None` when the service refused the token sent. A
+    /// refresh that fails, or whose new token the vault does not keep, marks the account.
     fn refreshed_credential(
         &mut self,
         id: &str,
         binding: &AccountBinding,
         declared: &Credential,
+        expiring_at: Option<u64>,
         refreshed: &mut bool,
         host_entries: &mut Vec<requests::Entry>,
     ) -> Result<Option<RequestCredential>, Stop> {
@@ -916,10 +926,17 @@ impl Calls {
                     Ok(stored) => stored,
                     Err(error) => return Ok((Err(error.to_string()), None)),
                 };
-                // Another process refreshed since this run read the secret: use what it kept
-                if current.refreshed_at_ms > snapshot.refreshed_at_ms
-                    && Some(&stored) != cached.as_ref()
-                {
+                // Another process refreshed since the record showed the token expiring, even
+                // before this run read the secret, or since the token refused was read: use
+                // what it kept
+                let elsewhere = match expiring_at {
+                    Some(seen) => current.refreshed_at_ms > seen,
+                    None => {
+                        current.refreshed_at_ms > snapshot.refreshed_at_ms
+                            && Some(&stored) != cached.as_ref()
+                    }
+                };
+                if elsewhere {
                     return Ok((Ok(stored), None));
                 }
                 let mut failed = current.clone();
