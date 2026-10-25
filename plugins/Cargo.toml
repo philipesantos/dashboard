@@ -25,6 +25,7 @@ members = [
     "fixtures/quiet",
     "fixtures/net-probe",
     "fixtures/store-probe",
+    "fixtures/account-probe",
 ]
 
 [workspace.package]
