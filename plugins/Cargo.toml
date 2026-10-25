@@ -8,6 +8,7 @@ members = [
     "examples/hello-widget",
     "examples/github-releases",
     "examples/update-counter",
+    "examples/private-notes",
     "hostile/infinite-loop",
     "hostile/huge-alloc",
     "hostile/deep-recursion",
