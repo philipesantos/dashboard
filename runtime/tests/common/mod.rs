@@ -157,11 +157,28 @@ pub fn append_manifest_section(package: &[u8], payload: &[u8]) -> Vec<u8> {
 }
 
 /// Runtime options for tests whose plugins declare no connector: development mode off, and a
-/// data directory of this test binary's own, which such plugins never write to.
+/// data directory of this test binary's own, which such plugins never write to. It lives under
+/// the build directory and is emptied on first use in each run: a temporary directory held in
+/// a static would never be deleted, since a static is never dropped.
 pub fn options() -> RuntimeOptions {
-    static DATA: std::sync::OnceLock<TempDir> = std::sync::OnceLock::new();
-    let data = DATA.get_or_init(|| TempDir::new().expect("a temporary data directory"));
-    RuntimeOptions::new(data.path())
+    static DATA: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    let data = DATA.get_or_init(|| {
+        let binary = std::env::current_exe().expect("the test binary's path");
+        let name = binary
+            .file_stem()
+            .expect("the test binary's name")
+            .to_string_lossy();
+        let data = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("data-{name}"));
+        match std::fs::remove_dir_all(&data) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                panic!("emptying {}: {error}", data.display())
+            }
+            _ => {}
+        }
+        std::fs::create_dir_all(&data).expect("a data directory under the build directory");
+        data
+    });
+    RuntimeOptions::new(data)
 }
 
 /// A manifest for `id` that declares `connectors` as (id, major, operations, required).
