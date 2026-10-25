@@ -94,7 +94,7 @@
       "maxContains": 1
     },
     "login_providers": {
-      "description": "Accounts the plugin would ask the user to connect. Shown now; connecting arrives in feature 005.",
+      "description": "Obsolete since feature 005: accepted and ignored; accounts come from the connectors a widget declares (specs/005-plugin-credentials/data-model.md).",
       "type": "array",
       "maxItems": 8,
       "uniqueItems": true,
@@ -137,6 +137,11 @@
           "required": {
             "description": "true: approved with the other required permissions, or the widget does not run. false: optional; it starts off, and while off every call answers not-granted.",
             "type": "boolean"
+          },
+          "account": {
+            "description": "true: the widget calls this connector as the account connected to it, through the accounts interface (contract 1.3.0 or later); the connector must declare a credential, and one whose credential is required needs it. false: calls go without a credential, through connectors.",
+            "type": "boolean",
+            "default": false
           }
         }
       }
