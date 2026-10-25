@@ -199,39 +199,70 @@ impl Vault {
     /// The vault over `backend`, with its thread started; the store itself opens on first use,
     /// so a command that never touches the keychain never connects to it.
     pub(crate) fn new(backend: Backend, max_secret_bytes: usize) -> Vault {
-        todo!("T013: start the vault thread over {backend:?} ({max_secret_bytes})")
+        Vault {
+            jobs: spawn(backend),
+            service: DEVELOPMENT_SERVICE,
+            max_secret_bytes,
+        }
     }
 
     pub(crate) fn read(&self, user: &str) -> Pending<Stored> {
-        todo!("T013: read {user}")
+        let (service, user) = (self.service, user.to_owned());
+        self.send(move |opened| {
+            let bytes = Zeroizing::new(opened.get(service, &user)?);
+            Stored::from_bytes(&bytes).ok_or(VaultError::Unreadable)
+        })
     }
 
     pub(crate) fn write(&self, user: &str, stored: &Stored) -> Pending<()> {
-        todo!("T013: write {user} {stored:?}")
+        let bytes = stored.to_bytes();
+        if bytes.len() > self.max_secret_bytes {
+            let (sender, answer) = mpsc::sync_channel(1);
+            let _ = sender.send(Err(VaultError::TooLarge {
+                bytes: bytes.len(),
+                limit: self.max_secret_bytes,
+            }));
+            return Pending { answer };
+        }
+        let (service, user) = (self.service, user.to_owned());
+        self.send(move |opened| opened.set(service, &user, &bytes))
     }
 
     /// Deletes the entry; `false` when there was none.
     pub(crate) fn delete(&self, user: &str) -> Pending<bool> {
-        todo!("T013: delete {user}")
+        let (service, user) = (self.service, user.to_owned());
+        self.send(move |opened| opened.delete(service, &user))
     }
 
     /// Makes the vault's thread wait `delay` before its next operation, for the tests.
     #[cfg(any(test, feature = "test-network"))]
     pub(crate) fn delay_next(&self, delay: Duration) {
-        todo!("T013: {delay:?}")
+        drop(self.send(move |_| {
+            thread::sleep(delay);
+            Ok(())
+        }));
     }
 
     /// Makes the next operation on `user` fail with `failure`, for the tests.
     #[cfg(any(test, feature = "test-network"))]
     pub(crate) fn fail_next(&self, user: &str, failure: store::Failure) {
-        todo!("T013: {user} {failure:?}")
+        let (service, user) = (self.service, user.to_owned());
+        let done = self.send(move |opened| {
+            opened.fail_next(service, &user, failure);
+            Ok(())
+        });
+        done.within(Duration::from_secs(5))
+            .expect("the mock store takes a failure");
     }
 
     /// Writes `bytes` as `user`'s entry as they are, for the tests of entries the host did not
     /// write.
     #[cfg(any(test, feature = "test-network"))]
     pub(crate) fn write_raw(&self, user: &str, bytes: Vec<u8>) {
-        todo!("T013: {user} {}", bytes.len())
+        let (service, user) = (self.service, user.to_owned());
+        self.send(move |opened| opened.set(service, &user, &bytes))
+            .within(Duration::from_secs(5))
+            .expect("the mock store keeps the entry");
     }
 
     /// Runs `job` on the vault's thread, after every operation sent before it.
