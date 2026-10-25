@@ -30,6 +30,17 @@ pub(crate) struct Signed {
     pub(crate) bad: Server,
     /// The seam, for another runtime that reaches the same servers.
     pub(crate) test: runtime::TestNetwork,
+    /// Whether the vault is the system's keychain.
+    keychain: bool,
+}
+
+impl Drop for Signed {
+    fn drop(&mut self) {
+        // The system's keychain keeps nothing of a case
+        if self.keychain {
+            let _ = self.world.runtime.disconnect_account("local/notes", None);
+        }
+    }
 }
 
 impl Signed {
@@ -48,6 +59,28 @@ impl Signed {
     }
 
     pub(crate) fn with(connector: Value, limits: runtime::Limits) -> Signed {
+        Signed::build(connector, limits, false)
+    }
+
+    /// On the system's keychain instead of the mock vault, for the cases where another runtime
+    /// changes the account, as another process does. The account is disconnected when the case
+    /// ends.
+    pub(crate) fn on_keychain() -> Signed {
+        Signed::build(notes(), runtime::Limits::default(), true)
+    }
+
+    /// Another runtime over the same data directory, connectors and servers, as another process
+    /// of the host would be; on the system's keychain.
+    pub(crate) fn other_process(&self) -> runtime::Runtime {
+        runtime::Runtime::with_test_network_on_keychain(
+            runtime::Limits::default(),
+            runtime::RuntimeOptions::new(self.world.data.path()).development(true),
+            self.test.clone(),
+        )
+        .unwrap()
+    }
+
+    fn build(connector: Value, limits: runtime::Limits, keychain: bool) -> Signed {
         let pki = TestPki::new();
         let service = SignInService::start(&pki);
         let other = Server::https(&pki.leaf(&["other.test"]));
@@ -67,7 +100,24 @@ impl Signed {
             root: pki.root(),
             catalog: Vec::new(),
         };
-        let world = World::seam_with(limits, test.clone(), true);
+        let world = if keychain {
+            let data = tempfile::TempDir::new().unwrap();
+            let runtime = runtime::Runtime::with_test_network_on_keychain(
+                limits,
+                runtime::RuntimeOptions::new(data.path()).development(true),
+                test.clone(),
+            )
+            .unwrap();
+            World {
+                grants: std::sync::Arc::new(runtime::grants::GrantStore::open(
+                    data.path().join("grants.json"),
+                )),
+                data,
+                runtime,
+            }
+        } else {
+            World::seam_with(limits, test.clone(), true)
+        };
         world.write_connector("notes", &connector);
         Signed {
             service,
@@ -75,6 +125,7 @@ impl Signed {
             other,
             bad,
             test,
+            keychain,
         }
     }
 
@@ -1151,4 +1202,200 @@ fn account_spoof() {
         ("requests", requests),
     ]);
     signed.assert_well_behaved();
+}
+
+/// The probe of the US5 cases: `local/notes` with its account, optional for the widget.
+fn mid_run_probe() -> Vec<u8> {
+    notes_probe(&["list-notes"])
+}
+
+/// `credential-added-update`: a connector version adds a credential, and the widget's new version
+/// uses it: `needs-new-approval`, naming it.
+#[test]
+fn credential_added_update() {
+    let mut plain = notes();
+    plain.as_object_mut().unwrap().remove("credential");
+    let signed = Signed::with_connector(plain);
+    let mut anchor = notes();
+    anchor["id"] = json!("local/anchor");
+    signed.world.write_connector("anchor", &anchor);
+    let version = |account: bool| {
+        probe(
+            "local/added-probe",
+            json!([
+                { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": account },
+                { "id": "local/anchor", "major": 1, "operations": ["list-notes"], "required": true, "account": true }
+            ]),
+        )
+    };
+    signed.world.approve_and_load(&version(false));
+    signed.world.write_connector("notes", &notes());
+    signed.connect();
+    let error = signed
+        .world
+        .try_load_at(&version(true), crate::common::TEST_ORIGIN)
+        .err()
+        .expect("a credential added is approved first");
+    assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+    assert!(
+        error.to_string().contains("credential added: local/notes"),
+        "{error}"
+    );
+    assert!(signed.service.requests_to("/notes").is_empty());
+    signed.assert_well_behaved();
+}
+
+/// `access-widened-update`: a connector version adds an access item: `needs-new-approval`; once
+/// approved, `account-not-connected` with reason `less-access` until the account connects
+/// again, with the wider access.
+#[test]
+fn access_widened_update() {
+    let signed = Signed::new();
+    signed.connect();
+    let probe = mid_run_probe();
+    signed.world.approve_and_load(&probe);
+    let mut wider = notes();
+    wider["credential"]["account"]["access"] =
+        json!([{ "name": "notes", "level": "read" }, { "name": "tags", "level": "read" }]);
+    wider["credential"]["account"]["scopes"] = json!(["notes:read"]);
+    signed.world.write_connector("notes", &wider);
+    let error = signed
+        .world
+        .try_load_at(&probe, crate::common::TEST_ORIGIN)
+        .err()
+        .expect("wider access is approved first");
+    assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("access added: local/notes tags read"),
+        "{error}"
+    );
+
+    let before = signed.service.requests_to("/notes").len();
+    let report = signed.update(&probe, &calls(&[("accounts", "local/notes", "list-notes")]));
+    assert_eq!(
+        probe_answers(&report)[0]["error"],
+        json!("account-not-connected"),
+        "{report:?}"
+    );
+    assert_eq!(signed.service.requests_to("/notes").len(), before);
+    assert_eq!(
+        the_account(&signed)
+            .needs_connecting
+            .map(|needs| needs.reason),
+        Some(runtime::accounts::Reason::LessAccess)
+    );
+    // Connected again, with what the connector asks for now
+    signed.connect();
+    let report = signed.update(&probe, &calls(&[("accounts", "local/notes", "list-notes")]));
+    assert!(probe_answers(&report)[0].get("ok").is_some(), "{report:?}");
+    signed.scan(&[("the updates", format!("{report:?}"))]);
+}
+
+/// Runs `probe`'s two calls of `list-notes` on another thread; `during` runs once the first call
+/// reached the service, while its answer waits.
+fn mid_run(signed: &Signed, during: impl FnOnce()) -> UpdateReport {
+    let plugin = signed.world.approve_and_load(&mid_run_probe());
+    signed
+        .service
+        .script(|script| script.notes_delay = Some(std::time::Duration::from_millis(1500)));
+    let config = calls(&[
+        ("accounts", "local/notes", "list-notes"),
+        ("accounts", "local/notes", "list-notes"),
+    ])
+    .to_string();
+    let before = signed.service.requests_to("/notes").len();
+    std::thread::scope(|scope| {
+        let running = scope.spawn(|| plugin.update(&config));
+        let started = std::time::Instant::now();
+        while signed.service.requests_to("/notes").len() == before {
+            assert!(started.elapsed() < std::time::Duration::from_secs(30));
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        during();
+        let report = running.join().unwrap();
+        signed.service.script(|script| script.notes_delay = None);
+        report
+    })
+}
+
+/// `disconnect-mid-run`: another process disconnects the account while a call is in flight: its
+/// response is dropped, and the next request goes without the credential.
+#[test]
+fn disconnect_mid_run() {
+    let signed = Signed::on_keychain();
+    signed.connect();
+    let before = signed.service.requests_to("/notes").len();
+    let report = mid_run(&signed, || {
+        signed
+            .other_process()
+            .disconnect_account("local/notes", None)
+            .unwrap()
+            .expect("an account was connected");
+    });
+    let answers = probe_answers(&report);
+    assert!(
+        answers[0].get("ok").is_none(),
+        "the in-flight response reached the widget: {answers:?}"
+    );
+    let sent = &signed.service.requests_to("/notes")[before..];
+    assert!(sent[0].header("authorization").is_some());
+    assert!(
+        sent[1..]
+            .iter()
+            .all(|request| request.header("authorization").is_none()),
+        "{sent:?}"
+    );
+    assert!(
+        answers[1].get("ok").is_some() || answers[1]["error"] == json!("account-not-connected"),
+        "{answers:?}"
+    );
+    signed.scan(&[("the update", format!("{report:?}"))]);
+    signed.assert_well_behaved();
+}
+
+/// `connect-mid-run`: another process connects an account during the update: the run keeps going
+/// without it, and the next load uses it.
+#[test]
+fn connect_mid_run() {
+    let signed = Signed::on_keychain();
+    let before = signed.service.requests_to("/notes").len();
+    let report = mid_run(&signed, || {
+        signed
+            .other_process()
+            .connect_account(
+                "local/notes",
+                Some("dashboard-dev"),
+                &signed.service.browser(),
+            )
+            .unwrap();
+    });
+    let answers = probe_answers(&report);
+    assert!(
+        answers.iter().all(|answer| answer.get("ok").is_some()),
+        "{answers:?}"
+    );
+    let sent = signed.service.requests_to("/notes")[before..].to_vec();
+    assert_eq!(sent.len(), 2);
+    assert!(
+        sent.iter()
+            .all(|request| request.header("authorization").is_none()),
+        "{sent:?}"
+    );
+    let next = signed.update(
+        &mid_run_probe(),
+        &calls(&[("accounts", "local/notes", "list-notes")]),
+    );
+    assert!(probe_answers(&next)[0].get("ok").is_some(), "{next:?}");
+    assert!(
+        signed
+            .service
+            .requests_to("/notes")
+            .last()
+            .unwrap()
+            .header("authorization")
+            .is_some()
+    );
+    signed.scan(&[("the updates", format!("{report:?} {next:?}"))]);
 }

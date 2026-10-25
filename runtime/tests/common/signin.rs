@@ -43,6 +43,8 @@ pub struct Script {
     pub bad_token: bool,
     /// The token answer is cut short, so it does not parse, after the tokens in it.
     pub token_cut: bool,
+    /// `/notes` waits this long before it answers.
+    pub notes_delay: Option<std::time::Duration>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -291,43 +293,52 @@ impl SignInService {
         let state = Arc::clone(&self.state);
         self.server.route_with("/notes", move |request| {
             let state = state.lock().unwrap_or_else(PoisonError::into_inner);
-            let public = serde_json::json!([{ "title": "Welcome", "private": false }]);
-            let Some(token) = bearer(request) else {
-                return Reply::json(&public.to_string());
-            };
-            if let Some(echo) = state.script.echo {
-                let header = request
-                    .header("authorization")
-                    .unwrap_or_default()
-                    .to_owned();
-                return match echo {
-                    Echo::Body => Reply::json(&serde_json::json!({ "seen": header }).to_string()),
-                    Echo::Header => Reply::json("[]").header("ETag", &header),
-                    Echo::Location => Reply::redirect(302, &format!("/notes?seen={token}")),
-                    Echo::JsonEscaped => Reply::json(&format!(
-                        r#"{{"seen":"{}"}}"#,
-                        token
-                            .replace('/', "\\/")
-                            .replace('+', "\\u002b")
-                            .replace('=', "\\u003d")
-                    )),
-                };
+            let mut reply = notes(&state, request);
+            if let Some(delay) = state.script.notes_delay {
+                reply.delay = delay;
             }
-            if !state.access.contains_key(&token) {
-                return Reply::status(401);
-            }
-            if let Some(status) = state.script.notes_status {
-                return Reply::status(status);
-            }
-            Reply::json(
-                &serde_json::json!([
-                    { "title": "Welcome", "private": false },
-                    { "title": "Ada's own note", "private": true }
-                ])
-                .to_string(),
-            )
+            reply
         });
     }
+}
+
+/// What `/notes` answers `request`.
+fn notes(state: &State, request: &Received) -> Reply {
+    let public = serde_json::json!([{ "title": "Welcome", "private": false }]);
+    let Some(token) = bearer(request) else {
+        return Reply::json(&public.to_string());
+    };
+    if let Some(echo) = state.script.echo {
+        let header = request
+            .header("authorization")
+            .unwrap_or_default()
+            .to_owned();
+        return match echo {
+            Echo::Body => Reply::json(&serde_json::json!({ "seen": header }).to_string()),
+            Echo::Header => Reply::json("[]").header("ETag", &header),
+            Echo::Location => Reply::redirect(302, &format!("/notes?seen={token}")),
+            Echo::JsonEscaped => Reply::json(&format!(
+                r#"{{"seen":"{}"}}"#,
+                token
+                    .replace('/', "\\/")
+                    .replace('+', "\\u002b")
+                    .replace('=', "\\u003d")
+            )),
+        };
+    }
+    if !state.access.contains_key(&token) {
+        return Reply::status(401);
+    }
+    if let Some(status) = state.script.notes_status {
+        return Reply::status(status);
+    }
+    Reply::json(
+        &serde_json::json!([
+            { "title": "Welcome", "private": false },
+            { "title": "Ada's own note", "private": true }
+        ])
+        .to_string(),
+    )
 }
 
 /// Issues an access and a refresh token for `account`.
