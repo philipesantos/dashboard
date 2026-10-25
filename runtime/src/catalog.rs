@@ -117,6 +117,49 @@ mod tests {
         }
     }
 
+    /// Every sign-in address and page of a catalog credential is under the domains its connector
+    /// reserves (`specs/005-plugin-credentials/research.md`, R19). No connector the host ships
+    /// declares a credential yet, so this runs over the built-in list and over one added through
+    /// the seam.
+    #[test]
+    fn the_sign_in_addresses_of_every_catalog_credential_are_under_its_reserves() {
+        let with_account = r#"{
+            "connector_version": 1, "id": "catalog/echo", "version": "1.0.0", "author": "Tests",
+            "description": "An echo service", "reserves": ["echo.test"],
+            "destinations": { "api": "https://api.echo.test" },
+            "credential": { "kind": "account", "destinations": ["api"], "header": "Authorization",
+                "scheme": "Bearer", "account": { "flow": "authorization-code", "client": "echo",
+                "authorize": "https://login.echo.test/authorize", "token": "https://api.echo.test/token",
+                "access": [{ "name": "echo", "level": "read" }],
+                "access_page": "https://echo.test/apps" } },
+            "operations": { "get": { "kind": "read", "method": "GET", "destination": "api",
+                "path": "/", "response": { "format": "json" } } }
+        }"#;
+        let catalog = Catalog::with_extra(&[with_account.to_owned()]).unwrap();
+        for connector in &catalog.connectors {
+            let Some(account) = connector.credential().and_then(|c| c.account()) else {
+                continue;
+            };
+            let mut addresses = vec![account.authorize(), account.token()];
+            addresses.extend(account.revoke());
+            addresses.extend(account.access_page());
+            addresses.extend(account.revoke_page());
+            for address in addresses {
+                let host = address.host_str().unwrap_or_default();
+                assert!(
+                    connector
+                        .reserves()
+                        .iter()
+                        .any(|domain| connector::is_under(host, domain)),
+                    "{}: {address} is not under its reserves",
+                    connector.id()
+                );
+            }
+        }
+        let outside = with_account.replace("https://echo.test/apps", "https://echo.example/apps");
+        assert!(Catalog::with_extra(&[outside]).is_err());
+    }
+
     #[test]
     fn github_reserves_every_host_under_github_com_and_nothing_else() {
         let catalog = Catalog::built_in();

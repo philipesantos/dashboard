@@ -51,6 +51,108 @@ pub struct Connector {
     operations: BTreeMap<String, Operation>,
 }
 
+/// What a connector declares about the credential its operations need
+/// (`specs/005-plugin-credentials/data-model.md`, Connector: `credential`).
+#[derive(Debug, Clone)]
+pub struct Credential {}
+
+/// An account the user connects, or a key the user enters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialKind {
+    Account,
+    Key,
+}
+
+/// How an account signs in.
+#[derive(Debug, Clone)]
+pub struct AccountDecl {}
+
+/// The operation that tells the account's name and stable id.
+#[derive(Debug, Clone)]
+pub struct Identity {}
+
+/// One item of what the account lets the connector do.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Access {
+    pub name: String,
+    pub level: Level,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Level {
+    Read,
+    Write,
+}
+
+impl Credential {
+    pub fn kind(&self) -> CredentialKind {
+        todo!("T017")
+    }
+    pub fn required(&self) -> bool {
+        todo!("T017")
+    }
+    pub fn origins(&self) -> &[Origin] {
+        todo!("T017")
+    }
+    pub fn header(&self) -> &str {
+        todo!("T017")
+    }
+    pub fn header_value(&self, secret: &str) -> String {
+        todo!("T017: {secret}")
+    }
+    pub fn account(&self) -> Option<&AccountDecl> {
+        todo!("T017")
+    }
+    pub fn access(&self) -> &[Access] {
+        todo!("T017")
+    }
+    pub fn subscription_required(&self) -> &[u16] {
+        todo!("T017")
+    }
+    pub fn digest(&self) -> String {
+        todo!("T017")
+    }
+}
+
+impl AccountDecl {
+    pub fn client(&self) -> &str {
+        todo!("T017")
+    }
+    pub fn authorize(&self) -> &url::Url {
+        todo!("T017")
+    }
+    pub fn token(&self) -> &url::Url {
+        todo!("T017")
+    }
+    pub fn revoke(&self) -> Option<&url::Url> {
+        todo!("T017")
+    }
+    pub fn scopes(&self) -> &[String] {
+        todo!("T017")
+    }
+    pub fn identity(&self) -> Option<&Identity> {
+        todo!("T017")
+    }
+    pub fn access_page(&self) -> Option<&url::Url> {
+        todo!("T017")
+    }
+    pub fn revoke_page(&self) -> Option<&url::Url> {
+        todo!("T017")
+    }
+}
+
+impl Identity {
+    pub fn operation(&self) -> &str {
+        todo!("T017")
+    }
+    pub fn name(&self) -> &str {
+        todo!("T017")
+    }
+    pub fn id(&self) -> &str {
+        todo!("T017")
+    }
+}
+
 /// Where requests go: a scheme, a host in its normal form, and a port.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Origin {
@@ -203,6 +305,11 @@ impl Connector {
         origins.sort();
         origins.dedup();
         origins
+    }
+
+    /// The credential its operations need, if any.
+    pub fn credential(&self) -> Option<&Credential> {
+        todo!("T017")
     }
 
     /// The origin of the destination named `name`.
@@ -2191,7 +2298,7 @@ mod tests {
     }
 
     #[test]
-    fn a_credential_anywhere_is_refused_as_not_supported_yet() {
+    fn a_credential_outside_the_credential_field_is_refused() {
         let edits: [fn(&mut Value); 4] = [
             |c| c["auth"] = json!({ "type": "bearer" }),
             |c| c["credentials"] = json!([]),
@@ -2205,8 +2312,349 @@ mod tests {
         for edit in edits {
             let error = parse_local(edit).unwrap_err();
             assert_eq!(error.kind(), ErrorKind::CredentialsNotSupported, "{error}");
-            assert!(error.detail().contains("005"), "{error}");
+            assert!(error.detail().contains("`credential`"), "{error}");
         }
+    }
+
+    /// The credential of `specs/005-plugin-credentials/data-model.md` (Connector: `credential`):
+    /// an account on the connector's only destination, with an identity operation.
+    fn with_account(connector: &mut Value) {
+        connector["operations"]["get-me"] = json!({
+            "kind": "read", "method": "GET", "destination": "api", "path": "/me",
+            "response": { "format": "json" }
+        });
+        connector["credential"] = json!({
+            "kind": "account",
+            "required": false,
+            "destinations": ["api"],
+            "header": "Authorization",
+            "scheme": "Bearer",
+            "account": {
+                "flow": "authorization-code",
+                "client": "weather",
+                "authorize": "https://api.weather.test/oauth/authorize",
+                "token": "https://api.weather.test/oauth/token",
+                "revoke": "https://api.weather.test/oauth/revoke",
+                "scopes": ["forecast:read"],
+                "access": [{ "name": "forecasts", "level": "read" }],
+                "identity": { "operation": "get-me", "name": "/name", "id": "/id" }
+            },
+            "subscription_required": [402]
+        });
+    }
+
+    fn parse_account(edit: impl FnOnce(&mut Value)) -> Result<Connector, RuntimeError> {
+        parse_local(|c| {
+            with_account(c);
+            edit(c);
+        })
+    }
+
+    #[track_caller]
+    fn assert_invalid_account(edit: impl FnOnce(&mut Value), parts: &[&str]) {
+        assert_invalid(parse_account(edit), parts);
+    }
+
+    #[test]
+    fn an_account_credential_is_read_with_every_field() {
+        let connector = parse_account(|_| {}).unwrap();
+        let credential = connector.credential().expect("a credential");
+        assert_eq!(credential.kind(), CredentialKind::Account);
+        assert!(!credential.required());
+        assert_eq!(
+            credential.origins().iter().map(|o| o.serialization()).collect::<Vec<_>>(),
+            ["https://api.weather.test"]
+        );
+        assert_eq!(credential.header(), "Authorization");
+        assert_eq!(credential.header_value("t0k"), "Bearer t0k");
+        let account = credential.account().expect("an account");
+        assert_eq!(account.client(), "weather");
+        assert_eq!(account.authorize().as_str(), "https://api.weather.test/oauth/authorize");
+        assert_eq!(account.token().as_str(), "https://api.weather.test/oauth/token");
+        assert_eq!(
+            account.revoke().map(url::Url::as_str),
+            Some("https://api.weather.test/oauth/revoke")
+        );
+        assert_eq!(account.scopes(), ["forecast:read"]);
+        let identity = account.identity().expect("an identity");
+        assert_eq!(identity.operation(), "get-me");
+        assert_eq!((identity.name(), identity.id()), ("/name", "/id"));
+        assert_eq!(
+            credential.access(),
+            [Access {
+                name: "forecasts".to_owned(),
+                level: Level::Read
+            }]
+        );
+        assert_eq!(credential.subscription_required(), [402]);
+        // A key has no account, and access only when declared
+        let key = parse_local(|c| {
+            c["credential"] = json!({
+                "kind": "key", "required": true, "destinations": ["api"],
+                "header": "Authorization", "scheme": "Bearer"
+            });
+        })
+        .unwrap();
+        let key = key.credential().unwrap();
+        assert_eq!(key.kind(), CredentialKind::Key);
+        assert!(key.required() && key.account().is_none() && key.access().is_empty());
+        // Without a credential, nothing changes from feature 003
+        assert!(parse_local(|_| {}).unwrap().credential().is_none());
+    }
+
+    #[test]
+    fn a_credential_follows_its_schema() {
+        assert_invalid_account(|c| c["credential"]["kind"] = json!("password"), &["credential.kind"]);
+        assert_invalid_account(
+            |c| c["credential"]["account"]["flow"] = json!("device"),
+            &["credential.account.flow"],
+        );
+        // account only with kind: account, and required with it
+        assert_invalid_account(|c| c["credential"]["kind"] = json!("key"), &["credential.account"]);
+        assert_invalid_account(
+            |c| {
+                c["credential"].as_object_mut().unwrap().remove("account");
+            },
+            &["credential.account"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["account"]["scopes"] = json!(["a\"b"]),
+            &["credential.account.scopes"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["account"]["scopes"] = json!(vec!["s"; 33]),
+            &["credential.account.scopes"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["account"]["access"] = json!([]),
+            &["credential.account.access"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["account"]["access"] = json!([{ "name": "notes", "level": "admin" }]),
+            &["credential.account.access"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["account"]["access"] = json!([{ "name": "x".repeat(65), "level": "read" }]),
+            &["credential.account.access"],
+        );
+        for status in [399, 500, 200] {
+            assert_invalid_account(
+                |c| c["credential"]["subscription_required"] = json!([status]),
+                &["credential.subscription_required"],
+            );
+        }
+        assert_invalid_account(
+            |c| c["credential"]["subscription_required"] = json!([400, 401, 402, 403, 404]),
+            &["credential.subscription_required"],
+        );
+        assert_invalid_account(|c| c["credential"]["unknown"] = json!(1), &["unknown"]);
+    }
+
+    #[test]
+    fn a_credential_goes_only_to_declared_https_destinations() {
+        assert_invalid_account(
+            |c| c["credential"]["destinations"] = json!(["nowhere"]),
+            &["credential.destinations", "nowhere"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["destinations"] = json!([]),
+            &["credential.destinations"],
+        );
+        // Every destination of a connector with a credential is HTTPS, not only the
+        // credential's own (Principle III): plain-http-beside and plain-http-credential
+        for edit in [
+            (|c: &mut Value| {
+                c["destinations"]["here"] = json!("http://127.0.0.1:9");
+            }) as fn(&mut Value),
+            |c| {
+                c["destinations"]["api"] = json!("http://127.0.0.1:9");
+                c["credential"]["account"]["authorize"] = json!("https://login.weather.test/a");
+            },
+        ] {
+            let error = parse_account(edit).unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::CredentialNeedsHttps, "{error}");
+        }
+        // The same destination over plain HTTP, without a credential, is still a local
+        // connector of feature 003
+        assert!(parse_local(|c| c["destinations"]["here"] = json!("http://127.0.0.1:9")).is_ok());
+    }
+
+    #[test]
+    fn the_credential_header_belongs_to_the_host() {
+        assert_invalid_account(
+            |c| {
+                c["credential"].as_object_mut().unwrap().remove("scheme");
+            },
+            &["credential.scheme"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["scheme"] = json!("Bea rer"),
+            &["credential.scheme"],
+        );
+        // Outside the catalog, only Authorization; never a header the host forbids
+        assert_invalid_account(
+            |c| {
+                c["credential"]["header"] = json!("X-Api-Key");
+                c["credential"].as_object_mut().unwrap().remove("scheme");
+            },
+            &["credential.header"],
+        );
+        let catalog = parse_catalog(|c| {
+            with_account(c);
+            c["credential"]["header"] = json!("X-Api-Key");
+            c["credential"].as_object_mut().unwrap().remove("scheme");
+        })
+        .unwrap();
+        assert_eq!(catalog.credential().unwrap().header_value("t0k"), "t0k");
+        for header in ["Cookie", "Host", "Content-Type"] {
+            assert_invalid(
+                Connector::parse(
+                    &catalog_with(|c| {
+                        with_account(c);
+                        c["credential"]["header"] = json!(header);
+                        c["credential"].as_object_mut().unwrap().remove("scheme");
+                    }),
+                    Source::Catalog,
+                ),
+                &["credential.header"],
+            );
+        }
+        // fixed-auth-header: an operation fixing the credential's header, in any case
+        assert_invalid(
+            Connector::parse(
+                &catalog_with(|c| {
+                    with_account(c);
+                    c["credential"]["header"] = json!("X-Api-Key");
+                    c["credential"].as_object_mut().unwrap().remove("scheme");
+                    forecast(c)["headers"]["x-api-key"] = json!("fixed");
+                }),
+                Source::Catalog,
+            ),
+            &["x-api-key"],
+        );
+        assert_invalid_account(
+            |c| forecast(c)["headers"]["authorization"] = json!("Bearer fixed"),
+            &["authorization"],
+        );
+    }
+
+    #[test]
+    fn sign_in_addresses_stay_on_the_connectors_hosts() {
+        // token and revoke on the credential's own destinations (token-host-elsewhere)
+        for at in ["token", "revoke"] {
+            assert_invalid_account(
+                |c| {
+                    c["destinations"]["other"] = json!("https://other.test");
+                    c["credential"]["account"][at] = json!("https://other.test/oauth/x");
+                },
+                &[&format!("credential.account.{at}")],
+            );
+        }
+        // authorize and the pages on one of the connector's hosts, never anywhere else
+        for at in ["authorize", "access_page", "revoke_page"] {
+            assert_invalid_account(
+                |c| c["credential"]["account"][at] = json!("https://elsewhere.test/x"),
+                &[&format!("credential.account.{at}")],
+            );
+            assert!(
+                parse_account(|c| {
+                    c["destinations"]["other"] = json!("https://login.weather.test");
+                    c["credential"]["account"][at] = json!("https://login.weather.test/x");
+                })
+                .is_ok(),
+                "{at} on another destination of the connector"
+            );
+        }
+        for address in [
+            "http://api.weather.test/oauth/token",
+            "https://user@api.weather.test/oauth/token",
+            "https://api.weather.test/oauth/token#x",
+            "/oauth/token",
+        ] {
+            assert_invalid_account(
+                |c| c["credential"]["account"]["token"] = json!(address),
+                &["credential.account.token"],
+            );
+        }
+        // A catalog connector: authorize under the domains it reserves
+        assert!(
+            Connector::parse(
+                &catalog_with(|c| {
+                    with_account(c);
+                    c["credential"]["account"]["authorize"] = json!("https://login.weather.test/a");
+                }),
+                Source::Catalog
+            )
+            .is_ok()
+        );
+        assert_invalid(
+            Connector::parse(
+                &catalog_with(|c| {
+                    with_account(c);
+                    c["credential"]["account"]["authorize"] = json!("https://weather.example/a");
+                }),
+                Source::Catalog,
+            ),
+            &["credential.account.authorize"],
+        );
+    }
+
+    #[test]
+    fn the_identity_operation_is_a_parameterless_read_on_a_credential_destination() {
+        // identity-elsewhere
+        assert_invalid_account(
+            |c| {
+                c["destinations"]["other"] = json!("https://other.test");
+                c["operations"]["get-me"]["destination"] = json!("other");
+            },
+            &["credential.account.identity"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["account"]["identity"]["operation"] = json!("missing"),
+            &["credential.account.identity"],
+        );
+        assert_invalid_account(
+            |c| c["credential"]["account"]["identity"]["operation"] = json!("forecast"),
+            &["credential.account.identity"],
+        );
+        assert_invalid_account(
+            |c| {
+                c["credential"]["account"]["identity"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("id");
+            },
+            &["credential.account.identity"],
+        );
+        // Without identity the account is named `account` and cannot be compared
+        let connector = parse_account(|c| {
+            c["credential"]["account"].as_object_mut().unwrap().remove("identity");
+        })
+        .unwrap();
+        assert!(connector.credential().unwrap().account().unwrap().identity().is_none());
+    }
+
+    #[test]
+    fn the_credential_digest_leaves_out_access_and_follows_the_rest() {
+        let digest = |edit: fn(&mut Value)| parse_account(edit).unwrap().credential().unwrap().digest();
+        let base = digest(|_| {});
+        assert!(base.starts_with("sha256:"));
+        assert_eq!(base, digest(|c| c["credential"]["account"]["access"] = json!([{ "name": "forecasts", "level": "write" }])));
+        for edit in [
+            (|c: &mut Value| c["credential"]["required"] = json!(true)) as fn(&mut Value),
+            |c| c["credential"]["scheme"] = json!("Token"),
+            |c| c["credential"]["account"]["token"] = json!("https://api.weather.test/oauth/token2"),
+            |c| c["credential"]["account"]["scopes"] = json!(["forecast:read", "x"]),
+            |c| c["credential"]["subscription_required"] = json!([]),
+            |c| c["credential"]["account"]["identity"]["name"] = json!("/login"),
+        ] {
+            assert_ne!(base, digest(edit));
+        }
+        // The operations' digests do not change when a credential is added
+        assert_eq!(
+            parse_local(|_| {}).unwrap().operation_digest("forecast"),
+            parse_account(|_| {}).unwrap().operation_digest("forecast")
+        );
     }
 
     #[test]
