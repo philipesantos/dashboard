@@ -824,6 +824,220 @@ mod connectors {
         }
         assert!(found > 0, "the catalog is empty");
     }
+
+    // Feature 005: `credential` (`specs/005-plugin-credentials/research.md`, R3)
+
+    const NOTES: &str = include_str!("../../plugins/examples/private-notes/connectors/notes.json");
+
+    /// `local/notes` as shipped, edited.
+    fn notes(edit: impl FnOnce(&mut Value)) -> Value {
+        let mut connector: Value = serde_json::from_str(NOTES).unwrap();
+        edit(&mut connector);
+        connector
+    }
+
+    fn credential(c: &mut Value) -> &mut Value {
+        &mut c["credential"]
+    }
+
+    fn key(c: &mut Value) {
+        c["credential"] = json!({
+            "kind": "key", "required": true, "destinations": ["api"],
+            "header": "Authorization", "scheme": "Bearer"
+        });
+    }
+
+    /// `connector_schema`: the schema and the parser agree on every credential below, on the
+    /// connectors shipped with the examples, and on the hostile ones, whose rules only the host
+    /// can check.
+    #[test]
+    fn connector_schema() {
+        let schema = schema();
+        let valid: Vec<(&str, Edit)> = vec![
+            ("an account, as shipped", |_| {}),
+            ("a required account", |c| {
+                credential(c)["required"] = json!(true)
+            }),
+            ("a key", key),
+            ("a key with its access", |c| {
+                key(c);
+                credential(c)["access"] = json!([{ "name": "notes", "level": "write" }]);
+            }),
+            ("the token scheme", |c| {
+                credential(c)["scheme"] = json!("token")
+            }),
+            ("subscription statuses", |c| {
+                credential(c)["subscription_required"] = json!([402, 403])
+            }),
+            ("no revocation, no identity", |c| {
+                let account = credential(c)["account"].as_object_mut().unwrap();
+                account.remove("revoke");
+                account.remove("identity");
+            }),
+            ("pages on the connector's host", |c| {
+                credential(c)["account"]["access_page"] = json!("https://notes.test/settings");
+                credential(c)["account"]["revoke_page"] = json!("https://notes.test/apps");
+            }),
+        ];
+        for (case, edit) in valid {
+            let connector = notes(edit);
+            assert!(
+                valid_for_schema(&schema, &connector),
+                "{case}: the schema refuses it"
+            );
+            assert!(
+                parses(&connector, Source::Local),
+                "{case}: the parser refuses it"
+            );
+        }
+        let invalid: Vec<(&str, Edit)> = vec![
+            ("another kind", |c| {
+                credential(c)["kind"] = json!("password")
+            }),
+            ("no destination", |c| {
+                credential(c)["destinations"] = json!([])
+            }),
+            ("no header", |c| {
+                credential(c).as_object_mut().unwrap().remove("header");
+            }),
+            ("Authorization without a scheme", |c| {
+                credential(c).as_object_mut().unwrap().remove("scheme");
+            }),
+            ("an account without its block", |c| {
+                credential(c).as_object_mut().unwrap().remove("account");
+            }),
+            ("a key with an account block", |c| {
+                credential(c)["kind"] = json!("key")
+            }),
+            ("an account's access outside its block", |c| {
+                credential(c)["access"] = json!([{ "name": "notes", "level": "read" }])
+            }),
+            ("another flow", |c| {
+                credential(c)["account"]["flow"] = json!("device-code")
+            }),
+            ("a scope with a space", |c| {
+                credential(c)["account"]["scopes"] = json!(["notes read"])
+            }),
+            ("a token address over plain HTTP", |c| {
+                credential(c)["account"]["token"] = json!("http://notes.test/oauth/token")
+            }),
+            ("an identity without an id", |c| {
+                credential(c)["account"]["identity"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("id");
+            }),
+            ("no access", |c| {
+                credential(c)["account"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("access");
+            }),
+            ("a level other than read and write", |c| {
+                credential(c)["account"]["access"] = json!([{ "name": "notes", "level": "admin" }])
+            }),
+            ("a server error as a subscription status", |c| {
+                credential(c)["subscription_required"] = json!([500])
+            }),
+            ("a client secret", |c| {
+                credential(c)["account"]["client_secret"] = json!("s3cret")
+            }),
+            ("an unknown field", |c| {
+                credential(c)["token"] = json!("t0ken")
+            }),
+        ];
+        for (case, edit) in invalid {
+            let connector = notes(edit);
+            assert!(
+                !valid_for_schema(&schema, &connector),
+                "{case}: the schema accepts it"
+            );
+            assert!(
+                !parses(&connector, Source::Local),
+                "{case}: the parser accepts it"
+            );
+        }
+        // Rules only the host checks: what each address and destination is
+        let host_only: Vec<(&str, Edit)> = vec![
+            ("a destination the connector does not declare", |c| {
+                credential(c)["destinations"] = json!(["elsewhere"])
+            }),
+            ("an identity operation it does not declare", |c| {
+                credential(c)["account"]["identity"]["operation"] = json!("who-am-i")
+            }),
+            ("a sign-in address on another host", |c| {
+                credential(c)["account"]["authorize"] = json!("https://login.example/authorize")
+            }),
+            ("another header outside the catalog", |c| {
+                credential(c)["header"] = json!("X-Api-Key");
+                credential(c).as_object_mut().unwrap().remove("scheme");
+            }),
+        ];
+        for (case, edit) in host_only {
+            let connector = notes(edit);
+            assert!(
+                valid_for_schema(&schema, &connector),
+                "{case}: the schema refuses it, so it is no host-only rule"
+            );
+            assert!(
+                !parses(&connector, Source::Local),
+                "{case}: the parser accepts it"
+            );
+        }
+
+        // The connectors shipped with the examples validate and parse
+        let examples = repository().join("plugins").join("examples");
+        let mut shipped = 0;
+        for example in std::fs::read_dir(&examples).unwrap() {
+            let Ok(entries) = std::fs::read_dir(example.unwrap().path().join("connectors")) else {
+                continue;
+            };
+            for entry in entries {
+                let path = entry.unwrap().path();
+                let bytes = std::fs::read(&path).unwrap();
+                let connector: Value = serde_json::from_slice(&bytes).unwrap();
+                assert!(valid_for_schema(&schema, &connector), "{}", path.display());
+                Connector::parse(&bytes, Source::Local)
+                    .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+                shipped += 1;
+            }
+        }
+        assert!(shipped > 0);
+        // The hostile ones: the host refuses each. The schema refuses the header the connector
+        // fixes too; the other rules are about where addresses lead, which only the host checks
+        let hostile = repository()
+            .join("plugins")
+            .join("hostile")
+            .join("connectors");
+        let mut refused = Vec::new();
+        for entry in std::fs::read_dir(&hostile).unwrap() {
+            let path = entry.unwrap().path();
+            let bytes = std::fs::read(&path).unwrap();
+            let connector: Value = serde_json::from_slice(&bytes).unwrap();
+            let name = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            assert_eq!(
+                valid_for_schema(&schema, &connector),
+                name != "fixed-auth-header",
+                "{name}: the schema's verdict"
+            );
+            assert!(
+                Connector::parse(&bytes, Source::Local).is_err(),
+                "{name}: the host accepts it"
+            );
+            refused.push(name);
+        }
+        refused.sort();
+        assert_eq!(
+            refused,
+            [
+                "fixed-auth-header",
+                "identity-elsewhere",
+                "plain-http-beside",
+                "plain-http-key",
+                "token-host-elsewhere"
+            ]
+        );
+    }
 }
 
 /// Manifests with `connectors`: the schema and the parser agree, the rule of feature 002 for the

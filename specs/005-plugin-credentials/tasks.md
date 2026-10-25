@@ -213,9 +213,9 @@ running and never see the new answers.
 
 ### Tests for User Story 6
 
-- [ ] T052 [P] [US6] Extend `runtime/tests/contract_v1.rs`: 1.3.0 only adds to 1.2.0, and 1.2.0 to 1.1.0 and 1.0.0 (the pair added to the existing check); `wit/history/1.2.0/widget.wit` pinned by hash beside the other frozen contracts; `accounts` answers `not-granted` first
-- [ ] T053 [P] [US6] Extend `runtime/tests/contract.rs`: every 1.0.0, 1.1.0 and 1.2.0 plugin of the repository runs on the 1.3.0 host as before; a component claiming 1.4.0 is refused naming both versions; `account: true` on a 1.2.0 component is `contract-too-old` naming 1.3.0; `connectors_type_only` (a widget whose connectors are all `account: true` loads, `connectors` linked to the stand-in, its calls work through `accounts`); `subscription-required` answers only 1.3.0 widgets
-- [ ] T054 [P] [US6] Extend `runtime/tests/manifest_schema.rs` to `wit/connector.schema.json` too (`connector_schema`): every connector of `connectors/`, `plugins/examples/*/connectors/` and `plugins/hostile/connectors/` validates or fails exactly as the parser does; manifests with `account` and without `login_providers` agree
+- [X] T052 [P] [US6] Extend `runtime/tests/contract_v1.rs`: 1.3.0 only adds to 1.2.0, and 1.2.0 to 1.1.0 and 1.0.0 (the pair added to the existing check); `wit/history/1.2.0/widget.wit` pinned by hash beside the other frozen contracts; `accounts` answers `not-granted` first
+- [X] T053 [P] [US6] Extend `runtime/tests/contract.rs`: every 1.0.0, 1.1.0 and 1.2.0 plugin of the repository runs on the 1.3.0 host as before; a component claiming 1.4.0 is refused naming both versions; `account: true` on a 1.2.0 component is `contract-too-old` naming 1.3.0; `connectors_type_only` (a widget whose connectors are all `account: true` loads, `connectors` linked to the stand-in, its calls work through `accounts`); `subscription-required` answers only 1.3.0 widgets
+- [X] T054 [P] [US6] Extend `runtime/tests/manifest_schema.rs` to `wit/connector.schema.json` too (`connector_schema`): every connector of `connectors/`, `plugins/examples/*/connectors/` and `plugins/hostile/connectors/` validates or fails exactly as the parser does; manifests with `account` and without `login_providers` agree
 
 ### Implementation for User Story 6
 

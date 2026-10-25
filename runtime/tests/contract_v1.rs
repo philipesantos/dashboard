@@ -65,11 +65,13 @@ fn every_capability_of_contract_v1_can_answer_not_granted() {
         }
     }
     assert!(capabilities > 0, "wit/v1 has no capability interface");
-    // storage among them (feature 004)
-    assert!(
-        resolve.packages[package].interfaces.contains_key("storage"),
-        "wit/v1 has no storage interface"
-    );
+    // storage (feature 004) and accounts (feature 005) among them
+    for interface in ["storage", "accounts"] {
+        assert!(
+            resolve.packages[package].interfaces.contains_key(interface),
+            "wit/v1 has no {interface} interface"
+        );
+    }
     assert!(broken.is_empty(), "{}", broken.join("\n"));
 }
 
@@ -151,11 +153,12 @@ fn contract_1_1_0_contains_everything_of_1_0_0_unchanged() {
     }
 }
 
-/// Feature 004, research R13: 1.2.0 (`wit/v1`) holds everything of the published 1.1.0
-/// unchanged, and adds storage.
+/// Feature 004, research R13: the published 1.2.0 (`wit/history/1.2.0`) holds everything of
+/// 1.1.0 unchanged, and adds storage.
 #[test]
 fn contract_1_2_0_contains_everything_of_1_1_0_unchanged() {
-    let added = assert_only_adds(&wit().join("history").join("1.1.0"), &wit().join("v1"));
+    let history = wit().join("history");
+    let added = assert_only_adds(&history.join("1.1.0"), &history.join("1.2.0"));
     for name in [
         "storage.get",
         "storage.set",
@@ -166,6 +169,19 @@ fn contract_1_2_0_contains_everything_of_1_1_0_unchanged() {
     ] {
         assert!(added.contains_key(name), "{name}");
     }
+}
+
+/// Feature 005, research R9: 1.3.0 (`wit/v1`) holds everything of the published 1.2.0
+/// unchanged, and adds `accounts`, whose call answers with errors of its own.
+#[test]
+fn contract_1_3_0_contains_everything_of_1_2_0_unchanged() {
+    let added = assert_only_adds(&wit().join("history").join("1.2.0"), &wit().join("v1"));
+    for name in ["accounts.call", "accounts.account-call-error"] {
+        assert!(added.contains_key(name), "{name}");
+    }
+    // The connectors' answers are the same as in 1.2.0: the new ones are only in `accounts`
+    let old = definitions(&wit().join("history").join("1.2.0"));
+    assert_eq!(added["connectors.call-error"], old["connectors.call-error"]);
 }
 
 /// The published contracts are frozen: the comparisons above would follow an edit to them, so
@@ -182,6 +198,10 @@ fn frozen_contracts() {
         (
             "1.1.0",
             "5985f969e1fef9a82bbf124f13c64f697b458b2866a6d46dbec705b915185aa2",
+        ),
+        (
+            "1.2.0",
+            "bf3f73c173baeaab6de4a395ba2767acc8e79ebca2601d3bff993baad1ad3cbb",
         ),
     ] {
         let path = wit().join("history").join(version).join("widget.wit");
