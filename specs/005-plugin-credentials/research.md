@@ -383,9 +383,13 @@ destinations of its connectors data read as that account can reach (constitution
 "before approval, the host MUST show … whether data read from one connected account … can reach
 another destination"), next to 003's line for data read from this machine; `requests` shows the
 account of each call and the host's own entries. A key is read from the terminal without echo
-through `rpassword` (only in the binary), whose `read_password` opens `/dev/tty` or `CONIN$`; the
-key's checks live in a library function, tested directly and through `read_password_from_bufread`,
-and the CLI's key path is tested in a pseudo-terminal on Linux and macOS; the browser is opened
+through `rpassword` (only in the binary), whose `read_password` opens `/dev/tty` or `CONIN$`. It
+turns the echo off only once it starts reading, after the prompt, so on Unix the binary turns it
+off first, with `libc` and `TCSAFLUSH`, as glibc's `getpass` does, and only then shows the prompt
+(found when CI typed the key in that gap, after the merge of 005). On Windows the gap stays; no
+test types there. The key's checks live in a library function, tested directly and through
+`read_password_from_bufread`, and the CLI's key path is tested in a pseudo-terminal on Linux and
+macOS, on Linux checking the echo is off when the prompt appears; the browser is opened
 with the `open` crate (only in the binary, with `shellexecute-on-windows`, so no shell parses the
 address on Windows), and the address is always printed too.
 
@@ -455,6 +459,7 @@ data) without a real service, which no catalog connector offers in this feature.
 | `memchr` 2 | runtime | The echo check (R10) | Yes | Unlicense OR MIT |
 | `httparse` 1 | runtime | The callback request (R2) | Yes | MIT OR Apache-2.0 |
 | `rpassword` 7 | runtime (binary only) | Reading a key without echo | No | Apache-2.0 |
+| `libc` 0.2 | runtime (binary only), Unix | The echo turned off before the key prompt (R14) | Yes (Wasmtime) | MIT OR Apache-2.0 |
 | `open` 5 | runtime (binary only) | Opening the system browser at the sign-in address | Yes (workspace) | MIT |
 
 Pins are exact for the vault crates, since they are security core. `rpassword` and `open` are used

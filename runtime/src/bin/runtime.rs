@@ -1759,9 +1759,14 @@ fn accounts_connect(options: &Options) -> ExitCode {
         }
         CredentialKind::Key => {
             use std::io::Write as _;
-            eprint!("type the key (it is not shown): ");
-            let _ = std::io::stderr().flush();
-            let key = zeroize::Zeroizing::new(rpassword::read_password().unwrap_or_default());
+            let key = {
+                // Without a terminal there is nothing to hide, and rpassword finds no key either
+                #[cfg(unix)]
+                let _echo_off = EchoOff::start().ok();
+                eprint!("type the key (it is not shown): ");
+                let _ = std::io::stderr().flush();
+                zeroize::Zeroizing::new(rpassword::read_password().unwrap_or_default())
+            };
             runtime.connect_key(id, &key)
         }
     };
@@ -1774,6 +1779,55 @@ fn accounts_connect(options: &Options) -> ExitCode {
         println!("{line}");
     }
     ExitCode::SUCCESS
+}
+
+/// The terminal's echo, off from before the key prompt is shown until dropped (R14). rpassword
+/// turns it off only once it starts reading, after the prompt, so a key typed as soon as the
+/// prompt appeared could be echoed. These are rpassword's own settings, applied with
+/// `TCSAFLUSH`, which also discards anything typed before, which the terminal may have echoed,
+/// as glibc's `getpass` does. rpassword then reads with them and leaves them as it found them.
+#[cfg(unix)]
+struct EchoOff {
+    tty: std::fs::File,
+    original: libc::termios,
+}
+
+#[cfg(unix)]
+impl EchoOff {
+    fn start() -> std::io::Result<EchoOff> {
+        use std::os::fd::AsRawFd as _;
+        let tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")?;
+        let mut original = std::mem::MaybeUninit::<libc::termios>::uninit();
+        // SAFETY: the descriptor is open for as long as `tty` lives, and tcgetattr writes a
+        // whole termios into `original` when it returns 0
+        if unsafe { libc::tcgetattr(tty.as_raw_fd(), original.as_mut_ptr()) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: tcgetattr returned 0, so it filled `original`
+        let original = unsafe { original.assume_init() };
+        let mut hidden = original;
+        hidden.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ECHONL | libc::ISIG);
+        hidden.c_cc[libc::VMIN] = 1;
+        hidden.c_cc[libc::VTIME] = 0;
+        // SAFETY: the descriptor is open, and `hidden` is a whole termios
+        if unsafe { libc::tcsetattr(tty.as_raw_fd(), libc::TCSAFLUSH, &hidden) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(EchoOff { tty, original })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for EchoOff {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd as _;
+        // SAFETY: the descriptor is open until `tty` drops after this, and `original` is the
+        // whole termios tcgetattr read
+        unsafe { libc::tcsetattr(self.tty.as_raw_fd(), libc::TCSANOW, &self.original) };
+    }
 }
 
 /// Every account in the development vault's record, sorted by connector id and origin; changes
