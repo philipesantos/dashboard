@@ -588,3 +588,232 @@ fn credential_rules() {
         format!("{jumped:?} {refused:?} {paid:?} {echoed:?} {narrowed:?}"),
     )]);
 }
+
+/// The seam of [`accounts_record`], as its child process rebuilds it from the environment.
+fn seam_from(address: &str, root: Vec<u8>) -> runtime::TestNetwork {
+    let address: std::net::SocketAddr = address.parse().unwrap();
+    runtime::TestNetwork {
+        routes: vec![runtime::Route {
+            host: signin::HOST.to_owned(),
+            port: 443,
+            answers: vec![vec![address]],
+        }],
+        public_for_tests: vec![address],
+        root,
+        catalog: Vec::new(),
+    }
+}
+
+/// The probe's configuration for one call of `list-notes` as the account.
+fn list_notes() -> String {
+    json!({ "calls": [{ "via": "accounts", "connector": "local/notes", "operation": "list-notes" }] })
+        .to_string()
+}
+
+/// Disconnects the account when dropped, so the system's keychain keeps nothing of a test.
+struct Disconnect<'a>(&'a runtime::Runtime);
+
+impl Drop for Disconnect<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.disconnect_account("local/notes", None);
+    }
+}
+
+/// `accounts_record` concurrency (research R6): two processes whose token is about to expire
+/// call at once, on the system's keychain: one refreshes, the other uses what it kept, and the
+/// record stays one consistent account.
+#[test]
+fn accounts_record() {
+    let pki = TestPki::new();
+    let service = SignInService::start(&pki);
+    let test = seam_from(&service.server.address().to_string(), pki.root());
+    let data = tempfile::TempDir::new().unwrap();
+    let runtime = runtime::Runtime::with_test_network_on_keychain(
+        runtime::Limits::default(),
+        runtime::RuntimeOptions::new(data.path()).development(true),
+        test,
+    )
+    .unwrap();
+    let world = World {
+        grants: std::sync::Arc::new(runtime::grants::GrantStore::open(
+            data.path().join("grants.json"),
+        )),
+        data,
+        runtime,
+    };
+    world.write_connector("notes", &serde_json::from_str(NOTES).unwrap());
+    // Only the first token expires at once: the one refreshed does not
+    service.script(|script| script.expires_in = Some(1));
+    world
+        .runtime
+        .connect_account("local/notes", Some("dashboard-dev"), &service.browser())
+        .unwrap();
+    let _disconnect = Disconnect(&world.runtime);
+    service.script(|script| script.expires_in = None);
+    let package = repack(
+        &fixture("account-probe"),
+        &json!({
+            "manifest_version": 1, "id": "local/record-probe", "version": "0.1.0", "author": "A",
+            "permissions": [],
+            "connectors": [{ "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }]
+        })
+        .to_string(),
+    );
+    world.approve(&package);
+    let dir = world.data.path();
+    std::fs::write(dir.join("probe.wasm"), &package).unwrap();
+    std::fs::write(dir.join("root.der"), pki.root()).unwrap();
+    let (ready, go) = (dir.join("ready"), dir.join("go"));
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "accounts_record_child_process",
+            "--nocapture",
+        ])
+        .env("ACCOUNTS_DATA", dir)
+        .env("ACCOUNTS_ADDRESS", service.server.address().to_string())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let plugin = world.load(&package);
+    let started = std::time::Instant::now();
+    while !ready.exists() {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "the child never got ready"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    std::fs::write(&go, "").unwrap();
+    let here = plugin.update(&list_notes());
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "the child failed: {output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let there: Value = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("ANSWERS "))
+        .map(|answers| serde_json::from_str(answers).unwrap())
+        .unwrap_or_else(|| panic!("no answers from the child: {stdout}"));
+    assert!(
+        common::answers(here.result.as_ref().unwrap())[0]
+            .get("ok")
+            .is_some(),
+        "{here:?}"
+    );
+    assert!(there["answers"][0].get("ok").is_some(), "{there}");
+
+    let refreshes = service
+        .requests_to("/oauth/token")
+        .iter()
+        .filter(|request| {
+            String::from_utf8_lossy(&request.body).contains("grant_type=refresh_token")
+        })
+        .count();
+    assert_eq!(
+        refreshes, 1,
+        "one process refreshed, the other used what it kept"
+    );
+    let accounts = world.runtime.list_accounts().unwrap();
+    assert_eq!(accounts.len(), 1, "{accounts:?}");
+    assert!(accounts[0].needs_connecting.is_none(), "{accounts:?}");
+    // The token both kept is the one valid token
+    let again = world.load(&package).update(&list_notes());
+    assert!(
+        common::answers(again.result.as_ref().unwrap())[0]
+            .get("ok")
+            .is_some(),
+        "{again:?}"
+    );
+    signin::scan(
+        &[world.data.path()],
+        &[("the child", &stdout)],
+        &service.secrets(),
+    );
+}
+
+/// The child half of [`accounts_record`], in a process of its own. Ignored when the suite runs.
+#[test]
+#[ignore = "run by accounts_record in a child process"]
+fn accounts_record_child_process() {
+    let data = std::path::PathBuf::from(
+        std::env::var("ACCOUNTS_DATA").expect("run through accounts_record"),
+    );
+    let address = std::env::var("ACCOUNTS_ADDRESS").unwrap();
+    let root = std::fs::read(data.join("root.der")).unwrap();
+    let runtime = runtime::Runtime::with_test_network_on_keychain(
+        runtime::Limits::default(),
+        runtime::RuntimeOptions::new(&data).development(true),
+        seam_from(&address, root),
+    )
+    .unwrap();
+    let grants = std::sync::Arc::new(runtime::grants::GrantStore::open(data.join("grants.json")));
+    let package = std::fs::read(data.join("probe.wasm")).unwrap();
+    let plugin = runtime.load(&package, common::TEST_ORIGIN, grants).unwrap();
+    std::fs::write(data.join("ready"), "").unwrap();
+    let started = std::time::Instant::now();
+    while !data.join("go").exists() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(60));
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let report = plugin.update(&list_notes());
+    println!("ANSWERS {}", report.result.unwrap());
+}
+
+/// `vault_order` during a refresh: a write of the refreshed token that does not finish within
+/// the update marks the account `refresh-failed`.
+#[test]
+fn vault_order() {
+    let pki = TestPki::new();
+    let service = SignInService::start(&pki);
+    let test = seam_from(&service.server.address().to_string(), pki.root());
+    let limits = runtime::Limits {
+        update_time_limit: std::time::Duration::from_secs(3),
+        ..runtime::Limits::default()
+    };
+    let world = std::sync::Arc::new(World::seam_with(limits, test, true));
+    world.write_connector("notes", &serde_json::from_str(NOTES).unwrap());
+    service.script(|script| script.expires_in = Some(1));
+    world
+        .runtime
+        .connect_account("local/notes", Some("dashboard-dev"), &service.browser())
+        .unwrap();
+    service.script(|script| script.expires_in = None);
+    // The keychain is slow from the moment the service answers the refresh
+    let slowed = std::sync::Arc::clone(&world);
+    service.on_refresh(move || {
+        slowed
+            .runtime
+            .test_vault_delay_next(std::time::Duration::from_secs(6));
+    });
+    let package = repack(
+        &fixture("account-probe"),
+        &json!({
+            "manifest_version": 1, "id": "local/order-probe", "version": "0.1.0", "author": "A",
+            "permissions": [],
+            "connectors": [{ "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }]
+        })
+        .to_string(),
+    );
+    let report = world.approve_and_load(&package).update(&list_notes());
+    let answers = report
+        .result
+        .as_ref()
+        .map(common::answers)
+        .unwrap_or_default();
+    assert!(
+        answers
+            .first()
+            .is_none_or(|answer| answer.get("ok").is_none()),
+        "{report:?}"
+    );
+    let accounts = world.runtime.list_accounts().unwrap();
+    assert_eq!(
+        accounts[0]
+            .needs_connecting
+            .as_ref()
+            .map(|needs| needs.reason),
+        Some(runtime::accounts::Reason::RefreshFailed),
+        "{accounts:?}"
+    );
+}

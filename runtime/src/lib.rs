@@ -505,6 +505,24 @@ impl Runtime {
         )
     }
 
+    /// As [`Runtime::with_test_network`], with the development vault on the system's keychain,
+    /// for the tests that need two processes to share it.
+    #[cfg(feature = "test-network")]
+    pub fn with_test_network_on_keychain(
+        limits: Limits,
+        options: RuntimeOptions,
+        test: TestNetwork,
+    ) -> wasmtime::Result<Runtime> {
+        let catalog = catalog::Catalog::with_extra(&test.catalog)?;
+        Runtime::start(
+            limits,
+            options,
+            catalog,
+            network::Network::with_seam(test),
+            vault::Backend::System,
+        )
+    }
+
     /// Makes the next operation on the vault entry of `connector_id`'s account at `origin`
     /// fail with `failure`, on the mock vault of [`Runtime::with_test_network`].
     #[cfg(feature = "test-network")]

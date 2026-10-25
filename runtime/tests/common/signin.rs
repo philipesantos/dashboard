@@ -76,6 +76,8 @@ struct State {
     /// Valid refresh tokens → account id.
     refresh: HashMap<String, String>,
     revoked: Vec<String>,
+    /// Run when a refresh is answered, before the answer is sent.
+    on_refresh: Option<Arc<dyn Fn() + Send + Sync>>,
     /// Every secret issued or seen, for the scan.
     secrets: Vec<String>,
     last_code: Option<String>,
@@ -107,6 +109,11 @@ impl SignInService {
             port: 443,
             answers: vec![vec![self.server.address()]],
         }
+    }
+
+    /// Runs `hook` each time the service answers a refresh, before the host receives the answer.
+    pub fn on_refresh(&self, hook: impl Fn() + Send + Sync + 'static) {
+        self.lock().on_refresh = Some(Arc::new(hook));
     }
 
     pub fn script(&self, edit: impl FnOnce(&mut Script)) {
@@ -245,6 +252,9 @@ impl SignInService {
                     }
                     // Rotation: the old access tokens of this account stop working too
                     state.access.retain(|_, owner| *owner != account);
+                    if let Some(hook) = state.on_refresh.clone() {
+                        hook();
+                    }
                     issue(&mut state, &account)
                 }
                 _ => refusal("unsupported_grant_type", "unknown grant"),
