@@ -394,7 +394,7 @@ mod tests {
             vault.read("a").within(WAIT),
             Err(VaultError::Unavailable(_))
         ));
-        vault.fail_next("a", store::Failure::PlatformFailure);
+        vault.fail_next("a", store::Failure::Platform);
         assert!(matches!(
             vault.read("a").within(WAIT),
             Err(VaultError::Unavailable(_))

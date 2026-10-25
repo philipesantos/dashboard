@@ -32,7 +32,7 @@ impl Backend {
 #[derive(Debug, Clone)]
 pub(crate) enum Failure {
     NoStorageAccess,
-    PlatformFailure,
+    Platform,
     BadEncoding(Vec<u8>),
     BadDataFormat(Vec<u8>),
 }
@@ -93,7 +93,7 @@ impl Opened {
             .expect("the mock store builds every entry");
         let error = match failure {
             Failure::NoStorageAccess => Error::NoStorageAccess(platform("locked")),
-            Failure::PlatformFailure => Error::PlatformFailure(platform("failed")),
+            Failure::Platform => Error::PlatformFailure(platform("failed")),
             Failure::BadEncoding(bytes) => Error::BadEncoding(bytes),
             Failure::BadDataFormat(bytes) => Error::BadDataFormat(bytes, platform("bad format")),
         };
