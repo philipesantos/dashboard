@@ -1,14 +1,14 @@
-/// Plugin contract v1, minor version 2 (feature 004).
+/// Plugin contract v1, minor version 3 (feature 005).
 ///
 /// The host and every v1 plugin build from wit/v1. A minor version only adds: every interface,
-/// function and type of 1.1.0 (wit/history/1.1.0/widget.wit) is here unchanged, and
+/// function and type of 1.2.0 (wit/history/1.2.0/widget.wit) is here unchanged, and
 /// runtime/tests/contract_v1.rs fails the build otherwise. The host runs plugins built for any
 /// v1 minor version up to its own.
 ///
 /// Every function of a capability interface returns `result<T, E>`, where `E` is an enum or
 /// variant of that interface whose first case is `not-granted`: the answer of an optional
 /// capability the user has not turned on (constitution Principle II).
-package dashboard:widget@1.2.0;
+package dashboard:widget@1.3.0;
 
 /// Writes log messages; carried by the `log` permission. Unchanged from 1.0.0.
 interface log {
@@ -107,6 +107,43 @@ interface connectors {
   /// redirects itself.
   call: func(connector: string, operation: string, arguments: list<argument>)
     -> result<response, call-error>;
+}
+
+/// Calls the operations of connectors the manifest declares with `"account": true`, as the
+/// account connected to that connector. The host adds the credential to the request itself: the
+/// plugin never sees it, and nothing it passes can name it. Calls work only while the host runs
+/// `update`. A connector the manifest declares without an account is called through
+/// `connectors`; through this interface it answers `not-granted`, and the other way round. Which
+/// account a widget acts as is fixed when the host loads it. New in 1.3.0.
+interface accounts {
+  use connectors.{argument, response, problem};
+
+  variant account-call-error {
+    /// The connector is an optional permission the user has not turned on, its approval (or its
+    /// approval to use the account) was removed, or the manifest does not declare it with an
+    /// account: nothing was sent.
+    not-granted,
+    /// The host refused the call before sending anything.
+    refused(problem),
+    /// The request was attempted and produced no response for the plugin. A response that
+    /// carried the credential back is `invalid-response`.
+    failed(problem),
+    /// No account is connected to the connector and its credential is required, or the account
+    /// must be connected again: the service refused it, it could not be refreshed, or the
+    /// connector now asks for more access than it holds. Nothing was sent, or the response was
+    /// dropped. Only the user can connect an account, in the host's controls.
+    account-not-connected,
+    /// The service answered that the account lacks a paid plan this operation needs, with a
+    /// status the connector declares as meaning that. The response was dropped.
+    subscription-required,
+  }
+
+  /// Calls `operation` of `connector` (an id the manifest declares with an account) with
+  /// `arguments`. When no account was connected as the host loaded the plugin and the
+  /// connector's credential is optional, the request goes without one. One call at a time; the
+  /// host follows allowed redirects itself and refreshes an expired token at most once per call.
+  call: func(connector: string, operation: string, arguments: list<argument>)
+    -> result<response, account-call-error>;
 }
 
 /// The plugin's own store of named values, carried by the `storage` permission. The host chooses
@@ -227,10 +264,29 @@ world stored-widget {
   export updater;
 }
 
-/// A widget with connectors and its own store; the world the host binds.
+/// A widget with connectors and its own store.
 world connected-stored-widget {
   import log;
   import connectors;
+  import storage;
+  export renderer;
+  export updater;
+}
+
+/// A widget that fetches data through connectors, some of them as the user's account.
+world account-widget {
+  import log;
+  import connectors;
+  import accounts;
+  export renderer;
+  export updater;
+}
+
+/// A widget with connectors, accounts and its own store; the world the host binds.
+world account-stored-widget {
+  import log;
+  import connectors;
+  import accounts;
   import storage;
   export renderer;
   export updater;
