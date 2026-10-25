@@ -148,8 +148,8 @@ compared line by line, with named placeholders (`<digest>`, `<path>`, `<n>`, `<t
 `<version>`) each matching only its kind of value. A block may say `output=any` only when none
 of its commands is `runtime`: cargo's and git's progress lines vary from run to run and are not
 this project's text, so for them only the exit code is checked. Before each page, the runner
-clears the development data directory through the function the CLI uses to find it, so pages do
-not share grants or stores; it refuses to start unless `CI` is set or
+clears the development data directory and grant record through the functions the CLI uses to
+find them, so pages do not share grants or stores; it refuses to start unless `CI` is set or
 `DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1` is, so a contributor's own development record is
 never cleared by surprise. The crate the walkthrough builds is also kept in the repository,
 `docs/authors/getting-started/` (`Cargo.toml`, `Cargo.lock`, `src/lib.rs`, excluded from the
@@ -179,9 +179,10 @@ checks), calls it with:
 - `Runtime::with_test_network_on_keychain`: the seam, on routes and a test CA the runner writes
   to a file named by `DASHBOARD_TEST_NETWORK`, and the development vault on the system's
   keychain, because each command is a process of its own and the mock vault lives in one
-  process's memory (`vault/store.rs:25`); the same file names the data directory, which the
-  binary uses instead of the default one, so its grants and accounts never land in the record
-  the real CLI reads;
+  process's memory (`vault/store.rs:25`); the same file names the data directory and the grant
+  record, which the binary uses instead of the default ones (`RuntimeOptions::
+  default_development_data_dir`, `GrantStore::default_development_path`), so its grants and
+  accounts never land in the records the real CLI reads;
 - an opener that, instead of a browser, follows the test sign-in service's page. Its HTTP client
   lives in `runtime/src/network/` behind `test-network`, beside the rest of the network code, so
   Clippy's rule that only that module opens connections keeps holding with no new `#![allow]`.

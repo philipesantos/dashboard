@@ -26,10 +26,11 @@ runtime pack <module-or-component> --manifest <file> --output <file>
 - Built only with the `test-network` feature (`required-features`), which refuses release
   builds; never installed, never named in the docs.
 - Same commands, options and output as `runtime`; its runtime is
-  `Runtime::with_test_network_on_keychain`, with routes, a test CA and a data directory read from
-  the JSON file named by `DASHBOARD_TEST_NETWORK`, and the development vault on the system's
-  keychain (each command is a process of its own). The file's data directory replaces the
-  default development one; `--data` still overrides it.
+  `Runtime::with_test_network_on_keychain`, with routes, a test CA, a data directory and a grant
+  record read from the JSON file named by `DASHBOARD_TEST_NETWORK`, and the development vault on
+  the system's keychain (each command is a process of its own). The file's data directory and
+  grant record replace the default development ones; `--data` and `--grants` still override
+  them.
 - `accounts connect` does not open a browser: it fetches the sign-in address and follows the
   test sign-in service's approval itself, then waits for the callback as `runtime` does. The
   client that follows it lives in `runtime/src/network/`, behind `test-network`.

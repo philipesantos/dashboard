@@ -83,8 +83,9 @@ name = "my-widget"
   the job's target folder (R3).
 - The walkthrough's file blocks equal the files of `docs/authors/getting-started/`, and its
   `Cargo.lock` is in the session's folder before the page and unchanged after it (R8).
-- The development data directory, found by the CLI's own lookup, cleared before the page; the
-  runner refuses to start unless `CI` or `DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1` is set.
-  The test-only CLI uses a data directory of the session's own instead.
+- The development data directory and grant record, found by the CLI's own lookups, cleared
+  before the page; the runner refuses to start unless `CI` or
+  `DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1` is set. The test-only CLI uses a data directory
+  and a grant record of the session's own instead.
 - Blocks run in order; the page fails at the first block that differs, showing the expected and
   the actual lines.
