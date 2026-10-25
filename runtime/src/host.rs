@@ -1,6 +1,7 @@
 //! The host side of one render or update call: the state its store holds, the `log` capability
 //! of each contract version, the `connectors` capability of contract 1.1.0, the `storage`
-//! capability of contract 1.2.0, and the stand-ins linked in place of a capability that is off.
+//! capability of contract 1.2.0, the `accounts` capability of contract 1.3.0, and the stand-ins
+//! linked in place of a capability that is off.
 
 use wasmtime::component::{HasData, HasSelf, Linker};
 
@@ -9,6 +10,7 @@ use crate::connector::ArgValue;
 use crate::limits::{Limits, MemoryLimiter};
 use crate::permissions::Contract;
 use crate::storage::{CallError, Rule, StorageRun};
+use crate::v1::dashboard::widget::accounts as accounts_wit;
 use crate::v1::dashboard::widget::connectors as wit;
 use crate::v1::dashboard::widget::storage as storage_wit;
 use crate::{LogLevel, LogMessage, text, v0, v1};
@@ -69,6 +71,25 @@ pub(crate) fn link_connectors(linker: &mut Linker<HostState>, link: Link) -> was
     }
 }
 
+/// Adds `accounts` to `linker`: the real interface over the plugin's table of connectors it uses
+/// with an account, or the stand-in, which holds no table, no vault and no network, and answers
+/// `not-granted` to every call (`specs/005-plugin-credentials/research.md`, R9).
+pub(crate) fn link_accounts(linker: &mut Linker<HostState>, link: Link) -> wasmtime::Result<()> {
+    match link {
+        Link::Real => accounts_wit::add_to_linker::<_, RealAccountsMarker>(linker, |state| {
+            RealAccounts {
+                run: &mut state.run,
+                calls: state.account_calls.as_mut(),
+            }
+        }),
+        Link::StandIn => {
+            accounts_wit::add_to_linker::<_, AccountsStandInMarker>(linker, |state| AccountsStandIn {
+                run: &mut state.run,
+            })
+        }
+    }
+}
+
 /// State of one render or update call, dropped with its store when the call ends.
 pub(crate) struct HostState {
     /// Messages kept, in the order the plugin wrote them, escaped and cut to size.
@@ -84,6 +105,9 @@ pub(crate) struct HostState {
     pub(crate) run: RunLog,
     /// What the real `connectors` reaches: present only when a connector is granted.
     pub(crate) calls: Option<Calls>,
+    /// What the real `accounts` reaches: present only when a connector the plugin uses with an
+    /// account is granted.
+    pub(crate) account_calls: Option<Calls>,
     /// What the real `storage` reaches: the run of the store bound at link time, present only
     /// when storage is granted.
     pub(crate) storage: Option<StorageRun>,
@@ -99,6 +123,7 @@ impl HostState {
             limiter: MemoryLimiter::new(limits.max_memory_bytes),
             run,
             calls,
+            account_calls: None,
             storage: None,
         }
     }
@@ -206,6 +231,84 @@ impl wit::Host for ConnectorsStandIn<'_> {
     }
 }
 
+/// The real `accounts` of one call.
+pub(crate) struct RealAccounts<'a> {
+    run: &'a mut RunLog,
+    calls: Option<&'a mut Calls>,
+}
+
+/// The marker the linker projects [`RealAccounts`] through.
+pub(crate) struct RealAccountsMarker;
+
+impl HasData for RealAccountsMarker {
+    type Data<'a> = RealAccounts<'a>;
+}
+
+impl accounts_wit::Host for RealAccounts<'_> {
+    fn call(
+        &mut self,
+        connector: String,
+        operation: String,
+        arguments: Vec<wit::Argument>,
+    ) -> Result<wit::Response, accounts_wit::AccountCallError> {
+        let answer = match self.calls.as_deref_mut() {
+            Some(calls) => calls.call(self.run, &connector, &operation, arguments_of(arguments)),
+            None => self.run.not_granted(&connector, &operation),
+        };
+        account_to_wit(answer)
+    }
+}
+
+/// Linked in place of `accounts` when the plugin declares connectors with an account and none
+/// of them is granted. It counts and logs each call, and reaches nothing.
+pub(crate) struct AccountsStandIn<'a> {
+    run: &'a mut RunLog,
+}
+
+/// The marker the linker projects [`AccountsStandIn`] through.
+pub(crate) struct AccountsStandInMarker;
+
+impl HasData for AccountsStandInMarker {
+    type Data<'a> = AccountsStandIn<'a>;
+}
+
+impl accounts_wit::Host for AccountsStandIn<'_> {
+    fn call(
+        &mut self,
+        connector: String,
+        operation: String,
+        _arguments: Vec<wit::Argument>,
+    ) -> Result<wit::Response, accounts_wit::AccountCallError> {
+        account_to_wit(self.run.not_granted(&connector, &operation))
+    }
+}
+
+fn arguments_of(arguments: Vec<wit::Argument>) -> Vec<(String, ArgValue)> {
+    arguments
+        .into_iter()
+        .map(|argument| {
+            let value = match argument.value {
+                wit::Value::Text(text) => ArgValue::Text(text),
+                wit::Value::Integer(number) => ArgValue::Integer(number),
+                wit::Value::Flag(flag) => ArgValue::Flag(flag),
+            };
+            (argument.name, value)
+        })
+        .collect()
+}
+
+fn account_to_wit(answer: Answer) -> Result<wit::Response, accounts_wit::AccountCallError> {
+    match answer {
+        Answer::AccountNotConnected(_) => Err(accounts_wit::AccountCallError::AccountNotConnected),
+        Answer::SubscriptionRequired => Err(accounts_wit::AccountCallError::SubscriptionRequired),
+        other => to_wit(other).map_err(|error| match error {
+            wit::CallError::NotGranted => accounts_wit::AccountCallError::NotGranted,
+            wit::CallError::Refused(problem) => accounts_wit::AccountCallError::Refused(problem),
+            wit::CallError::Failed(problem) => accounts_wit::AccountCallError::Failed(problem),
+        }),
+    }
+}
+
 fn to_wit(answer: Answer) -> Result<wit::Response, wit::CallError> {
     let problem = |rule: crate::calls::Rule, detail: String| wit::Problem {
         rule: match rule {
@@ -231,7 +334,10 @@ fn to_wit(answer: Answer) -> Result<wit::Response, wit::CallError> {
                 .collect(),
             body: response.body,
         }),
-        Answer::NotGranted => Err(wit::CallError::NotGranted),
+        // Only the account table answers these, and `connectors` never reaches it
+        Answer::NotGranted | Answer::AccountNotConnected(_) | Answer::SubscriptionRequired => {
+            Err(wit::CallError::NotGranted)
+        }
         Answer::Refused(rule, detail) => Err(wit::CallError::Refused(problem(rule, detail))),
         Answer::Failed(rule, detail) => Err(wit::CallError::Failed(problem(rule, detail))),
     }

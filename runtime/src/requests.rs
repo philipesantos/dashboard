@@ -58,6 +58,10 @@ pub struct Entry {
     /// Only in the one entry written past a run's call limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<Summary>,
+    /// The account a request acted as: its name, or `key` (feature 005); never the credential.
+    /// Absent when the request carried none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 /// How a call ended: `{ "status": 200 }`, `{ "not-granted": true }`,
@@ -238,6 +242,7 @@ mod tests {
             duration_ms: 184,
             redirect_of: None,
             summary: None,
+            account: None,
         }
     }
 

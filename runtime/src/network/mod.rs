@@ -18,6 +18,8 @@ mod address;
 mod callback;
 mod resolver;
 
+pub(crate) use callback::Callback;
+
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -452,6 +454,8 @@ pub(crate) struct Hop {
     pub(crate) sent_bytes: u64,
     pub(crate) received_bytes: u64,
     pub(crate) duration: Duration,
+    /// Whether this request carried the connector's credential.
+    pub(crate) with_credential: bool,
 }
 
 /// Everything one call did on the network.
@@ -505,6 +509,10 @@ impl Session {
                 sent_bytes,
                 received_bytes: 0,
                 duration: Duration::ZERO,
+                with_credential: request
+                    .credential
+                    .as_ref()
+                    .is_some_and(|credential| credential.applies_to(&request.url)),
             };
             let answer = self.once(&request, left, deadline, update_bytes_left, operation);
             hop.duration = hop_start.elapsed();

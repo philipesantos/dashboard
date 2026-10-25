@@ -243,23 +243,33 @@ fn fixed_headers() {
     gate.assert_well_behaved();
 }
 
-/// `credentials` (FR-017): a connector that declares a credential cannot be used yet.
+/// `credentials` (FR-017 of feature 003, kept by feature 005): a credential anywhere but the
+/// top-level `credential` field is refused, and a `credential` that is not a declaration too.
 #[test]
 fn credentials() {
     let gate = Gate::new();
     let edits: [fn(&mut Value); 3] = [
-        |c| c["credential"] = json!("token"),
         |c| c["credentials"] = json!({ "kind": "api-key" }),
         |c| c["operations"]["get"]["auth"] = json!("bearer"),
+        |c| c["operations"]["get"]["credential"] = json!("token"),
     ];
     for edit in edits {
         gate.connector("echo", &local("echo", "https://api.echo.test", edit));
         assert_kind(
             &gate.load_error(&probe_of("echo", &["get"])),
             ErrorKind::CredentialsNotSupported,
-            &["005"],
+            &["`credential`"],
         );
     }
+    gate.connector(
+        "echo",
+        &local("echo", "https://api.echo.test", |c| c["credential"] = json!("token")),
+    );
+    assert_kind(
+        &gate.load_error(&probe_of("echo", &["get"])),
+        ErrorKind::InvalidConnector,
+        &["credential"],
+    );
     gate.assert_well_behaved();
 }
 

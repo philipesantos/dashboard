@@ -65,13 +65,13 @@ pub(crate) mod v0 {
     wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
 }
 
-/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.2.0`), from its widest world,
-/// `connected-stored-widget`, for the host side of every interface. Wasmtime matches the imports
+/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.3.0`), from its widest world,
+/// `account-stored-widget`, for the host side of every interface. Wasmtime matches the imports
 /// of plugins built for an older minor against them by compatible version. Exports are looked up
 /// one by one, by the exact names each plugin has, since a render-only widget has no `updater`
 /// (`specs/003-plugin-connectors/research.md`, R11; `specs/004-plugin-storage/research.md`, R13).
 pub(crate) mod v1 {
-    wasmtime::component::bindgen!({ path: "../wit/v1", world: "connected-stored-widget" });
+    wasmtime::component::bindgen!({ path: "../wit/v1", world: "account-stored-widget" });
 }
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
@@ -201,6 +201,22 @@ pub struct Runtime {
     /// Calls per minute per widget and per destination host, across every plugin this runtime
     /// runs (research R10).
     rates: Arc<Rates>,
+    /// The secrets vault, one ordered thread for every plugin this runtime runs
+    /// (`specs/005-plugin-credentials/research.md`, R5).
+    vault: Arc<vault::Vault>,
+}
+
+/// What disconnecting an account did (FR-014).
+#[derive(Debug)]
+pub struct Disconnected {
+    pub account: accounts::Account,
+    /// Whether the service revoked the token, when the connector says where; `None` when it
+    /// offers no revocation, or for a key.
+    pub revoked: Option<Result<(), String>>,
+    /// Where the person revokes it by hand, when the connector names a page.
+    pub revoke_page: Option<String>,
+    /// The widgets whose kept data, read as that account, was deleted.
+    pub kept_discarded: Vec<String>,
 }
 
 /// A package that passed every check that needs no grants: load steps 1–6 of
@@ -404,6 +420,7 @@ pub struct Plugin {
     clock: Arc<EpochClock>,
     network: network::Network,
     rates: Arc<Rates>,
+    vault: Arc<vault::Vault>,
     kept: KeptStore,
     log: RequestLog,
     /// Where declared connectors are found, for [`Plugin::recheck`].
@@ -433,6 +450,11 @@ struct V1Pre {
     /// The connectors granted when it was linked, for a plugin that imports `connectors`;
     /// `None` when it was linked to the stand-in, or imports nothing of them.
     table: Option<Arc<ConnectorTable>>,
+    /// The connectors it uses with an account, each with the account connected when it was
+    /// linked, for a plugin that imports `accounts`; `None` for the stand-in or no import.
+    account_table: Option<Arc<ConnectorTable>>,
+    /// The accounts record's vault id when it was linked.
+    vault_id: Option<String>,
     /// The store bound when it was linked, for a plugin linked to the real `storage`, or why
     /// storage is unavailable; `None` when it was linked to the stand-in, or imports no storage.
     storage: Option<Result<Arc<storage::StoreBinding>, String>>,
@@ -458,6 +480,7 @@ impl Runtime {
             options,
             catalog::Catalog::built_in(),
             network::Network::production(),
+            vault::Backend::System,
         )
     }
 
@@ -471,7 +494,13 @@ impl Runtime {
         test: TestNetwork,
     ) -> wasmtime::Result<Runtime> {
         let catalog = catalog::Catalog::with_extra(&test.catalog)?;
-        Runtime::start(limits, options, catalog, network::Network::with_seam(test))
+        Runtime::start(
+            limits,
+            options,
+            catalog,
+            network::Network::with_seam(test),
+            vault::Backend::mock(),
+        )
     }
 
     fn start(
@@ -479,6 +508,7 @@ impl Runtime {
         mut options: RuntimeOptions,
         catalog: catalog::Catalog,
         network: network::Network,
+        backend: vault::Backend,
     ) -> wasmtime::Result<Runtime> {
         // A store's path is always absolute: a relative one could be read as a URI, or move
         // with the working directory (specs/004-plugin-storage/research.md, R4)
@@ -517,6 +547,7 @@ impl Runtime {
         let clock = Arc::new(EpochClock::new());
         start_epoch_ticker(&engine, Arc::clone(&clock))?;
 
+        let vault = Arc::new(vault::Vault::new(backend, limits.max_secret_bytes));
         Ok(Runtime {
             engine,
             limits,
@@ -525,6 +556,7 @@ impl Runtime {
             catalog,
             network,
             rates: Arc::default(),
+            vault,
         })
     }
 
@@ -533,6 +565,120 @@ impl Runtime {
             catalog: &self.catalog,
             options: &self.options,
         }
+    }
+
+    /// What connecting and disconnecting accounts need (`specs/005-plugin-credentials/
+    /// data-model.md`, Sign-in).
+    fn signin_context(&self) -> signin::Context<'_> {
+        signin::Context {
+            accounts: accounts::AccountStore::open(self.options.data_dir()),
+            vault: &self.vault,
+            session: self.network.session(&self.limits),
+            log: RequestLog::new(self.options.data_dir(), &self.limits),
+            limits: &self.limits,
+        }
+    }
+
+    /// Connects an account to the connector `connector_id` by signing in with the authorization
+    /// code and PKCE (FR-009): `open` shows the person the sign-in address in the system
+    /// browser. `client` is the client registration's id, remembered for the connector; without
+    /// it, the one remembered from before. Only the host's own controls call this (Principle VII,
+    /// constitution v2.4.0); no plugin can.
+    pub fn connect_account(
+        &self,
+        connector_id: &str,
+        client: Option<&str>,
+        open: &(dyn Fn(&url::Url) + Sync),
+    ) -> Result<accounts::Connected, RuntimeError> {
+        let (connector, origin) = self.connectors().find(connector_id)?;
+        signin::connect(&self.signin_context(), &connector, &origin, client, open)
+    }
+
+    /// Connects a key the maintainer typed to the connector `connector_id` (FR-010).
+    pub fn connect_key(
+        &self,
+        connector_id: &str,
+        key: &str,
+    ) -> Result<accounts::Connected, RuntimeError> {
+        let (connector, origin) = self.connectors().find(connector_id)?;
+        signin::connect_key(&self.signin_context(), &connector, &origin, key)
+    }
+
+    /// Every connected account, with whether its connector's file still exists (FR-014).
+    pub fn list_accounts(&self) -> Result<Vec<accounts::Account>, RuntimeError> {
+        accounts::AccountStore::open(self.options.data_dir()).list()
+    }
+
+    /// The connector `connector_id` as found now, for the tool's output: its declaration and
+    /// origin.
+    pub fn find_connector(&self, connector_id: &str) -> Result<(Arc<Connector>, String), RuntimeError> {
+        self.connectors().find(connector_id)
+    }
+
+    /// Disconnects the account of `connector_id` from `origin` (FR-013, FR-014): deletes its
+    /// credential from the keychain and the account from the record under the record's lock,
+    /// deletes at once the kept data of every widget that used it, then asks the service to
+    /// revoke the token when the connector says where. `origin` defaults to the connector's
+    /// file as found now, and must be given when that file is gone. `None` when nothing was
+    /// connected.
+    pub fn disconnect_account(
+        &self,
+        connector_id: &str,
+        origin: Option<&str>,
+    ) -> Result<Option<Disconnected>, RuntimeError> {
+        let found = self.connectors().find(connector_id).ok();
+        let origin = match (origin, &found) {
+            (Some(origin), _) => origin.to_owned(),
+            (None, Some((_, origin))) => origin.clone(),
+            (None, None) => {
+                return Err(RuntimeError::new(
+                    ErrorKind::AccountNotConnected,
+                    format!(
+                        "{connector_id} cannot be found now; give the origin of its account with --origin"
+                    ),
+                ));
+            }
+        };
+        let context = self.signin_context();
+        let mut token = None;
+        let removed = context.accounts.disconnect(connector_id, &origin, |account| {
+            let vault_id = context.accounts.vault_id()?;
+            let user = vault::entry_user(&vault_id, connector_id, &origin);
+            let wait = self.limits.vault_wait_tool;
+            if let Ok(vault::Stored::Account { access, .. }) = self.vault.read(&user).within(wait) {
+                token = Some(access);
+            }
+            let _ = account;
+            self.vault
+                .delete(&user)
+                .within(wait)
+                .map(drop)
+                .map_err(|error| RuntimeError::new(ErrorKind::KeychainUnavailable, error.to_string()))
+        })?;
+        let Some(account) = removed else {
+            return Ok(None);
+        };
+        let kept_discarded = KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes)
+            .discard_account(connector_id, &account.account_id)
+            .unwrap_or_default();
+        let revoked = match (&found, &token, &account.client) {
+            (Some((connector, found_origin)), Some(token), Some(client)) if *found_origin == origin => {
+                signin::revoke(&context, connector, &client.client_id, token)
+            }
+            _ => None,
+        };
+        let revoke_page = found
+            .as_ref()
+            .and_then(|(connector, _)| connector.credential())
+            .and_then(|credential| credential.account())
+            .and_then(|account| account.revoke_page())
+            .map(|page| page.to_string());
+        Ok(Some(Disconnected {
+            account,
+            revoked,
+            revoke_page,
+            kept_discarded,
+        }))
     }
 
     /// Discards every kept data file of the plugin `id`, as removing its approval or turning
@@ -721,6 +867,7 @@ impl Runtime {
             clock: Arc::clone(&self.clock),
             network: self.network.clone(),
             rates: Arc::clone(&self.rates),
+            vault: Arc::clone(&self.vault),
             kept: KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes),
             log: RequestLog::new(self.options.data_dir(), &self.limits),
             catalog: self.catalog.clone(),
@@ -740,14 +887,9 @@ pub(crate) struct Connectors<'a> {
 }
 
 impl Connectors<'_> {
-    /// Load step 6a for one declared connector: found, parsed, following the destination
-    /// rules, of the declared major, with every declared operation
-    /// (`specs/003-plugin-connectors/data-model.md`, Load decision).
-    pub(crate) fn resolve(
-        &self,
-        request: &manifest::ConnectorRequest,
-    ) -> Result<LoadedConnector, RuntimeError> {
-        let id = request.id.as_str();
+    /// The connector `id`, from the catalog or, in development, its local file, with its origin:
+    /// `catalog`, or the file's canonical path. Repository ids are not verified yet (FR-004).
+    pub(crate) fn find(&self, id: &str) -> Result<(Arc<Connector>, String), RuntimeError> {
         let names = || vec![id.to_owned()];
         let (connector, origin) = if id.starts_with("catalog/") {
             let connector = self.catalog.get(id).ok_or_else(|| {
@@ -778,6 +920,19 @@ impl Connectors<'_> {
                 ),
             ));
         };
+        Ok((connector, origin))
+    }
+
+    /// Load step 6a for one declared connector: found, parsed, following the destination
+    /// rules, of the declared major, with every declared operation
+    /// (`specs/003-plugin-connectors/data-model.md`, Load decision).
+    pub(crate) fn resolve(
+        &self,
+        request: &manifest::ConnectorRequest,
+    ) -> Result<LoadedConnector, RuntimeError> {
+        let id = request.id.as_str();
+        let names = || vec![id.to_owned()];
+        let (connector, origin) = self.find(id)?;
         if connector.version().major != u64::from(request.major) {
             return Err(RuntimeError::with_names(
                 ErrorKind::ConnectorUnavailable,
@@ -988,6 +1143,38 @@ fn prepare(
     } else {
         None
     };
+    // Step 9 for accounts: the real interface over a table of the connectors used with an
+    // account, each with the account connected now, or the stand-in (research R9, R11 step 0)
+    let accounts = accounts::AccountStore::open(data_dir);
+    let (account_table, vault_id) = if plan.accounts {
+        let loaded: Vec<(String, String, Arc<Connector>)> = package
+            .connectors
+            .iter()
+            .map(|loaded| {
+                (
+                    loaded.id.clone(),
+                    loaded.origin.clone(),
+                    Arc::clone(&loaded.connector),
+                )
+            })
+            .collect();
+        let entry = entry
+            .as_ref()
+            .expect("step 7 refused a plugin without an approval");
+        let table = ConnectorTable::build_accounts(manifest, &loaded, entry, |id, origin| {
+            accounts.get(id, origin).ok().flatten()
+        })
+        .map(Arc::new);
+        let link = if table.is_some() {
+            host::Link::Real
+        } else {
+            host::Link::StandIn
+        };
+        host::link_accounts(&mut linker, link).map_err(mismatch)?;
+        (table, accounts.existing_vault_id().ok().flatten())
+    } else {
+        (None, None)
+    };
     // Steps 8a and 9 for storage: the store binding, from the plugin's id and origin, for a
     // plugin linked to the real interface; never from anything a call says (research R3)
     let storage = if plan.real.contains(&"storage") {
@@ -1040,6 +1227,8 @@ fn prepare(
                 render,
                 update,
                 table,
+                account_table,
+                vault_id,
                 storage,
             })
         }
@@ -1223,6 +1412,14 @@ impl Plugin {
             }) => Some(Arc::clone(table)),
             _ => None,
         };
+        let (account_table, vault_id) = match prepared {
+            Prepared::V1(V1Pre {
+                account_table: Some(table),
+                vault_id,
+                ..
+            }) => (Some(Arc::clone(table)), vault_id.clone()),
+            _ => (None, None),
+        };
         let log = (!self.package.connectors.is_empty()).then(|| self.log.clone());
         let run = RunLog::new(self.manifest().id(), log, &self.limits);
         let calls = table.map(|table| Calls {
@@ -1236,8 +1433,28 @@ impl Plugin {
             update_bytes_left: self.limits.max_update_response_bytes,
             limits: self.limits.clone(),
             rates: Arc::clone(&self.rates),
+            account: None,
+        });
+        let account_calls = account_table.map(|table| Calls {
+            plugin: self.manifest().id().clone(),
+            origin: self.origin.clone(),
+            grants: Arc::clone(&self.grants),
+            table,
+            phase,
+            session: (phase == Phase::Update).then(|| self.network.session(&self.limits)),
+            deadline: Instant::now() + self.limits.update_time_limit,
+            update_bytes_left: self.limits.max_update_response_bytes,
+            limits: self.limits.clone(),
+            rates: Arc::clone(&self.rates),
+            account: Some(calls::AccountAccess {
+                store: accounts::AccountStore::open(self.options.data_dir()),
+                vault: Arc::clone(&self.vault),
+                vault_id,
+                secrets: std::collections::HashMap::new(),
+            }),
         });
         let mut state = HostState::new(&self.limits, run, calls);
+        state.account_calls = account_calls;
         if let Prepared::V1(V1Pre {
             storage: Some(binding),
             ..
@@ -1272,12 +1489,21 @@ impl Plugin {
             .map(|(id, _)| id.clone())
             .collect();
         connectors_on.sort();
+        // The accounts its account calls act as, from the table it was linked with
+        let accounts = match self.linked.lock().unwrap_or_else(PoisonError::into_inner).prepared.as_deref() {
+            Ok(Prepared::V1(V1Pre {
+                account_table: Some(table),
+                ..
+            })) => table.account_ids(),
+            _ => std::collections::BTreeMap::new(),
+        };
         Some(kept::Key {
             id: self.manifest().id().to_string(),
             origin: self.origin.clone(),
             digest: self.package.digest.clone(),
             approval: self.package.approval_digest(),
             connectors_on,
+            accounts,
         })
     }
 
@@ -1350,6 +1576,7 @@ impl Plugin {
             },
             fetched_at_ms: Some(now),
             data: Some(data.clone()),
+            accounts: std::collections::BTreeMap::new(),
             last_update: Some(kept::LastUpdate {
                 at_ms: now,
                 outcome: kept::Outcome::Ok,

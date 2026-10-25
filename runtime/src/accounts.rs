@@ -145,6 +145,11 @@ impl AccountStore {
         self.change(|record| Ok((record.vault.clone(), true)))
     }
 
+    /// The vault id of the record, if there is one; asking creates nothing.
+    pub fn existing_vault_id(&self) -> Result<Option<String>, RuntimeError> {
+        Ok(self.read()?.map(|record| record.vault))
+    }
+
     /// The account connected to `connector` from `origin`, if any.
     pub fn get(&self, connector: &str, origin: &str) -> Result<Option<Account>, RuntimeError> {
         Ok(self.read()?.and_then(|record| {

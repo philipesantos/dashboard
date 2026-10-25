@@ -20,6 +20,8 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 pub(crate) use store::Backend;
+#[cfg(any(test, feature = "test-network"))]
+pub(crate) use store::Failure;
 
 /// The keychain service of the development vault (constitution v2.4.0, Principle VII). Installed
 /// plugins will use their own from Phase 3.
