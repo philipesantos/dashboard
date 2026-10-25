@@ -23,7 +23,13 @@ in scope, especially:
   domains
 - a plugin reading or changing another plugin's storage, reaching anything outside its own
   store through it, writing past its approved quota, or keeping part of an update that failed
-- a plugin reading passwords, tokens or AI provider keys
+- a plugin reading passwords, tokens or AI provider keys, or a credential leaving the host's
+  vault in the system's keychain other than in the header its connector declares, to that
+  connector's own HTTPS destinations: in a response the widget gets, a file, a log, an error or
+  the tool's output
+- an account connected, replaced or used without the user: a forged or replayed sign-in, a
+  widget acting as an account it was not approved to use, or an update widening what the
+  account lets it do without a new approval
 - a plugin drawing outside its frame or imitating a host dialog
 - AI output triggering an action without confirmation in a host dialog
 

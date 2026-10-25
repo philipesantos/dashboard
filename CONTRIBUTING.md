@@ -41,7 +41,12 @@ See the [README](README.md) for the repository layout.
 
 ## Checks
 
-CI runs these on Linux, macOS and Windows; run them locally before opening a pull request:
+CI runs these on Linux, macOS and Windows; run them locally before opening a pull request. On
+Linux the vault's Secret Service store needs `libdbus-1-dev` (and `pkg-config`) to build, and its
+tests use the real keychain: run them in a desktop session whose keyring is unlocked, or in a
+session bus of their own, as CI does:
+`dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'dev' && cargo test --workspace --locked"`.
+
 
 ```bash
 pnpm --filter ./app build                                      # UI type-check and build
@@ -96,8 +101,9 @@ You do not need Spec Kit to read or edit a spec: specs are plain Markdown.
 - A change that adds or touches a security rule comes with an automated test that fails when
   the rule is broken. The security test suite only grows: do not delete or weaken its tests.
 - Changes to the security core (plugin runtime, permission engine, connector engine and
-  network proxy, plugin storage in `runtime/src/storage/`, secrets vault, and the official
-  connector catalog in `connectors/`) get
+  network proxy, plugin storage in `runtime/src/storage/`, the secrets vault in
+  `runtime/src/vault/` with the accounts and the sign-in, and the official connector catalog
+  in `connectors/`) get
   line-by-line human review before merge, including code written with AI help.
   They always go through a pull request, even when a maintainer could push to `master`
   directly, and the pull request records who reviewed them.
