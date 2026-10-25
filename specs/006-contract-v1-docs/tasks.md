@@ -57,7 +57,7 @@ Built plugins go to `target/plugins/<crate-name>.wasm`. Where the details live:
 **Purpose**: the new dependency, the workspace exclusion and the feature's records. The runtime
 behaves as in feature 005 at the end of this phase.
 
-- [ ] T001 Update `runtime/Cargo.toml` (research R2):
+- [X] T001 Update `runtime/Cargo.toml` (research R2):
   - Add `wit-component = "=0.262.0"`, with a one-line comment as the file has for its other
     dependencies: "Turns the core module cargo builds into a component in `runtime pack`; the
     release xtask uses and wit-bindgen 0.63.0 encodes with".
