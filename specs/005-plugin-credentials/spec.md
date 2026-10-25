@@ -95,6 +95,17 @@ sync or export of the vault; the TypeScript example (separate Phase 2 item)."
   account it acted as, or only that a credential was sent? → A: The account's name, escaped when
   shown, or that it was a key; never the credential (FR-007).
 
+### Session 2026-10-25 (planning)
+
+- Q: GitHub's browser-redirect flow needs a client secret even with the proof key, so GitHub
+  works only with its device flow (a code the user types at GitHub). Should this feature build
+  only the device flow, or also the browser-redirect flow? → A: Both: the device flow, which the
+  GitHub connector uses, and the browser-redirect flow with proof key, for connectors that declare
+  it, tested with the test sign-in service and development connectors (FR-009, FR-015, FR-019).
+- Q: Constitution v2.4.0 fixed "the `keyring` crate", whose project now publishes its API as
+  `keyring-core` and each store as a crate of its own. → A: Amended to v2.4.1: the fixed decision
+  names keyring-rs, `keyring-core` and its store crates (Assumptions).
+
 ## User Scenarios & Testing *(mandatory)*
 
 The people using this feature are the maintainer, who connects accounts and approves widgets
@@ -268,6 +279,9 @@ and replayed callbacks during a sign-in and check that nothing is connected.
    maintainer lists accounts, **Then** it appears with its connector id and origin, marked as having
    no file; **when** the maintainer disconnects it by id and origin, **Then** its credential is
    deleted from the keychain and no other account changes.
+8. **Given** a sign-in through a device code, **When** the user denies it at the service, the code
+   expires, or the service asks the host to poll more slowly, **Then** a denial or an expiry ends
+   the sign-in with nothing connected, and the host polls no faster than the service allows.
 
 ---
 
@@ -455,14 +469,16 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   answering an invalid response and recording why in the log.
 - **FR-009**: Only the host's own controls MAY start a sign-in, in this phase the development tool;
   neither a widget nor its output MAY connect, reconnect or disconnect an account, start a sign-in
-  or open a browser (Principle VII). A sign-in MUST use the authorization code with proof key
-  (PKCE) in the system browser, the callback reaching the host on a loopback address at a port
-  chosen for that sign-in, which the host closes after the first callback or at the sign-in's time
-  limit. The host MUST check the callback's state, and a callback with a wrong or missing state, a
-  code already used, an error, or one arriving after the time limit MUST end the sign-in with
-  nothing connected and any earlier account unchanged. If the first provider's flow needs a secret
-  that a desktop app cannot keep, the plan MAY use the provider's device flow instead, in the
-  system browser and under the same rules. The host's own requests for sign-in, refresh and
+  or open a browser (Principle VII). A connector's account declares one of two sign-in flows,
+  both run in the system browser and neither using a client secret. With the authorization code
+  and proof key (PKCE), the callback reaches the host on a loopback address at a port chosen for
+  that sign-in, which the host closes after the first callback or at the sign-in's time limit; the
+  host MUST check the callback's state, and a callback with a wrong or missing state, a code
+  already used, an error, or one arriving after the time limit MUST end the sign-in with nothing
+  connected and any earlier account unchanged. With a device code, the tool MUST show the code and
+  the service's address only in its own output, poll no faster than the service's interval, slow
+  down when the service asks, and end the sign-in with nothing connected when the user denies it,
+  the code expires or the time limit passes. The host's own requests for sign-in, refresh and
   revocation MUST follow the proxy's rules and appear in the request log as the host's, without
   any credential, code or secret.
 - **FR-010**: The development tool MUST read a key from the terminal without showing it, never from
@@ -500,8 +516,11 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   v2.4.0); accounts for installed plugins arrive with installation in Phase 3.
 - **FR-015**: The catalog's GitHub connector MUST move to version 1.1.0 with an optional account
   that asks only for read access, to the repositories the user picks at GitHub, so that the
-  approval never shows write access for a widget that only reads. The plan picks the kind of
-  GitHub app that offers this. A catalog connector's review MUST check that the access its
+  approval never shows write access for a widget that only reads: a GitHub App with read access
+  to contents and metadata, signed in with GitHub's device flow, the only one GitHub completes
+  without a client secret; the user picks the repositories by installing the app on them at
+  GitHub, at an address the tool gives. GitHub offers no revocation to a client without a secret,
+  so disconnecting says where to revoke the app at GitHub. A catalog connector's review MUST check that the access its
   credential asks for is the narrowest the service offers for its operations. The app's identity
   is configured for development by the developer, never by a plugin; the project registers its
   own app before the first public release (Phase 6).
@@ -530,7 +549,8 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   credential (FR-002), a development connector without HTTPS or with an invalid certificate
   (FR-007), a widget without a grant, with its connector off, or not approved for the account
   (FR-003, FR-007), a file that copies an approved widget's or connector's id (FR-004), a version
-  that adds a credential or asks for more access (FR-005), forged and replayed callbacks (FR-009),
+  that adds a credential or asks for more access (FR-005), forged and replayed callbacks, and a
+  denied, expired or slowed-down device code (FR-009),
   a widget trying to start a sign-in (FR-009), a revoked and an expired token (FR-011), a
   disconnect during an update (FR-013), and a spoofed account name (FR-014). After every case, a
   scan MUST find no credential, code or secret in the host's records, the development data
@@ -580,7 +600,8 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   certificate, verified by tests.
 - **SC-003**: Every refusal tells the maintainer, in one message, what is concerned and the rule,
   without reading source code or host logs.
-- **SC-004**: A forged, replayed or late callback connects nothing, every time.
+- **SC-004**: A forged, replayed or late callback, and a denied or expired device code, connect
+  nothing, every time.
 - **SC-005**: Disconnecting an account, removing an approval or turning a connector off takes effect
   from the widget's next call, every time, and no later request carries the credential.
 - **SC-006**: Adding a credential to a call adds less than 5 ms once the host has read it from the
@@ -599,13 +620,14 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   Phase 3 warning about data from one connected account reaching another destination judges the
   accounts and destinations this feature shows.
 - The fixed technical decision applies: credentials live in the operating system's keychain
-  through `keyring`. Plugins never see that choice. How CI reaches a keychain on each system, and
+  through keyring-rs, `keyring-core` and its store crates (constitution v2.4.1). Plugins never see that choice. How CI reaches a keychain on each system, and
   whether macOS or Linux asks the user for access, is decided in the plan.
 - A classic GitHub OAuth app can read private repositories only with full access to all of them,
   writing and deleting included; GitHub's other kind of app can ask for read-only access to the
-  repositories the user picks, with tokens that expire and are refreshed. FR-015 asks for the
-  narrow access; the plan checks which flow, and which refresh, GitHub offers without a secret a
-  desktop app cannot keep, and uses the device flow if it must.
+  repositories the user picks, with tokens that expire after eight hours and are refreshed. For
+  both kinds, GitHub's browser-redirect flow requires a client secret at the code exchange, even
+  with the proof key; its device flow requires none, and neither does refreshing a token it gave
+  (research R1).
 - The response check of FR-008 catches a credential sent back as it was received. A destination
   that encodes it on purpose already holds it, since the credential is its own; that is why only
   reviewed catalog connectors and, from Phase 3, owner-verified domains carry credentials.
@@ -624,6 +646,6 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   repository connectors; the credential declaration already allows it); catalog connectors for
   local services and certificates accepted at first use (right after this feature); AI provider
   keys (Phase 4); several accounts for one connector; turning a widget's use of an account on and
-  off apart from its connector; flows other than the authorization code with proof key and, if
-  GitHub needs it, the device flow; registering the project's GitHub app (Phase 6); sync or export
+  off apart from its connector; flows other than the authorization code with proof key and the
+  device flow; registering the project's GitHub app (Phase 6); sync or export
   of the vault; the TypeScript example (its own Phase 2 item).
