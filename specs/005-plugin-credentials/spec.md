@@ -483,21 +483,21 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   running; a request already sent MAY finish within its time limit, but its response MUST NOT
   reach the widget, and no later request MAY carry the credential. Disconnecting an account
   MUST discard the data the host kept from every widget that used it.
-- **FR-014**: The development tool MUST connect an account (sign-in in the system browser, or a key
-  read under FR-010), list every account in the development vault (connector id, origin, kind,
-  account name, access asked for and held, when connected, whether it needs connecting again, and
-  whether the origin's file still exists), and disconnect one by connector id and origin, whether
-  or not that file exists, deleting its credential from the keychain and asking the service to
-  revoke it when it offers that, saying whether revocation succeeded (or that it could not be
-  asked because the connector's file is gone). It MUST escape every text a service or a
-  connector wrote, and never print a credential. Connecting a connector that already has an account MUST succeed only
-  when the service reports the same account, the new credential then replacing the old; a
-  different account, an account the connector cannot identify, or a new key while one is stored
-  MUST be refused, naming the current account, with the new credential discarded and nothing
-  changed, until the maintainer disconnects the current one. In this phase, accounts live in a
-  development vault, in the operating system's keychain, and their records in the development
-  data directory, which installed plugins never use (constitution v2.4.0); accounts for installed plugins arrive with installation in
-  Phase 3.
+- **FR-014**: The development tool MUST connect an account (sign-in in the system browser, or a
+  key read under FR-010), list every account in the development vault (connector id, origin,
+  kind, account name, access asked for and held, when connected, whether it needs connecting
+  again, and whether the origin's file still exists), and disconnect one by connector id and
+  origin, whether or not that file exists, deleting its credential from the keychain and asking
+  the service to revoke it when it offers that, saying whether revocation succeeded (or that it
+  could not be asked because the connector's file is gone). It MUST escape every text a service
+  or a connector wrote, and never print a credential. Connecting a connector that already has an
+  account MUST succeed only when the service reports the same account, the new credential then
+  replacing the old; a different account, an account the connector cannot identify, or a new key
+  while one is stored MUST be refused, naming the current account, with the new credential
+  discarded and nothing changed, until the maintainer disconnects the current one. In this
+  phase, accounts live in a development vault, in the operating system's keychain, and their
+  records in the development data directory, which installed plugins never use (constitution
+  v2.4.0); accounts for installed plugins arrive with installation in Phase 3.
 - **FR-015**: The catalog's GitHub connector MUST move to version 1.1.0 with an optional account
   that asks only for read access, to the repositories the user picks at GitHub, so that the
   approval never shows write access for a widget that only reads. The plan picks the kind of
