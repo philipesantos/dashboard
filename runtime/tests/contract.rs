@@ -249,13 +249,13 @@ fn component_with(exports: &[&str], manifest: &str) -> Vec<u8> {
 #[test]
 fn a_component_built_for_a_newer_minor_is_a_contract_mismatch_naming_both_versions() {
     let package = component_with(
-        &["dashboard:widget/renderer@1.3.0"],
+        &["dashboard:widget/renderer@1.4.0"],
         &manifest("local/newer", "0.1.0", &[]),
     );
     let (kind, detail) = load_error(&runtime(), &package);
     assert_eq!(kind, ErrorKind::ContractMismatch);
     assert!(
-        detail.contains("1.3.0") && detail.contains("1.2.0"),
+        detail.contains("1.4.0") && detail.contains("1.3.0"),
         "{detail}"
     );
 }

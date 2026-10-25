@@ -17,26 +17,30 @@ use crate::manifest::Manifest;
 pub enum Contract {
     /// `dashboard:widget@0.1.0` (`wit/v0`): only `log`, which cannot answer "not granted".
     V0,
-    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.2.0: every
+    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.3.0: every
     /// capability can answer "not granted".
     V1,
 }
 
 /// The newest minor version of contract v1 this host runs; plugins built for any v1 minor up to
 /// it run, and newer ones are refused (FR-016).
-pub const V1_VERSION: semver::Version = semver::Version::new(1, 2, 0);
+pub const V1_VERSION: semver::Version = semver::Version::new(1, 3, 0);
 /// The only version of contract v0.
 const V0_VERSION: semver::Version = semver::Version::new(0, 1, 0);
 /// The minor version that brought connectors and `updater`.
 const CONNECTORS_SINCE: semver::Version = semver::Version::new(1, 1, 0);
 /// The minor version that brought `storage` (`specs/004-plugin-storage/research.md`, R13).
 const STORAGE_SINCE: semver::Version = semver::Version::new(1, 2, 0);
+/// The minor version that brought `accounts` (`specs/005-plugin-credentials/research.md`, R9).
+const ACCOUNTS_SINCE: semver::Version = semver::Version::new(1, 3, 0);
 
 /// The interface names of the contract, without their version.
 const RENDERER: &str = "dashboard:widget/renderer";
 const UPDATER: &str = "dashboard:widget/updater";
 /// The interface that carries every connector a manifest declares (research R12).
 const CONNECTORS: &str = "dashboard:widget/connectors";
+/// The interface that carries every connector the manifest declares with `"account": true`.
+const ACCOUNTS: &str = "dashboard:widget/accounts";
 
 impl Contract {
     /// Every version, oldest first.
@@ -54,7 +58,7 @@ impl Contract {
     pub fn renderer(self) -> &'static str {
         match self {
             Contract::V0 => "dashboard:widget/renderer@0.1.0",
-            Contract::V1 => "dashboard:widget/renderer@1.2.0",
+            Contract::V1 => "dashboard:widget/renderer@1.3.0",
         }
     }
 
@@ -92,6 +96,11 @@ impl ContractVersion {
     /// Whether this version has `storage`.
     pub fn has_storage(&self) -> bool {
         self.contract == Contract::V1 && self.version >= STORAGE_SINCE
+    }
+
+    /// Whether this version has `accounts`.
+    pub fn has_accounts(&self) -> bool {
+        self.contract == Contract::V1 && self.version >= ACCOUNTS_SINCE
     }
 }
 
@@ -192,6 +201,11 @@ fn is_connectors(import: &str) -> bool {
     split(import).is_some_and(|(base, _)| base == CONNECTORS)
 }
 
+/// Whether `import` is the `accounts` interface of some v1 version.
+fn is_accounts(import: &str) -> bool {
+    split(import).is_some_and(|(base, _)| base == ACCOUNTS)
+}
+
 /// What a plugin is linked with: for each permission it imports, the real interface or the
 /// stand-in, and nothing else.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +219,9 @@ pub(crate) struct LinkPlan {
     /// Whether the component imports `connectors`, linked over the table of granted connectors
     /// or to the stand-in (research R12).
     pub(crate) connectors: bool,
+    /// Whether the component imports `accounts`, linked over the table of granted connectors it
+    /// uses with an account or to the stand-in (`specs/005-plugin-credentials/research.md`, R9).
+    pub(crate) accounts: bool,
 }
 
 /// The outcome of load steps 7–9.
@@ -346,6 +363,24 @@ pub(crate) fn check_component(
             ));
         }
     }
+    // Account use arrived with 1.3.0, through `accounts`
+    // (specs/005-plugin-credentials/research.md, R9)
+    let with_account: Vec<String> = manifest
+        .connectors()
+        .iter()
+        .filter(|connector| connector.account)
+        .map(|connector| connector.id.clone())
+        .collect();
+    if !with_account.is_empty() && !contract.has_accounts() {
+        return Err(RuntimeError::with_names(
+            ErrorKind::ContractTooOld,
+            with_account,
+            Some(&format!(
+                "a connector used with its account needs contract {ACCOUNTS_SINCE} or later, and this plugin is built for {}",
+                contract.version
+            )),
+        ));
+    }
     // Storage arrived with 1.2.0, and is written only in `update`
     // (specs/004-plugin-storage/spec.md, FR-012, FR-015)
     if manifest.storage().is_some() {
@@ -375,9 +410,17 @@ pub(crate) fn check_component(
     let mut refused = Vec::new();
     let mut undeclared = Vec::new();
     for import in &interfaces.imports {
+        // A component that calls only `accounts` still imports `connectors`, for the types
+        // `accounts` uses (research R9): any declared connector lets it through
         if contract.has_connectors() && is_connectors(import) {
             if manifest.connectors().is_empty() {
                 undeclared.push("connectors".to_owned());
+            }
+            continue;
+        }
+        if contract.has_accounts() && is_accounts(import) {
+            if !manifest.connectors().iter().any(|connector| connector.account) {
+                undeclared.push("accounts".to_owned());
             }
             continue;
         }
@@ -476,11 +519,17 @@ pub(crate) fn decide(
         real: Vec::new(),
         stand_in: Vec::new(),
         connectors: false,
+        accounts: false,
     };
     for import in &interfaces.imports {
         // Step 6 let it through only for a 1.1 plugin that declares connectors
         if is_connectors(import) {
             plan.connectors = true;
+            continue;
+        }
+        // Step 6 let it through only for a 1.3 plugin that uses a connector's account
+        if is_accounts(import) {
+            plan.accounts = true;
             continue;
         }
         let permission = by_import(contract, import);
@@ -639,7 +688,7 @@ mod tests {
     fn no_renderer_of_a_known_version_is_a_contract_mismatch() {
         for renderer in [
             None,
-            Some("dashboard:widget/renderer@1.3.0"),
+            Some("dashboard:widget/renderer@1.4.0"),
             Some("dashboard:widget/renderer@2.0.0"),
             Some("dashboard:widget/renderer@0.2.0"),
             Some("dashboard:other/renderer@1.0.0"),
@@ -816,6 +865,7 @@ mod tests {
                 real: vec!["log"],
                 stand_in: vec![],
                 connectors: false,
+                accounts: false,
             }
         );
 
@@ -899,7 +949,7 @@ mod tests {
     #[test]
     fn each_contract_has_its_renderer() {
         assert_eq!(Contract::V0.renderer(), "dashboard:widget/renderer@0.1.0");
-        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.2.0");
+        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.3.0");
         assert_eq!(
             Contract::from_renderer("dashboard:widget/renderer@0.1.0"),
             Some(Contract::V0)
@@ -907,6 +957,8 @@ mod tests {
         for v1 in [
             "dashboard:widget/renderer@1.0.0",
             "dashboard:widget/renderer@1.1.0",
+            "dashboard:widget/renderer@1.2.0",
+            "dashboard:widget/renderer@1.3.0",
         ] {
             assert_eq!(Contract::from_renderer(v1), Some(Contract::V1));
         }
@@ -917,7 +969,7 @@ mod tests {
     #[test]
     fn another_renderer_version_is_no_contract() {
         for export in [
-            "dashboard:widget/renderer@1.3.0",
+            "dashboard:widget/renderer@1.4.0",
             "dashboard:widget/renderer@2.0.0",
             "dashboard:widget/renderer@0.2.0",
             "dashboard:widget/renderer",
@@ -952,7 +1004,7 @@ mod tests {
     fn an_import_from_the_other_contract_matches_nothing() {
         assert_eq!(by_import(Contract::V0, "dashboard:widget/log@1.0.0"), None);
         assert_eq!(by_import(Contract::V1, "dashboard:widget/log@0.1.0"), None);
-        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@1.3.0"), None);
+        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@1.4.0"), None);
         assert_eq!(by_import(Contract::V1, "dashboard:widget/log@2.0.0"), None);
     }
 
@@ -1043,15 +1095,111 @@ mod tests {
     fn a_plugin_built_for_a_newer_minor_is_a_contract_mismatch_naming_both() {
         let error = check_component(
             &component(
-                &["dashboard:widget/log@1.3.0"],
-                &["dashboard:widget/renderer@1.3.0"],
+                &["dashboard:widget/log@1.4.0"],
+                &["dashboard:widget/renderer@1.4.0"],
             ),
             &manifest(Some(true)),
         )
         .expect_err("refused");
         assert_eq!(error.kind(), ErrorKind::ContractMismatch);
+        assert!(error.detail().contains("1.4.0"), "{error}");
         assert!(error.detail().contains("1.3.0"), "{error}");
-        assert!(error.detail().contains("1.2.0"), "{error}");
+    }
+
+    const ACCOUNTS_V1_3: &str = "dashboard:widget/accounts@1.3.0";
+    const CONNECTORS_V1_3: &str = "dashboard:widget/connectors@1.3.0";
+    const RENDERER_V1_3: &str = "dashboard:widget/renderer@1.3.0";
+    const UPDATER_V1_3: &str = "dashboard:widget/updater@1.3.0";
+
+    /// A manifest declaring `local/notes` with `account`, and `catalog/github` without, when
+    /// `with_github`.
+    fn account_manifest(account: bool, with_github: bool) -> Manifest {
+        let mut connectors = vec![json!({
+            "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true,
+            "account": account
+        })];
+        if with_github {
+            connectors.push(json!({ "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true }));
+        }
+        let manifest = json!({
+            "manifest_version": 1, "id": "local/probe", "version": "1.0.0", "author": "A",
+            "permissions": [], "connectors": connectors
+        });
+        Manifest::parse(&serde_json::to_vec(&manifest).expect("serializes")).expect("valid")
+    }
+
+    #[test]
+    fn a_1_3_plugin_runs_at_its_version_and_minors_are_not_mixed() {
+        let checked = check_component(
+            &component(&[CONNECTORS_V1_3, ACCOUNTS_V1_3], &[RENDERER_V1_3, UPDATER_V1_3]),
+            &account_manifest(true, false),
+        )
+        .unwrap();
+        assert_eq!(checked.version, semver::Version::new(1, 3, 0));
+        assert!(checked.has_accounts() && checked.has_storage() && checked.has_connectors());
+        let error = check_component(
+            &component(&["dashboard:widget/connectors@1.2.0", ACCOUNTS_V1_3], &[RENDERER_V1_3, UPDATER_V1_3]),
+            &account_manifest(true, false),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::ContractMismatch, "{error}");
+        assert!(error.detail().contains("1.3.0"), "{error}");
+        assert!(error.names().iter().any(|name| name.contains("1.2.0")), "{error:?}");
+    }
+
+    #[test]
+    fn account_use_needs_contract_1_3() {
+        let error = check_component(
+            &component(
+                &["dashboard:widget/connectors@1.2.0"],
+                &["dashboard:widget/renderer@1.2.0", "dashboard:widget/updater@1.2.0"],
+            ),
+            &account_manifest(true, false),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::ContractTooOld, "{error}");
+        assert!(error.detail().contains("1.3.0"), "{error}");
+        assert_eq!(error.names(), ["local/notes"]);
+        // Without account use, a 1.2.0 widget declares the same connector as before
+        assert!(
+            check_component(
+                &component(
+                    &["dashboard:widget/connectors@1.2.0"],
+                    &["dashboard:widget/renderer@1.2.0", "dashboard:widget/updater@1.2.0"],
+                ),
+                &account_manifest(false, false),
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn importing_accounts_without_a_connector_used_with_its_account_is_not_declared() {
+        for manifest in [account_manifest(false, true), manifest(None)] {
+            let (kind, names) = refusal(check_component(
+                &component(&[CONNECTORS_V1_3, ACCOUNTS_V1_3], &[RENDERER_V1_3, UPDATER_V1_3]),
+                &manifest,
+            ));
+            assert_eq!(kind, ErrorKind::NotDeclared);
+            assert!(names.contains(&"accounts".to_owned()), "{names:?}");
+        }
+    }
+
+    /// connectors_type_only: a widget whose connectors are all used with an account still
+    /// imports `connectors`, for the types `accounts` uses, and is accepted; both are linked.
+    #[test]
+    fn a_type_only_connectors_import_is_accepted_beside_accounts() {
+        let interfaces = component(&[CONNECTORS_V1_3, ACCOUNTS_V1_3], &[RENDERER_V1_3, UPDATER_V1_3]);
+        let manifest = account_manifest(true, false);
+        check_component(&interfaces, &manifest).unwrap();
+        let store = GrantStore::in_memory();
+        let digest = crate::grants::approval_digest(DIGEST, &manifest, &[]);
+        store
+            .approve_connected(&manifest, ORIGIN, DIGEST, &[], &digest)
+            .unwrap();
+        let entry = store.entry(manifest.id()).unwrap().unwrap();
+        let decision = decide(Contract::V1, &interfaces, &manifest, ORIGIN, Some(&entry)).unwrap();
+        assert!(decision.plan.connectors && decision.plan.accounts);
     }
 
     #[test]
@@ -1199,8 +1347,9 @@ mod tests {
         )
         .unwrap();
         assert!(!older.has_storage());
-        assert_eq!(V1_VERSION, semver::Version::new(1, 2, 0));
-        assert_eq!(Contract::V1.renderer(), RENDERER_V1_2);
+        // The host itself has since moved to 1.3.0 (feature 005)
+        assert_eq!(V1_VERSION, semver::Version::new(1, 3, 0));
+        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.3.0");
     }
 
     #[test]
@@ -1276,7 +1425,7 @@ mod tests {
             None
         );
         assert_eq!(
-            by_import(Contract::V1, "dashboard:widget/storage@1.3.0"),
+            by_import(Contract::V1, "dashboard:widget/storage@1.4.0"),
             None
         );
     }
