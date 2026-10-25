@@ -112,7 +112,11 @@ wasmtime = { version = "50", default-features = false, features = [
     "wat",
 ] }
 
-# A pseudo-terminal for the CLI's key prompt, which reads /dev/tty (tests/cli.rs); already in the
-# lock file through Wasmtime
+# Only the development CLI: the terminal's echo turned off before the key prompt is shown, which
+# rpassword does only once it starts reading (R14); already in the lock file through Wasmtime
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# A pseudo-terminal for the CLI's key prompt, which reads /dev/tty (tests/cli.rs)
 [target.'cfg(unix)'.dev-dependencies]
 libc = "0.2"

@@ -2222,12 +2222,36 @@ fn on_terminal(args: &[&str], typed: &str) -> (Option<i32>, String) {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    // The prompt appears only once the terminal's echo is off (R14)
+    #[cfg(target_os = "linux")]
+    assert!(
+        !echoes(&terminal),
+        "the terminal echoed when the prompt appeared"
+    );
     terminal.write_all(format!("{typed}\n").as_bytes()).unwrap();
     let status = child.wait().unwrap();
+    // And the CLI leaves it as it found it
+    #[cfg(target_os = "linux")]
+    assert!(echoes(&terminal), "the terminal's echo stayed off");
     drop(terminal);
     reading.join().unwrap();
     let shown = String::from_utf8_lossy(&shown.lock().unwrap()).into_owned();
     (status.code(), shown)
+}
+
+/// Whether the pseudo-terminal echoes what is typed. On Linux its controller side reports the
+/// settings the program on the other side set.
+#[cfg(target_os = "linux")]
+fn echoes(terminal: &std::fs::File) -> bool {
+    use std::os::fd::AsRawFd as _;
+    let mut settings = std::mem::MaybeUninit::<libc::termios>::uninit();
+    // SAFETY: the descriptor is open for as long as `terminal` lives, and tcgetattr writes a
+    // whole termios into `settings` when it returns 0
+    let read = unsafe { libc::tcgetattr(terminal.as_raw_fd(), settings.as_mut_ptr()) };
+    assert_eq!(read, 0, "tcgetattr: {}", std::io::Error::last_os_error());
+    // SAFETY: tcgetattr returned 0, so it filled `settings`
+    let settings = unsafe { settings.assume_init() };
+    settings.c_lflag & libc::ECHO != 0
 }
 
 /// Disconnects `local/keyed` from `origin` when dropped, so the system's keychain keeps nothing
