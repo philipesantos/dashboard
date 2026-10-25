@@ -2137,3 +2137,278 @@ fn data_flow() {
     );
     assert!(!text.contains("account of local/notes"), "{text}");
 }
+
+/// `local/keyed`: `local/notes` with a key the maintainer types instead of an account, written
+/// beside it; returns its file's canonical path.
+#[cfg(unix)]
+fn keyed(accounts: &Accounts) -> PathBuf {
+    let mut connector: serde_json::Value = serde_json::from_str(NOTES).unwrap();
+    connector["id"] = json!("local/keyed");
+    connector["credential"] = json!({
+        "kind": "key", "required": true, "destinations": ["api"],
+        "header": "Authorization", "scheme": "Bearer"
+    });
+    let path = accounts.dir.path().join("connectors/keyed.json");
+    std::fs::write(&path, connector.to_string()).unwrap();
+    std::fs::canonicalize(path).unwrap()
+}
+
+/// Runs the CLI with `args` on a pseudo-terminal of its own, its controlling terminal, as a
+/// person at a terminal does; types `typed` and Enter once it asks for the key. Returns the exit
+/// status and everything the terminal showed.
+#[cfg(unix)]
+fn on_terminal(args: &[&str], typed: &str) -> (Option<i32>, String) {
+    use std::io::{Read, Write};
+    use std::os::fd::{FromRawFd, OwnedFd};
+    use std::os::unix::process::CommandExt;
+    use std::sync::{Arc, Mutex};
+
+    let (mut master, mut slave) = (0, 0);
+    // SAFETY: openpty writes the two descriptors it opens into the two integers; the null
+    // pointers ask for no name, no terminal settings and no window size
+    let opened = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(opened, 0, "openpty: {}", std::io::Error::last_os_error());
+    // SAFETY: both descriptors were just opened, and nothing else owns them
+    let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+    let mut command = Command::new(env!("CARGO_BIN_EXE_runtime"));
+    command
+        .args(args)
+        .stdin(slave.try_clone().unwrap())
+        .stdout(slave.try_clone().unwrap())
+        .stderr(slave);
+    // SAFETY: between fork and exec, only async-signal-safe calls: a new session, then the
+    // terminal on standard input as its controlling terminal
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn().unwrap();
+    // The parent's copies of the terminal side, so its reads end when the child's do
+    drop(command);
+    let mut terminal = std::fs::File::from(master);
+    let mut reader = terminal.try_clone().unwrap();
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let reading = {
+        let shown = Arc::clone(&shown);
+        std::thread::spawn(move || {
+            let mut chunk = [0u8; 1024];
+            // Ends with an error once the child and its terminal are gone
+            while let Ok(read @ 1..) = reader.read(&mut chunk) {
+                shown.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+        })
+    };
+    let started = std::time::Instant::now();
+    loop {
+        let text = String::from_utf8_lossy(&shown.lock().unwrap()).into_owned();
+        if text.contains("not shown): ") {
+            break;
+        }
+        if started.elapsed() > std::time::Duration::from_secs(30) {
+            let _ = child.kill();
+            panic!("the CLI never asked for the key: {text}");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    terminal.write_all(format!("{typed}\n").as_bytes()).unwrap();
+    let status = child.wait().unwrap();
+    drop(terminal);
+    reading.join().unwrap();
+    let shown = String::from_utf8_lossy(&shown.lock().unwrap()).into_owned();
+    (status.code(), shown)
+}
+
+/// Disconnects `local/keyed` from `origin` when dropped, so the system's keychain keeps nothing
+/// of a test that failed.
+#[cfg(unix)]
+struct ForgetKey<'a> {
+    accounts: &'a Accounts,
+    origin: String,
+}
+
+#[cfg(unix)]
+impl Drop for ForgetKey<'_> {
+    fn drop(&mut self) {
+        let _ = self.accounts.run(&[
+            "accounts",
+            "disconnect",
+            "local/keyed",
+            "--origin",
+            &self.origin,
+        ]);
+    }
+}
+
+/// A key typed at the terminal, never echoed, kept in the system's keychain, listed, and
+/// disconnected after its connector's file moved (clarification 1); `key_checks` on the CLI's
+/// key path, and a second key refused while one is kept.
+#[cfg(unix)]
+#[test]
+fn a_key_typed_at_the_terminal_is_kept_listed_and_disconnected() {
+    let accounts = Accounts::private_notes();
+    let file = keyed(&accounts);
+    let _forget = ForgetKey {
+        accounts: &accounts,
+        origin: file.to_string_lossy().into_owned(),
+    };
+    let grants = path_str(&accounts.grants).to_owned();
+    let data = path_str(accounts.dir.path()).to_owned();
+    let connect = [
+        "accounts",
+        "connect",
+        "local/keyed",
+        "--grants",
+        &grants,
+        "--data",
+        &data,
+    ];
+
+    // `key_checks`: refused before the keychain sees it. A line over 1,024 bytes is cut by
+    // macOS's terminal before the CLI reads it, so only Linux types one
+    let mut refused = vec!["".to_owned(), "has space".to_owned(), "clé".to_owned()];
+    if cfg!(target_os = "linux") {
+        refused.push("k".repeat(1025));
+    }
+    for key in &refused {
+        let (status, shown) = on_terminal(&connect, key);
+        assert_eq!(status, Some(1), "{key:?}: {shown}");
+        assert!(shown.contains("error: key-refused: "), "{key:?}: {shown}");
+    }
+    assert_eq!(
+        stdout(&accounts.run(&["accounts", "list"])),
+        "nothing connected\n"
+    );
+
+    let key = "k3y-typed_at.the~terminal";
+    let (status, shown) = on_terminal(&connect, key);
+    assert_eq!(status, Some(0), "{shown}");
+    assert!(shown.contains("connected: key"), "{shown}");
+    assert!(!shown.contains(key), "the key was echoed: {shown}");
+    let record = std::fs::read_to_string(accounts.dir.path().join("accounts.json")).unwrap();
+    assert!(!record.contains(key), "{record}");
+    // A second key while one is kept
+    let (status, shown) = on_terminal(&connect, "another-k3y");
+    assert_eq!(status, Some(1), "{shown}");
+    assert!(
+        shown.contains("error: another-account-connected: "),
+        "{shown}"
+    );
+
+    let listed = stdout(&accounts.run(&["accounts", "list"]));
+    assert!(
+        listed.starts_with(&format!(
+            "local/keyed  local file {}\n  account: key, connected ",
+            file.display()
+        )),
+        "{listed}"
+    );
+    // The connector's file moves: listed as gone, and disconnected by its origin
+    std::fs::rename(&file, accounts.dir.path().join("connectors/moved.json")).unwrap();
+    let listed = stdout(&accounts.run(&["accounts", "list"]));
+    assert!(
+        listed.starts_with(&format!(
+            "local/keyed  local file {} (no file)\n",
+            file.display()
+        )),
+        "{listed}"
+    );
+    let output = accounts.run(&["accounts", "disconnect", "local/keyed"]);
+    assert_eq!(output.status.code(), Some(1), "{}", stdout(&output));
+    assert!(stderr(&output).contains("--origin"), "{}", stderr(&output));
+    let output = accounts.run(&[
+        "accounts",
+        "disconnect",
+        "local/keyed",
+        "--origin",
+        &file.to_string_lossy(),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "disconnected local/keyed: key
+deleted from the keychain
+the service offers no revocation: revoke it at the service
+kept data discarded: none
+"
+    );
+    assert_eq!(
+        stdout(&accounts.run(&["accounts", "list"])),
+        "nothing connected\n"
+    );
+}
+
+/// `accounts disconnect` deletes at once the kept data read as the account. The account and the
+/// data come from the library, through the seam and the mock vault, in the data directory the
+/// CLI then works on.
+#[test]
+fn accounts_disconnect_discards_the_kept_data_read_as_the_account() {
+    use common::signin::SignInService;
+
+    let pki = common::servers::TestPki::new();
+    let service = SignInService::start(&pki);
+    let world = common::World::seam(
+        runtime::TestNetwork {
+            routes: vec![service.route()],
+            public_for_tests: vec![service.server.address()],
+            root: pki.root(),
+            catalog: Vec::new(),
+        },
+        true,
+    );
+    world.write_connector("notes", &serde_json::from_str(NOTES).unwrap());
+    world
+        .runtime
+        .connect_account("local/notes", Some("dashboard-dev"), &service.browser())
+        .unwrap();
+    let package = std::fs::read(fixture_path("private-notes")).unwrap();
+    let plugin_file = world.data.path().join("private-notes.wasm");
+    std::fs::write(&plugin_file, &package).unwrap();
+    let origin = origin(&plugin_file);
+    world.approve_at(&package, &origin);
+    let update = world.load_at(&package, &origin).update("{}");
+    assert!(update.result.is_ok(), "{update:?}");
+    let kept = || -> Vec<PathBuf> {
+        std::fs::read_dir(world.data.path().join("widget-data"))
+            .map(|entries| entries.map(|entry| entry.unwrap().path()).collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(kept().len(), 1);
+
+    let output = runtime(&[
+        "accounts",
+        "disconnect",
+        "local/notes",
+        "--grants",
+        path_str(&world.data.path().join("grants.json")),
+        "--data",
+        path_str(world.data.path()),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    // The CLI's vault is the system's keychain, which never held this test's token
+    assert_eq!(
+        stdout(&output),
+        "disconnected local/notes: ada (id 1234567)
+deleted from the keychain
+revocation failed: the keychain held no token to revoke; revoke it at the service
+kept data discarded: local/private-notes
+"
+    );
+    assert!(kept().is_empty(), "{:?}", kept());
+    common::signin::scan(
+        &[world.data.path()],
+        &[("the output", &stdout(&output))],
+        &service.secrets(),
+    );
+}

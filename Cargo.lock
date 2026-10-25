@@ -3649,6 +3649,7 @@ dependencies = [
  "dirs",
  "httparse",
  "keyring-core",
+ "libc",
  "libsqlite3-sys",
  "memchr",
  "open",

@@ -719,13 +719,23 @@ impl Runtime {
             KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes)
                 .discard_account(connector_id, &account.account_id)
                 .unwrap_or_default();
-        let revoked = match (&found, &token, &account.client) {
-            (Some((connector, found_origin)), Some(token), Some(client))
-                if *found_origin == origin =>
-            {
+        // The service's revocation address, when the connector found is the account's
+        let revoker = found.as_ref().filter(|(connector, found_origin)| {
+            *found_origin == origin
+                && connector
+                    .credential()
+                    .and_then(|credential| credential.account())
+                    .is_some_and(|account| account.revoke().is_some())
+        });
+        let revoked = match (revoker, &token, &account.client) {
+            (Some((connector, _)), Some(token), Some(client)) => {
                 signin::revoke(&context, connector, &client.client_id, token)
             }
-            _ => None,
+            (Some(_), None, _) => Some(Err("the keychain held no token to revoke".to_owned())),
+            (Some(_), Some(_), None) => Some(Err(
+                "no client registration is remembered for the account".to_owned(),
+            )),
+            (None, ..) => None,
         };
         let revoke_page = found
             .as_ref()

@@ -111,3 +111,8 @@ wasmtime = { version = "50", default-features = false, features = [
     "std",
     "wat",
 ] }
+
+# A pseudo-terminal for the CLI's key prompt, which reads /dev/tty (tests/cli.rs); already in the
+# lock file through Wasmtime
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
