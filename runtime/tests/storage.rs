@@ -378,7 +378,9 @@ fn an_update_that_cannot_take_its_store_fails_as_busy_and_keeps_nothing() {
     update(&plugin, &[set("a", "before")]);
     let previous =
         plugin.render(&render_steps(&[])).result.unwrap()["render_config"]["data"].clone();
-    let spin = spin_for(&plugin, 4.0);
+    // Four times the second's wait, measured on a machine whose load can change: under the
+    // update's 30 s even if the spin then runs at a third of the speed measured
+    let spin = spin_for(&plugin, 8.0);
     let (other, grants) = another_process(&world, Limits::default());
     let second = other.load(&probe(true), TEST_ORIGIN, grants).unwrap();
     std::thread::scope(|scope| {
