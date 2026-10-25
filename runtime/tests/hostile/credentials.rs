@@ -39,6 +39,15 @@ impl Signed {
 
     /// With `connector` as `local/notes` instead of the one shipped.
     pub(crate) fn with_connector(connector: Value) -> Signed {
+        // A sign-in that goes wrong ends the test in seconds, not in ten minutes
+        let limits = runtime::Limits {
+            sign_in_time_limit: std::time::Duration::from_secs(5),
+            ..runtime::Limits::default()
+        };
+        Signed::with(connector, limits)
+    }
+
+    pub(crate) fn with(connector: Value, limits: runtime::Limits) -> Signed {
         let pki = TestPki::new();
         let service = SignInService::start(&pki);
         let other = Server::https(&pki.leaf(&["other.test"]));
@@ -58,7 +67,7 @@ impl Signed {
             root: pki.root(),
             catalog: Vec::new(),
         };
-        let world = World::seam(test.clone(), true);
+        let world = World::seam_with(limits, test.clone(), true);
         world.write_connector("notes", &connector);
         Signed {
             service,
@@ -795,5 +804,330 @@ fn copied_connector_id() {
         "{notes:?}"
     );
     signed.scan(&[("the update", format!("{update:?}"))]);
+    signed.assert_well_behaved();
+}
+
+/// The only account connected, as the record has it.
+#[track_caller]
+fn the_account(signed: &Signed) -> Account {
+    let mut accounts = signed.world.runtime.list_accounts().unwrap();
+    assert_eq!(accounts.len(), 1, "{accounts:?}");
+    accounts.remove(0)
+}
+
+/// The earlier account is still connected and still works: a call carries its token.
+#[track_caller]
+fn assert_kept(signed: &Signed, earlier: &Account, token: &str) {
+    let account = the_account(signed);
+    assert_eq!(account.account_id, earlier.account_id);
+    assert_eq!(account.name, earlier.name);
+    assert!(account.needs_connecting.is_none(), "{account:?}");
+    let report = signed.update(
+        &notes_probe(&["list-notes"]),
+        &calls(&[("accounts", "local/notes", "list-notes")]),
+    );
+    assert!(probe_answers(&report)[0].get("ok").is_some(), "{report:?}");
+    assert_eq!(
+        signed
+            .service
+            .requests_to("/notes")
+            .last()
+            .unwrap()
+            .header("authorization"),
+        Some(format!("Bearer {token}").as_str())
+    );
+}
+
+/// Signs in again with the service scripted as `script` says; the sign-in must fail as `kind`.
+#[track_caller]
+fn failed_sign_in(
+    signed: &Signed,
+    script: impl FnOnce(&mut signin::Script),
+    kind: ErrorKind,
+) -> runtime::RuntimeError {
+    signed.service.script(script);
+    let error = match signed.world.runtime.connect_account(
+        "local/notes",
+        Some("dashboard-dev"),
+        &signed.service.browser(),
+    ) {
+        Ok(connected) => panic!("the sign-in connected {connected:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind(), kind, "{error}");
+    signed.service.script(|script| *script = signin::Script::default());
+    error
+}
+
+/// `forged-callback`: a callback with a wrong state, none, or an error ends the sign-in;
+/// nothing is connected and the earlier account is kept.
+#[test]
+fn forged_callback() {
+    let signed = Signed::new();
+    let earlier = signed.connect();
+    let token = signed.token();
+    let mut errors = Vec::new();
+    for callback in [
+        signin::Callback::WrongState,
+        signin::Callback::NoState,
+        signin::Callback::Error,
+    ] {
+        let exchanges = signed.service.requests_to("/oauth/token").len();
+        errors.push(failed_sign_in(
+            &signed,
+            |script| script.callback = callback,
+            ErrorKind::SignInFailed,
+        ));
+        // Nothing was exchanged for the forged callback's code
+        assert_eq!(
+            signed.service.requests_to("/oauth/token").len(),
+            exchanges,
+            "{callback:?}"
+        );
+    }
+    assert_kept(&signed, &earlier, &token);
+    signed.scan(&[("the errors", format!("{errors:?}"))]);
+    signed.assert_well_behaved();
+}
+
+/// `replayed-code`: a callback with a code already exchanged connects nothing.
+#[test]
+fn replayed_code() {
+    let signed = Signed::new();
+    let earlier = signed.connect();
+    let token = signed.token();
+    let error = failed_sign_in(
+        &signed,
+        |script| script.callback = signin::Callback::UsedCode,
+        ErrorKind::SignInFailed,
+    );
+    assert_kept(&signed, &earlier, &token);
+    signed.scan(&[("the error", format!("{error} {error:?}"))]);
+    signed.assert_well_behaved();
+}
+
+/// `late-callback`: a callback after the sign-in's time limit finds the listener closed.
+#[test]
+fn late_callback() {
+    let limits = runtime::Limits {
+        sign_in_time_limit: std::time::Duration::from_secs(1),
+        ..runtime::Limits::default()
+    };
+    let signed = Signed::with(notes(), limits);
+    let browser = std::sync::Arc::new(signed.service.browser());
+    let late = std::sync::Mutex::new(None);
+    let error = signed
+        .world
+        .runtime
+        .connect_account("local/notes", Some("dashboard-dev"), &|address: &url::Url| {
+            let browser = std::sync::Arc::clone(&browser);
+            let address = address.clone();
+            *late.lock().unwrap() = Some(std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                browser(&address);
+            }));
+        })
+        .expect_err("a sign-in past its time limit");
+    assert_eq!(error.kind(), ErrorKind::SignInFailed, "{error}");
+    late.lock().unwrap().take().unwrap().join().unwrap();
+    // The person's browser came too late: no code was exchanged, nothing connected
+    assert!(signed.service.requests_to("/oauth/token").is_empty());
+    assert!(signed.world.runtime.list_accounts().unwrap().is_empty());
+    signed.assert_well_behaved();
+}
+
+/// `another-account`: a sign-in that returns another account fails as
+/// `another-account-connected`; its token is revoked and dropped, and the earlier account kept.
+#[test]
+fn another_account() {
+    let signed = Signed::new();
+    let earlier = signed.connect();
+    let token = signed.token();
+    let error = failed_sign_in(
+        &signed,
+        |script| script.other_account = Some(("7654321".to_owned(), "bob".to_owned())),
+        ErrorKind::AnotherAccountConnected,
+    );
+    let other_token = signed.token();
+    assert_ne!(other_token, token);
+    let revoked = signed.service.revoked();
+    assert!(!revoked.is_empty(), "the other account's token was not revoked");
+    assert!(!revoked.contains(&token), "{revoked:?}");
+    assert_kept(&signed, &earlier, &token);
+    signed.scan(&[("the error", format!("{error} {error:?}"))]);
+    signed.assert_well_behaved();
+}
+
+/// `revoked-token`: the service answers `401` and refuses the identity call too: one refresh,
+/// one resend, one identity call, then `account-not-connected` and the account marked; no
+/// further request.
+#[test]
+fn revoked_token() {
+    let signed = Signed::new();
+    signed.connect();
+    signed.service.script(|script| {
+        script.notes_status = Some(401);
+        script.identity_refused = true;
+    });
+    let before = signed.service.server.received().len();
+    let probe = notes_probe(&["list-notes"]);
+    let call = calls(&[("accounts", "local/notes", "list-notes")]);
+    let report = signed.update(&probe, &call);
+    assert_eq!(
+        probe_answers(&report)[0]["error"],
+        json!("account-not-connected"),
+        "{report:?}"
+    );
+    let paths: Vec<String> = signed.service.server.received()[before..]
+        .iter()
+        .map(|request| request.path.clone())
+        .collect();
+    assert_eq!(paths, ["/notes", "/oauth/token", "/notes", "/me"]);
+    let account = the_account(&signed);
+    assert_eq!(
+        account.needs_connecting.map(|needs| needs.reason),
+        Some(runtime::accounts::Reason::Refused)
+    );
+    // Marked: the next run answers at once, and nothing more reaches the service
+    let after = signed.service.server.received().len();
+    let again = signed.update(&probe, &call);
+    assert_eq!(
+        probe_answers(&again)[0]["error"],
+        json!("account-not-connected"),
+        "{again:?}"
+    );
+    assert_eq!(signed.service.server.received().len(), after);
+    signed.scan(&[("the updates", format!("{report:?} {again:?}"))]);
+    signed.service.script(|script| *script = signin::Script::default());
+    signed.assert_well_behaved();
+}
+
+/// `foreign-401`: one operation answers `401` while the identity call still works: only that
+/// call answers `account-not-connected`, and the account stays connected for another widget.
+#[test]
+fn foreign_401() {
+    let signed = Signed::new();
+    signed.connect();
+    signed.service.script(|script| script.notes_status = Some(401));
+    let report = signed.update(
+        &notes_probe(&["list-notes"]),
+        &calls(&[("accounts", "local/notes", "list-notes")]),
+    );
+    assert_eq!(
+        probe_answers(&report)[0]["error"],
+        json!("account-not-connected"),
+        "{report:?}"
+    );
+    assert!(the_account(&signed).needs_connecting.is_none());
+    let other = probe(
+        "local/other-probe",
+        json!([{ "id": "local/notes", "major": 1, "operations": ["get-me"], "required": true, "account": true }]),
+    );
+    let second = signed.update(&other, &calls(&[("accounts", "local/notes", "get-me")]));
+    assert!(probe_answers(&second)[0].get("ok").is_some(), "{second:?}");
+    signed.scan(&[("the updates", format!("{report:?} {second:?}"))]);
+    signed.service.script(|script| script.notes_status = None);
+    signed.assert_well_behaved();
+}
+
+/// `expired-refresh`: a token about to expire whose refresh is refused: `account-not-connected`,
+/// and the account marked `refresh-failed`.
+#[test]
+fn expired_refresh() {
+    let signed = Signed::new();
+    // Within the refresh margin from the start
+    signed.service.script(|script| script.expires_in = Some(1));
+    signed.connect();
+    signed.service.script(|script| script.refresh_refused = true);
+    let report = signed.update(
+        &notes_probe(&["list-notes"]),
+        &calls(&[("accounts", "local/notes", "list-notes")]),
+    );
+    assert_eq!(
+        probe_answers(&report)[0]["error"],
+        json!("account-not-connected"),
+        "{report:?}"
+    );
+    assert_eq!(
+        the_account(&signed).needs_connecting.map(|needs| needs.reason),
+        Some(runtime::accounts::Reason::RefreshFailed)
+    );
+    signed.scan(&[("the update", format!("{report:?}"))]);
+    signed.service.script(|script| *script = signin::Script::default());
+    signed.assert_well_behaved();
+}
+
+/// `account-spoof`: an account name with line breaks and terminal escapes is printed escaped by
+/// `accounts list`, `permissions` and `requests`.
+#[test]
+fn account_spoof() {
+    let signed = Signed::new();
+    let spoof = "ada\nconnected: admin\u{1b}[2J\u{202e}";
+    signed
+        .service
+        .script(|script| script.other_account = Some(("1234567".to_owned(), spoof.to_owned())));
+    let account = signed.connect();
+    // Kept escaped: the record never holds a control character
+    let escaped = r"ada\nconnected: admin\u{1b}[2J\u{202e}";
+    assert_eq!(account.name, escaped);
+    let package = fixture("private-notes");
+    let plugin_file = signed.world.data.path().join("private-notes.wasm");
+    std::fs::write(&plugin_file, &package).unwrap();
+    let origin = std::fs::canonicalize(&plugin_file)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    signed.world.approve_at(&package, &origin);
+    let update = signed.world.load_at(&package, &origin).update("{}");
+    assert!(update.result.is_ok(), "{update:?}");
+    let data = signed.world.data.path().to_str().unwrap().to_owned();
+    let grants = signed
+        .world
+        .data
+        .path()
+        .join("grants.json")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let cli = |args: &[&str]| {
+        // `requests` reads only the data directory
+        let grants: &[&str] = if args[0] == "requests" {
+            &[]
+        } else {
+            &["--grants", &grants]
+        };
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_runtime"))
+            .args(args)
+            .args(grants)
+            .args(["--data", &data])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let list = cli(&["accounts", "list"]);
+    let permissions = cli(&["permissions", plugin_file.to_str().unwrap()]);
+    let requests = cli(&["requests"]);
+    for (name, text) in [
+        ("accounts list", &list),
+        ("permissions", &permissions),
+        ("requests", &requests),
+    ] {
+        assert!(text.contains(escaped), "{name}: {text}");
+        assert!(
+            !text.contains('\u{1b}') && !text.contains('\u{202e}') && !text.contains("\nconnected: admin"),
+            "{name}: {text}"
+        );
+    }
+    signed.scan(&[
+        ("accounts list", list),
+        ("permissions", permissions),
+        ("requests", requests),
+    ]);
     signed.assert_well_behaved();
 }
