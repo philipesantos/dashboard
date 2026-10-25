@@ -31,29 +31,26 @@
 
 ## Notes
 
-- The `keyring` crate and GitHub are named only where the constitution's fixed decision and the
-  guide name them; the requirements speak of the keychain, the sign-in standards and the
-  connector's declaration. FR-002 forbids service-specific code in the host: every service,
-  GitHub included, is described by its connector's declaration (decided with the maintainer on
-  2026-10-24).
-- Where the spec refines the description:
-  - Account use is declared by each widget (FR-004): a widget whose grant does not include the
-    connector's account sends no credential even while one is connected. The description had every
-    widget granted the connector use the account; least privilege (Principle II) asks for the
-    declaration.
-  - Redirects (FR-008): feature 003 follows redirects to hosts the same connector declares, so the
-    description's "never past a redirect (already refused)" did not hold; a redirect carries the
-    credential only to a host the credential is for and drops it for the connector's other hosts.
-  - "Scopes" became "the access it asks for", since GitHub's read-only, per-repository client sets
-    its access at registration rather than through scopes (FR-003, Assumptions). The side note of
-    2026-10-24 found that a classic GitHub client can read private repositories only with write
-    access to all of them.
-  - Widgets built for older minor versions never use an account (FR-019): they cannot declare
-    account use, so a connector's optional credential is simply not sent for them, and one whose
-    credential is required needs 1.3.0.
-  - Disconnecting discards the kept data of the widgets that used the account (FR-015), as turning
-    a connector off does in feature 003, so private data does not outlive the account.
-- The numbers (sign-in time limit, key length limit, the bound on service error text) are left to
-  the plan; SC-006's 5 ms is a target to confirm in `performance.md`.
-- Open for the plan: how GitHub's read-only client renews and revokes tokens from a desktop app
-  without a secret (Assumptions), and how the tests reach a keychain on each CI system.
+- `keyring` is named only in Assumptions, as the constitution's fixed technical decision. The
+  `Authorization` header (FR-002), HTTPS (FR-007) and the authorization code with proof key
+  (FR-009) are stated as security rules, as 003 states HTTPS; how they are built is left to the
+  plan.
+- Decided with the maintainer before specifying (2026-10-24): constitution v2.4.0 lets the
+  development tool connect accounts (Principle VII); the manifest's login providers become
+  obsolete (FR-016); the account belongs to the connector, shared by the widgets approved to use
+  it (FR-004); CI uses a test sign-in service, development uses an app the developer configures,
+  and the project's app is registered in Phase 6 (FR-015); "subscription required" is in this
+  feature (FR-012).
+- The spec refines the description in three places, each to be confirmed:
+  1. A widget declares whether it uses a connector's account (FR-003), so a widget that only
+     shows public data never acts as the user even when an account is connected (least
+     privilege, Principle II). The description had every widget granted the connector use it.
+  2. GitHub's account asks for read access to the repositories the user picks (FR-015), after a
+     note that a classic OAuth app reads private repositories only with full access to all of
+     them; the plan picks the kind of GitHub app.
+  3. A redirect carries the credential only to a host it is for, and drops it for another host of
+     the connector (FR-007). The description said "never past a redirect (already refused)", but
+     feature 003 follows redirects to the connector's own hosts.
+- The numbers (sign-in time limit, key length, refresh limits) are left to the plan and measured,
+  as in features 001, 003 and 004. SC-006's 5 ms per call is a target to confirm in
+  `performance.md`.
