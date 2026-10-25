@@ -8,6 +8,11 @@
 //! HTTP of local connectors on this machine, which reaches only loopback addresses. Neither
 //! uses a network proxy, keeps cookies, asks for compression or follows a redirect: the host
 //! follows redirects itself, to the connector's own origins only.
+//!
+//! A request may carry a connector's credential (`specs/005-plugin-credentials/research.md`,
+//! R10). It is added here, at the last moment and on every hop again, only for the origins it is
+//! for and only over HTTPS; nothing else in a request can name it, and a response that carries it
+//! back reaches no one.
 
 mod address;
 mod callback;
@@ -26,8 +31,11 @@ use ureq::tls::Certificate;
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::unversioned::transport::DefaultConnector;
 
-use crate::connector::{ArgValue, Connector, Format, Method, Operation, Template};
+use zeroize::Zeroizing;
+
+use crate::connector::{ArgValue, Connector, Credential, Format, Method, Operation, Origin, Template};
 use crate::limits::Limits;
+use crate::vault::Secret;
 
 #[cfg(feature = "test-network")]
 pub use resolver::{Route, TestNetwork};
@@ -128,6 +136,120 @@ pub(crate) struct Request {
     pub(crate) url: url::Url,
     pub(crate) headers: Vec<(String, String)>,
     pub(crate) body: Option<Vec<u8>>,
+    /// The connector's credential, added by [`Session::send`] on each hop it applies to.
+    pub(crate) credential: Option<RequestCredential>,
+}
+
+/// A credential to add to a connector's requests (research R10): the header, its value, the
+/// origins it is for, and every form a response could carry it back in.
+#[derive(Clone)]
+pub(crate) struct RequestCredential {
+    header: String,
+    /// The whole header value: `<scheme> <secret>`, or the secret alone.
+    value: Secret,
+    /// The secret and the header value as an encoder or a URL could write them.
+    forms: Vec<Secret>,
+    origins: Vec<Origin>,
+}
+
+impl std::fmt::Debug for RequestCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RequestCredential")
+            .field("header", &self.header)
+            .field("origins", &self.origins)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Why a credential cannot be sent at all.
+pub(crate) const NOT_A_BEARER_TOKEN: &str =
+    "the credential holds characters outside letters, digits and -._~+/=";
+
+impl RequestCredential {
+    /// The credential of `declaration` with `secret`, refused unless every character of it is
+    /// in the bearer-token set, which makes the forms of [`echo_forms`] complete.
+    pub(crate) fn new(declaration: &Credential, secret: &Secret) -> Result<RequestCredential, &'static str> {
+        if !is_bearer_token(secret.expose()) {
+            return Err(NOT_A_BEARER_TOKEN);
+        }
+        let value = Secret::new(declaration.header_value(secret.expose()));
+        let mut forms = echo_forms(secret.expose());
+        forms.push(value.clone());
+        Ok(RequestCredential {
+            header: declaration.header().to_owned(),
+            value,
+            forms,
+            origins: declaration.origins().to_vec(),
+        })
+    }
+
+    /// Whether the request to `url` carries it: an origin it is for, over HTTPS.
+    pub(crate) fn applies_to(&self, url: &url::Url) -> bool {
+        url.scheme() == "https"
+            && self.origins.iter().any(|origin| {
+                origin.is_https()
+                    && Some(origin.host()) == url.host_str()
+                    && Some(origin.port()) == url.port_or_known_default()
+            })
+    }
+
+    /// Whether `bytes` hold the credential in any of its forms.
+    pub(crate) fn is_in(&self, bytes: &[u8]) -> bool {
+        self.forms
+            .iter()
+            .any(|form| memchr::memmem::find(bytes, form.expose().as_bytes()).is_some())
+    }
+}
+
+/// RFC 6750's `b64token` characters: letters, digits and `-._~+/=`.
+pub(crate) fn is_bearer_token(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-._~+/=".contains(&byte))
+}
+
+/// The secret as a response could carry it: as is, `/` escaped `\/` as some JSON encoders do,
+/// `+`, `/` and `=` as `\u` escapes or percent-encoded, in either case. A bearer token holds no
+/// other character an encoder changes (`"`, `\`, `<`, `>`, `&`), so these are every form.
+fn echo_forms(secret: &str) -> Vec<Secret> {
+    let mapped = |map: &dyn Fn(char) -> Option<&'static str>| -> String {
+        secret
+            .chars()
+            .map(|c| map(c).map_or_else(|| c.to_string(), str::to_owned))
+            .collect()
+    };
+    let mut forms = vec![
+        secret.to_owned(),
+        mapped(&|c| (c == '/').then_some("\\/")),
+        mapped(&|c| match c {
+            '+' => Some("\\u002b"),
+            '/' => Some("\\u002f"),
+            '=' => Some("\\u003d"),
+            _ => None,
+        }),
+        mapped(&|c| match c {
+            '+' => Some("\\u002B"),
+            '/' => Some("\\u002F"),
+            '=' => Some("\\u003D"),
+            _ => None,
+        }),
+        mapped(&|c| match c {
+            '+' => Some("%2B"),
+            '/' => Some("%2F"),
+            '=' => Some("%3D"),
+            _ => None,
+        }),
+        mapped(&|c| match c {
+            '+' => Some("%2b"),
+            '/' => Some("%2f"),
+            '=' => Some("%3d"),
+            _ => None,
+        }),
+    ];
+    forms.sort();
+    forms.dedup();
+    forms.into_iter().map(Secret::new).collect()
 }
 
 impl Request {
@@ -227,6 +349,7 @@ pub(crate) fn build_request(
         url,
         headers,
         body,
+        credential: None,
     })
 }
 
@@ -485,6 +608,17 @@ impl Session {
         for (name, value) in &request.headers {
             builder = builder.header(name, value);
         }
+        // The credential: only now, only for the origins it is for, over HTTPS (research R10)
+        if let Some(credential) = request
+            .credential
+            .as_ref()
+            .filter(|credential| credential.applies_to(&request.url))
+        {
+            let mut value = http::HeaderValue::from_str(credential.value.expose())
+                .map_err(|_| Failure::new(FailureRule::Unavailable, NOT_A_BEARER_TOKEN))?;
+            value.set_sensitive(true);
+            builder = builder.header(credential.header.as_str(), value);
+        }
         let body = request.body.clone().unwrap_or_default();
         let http_request = builder
             .body(body)
@@ -498,7 +632,7 @@ impl Session {
             .map_err(|error| self.failure(error, request, deadline))?;
 
         let status = response.status().as_u16();
-        let headers = operation
+        let headers: Vec<(String, Option<String>)> = operation
             .response()
             .headers
             .iter()
@@ -564,6 +698,23 @@ impl Session {
             }
         };
         *update_bytes_left = update_bytes_left.saturating_sub(body.len());
+        // A response that carries the credential back reaches neither the widget nor the log:
+        // not in its body, a header the widget receives, nor the address of a redirect
+        if let Some(credential) = &request.credential {
+            let carried = credential.is_in(&body)
+                || headers.iter().any(|(_, value)| {
+                    value.as_deref().is_some_and(|value| credential.is_in(value.as_bytes()))
+                })
+                || location
+                    .as_deref()
+                    .is_some_and(|location| credential.is_in(location.as_bytes()));
+            if carried {
+                return Err(Failure::new(
+                    FailureRule::InvalidResponse,
+                    "the response carried the credential back",
+                ));
+            }
+        }
         Ok(Answer {
             location,
             content_type,
@@ -674,6 +825,8 @@ fn follow(
         } else {
             None
         },
+        // Carried along; each hop decides whether it applies (research R10)
+        credential: request.credential.clone(),
     })
 }
 
@@ -717,7 +870,8 @@ fn check_format(
     }
 }
 
-/// Bytes a request puts on the wire, as logged: the request line, the fixed headers and the body.
+/// Bytes a request puts on the wire, as logged: the request line, the fixed headers, the
+/// credential's header when it applies, counted and never recorded, and the body.
 fn sent_bytes(request: &Request) -> u64 {
     let line = request.method.as_str().len() + request.target().len();
     let headers: usize = request
@@ -725,7 +879,104 @@ fn sent_bytes(request: &Request) -> u64 {
         .iter()
         .map(|(name, value)| name.len() + value.len())
         .sum();
-    (line + headers + request.body.as_ref().map_or(0, Vec::len)) as u64
+    let credential = request
+        .credential
+        .as_ref()
+        .filter(|credential| credential.applies_to(&request.url))
+        .map_or(0, |credential| credential.header.len() + credential.value.expose().len());
+    (line + headers + credential + request.body.as_ref().map_or(0, Vec::len)) as u64
+}
+
+/// The answer to one of the host's own requests: a token, a refresh or a revocation.
+pub(crate) struct HostAnswer {
+    pub(crate) status: u16,
+    /// Wiped when dropped: a token answer holds tokens.
+    pub(crate) body: Zeroizing<Vec<u8>>,
+    pub(crate) duration: Duration,
+    pub(crate) sent_bytes: u64,
+}
+
+/// `application/x-www-form-urlencoded` of `pairs`, in a buffer wiped when dropped: it holds a
+/// code, a verifier or a refresh token.
+pub(crate) fn form_body(pairs: &[(&str, &str)]) -> Zeroizing<String> {
+    let mut form = url::form_urlencoded::Serializer::new(String::new());
+    for (name, value) in pairs {
+        form.append_pair(name, value);
+    }
+    Zeroizing::new(form.finish())
+}
+
+impl Session {
+    /// One of the host's own requests (research R10): a form `POST` to `url` with
+    /// `Accept: application/json`, over the HTTPS agent with every rule of a connector's
+    /// requests, following no redirect, reading at most `max_bytes` of the answer.
+    pub(crate) fn host_post(
+        &self,
+        url: &url::Url,
+        pairs: &[(&str, &str)],
+        deadline: Instant,
+        max_bytes: usize,
+    ) -> Result<HostAnswer, Failure> {
+        if url.scheme() != "https" {
+            return Err(Failure::new(
+                FailureRule::Unavailable,
+                format!("{} is not HTTPS", url.origin().ascii_serialization()),
+            ));
+        }
+        let start = Instant::now();
+        let timeout = (start + self.limits.call_time_limit)
+            .min(deadline)
+            .saturating_duration_since(start);
+        if timeout.is_zero() {
+            return Err(self.out_of_time(deadline));
+        }
+        let body = form_body(pairs);
+        let sent_bytes = (url.path().len() + body.len()) as u64;
+        *self.refused.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        let http_request = http::Request::builder()
+            .method("POST")
+            .uri(url.as_str())
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body.as_bytes().to_vec())
+            .map_err(|error| Failure::new(FailureRule::Unavailable, format!("{error}")))?;
+        let http_request = self
+            .https
+            .configure_request(http_request)
+            .timeout_global(Some(timeout))
+            .build();
+        let as_request = Request {
+            method: Method::Post,
+            url: url.clone(),
+            headers: Vec::new(),
+            body: None,
+            credential: None,
+        };
+        let mut response = self
+            .https
+            .run(http_request)
+            .map_err(|error| self.failure(error, &as_request, deadline))?;
+        let status = response.status().as_u16();
+        let read = response
+            .body_mut()
+            .with_config()
+            .limit(max_bytes as u64 + 1)
+            .read_to_vec()
+            .map_err(|error| self.failure(error, &as_request, deadline))?;
+        let read = Zeroizing::new(read);
+        if read.len() > max_bytes {
+            return Err(Failure::new(
+                FailureRule::OverLimit,
+                format!("the answer is over the limit of {max_bytes} bytes"),
+            ));
+        }
+        Ok(HostAnswer {
+            status,
+            body: read,
+            duration: start.elapsed(),
+            sent_bytes,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -931,6 +1182,7 @@ mod tests {
             url: url::Url::parse(url).unwrap(),
             headers: vec![("Accept".to_owned(), "application/json".to_owned())],
             body: Some(b"{}".to_vec()),
+            credential: None,
         }
     }
 
@@ -969,6 +1221,126 @@ mod tests {
         let next = follow(&echo, &from, 307, "/again").unwrap();
         assert_eq!(next.method, Method::Post);
         assert_eq!(next.body.as_deref(), Some(&b"{}"[..]));
+    }
+
+    /// The connector of `connector` with an account credential on `api`.
+    fn with_credential() -> Connector {
+        connector(Source::Local, |c| {
+            c["operations"]["me"] = json!({
+                "kind": "read", "method": "GET", "destination": "api", "path": "/me",
+                "response": { "format": "json" }
+            });
+            c["credential"] = json!({
+                "kind": "account", "destinations": ["api"], "header": "Authorization",
+                "scheme": "Bearer",
+                "account": {
+                    "flow": "authorization-code", "client": "echo",
+                    "authorize": "https://api.echo.test/authorize",
+                    "token": "https://api.echo.test/token",
+                    "access": [{ "name": "items", "level": "read" }]
+                }
+            });
+        })
+    }
+
+    fn request_credential(secret: &str) -> RequestCredential {
+        let echo = with_credential();
+        RequestCredential::new(echo.credential().unwrap(), &Secret::new(secret.to_owned())).unwrap()
+    }
+
+    #[test]
+    fn a_built_request_never_holds_a_credential() {
+        let echo = with_credential();
+        let operation = echo.operation("get").unwrap();
+        let arguments = operation
+            .check_arguments(&[("id".to_owned(), text("Bearer x"))], 16)
+            .unwrap();
+        let request = build_request(&echo, operation, &arguments, &Limits::default()).unwrap();
+        assert!(request.credential.is_none());
+        assert!(!request.headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("authorization")));
+    }
+
+    #[test]
+    fn a_credential_applies_only_to_its_origins_over_https() {
+        let credential = request_credential("tok3n");
+        for url in ["https://api.echo.test/v1/a", "https://API.echo.test:443/x?y=1"] {
+            assert!(credential.applies_to(&url::Url::parse(url).unwrap()), "{url}");
+        }
+        for url in [
+            "https://files.echo.test:8443/f",
+            "https://api.echo.test:8443/v1",
+            "http://api.echo.test/v1",
+            "https://elsewhere.test/",
+        ] {
+            assert!(!credential.applies_to(&url::Url::parse(url).unwrap()), "{url}");
+        }
+        // Carried across a redirect, each hop deciding again
+        let echo = with_credential();
+        let mut from = request("https://api.echo.test/v1/a", Method::Get);
+        from.credential = Some(credential);
+        let next = follow(&echo, &from, 302, "https://files.echo.test:8443/f").unwrap();
+        assert!(next.credential.as_ref().is_some_and(|c| !c.applies_to(&next.url)));
+        let back = follow(&echo, &next, 302, "https://api.echo.test/v1/b").unwrap();
+        assert!(back.credential.as_ref().is_some_and(|c| c.applies_to(&back.url)));
+        // Counted in the bytes sent only on a hop it applies to
+        let without = |request: &Request| Request {
+            credential: None,
+            ..request.clone()
+        };
+        assert_eq!(
+            sent_bytes(&back) - sent_bytes(&without(&back)),
+            ("Authorization".len() + "Bearer tok3n".len()) as u64
+        );
+        assert_eq!(sent_bytes(&next), sent_bytes(&without(&next)));
+    }
+
+    #[test]
+    fn only_bearer_tokens_are_sent() {
+        for token in ["gho_ABCdef123", "a-b.c_d~e+f/g=", "x"] {
+            assert!(is_bearer_token(token), "{token}");
+        }
+        for token in ["", "a b", "a\"b", "a\\b", "a<b", "a\r\nX-Evil: 1", "é"] {
+            assert!(!is_bearer_token(token), "{token:?}");
+            let echo = with_credential();
+            assert_eq!(
+                RequestCredential::new(echo.credential().unwrap(), &Secret::new(token.to_owned())).err(),
+                Some(NOT_A_BEARER_TOKEN)
+            );
+        }
+    }
+
+    /// The echo check of research R10, over every form an encoder or a URL gives the secret.
+    #[test]
+    fn the_credential_is_found_in_every_form_a_response_could_carry() {
+        let credential = request_credential("ab+cd/ef=");
+        for carried in [
+            "ab+cd/ef=",
+            r#"{"token":"ab+cd\/ef="}"#,
+            r#"{"token":"ab+cd/ef="}"#,
+            r#"{"token":"ab+cd/ef="}"#,
+            "/next?t=ab%2Bcd%2Fef%3D",
+            "/next?t=ab%2bcd%2fef%3d",
+            "Bearer ab+cd/ef=",
+        ] {
+            assert!(credential.is_in(carried.as_bytes()), "{carried}");
+        }
+        for clean in ["ab+cd/ef", "abcdef", "ab cd ef", ""] {
+            assert!(!credential.is_in(clean.as_bytes()), "{clean}");
+        }
+        assert!(!format!("{credential:?}").contains("ab+cd"));
+    }
+
+    #[test]
+    fn the_hosts_own_requests_are_forms() {
+        let body = form_body(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", "r+1/2"),
+            ("client_id", "dashboard dev"),
+        ]);
+        assert_eq!(
+            body.as_str(),
+            "grant_type=refresh_token&refresh_token=r%2B1%2F2&client_id=dashboard+dev"
+        );
     }
 
     #[test]
