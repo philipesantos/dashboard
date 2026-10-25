@@ -1,0 +1,86 @@
+{
+  "$schema": "../../../wit/connector.schema.json",
+  "connector_version": 1,
+  "id": "local/plain-http-beside",
+  "version": "1.0.0",
+  "author": "Dashboard contributors",
+  "description": "Hostile: a credential on an HTTPS destination beside a plain-HTTP one",
+  "destinations": {
+    "api": "https://notes.test",
+    "here": "http://127.0.0.1:9"
+  },
+  "credential": {
+    "kind": "account",
+    "required": false,
+    "destinations": [
+      "api"
+    ],
+    "header": "Authorization",
+    "scheme": "Bearer",
+    "account": {
+      "flow": "authorization-code",
+      "client": "notes",
+      "authorize": "https://notes.test/oauth/authorize",
+      "token": "https://notes.test/oauth/token",
+      "revoke": "https://notes.test/oauth/revoke",
+      "scopes": [
+        "notes:read"
+      ],
+      "access": [
+        {
+          "name": "notes",
+          "level": "read"
+        }
+      ],
+      "identity": {
+        "operation": "get-me",
+        "name": "/name",
+        "id": "/id"
+      }
+    }
+  },
+  "operations": {
+    "list-notes": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "api",
+      "path": "/notes",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "parameters": {},
+      "response": {
+        "format": "json",
+        "headers": []
+      }
+    },
+    "get-me": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "api",
+      "path": "/me",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "parameters": {},
+      "response": {
+        "format": "json",
+        "headers": []
+      }
+    },
+    "list-here": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "here",
+      "path": "/notes",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "parameters": {},
+      "response": {
+        "format": "json",
+        "headers": []
+      }
+    }
+  }
+}

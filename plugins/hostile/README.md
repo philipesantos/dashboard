@@ -19,6 +19,7 @@ normally. They are security test fixtures and are never shipped.
 | `out-of-bounds` | Reads far beyond its own memory | `plugin-crashed` |
 | `log-spoof` | Logs and errors with line breaks and terminal escapes | `plugin-error`, with every text escaped |
 | `storage-file` | Declares storage, then opens a store file with `std::fs` | `capability-refused`, listing `wasi:filesystem/*` |
+| `token-hunt` | Declares a connector with an account, then reads its environment, arguments and files with the standard library | `capability-refused`, listing `wasi:cli/*` and `wasi:filesystem/*` |
 
 The [data model](../../specs/001-plugin-runtime/data-model.md#hostile-plugin-case) is the
 source of these outcomes, and [`docs/threat-model.md`](../../docs/threat-model.md) maps them to
@@ -137,10 +138,32 @@ runtime.
 | `store-binding` (white box) | FR-002 | The bound store is the file of the plugin's id and origin; the stand-in has none |
 | `host-records-untouched` | FR-013 | Every case above leaves the host's records and other stores as they were |
 
+## Credential cases
+
+The cases of [feature 005](../../specs/005-plugin-credentials/data-model.md#hostile-cases-fr-019)
+are the token case of the Phase 2 gate: no plugin obtains a credential, and the host sends one
+only where its connector says. They live in
+[`runtime/tests/hostile/credentials.rs`](../../runtime/tests/hostile/credentials.rs) and pack
+the fixture [`account-probe`](../fixtures/account-probe) with each case's manifest, against the
+test sign-in service of `runtime/tests/common/signin.rs`; `token-hunt` is the one crate of its
+own. The connector files of the cases refused at load are in [`connectors/`](connectors):
+
+| File | What it breaks | Expected outcome |
+| --- | --- | --- |
+| `plain-http-key.json` | A key sent to a loopback address without HTTPS | `credential-needs-https` |
+| `plain-http-beside.json` | A credential on an HTTPS destination beside a plain-HTTP one | `credential-needs-https` |
+| `token-host-elsewhere.json` | The token address on a destination the credential is not for | `invalid-connector`, naming `credential.account.token` |
+| `identity-elsewhere.json` | The identity operation on a destination the credential is not for | `invalid-connector`, naming `credential.account.identity` |
+| `fixed-auth-header.json` | An operation fixing `authorization`, in lowercase | `invalid-connector`, naming the header |
+
+After every case, a scan looks for each token, refresh token, code and verifier the test service
+issued in every file of the data directory, the grant record, the request log, kept data, stores,
+the captured output and what the fixture returned, and fails naming where it found one.
+
 ## How they are built
 
 Like any plugin, from source, by `cargo xtask plugins`, into `target/plugins/<crate>.wasm`;
-no built `.wasm` is ever committed. `read-file`, `open-socket` and `storage-file` declare
+no built `.wasm` is ever committed. `read-file`, `open-socket`, `storage-file` and `token-hunt` declare
 `[package.metadata.dashboard] target = "wasm32-wasip2"`, so they import WASI the way the
 standard library does; the others build for `wasm32-unknown-unknown`. A test whose fixture was
 not built fails instead of skipping.

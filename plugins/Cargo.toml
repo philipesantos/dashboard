@@ -21,6 +21,7 @@ members = [
     "hostile/out-of-bounds",
     "hostile/log-spoof",
     "hostile/storage-file",
+    "hostile/token-hunt",
     "fixtures/hello-v0",
     "fixtures/probe",
     "fixtures/quiet",
