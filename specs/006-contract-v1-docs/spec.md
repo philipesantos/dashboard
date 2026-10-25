@@ -56,6 +56,20 @@ case: the feature adds no security rule, and the existing suite must pass unchan
   plugins, and the examples and fixtures move to 2.0.0), and 2.0.0 is the version frozen. v0
   keeps running. After the first public release, such a finding is recorded for the next major
   instead. (Raised by a side note on the spec.)
+- Q: When CI runs the commands of the walkthrough and the guides, how closely must their output
+  match what the docs show? → A: Exactly. The docs show each step's whole output and CI compares
+  all of it, with the values that change from run to run (digests, paths, times) written as
+  placeholders such as `<digest>`; the examples of CLI output in the reference are checked the
+  same way.
+- Q: How is SC-001 (someone new to the project reaches a running widget from the docs alone in
+  under 30 minutes) verified? → A: Three ways together: CI walks the walkthrough on Windows, macOS
+  and Linux; an independent agent with no context, in a clean Linux container, follows only the
+  docs (it may clone the repository as the docs say, but reads no code or spec) and records every
+  point where it got stuck; and the maintainer walks it once by hand on Linux, timed.
+- Q: Where do the new docs checks (walkthrough, guides and reference examples, on three systems)
+  run in CI? → A: In a job of their own per system, in parallel with the current jobs and
+  required by the single "CI result" check, so the run's wall time barely grows and the timed
+  hostile cases keep their machine to themselves.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -77,9 +91,10 @@ with.
 get a widget running in one sitting goes elsewhere, and every later phase (the app, AI-generated
 modules) builds on authors being able to write plugins.
 
-**Independent Test**: on a clean machine of each system, follow the walkthrough exactly as
+**Independent Test**: on a clean directory of each system, follow the walkthrough exactly as
 written, command by command, and check that the last step shows the widget's content and that no
-step needed a file or a tool the walkthrough did not mention.
+step needed a file or a tool the walkthrough did not mention; then have an agent with no context
+follow it in a clean Linux container, and the maintainer walk it once by hand, timed.
 
 **Acceptance Scenarios**:
 
@@ -195,8 +210,8 @@ one command in the walkthrough to something that fails; each time the build fail
    than the host's, **When** the build runs, **Then** it fails, naming it.
 3. **Given** a command or file shown in the walkthrough or a guide, **When** the build runs on
    Windows, macOS and Linux, **Then** it is run as written (only an external service's address
-   swapped for a test service) and the build fails if it does not work or prints otherwise than
-   the docs say.
+   swapped for a test service) and the build fails if it does not work or if any line of its
+   output differs from the docs, apart from placeholders for values that change between runs.
 4. **Given** a pull request that changes only the docs these checks cover, **When** CI decides
    what to run, **Then** these checks still run, because those docs are used as code.
 
@@ -344,7 +359,8 @@ of TypeScript in feature 006.
   with its default and the error past it.
 - **FR-013**: The reference MUST list the commands and options of the development CLI that an
   author uses, with an example of what each prints; every text a plugin, a manifest or a
-  connector controls MUST appear escaped exactly as the CLI prints it.
+  connector controls MUST appear escaped exactly as the CLI prints it, and each example MUST be
+  checked against what the CLI prints, as in FR-018.
 - **FR-014**: The docs MUST say that render returns a JSON document of at most 64 KiB, that the
   content format the host frame draws is defined in Phase 3 in a later minor, and that widgets
   will adopt it then.
@@ -361,13 +377,18 @@ of TypeScript in feature 006.
   not exist or gives a limit's default other than the host's; it MUST name each item, and MUST
   fail on an item it cannot classify rather than skip it.
 - **FR-018**: Every command and file shown in the walkthrough and the guides MUST run in CI on
-  Windows, macOS and Linux as written, in the form shown for that system, and the build MUST fail
-  if one fails or prints otherwise than the docs say; a command that reaches an external service
-  MUST run against the test services, with only the address swapped.
+  Windows, macOS and Linux as written, in the form shown for that system. The docs MUST show each
+  command's whole output, and the build MUST fail if a command fails or its output differs from
+  the docs in any line; only values that change from run to run (digests, paths, times) MAY be
+  written as named placeholders, such as `<digest>`, and each placeholder MUST match only its kind
+  of value. A command that reaches an external service MUST run against the test services, with
+  only the address swapped.
 - **FR-019**: The checks of FR-017 and FR-018 MUST run on every change to what they read,
   including a change to Markdown alone, since those docs are used as code (constitution,
   Development Workflow); the rest of the suite keeps its current rule for documentation-only
-  changes.
+  changes. The checks of FR-018 MUST run in a job of their own on each of the three systems, in
+  parallel with the existing jobs, never on the machine that runs the hostile suite, and the
+  required "CI result" check MUST fail when one of them fails.
 - **FR-020**: The contributor docs MUST say how to keep the reference in step: a change to the
   contract, a schema, a limit, a host error or an author-facing CLI command updates the reference
   in the same pull request, and the check names what is missing.
@@ -406,9 +427,12 @@ of TypeScript in feature 006.
 
 ### Measurable Outcomes
 
-- **SC-001**: A person who has not used the project before follows the walkthrough on each of
-  Windows, macOS and Linux to a running widget of their own in under 30 minutes, not counting the
-  download of the tools, using only the docs.
+- **SC-001**: The walkthrough reaches a running widget from the docs alone, checked three ways:
+  CI walks it on Windows, macOS and Linux; an independent agent with no context, in a clean Linux
+  container, follows only the docs (cloning the repository where they say to, reading no code or
+  spec) and every point where it got stuck is fixed in the docs, until a walk has none; and the
+  maintainer walks it once by hand on Linux in under 30 minutes, not counting the download of the
+  tools.
 - **SC-002**: 100% of the items of contract 1.3.0, the manifest and connector fields, the limits
   and the host's plugin errors appear in the reference, and the drift check fails, naming the
   item, both when one is removed from the reference and when one that does not exist is added.
