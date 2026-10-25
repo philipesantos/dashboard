@@ -66,7 +66,7 @@ behaves as in feature 005 at the end of this phase.
   - Confirm `cargo tree -d -p runtime -e normal` shows only the expected second copy of
     `wasmparser`/`wasm-encoder` (0.262 beside Wasmtime's 0.261) and no other new duplicate.
   - Confirm `cargo deny check` passes with no new license.
-- [ ] T002 [P] Create `specs/006-contract-v1-docs/review.md` and
+- [X] T002 [P] Create `specs/006-contract-v1-docs/review.md` and
   `specs/006-contract-v1-docs/walks.md` with the fields of `data-model.md`, sections only:
   - `review.md` has one table with the columns `id`, `item`, `what`, `checked`, `outcome` and
     `cost`. Outcomes are `docs`, `host`, `breaking` or `kept`, and a finding moves only from
