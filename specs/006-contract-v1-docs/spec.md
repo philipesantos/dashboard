@@ -213,7 +213,7 @@ one command in the walkthrough to something that fails; each time the build fail
    swapped for a test service) and the build fails if it does not work or if any line of its
    output differs from the docs, apart from placeholders for values that change between runs.
 4. **Given** a pull request that changes only the docs these checks cover, **When** CI decides
-   what to run, **Then** these checks still run, because those docs are used as code.
+   what to run, **Then** it runs everything, as for code, because those docs are used as code.
 
 ---
 
@@ -290,9 +290,9 @@ of TypeScript in feature 006.
   the CLI prints it, never raw.
 - The drift check meets an item it cannot classify, such as a new kind of WIT definition: it
   fails and names it, rather than pass silently.
-- A pull request changes only Markdown the drift or walkthrough checks read: those checks run;
-  the hostile suite may still be skipped as for any other change that touches only
-  documentation.
+- A pull request changes only Markdown the drift or walkthrough checks read: CI runs in full, as
+  for code, since the constitution does not count Markdown the build uses as documentation; a
+  change to any other Markdown still skips the build.
 
 ## Requirements *(mandatory)*
 
@@ -383,10 +383,9 @@ of TypeScript in feature 006.
   written as named placeholders, such as `<digest>`, and each placeholder MUST match only its kind
   of value. A command that reaches an external service MUST run against the test services, with
   only the address swapped.
-- **FR-019**: The checks of FR-017 and FR-018 MUST run on every change to what they read,
-  including a change to Markdown alone, since those docs are used as code (constitution,
-  Development Workflow); the rest of the suite keeps its current rule for documentation-only
-  changes. The checks of FR-018 MUST run in a job of their own on each of the three systems, in
+- **FR-019**: The docs that the checks of FR-017 and FR-018 read are used as code, so they are
+  not documentation for the constitution's rule (Development Workflow): a change to them, even to
+  Markdown alone, MUST run CI as any code change does, the security suite included. The checks of FR-018 MUST run in a job of their own on each of the three systems, in
   parallel with the existing jobs, never on the machine that runs the hostile suite, and the
   required "CI result" check MUST fail when one of them fails.
 - **FR-020**: The contributor docs MUST say how to keep the reference in step: a change to the
