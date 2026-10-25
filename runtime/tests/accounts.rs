@@ -162,6 +162,82 @@ fn private_notes() {
     ]);
 }
 
+/// A refresh timed (research R18: a network round trip, so timed here rather than benched): the
+/// host's refresh request as the request log records it, and an update that refreshes against
+/// one that does not, medians of 20 each, printed for `performance.md` with `--nocapture`.
+#[test]
+fn a_refresh_timed() {
+    let pki = TestPki::new();
+    let service = SignInService::start(&pki);
+    let test = runtime::TestNetwork {
+        routes: vec![service.route()],
+        public_for_tests: vec![service.server.address()],
+        root: pki.root(),
+        catalog: Vec::new(),
+    };
+    // 41 updates in a few seconds, past the per-minute limits of calls
+    let limits = runtime::Limits {
+        calls_per_minute_per_widget: 1000,
+        calls_per_minute_per_host: 1000,
+        ..runtime::Limits::default()
+    };
+    let world = World::seam_with(limits, test, true);
+    world.write_connector("notes", &serde_json::from_str(NOTES).unwrap());
+    let setup = Setup { service, world };
+    // Every token the service issues expires within the refresh margin, so every update refreshes
+    setup.service.script(|script| script.expires_in = Some(1));
+    setup.connect();
+    let plugin = setup.world.approve_and_load(&fixture("private-notes"));
+    let timed = |n: usize| {
+        let mut times: Vec<std::time::Duration> = (0..n)
+            .map(|_| {
+                let started = std::time::Instant::now();
+                let update = plugin.update("{}");
+                assert!(update.result.is_ok(), "{update:?}");
+                started.elapsed()
+            })
+            .collect();
+        times.sort();
+        times[n / 2]
+    };
+    let refreshing = timed(20);
+    let mut refreshes: Vec<u64> = setup
+        .world
+        .runtime
+        .read_requests(1000, None)
+        .unwrap()
+        .iter()
+        .filter(|entry| entry.plugin == "host" && entry.operation == "refresh")
+        .map(|entry| {
+            assert_eq!(
+                entry.outcome,
+                runtime::requests::Outcome::Status { status: 200 }
+            );
+            entry.duration_ms
+        })
+        .collect();
+    assert_eq!(refreshes.len(), 20);
+    refreshes.sort();
+    // The next refresh gets a token that does not expire, and the updates after it do not refresh
+    setup.service.script(|script| script.expires_in = None);
+    timed(1);
+    let plain = timed(20);
+    let limit = runtime::Limits::default().call_time_limit;
+    assert!(
+        u128::from(refreshes[19]) < limit.as_millis(),
+        "{refreshes:?}"
+    );
+    println!(
+        "refresh_request_ms: {} (median), {} (slowest)",
+        refreshes[10], refreshes[19]
+    );
+    println!(
+        "update_with_refresh_us: {}, update_us: {}",
+        refreshing.as_micros(),
+        plain.as_micros()
+    );
+}
+
 /// A key typed by the maintainer is sent as `Authorization: Bearer <key>`.
 #[test]
 fn a_key_is_sent_as_its_connector_says() {
