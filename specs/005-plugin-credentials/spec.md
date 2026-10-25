@@ -519,11 +519,11 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   approval never shows write access for a widget that only reads: a GitHub App with read access
   to contents and metadata, signed in with GitHub's device flow, the only one GitHub completes
   without a client secret; the user picks the repositories by installing the app on them at
-  GitHub, at an address the tool gives. GitHub offers no revocation to a client without a secret,
-  so disconnecting says where to revoke the app at GitHub. A catalog connector's review MUST check that the access its
-  credential asks for is the narrowest the service offers for its operations. The app's identity
-  is configured for development by the developer, never by a plugin; the project registers its
-  own app before the first public release (Phase 6).
+  GitHub, at an address the tool gives. GitHub offers no revocation to a client without a
+  secret, so disconnecting says where to revoke the app at GitHub. A catalog connector's review
+  MUST check that the access its credential asks for is the narrowest the service offers for its
+  operations. The app's identity is configured for development by the developer, never by a
+  plugin; the project registers its own app before the first public release (Phase 6).
 - **FR-016**: The manifest's list of login providers (feature 002) MUST become obsolete: a
   manifest that has it stays valid, the tool shows it as obsolete, and it grants nothing; the
   accounts a widget uses come only from the connectors it declares (FR-003).
@@ -620,8 +620,9 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   Phase 3 warning about data from one connected account reaching another destination judges the
   accounts and destinations this feature shows.
 - The fixed technical decision applies: credentials live in the operating system's keychain
-  through keyring-rs, `keyring-core` and its store crates (constitution v2.4.1). Plugins never see that choice. How CI reaches a keychain on each system, and
-  whether macOS or Linux asks the user for access, is decided in the plan.
+  through keyring-rs, `keyring-core` and its store crates (constitution v2.4.1). Plugins never
+  see that choice. How CI reaches a keychain on each system, and whether macOS or Linux asks the
+  user for access, is decided in the plan.
 - A classic GitHub OAuth app can read private repositories only with full access to all of them,
   writing and deleting included; GitHub's other kind of app can ask for read-only access to the
   repositories the user picks, with tokens that expire after eight hours and are refreshed. For
