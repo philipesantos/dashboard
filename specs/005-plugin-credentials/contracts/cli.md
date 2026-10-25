@@ -14,58 +14,44 @@ stderr with exit 1, usage errors with exit 2.
 - Every command that waits on the keychain waits at most 2 minutes, then fails as
   `keychain-unavailable`.
 
-## `runtime accounts connect <connector-id> [--origin <path>] [--client <id>] [--app <name>] [--no-browser] …`
+## `runtime accounts connect <connector-id> [--origin <path>] [--client <id>] [--no-browser] …`
 
-Connects an account to a connector: `catalog/github`, or a local connector by id (its file in
-`--connectors <dir>`; `--origin` picks the file when the id is ambiguous). For `kind: key`, reads
-the key from the terminal without echo. For an account, runs the connector's flow. `--client` and
-`--app` supply the client registration when the host has none built in (R4) and are remembered
-for the connector; without them and without a remembered one, the command fails as
-`no-client-configured`, naming the options. `--no-browser` prints the address without opening it.
-
-Device flow:
-
-```text
-account for catalog/github (official catalog)
-asks for: Contents read, Metadata read
-sign in at https://github.com/login/device with the code
-  WDJB-MJHT
-enter this code only because this tool just showed it to you; never enter a code someone sent you
-waiting for GitHub (the code expires in 15 min)…
-connected: ada (id 1234567)
-choose the repositories it may read: https://github.com/apps/dashboard-dev-ada/installations/new
-```
-
-Authorization code flow (a local connector):
+Connects an account to a connector: a local connector by id (its file in `--connectors <dir>`;
+`--origin` picks the file when the id is ambiguous) or, from a later feature, a catalog connector.
+For `kind: key`, reads the key from the terminal without echo. For an account, runs the sign-in of
+[data-model.md](../data-model.md#sign-in). `--client` supplies the client registration when the
+host has none built in (R4) and is remembered for the connector; without it and without a
+remembered one, the command fails as `no-client-configured`, naming the option. `--no-browser`
+prints the address without opening it.
 
 ```text
-account for local/weather (local file /home/ada/connectors/weather.json, development)
-asks for: forecasts read
-opening https://weather.example/oauth/authorize?… in the browser
+account for local/notes (local file /home/ada/dashboard/plugins/examples/private-notes/connectors/notes.json, development)
+asks for: notes read
+opening https://notes.test/oauth/authorize?response_type=code&client_id=dashboard-dev&… in the browser
 waiting for the browser (10 min)…
-connected: ada@example
+connected: ada (id 1234567)
 ```
 
 - The sign-in address is printed as the host will open it, escaped; the `state` and challenge in
-  it are not secrets.
+  it are not secrets, and the verifier never leaves the host.
 - An account already connected: the same account (same id) replaces its credential and prints
   `reconnected: <name>`; another account fails as `another-account-connected`, naming the current
   one and `runtime accounts disconnect`, and nothing changes; for a key, any new key fails the
   same way.
 - The widgets that use the account are listed after `connected:` as `used by: <plugin id>, …`.
-- Failures: `sign-in-failed` (denied, expired, the time limit, a wrong or missing state, a used
-  code, the service's error code and text, escaped and cut), `key-refused` (empty, too long, a
+- Failures: `sign-in-failed` (the time limit, a wrong or missing state, a used code, the
+  service's error code and text, escaped and cut), `key-refused` (empty, too long, a
   character outside `!`–`~`), `keychain-unavailable`, `no-client-configured`,
   `invalid-connector`, `connector-unavailable`.
 
 ## `runtime accounts list …`
 
 ```text
-catalog/github  official catalog
-  account: ada (id 1234567), connected 2026-10-25 14:02, refreshed 14:02, expires 22:02
-  access: Contents read, Metadata read (as asked)
-  client: Iv23li… (from --client), app dashboard-dev-ada
-  used by: local/github-releases
+local/notes  local file /home/ada/dashboard/plugins/examples/private-notes/connectors/notes.json
+  account: ada (id 1234567), connected 2026-10-25 14:02, refreshed 14:02, expires 15:02
+  access: notes read (as asked)
+  client: dashboard-dev (from --client)
+  used by: local/private-notes
 local/weather  local file /home/ada/connectors/weather.json (no file)
   account: ada@example, needs connecting again: the service refused it (401)
 ```
@@ -81,16 +67,17 @@ local/weather  local file /home/ada/connectors/weather.json (no file)
 ## `runtime accounts disconnect <connector-id> [--origin <path>] …`
 
 ```text
-disconnected catalog/github: ada
+disconnected local/notes: ada
 deleted from the keychain
-GitHub offers no revocation to this app: revoke it at https://github.com/settings/apps/authorizations
-kept data discarded: local/github-releases
+revoked at notes.test
+kept data discarded: local/private-notes
 ```
 
 - Works whether or not the connector's file exists; `--origin` is required when the id has
   accounts at several origins.
 - With a `revoke` address: `revoked at <host>` or `revocation failed: <reason>; revoke it at the
-  service` (the account is gone from the vault either way).
+  service` (the account is gone from the vault either way); without one, `the service offers no
+  revocation: revoke it at <revoke_page>` or `…: revoke it at the service`.
 - No account: `error: account-not-connected: …`, exit 1.
 
 ## `runtime permissions <plugin> …`
@@ -98,15 +85,15 @@ kept data discarded: local/github-releases
 As in feature 004, plus, for each connector with a credential, after its `destinations:` line:
 
 ```text
-  catalog/github 1.1.0  required  granted
-    from: official catalog
-    destinations: https://api.github.com
-    credential: account (optional), Authorization: Bearer, sent to https://api.github.com
-      asks for: Contents read, Metadata read (reviewed)
+  local/notes 1.0.0  required  granted
+    from: local file /home/ada/dashboard/plugins/examples/private-notes/connectors/notes.json (development)
+    destinations: https://notes.test
+    credential: account (optional), Authorization: Bearer, sent to https://notes.test
+      asks for: notes read (declared by the developer)
       this widget acts as the account: ada (id 1234567)
-    list-releases  read (reviewed)  GET https://api.github.com/repos/{owner}/{repo}/releases
+    list-notes  read (declared by the developer)  GET https://notes.test/notes
 …
-login providers: github (obsolete: accounts come from connectors)
+login providers: none
 approval digest: sha256:…
 ```
 
@@ -123,16 +110,16 @@ approval digest: sha256:…
 
 As before; the digest covers each connector's credential and whether the widget uses the account
 ([data-model.md](../data-model.md#approval-digest)). One more line per connector the widget uses
-with an account: `account use: catalog/github (Contents read, Metadata read)`.
+with an account: `account use: local/notes (notes read)`.
 
 ## `runtime requests …`
 
 Each entry of a call that carried a credential shows `as <account name>` (or `as key`) after the
-connector; the host's own requests appear as `host  catalog/github  token  POST github.com/login/oauth/access_token  200`,
+connector; the host's own requests appear as `host  local/notes  token  POST notes.test/oauth/token  200`,
 never with a body.
 
 ## `runtime update <plugin> …`
 
 As before. A call that answered `account-not-connected` or `subscription-required` is counted
-with the refused ones, and the update output adds `account: catalog/github needs connecting
-again (runtime accounts connect catalog/github)` when that is why.
+with the refused ones, and the update output adds `account: local/notes needs connecting again
+(runtime accounts connect local/notes)` when that is why.

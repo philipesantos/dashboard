@@ -417,15 +417,18 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
 
 ### Functional Requirements
 
-- **FR-001**: A connector MAY declare one credential, replacing feature 003's refusal (its FR-017):
-  an account the user connects by signing in to the service, or a key the user enters. The
-  declaration MUST state its kind; whether it is required or optional; which of the connector's
-  destinations it is sent to; the header it travels in; for an account, the service's sign-in,
-  token and, if any, revocation addresses, the access it asks for, each item named, and, when the
-  service offers one, an operation that tells the account's name; and which responses, if any,
-  mean that the account lacks a paid plan. The sign-in, token and revocation addresses MUST be on
-  hosts the connector reserves (catalog) or declares (development). The host MUST refuse a
-  credential declaration that does not conform, naming the field and the problem.
+- **FR-001**: A connector MAY declare one credential, replacing feature 003's refusal (its
+  FR-017): an account the user connects by signing in to the service, or a key the user enters.
+  The declaration MUST state its kind; whether it is required or optional; which of the
+  connector's destinations it is sent to; the header it travels in; for an account, the
+  service's sign-in, token and, if any, revocation addresses, the access it asks for, each item
+  named, and, when the service offers one, an operation that tells the account's name and stable
+  id; and which responses, if any, mean that the account lacks a paid plan. The token and
+  revocation addresses, and the destination of the identity operation, MUST be among the
+  destinations the credential is for, and the sign-in address on a host the connector reserves
+  (catalog) or declares (development), so a credential or a refresh token never reaches a host
+  the credential is not for. The host MUST refuse a credential declaration that does not
+  conform, naming the field and the problem, and compare header names without regard to case.
 - **FR-002**: A credential MUST travel in the `Authorization` header, with the scheme the
   connector states; only a catalog connector MAY use another header, checked by its review. No
   connector MAY fix that header or any value in it, and no value a connector fixes or a widget
@@ -440,15 +443,17 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   that connector. Connecting an account MUST grant nothing to any widget, and approving a widget
   MUST connect nothing.
 - **FR-005**: Before approval, the host MUST show, for every connector with a credential that a
-  widget declares, the credential's kind, whether it is required or optional, the destinations and
-  header it is sent in, the access it asks for, whether the widget uses it, and the account
-  connected now or that none is. The approval MUST cover the credential declaration and whether
-  the widget uses it, as shown, in the digest of feature 003; it does not cover which account is
-  connected. A new version of a connector that adds a credential, asks for more access, sends the
+  widget declares, the credential's kind, whether it is required or optional, the destinations
+  and header it is sent in, the sign-in and token addresses, the access it asks for, whether the
+  widget uses it, and the account connected now or that none is; and, for a widget that uses an
+  account, whether data read as that account can reach any other destination of its connectors
+  (Principle III). The approval MUST cover the credential declaration and whether the widget
+  uses it, as shown, in the digest of feature 003; it does not cover which account is connected.
+  A new version of a connector that adds a credential, asks for more access, sends the
   credential to another destination or in another header, or a new version of a widget that
   starts using an account, MUST be refused until approved, naming what changed, with the grants
-  already given unchanged. Asking for less access, or no longer using the account, MUST NOT need a
-  new approval.
+  already given unchanged. Asking for less access, or no longer using the account, MUST NOT need
+  a new approval.
 - **FR-006**: The host MUST keep credentials (tokens, refresh tokens and keys) only in the
   operating system's keychain, and MAY hold them in its own memory while it runs. The host's
   records MUST hold only which account is connected: connector, origin, kind, account name, access
@@ -456,17 +461,18 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   No credential, sign-in code or sign-in secret MAY be written to any file the host writes, the
   request log, kept data, storage, an error message or the output of the host or the tool, nor
   sent anywhere but under FR-007 and FR-009.
-- **FR-007**: The host MUST add a credential only to requests of the connector it belongs to, to a
-  destination the credential is for, from widgets whose approval includes using it, through the
-  proxy of feature 003: HTTPS with a certificate valid for the destination, the exact host, no
-  non-public address. It MUST add it in the declared header only, after building the request from
-  the operation, and never in a path, query or body. A redirect MUST carry the credential only to a
-  host it is for; to another host of the connector, the redirect is followed without it, and any
-  other target is not followed, as in feature 003. A connector that declares a credential MUST be
-  refused when any destination the credential is for is not HTTPS, including a development
-  connector on a loopback address without HTTPS. The request log of feature 003 MUST record, for
-  each call that carried a credential, the name of the account it acted as, or that it was a key,
-  escaped when shown, and never the credential.
+- **FR-007**: The host MUST add a credential only to requests of the connector it belongs to, to
+  a destination the credential is for, from widgets whose approval includes using it, through
+  the proxy of feature 003: HTTPS with a certificate valid for the destination, the exact host,
+  no non-public address. It MUST add it in the declared header only, after building the request
+  from the operation, and never in a path, query or body. A redirect MUST carry the credential
+  only to a host it is for; to another host of the connector, the redirect is followed without
+  it, and any other target is not followed, as in feature 003. A connector that declares a
+  credential MUST be refused when any of its destinations is not HTTPS, including a development
+  connector on a loopback address without HTTPS, since only a connector that sends no credential
+  may go without it (Principle III). The request log of feature 003 MUST record, for each call
+  that carried a credential, the name of the account it acted as, or that it was a key, escaped
+  when shown, and never the credential.
 - **FR-008**: Plugins MUST NOT receive a credential by any means: no capability, environment
   variable, argument, configuration value or file carries one. The host MUST withhold from the
   widget any response whose body or declared headers contain the credential its request carried,
@@ -482,16 +488,24 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   host's own requests for sign-in, refresh and
   revocation MUST follow the proxy's rules and appear in the request log as the host's, without
   any credential, code or secret.
-- **FR-010**: The development tool MUST read a key from the terminal without showing it, never from
-  an argument, an environment variable or a file, and MUST refuse a key that is empty, longer than
-  a limit, or holds characters a header cannot carry.
-- **FR-011**: The host MUST refresh an expired token itself, at most once per call. When no account
-  is connected, or the account cannot be used (refresh failed, or the service refused a request
-  that carried the credential as unauthorized), the call MUST answer "account not connected", the
-  host MUST NOT retry further, and the account MUST be marked as needing connecting again. A call
-  from a widget that uses the account MUST go without a credential only when the credential is
-  optional and no account is connected.
-  A call to a connector that asks for more access than the account holds MUST answer "account not
+- **FR-010**: The development tool MUST read a key from the terminal without showing it, never
+  from an argument, an environment variable or a file, and MUST refuse a key that is empty,
+  longer than a limit, or holds characters outside the set a bearer token uses (letters, digits
+  and `-._~+/=`). The host MUST refuse, as a failed sign-in, a token from a service outside that
+  set, so every credential is found by the response check of FR-008 however a service escapes
+  it.
+- **FR-011**: The host MUST refresh an expired token itself, at most once per call. When no
+  account is connected, or the account cannot be used (refresh failed, or the service refused a
+  request that carried the credential as unauthorized and the identity operation, asked again,
+  is refused too), the call MUST answer "account not connected", the host MUST NOT retry
+  further, and the account MUST be marked as needing connecting again; when the identity
+  operation still succeeds, only that call answers "account not connected" and the account stays
+  as it is, so one widget's calls cannot lock the account out for the others. A call from a
+  widget that uses the account MUST go without a credential only when the credential is optional
+  and no account was connected when the widget was linked. Which account a widget acts as MUST
+  be fixed when it is linked: an account connected afterwards, by any process, applies from the
+  widget's next load, and checks during a run MAY only take the account away (Principle II). A
+  call to a connector that asks for more access than the account holds MUST answer "account not
   connected" until the account is connected again.
 - **FR-012**: When a response is one the connector declares as meaning the account lacks a paid
   plan, the widget MUST receive "subscription required" and no part of the response.
@@ -541,19 +555,21 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   sign-in failed (state, code, time limit, the service's error), another account connected, key
   refused, keychain unavailable, no app configured.
 - **FR-019**: The hostile suite MUST gain one case per rule, each run with an account connected
-  through the test sign-in service: looking for the credential (FR-008), a destination that sends
-  it back (FR-008), a second destination (FR-007), values that try to add a header or name the
-  credential (FR-002), a development connector without HTTPS or with an invalid certificate
-  (FR-007), a widget without a grant, with its connector off, or not approved for the account
-  (FR-003, FR-007), a file that copies an approved widget's or connector's id (FR-004), a version
-  that adds a credential or asks for more access (FR-005), forged, replayed and late callbacks
-  (FR-009),
-  a widget trying to start a sign-in (FR-009), a revoked and an expired token (FR-011), a
-  disconnect during an update (FR-013), and a spoofed account name (FR-014). After every case, a
-  scan MUST find no credential, code or secret in the host's records, the development data
-  directory, the request log, kept data, storage or captured output (FR-006). The suite MUST run
-  on Windows, macOS and Linux on every change that is not documentation-only, without the real
-  GitHub, and fail the build if any case is not contained (Principle VIII).
+  through the test sign-in service: looking for the credential (FR-008), a destination that
+  sends it back (FR-008), a second destination, a plain-HTTP destination beside the
+  credential's, and token or identity addresses on a host the credential is not for (FR-001,
+  FR-007), a reflection in an escaped form (FR-008, FR-010), values that try to add a header or
+  name the credential (FR-002), a development connector without HTTPS or with an invalid
+  certificate (FR-007), a widget without a grant, with its connector off, or not approved for
+  the account (FR-003, FR-007), a file that copies an approved widget's or connector's id
+  (FR-004), a version that adds a credential or asks for more access (FR-005), forged, replayed
+  and late callbacks (FR-009), a widget trying to start a sign-in (FR-009), a revoked and an
+  expired token, a refusal that is not the token's fault, and an account connected during a run
+  (FR-011), a disconnect during an update (FR-013), and a spoofed account name (FR-014). After
+  every case, a scan MUST find no credential, code or secret in the host's records, the
+  development data directory, the request log, kept data, storage or captured output (FR-006).
+  The suite MUST run on Windows, macOS and Linux on every change that is not documentation-only,
+  without the real GitHub, and fail the build if any case is not contained (Principle VIII).
 - **FR-020**: The project MUST ship an example widget built for contract 1.3.0 that uses the
   account of a development connector, shipped with it, and shows data only that account can
   read, run end to end in CI against the test sign-in service; the connector and manifest
@@ -640,7 +656,8 @@ widget that uses an account while built for 1.2.0 is refused naming 1.3.0.
   certificate arrives with the catalog connectors for local services, right after this feature; in
   this feature a credential never goes to a loopback address without HTTPS (FR-007).
 - One person uses the host on a machine, as in features 002 to 004.
-- Out of scope: host dialogs for connecting accounts and the cross-account warning (Phase 3);
+- Out of scope: host dialogs for connecting accounts and their cross-account warning (Phase 3; the
+  tool shows the data flow now, FR-005);
   sign-in for authors' own services on verified domains, including paid ones (Phase 3, with
   repository connectors; the credential declaration already allows it); catalog connectors for
   local services and certificates accepted at first use (right after this feature); AI provider

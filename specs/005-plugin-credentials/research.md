@@ -5,13 +5,12 @@ documentation, read on 2026-10-24 (each claim the plan rests on checked again in
 `keyring-rs` comes from its published sources and a spike on Linux on 2026-10-24, outside the
 repository. The plan's first tasks repeat on the three systems the parts that matter.
 
-## R1. Signing in to GitHub
+## R1. GitHub: no account in this feature
 
-**Decision**: the catalog's GitHub connector uses a **GitHub App** (not a classic OAuth app),
-signed in with GitHub's **device flow**, with expiring user tokens (the default) refreshed by the
-host. The app asks for two repository permissions, Contents (read) and Metadata (read). The user
-picks the repositories by installing the app on them at GitHub, at the address the tool prints
-after sign-in.
+**Decision** (planning session): the catalog's GitHub connector stays 1.0.0, public data without
+an account. GitHub cannot sign in a client that keeps no secret except through its device flow,
+which the maintainer left out, so its account waits for a later feature, after the project
+registers its GitHub App (Phase 6) and decides how a public client signs in to GitHub.
 
 What GitHub documents:
 
@@ -28,67 +27,51 @@ What GitHub documents:
 | Statuses | A private repository the token cannot see answers 404; invalid credentials answer 401 first, then 403 for a while | [Troubleshooting](https://docs.github.com/en/rest/using-the-rest-api/troubleshooting-the-rest-api), [Authenticating](https://docs.github.com/en/rest/authentication/authenticating-to-the-rest-api) |
 | Rate limits | 60 requests per hour per address without a token; 5,000 per hour per user with one | [Rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api) |
 
-So the device flow is the only one a client without a secret completes end to end, refresh
-included, and FR-015's read-only, chosen-repositories access needs a GitHub App. Revocation needs
-the secret, so `accounts disconnect` deletes the credential and prints where to revoke the app at
-GitHub (FR-014). GitHub's credential revocation API (`POST /credentials/revoke`) takes tokens
-without a secret, but it exists to report leaked credentials, emails the owner and allows 60
-requests per hour per address; the host does not use it.
+So no flow under FR-009 completes against GitHub: the browser-redirect flow needs the secret
+at the code exchange (and at refresh), and the device flow, the one GitHub recommends for desktop
+apps, is what GitHub's best practices warn about: "an attacker can use the device flow to remotely
+impersonate your app as part of a phishing attack", since the client id is public and anyone can
+request a code under the app's name. When the GitHub account comes, FR-015's narrow access needs
+a GitHub App, not a classic OAuth app.
 
-**Accepted risk: device-code phishing.** GitHub's best practices warn that "an attacker can use
-the device flow to remotely impersonate your app as part of a phishing attack": the client id is
-public, so anyone can request a code under the app's name and ask a victim to enter it. The host
-cannot prevent that; it limits what such a token reaches (read-only, chosen repositories) and
-says, every time it shows a code, to enter only a code the tool itself just showed. The threat
-model and the author guide record the risk, and the registration of the project's own app
-(Phase 6) revisits it.
+**Alternatives considered**: the device flow, with a warning to enter only a code the tool showed
+(planned first, then removed by the maintainer); the browser-redirect flow with the project's
+secret in the binary, as GitHub's best practices suggest for public clients (the secret is then
+public, and GitHub Apps document no run-time loopback port, so the callback port would be fixed);
+a classic OAuth app (`repo` is full write access to every repository, against FR-015).
 
-**Alternatives considered**: a classic OAuth app (`repo` is full write access to every
-repository, against FR-015); the web flow with the secret shipped in the binary, as GitHub's best
-practices suggest for public clients (the secret is then public; nothing is gained over the device
-flow, and the constitution keeps no fake secret); `POST /credentials/revoke` on disconnect (above);
-non-expiring tokens (GitHub recommends expiry, and the refresh path is needed for other services
-anyway).
+## R2. The sign-in flow
 
-## R2. Two sign-in flows (planning session, clarification 1)
+**Decision**: the authorization code with PKCE (RFC 7636) on a loopback callback (RFC 8252), the
+one flow of FR-009; a connector's account declares `flow: authorization-code`, so a later flow
+adds a value without changing what this one means.
 
-**Decision**: the host implements both flows (FR-009); a connector's account declares which one it
-uses.
+- A loopback listener on `127.0.0.1`, port 0 (the system's choice), redirect address
+  `http://127.0.0.1:<port>/callback`; `state` and the verifier are 32 random bytes each, from
+  `ring::rand::SystemRandom` (already in the tree), sent base64url without padding; the challenge is
+  the S256 of the verifier (`sha2`, already in the tree).
+- The listener answers only `GET /callback`: the first such request ends the sign-in, whatever it
+  carries; any other path gets `404` and does not count. The page it returns is fixed text, never
+  anything from the request, with `Cache-Control: no-store`. The listener closes after that request
+  or at the time limit.
+- The code is exchanged with `client_id`, `code`, `redirect_uri` and `code_verifier`, never a
+  secret.
 
-- **Device code** (RFC 8628): `POST` the device address with `client_id` and the scopes; show the
-  user code and the verification address only in the tool's output; open the browser at the
-  verification address; poll the token address at the service's interval, adding 5 s on
-  `slow_down`; stop on `access_denied`, `expired_token`, the code's `expires_in` or the sign-in's
-  time limit. The verification address must be `https` on a host the connector reserves
-  (catalog) or declares (development), so a service cannot send the user elsewhere; the user code
-  must be 1–32 characters of `A–Z`, `0–9` and `-`, so it prints as itself.
-- **Authorization code with PKCE** (RFC 7636, RFC 8252): a loopback listener on `127.0.0.1`, port
-  0 (the system's choice), redirect address `http://127.0.0.1:<port>/callback`; `state` and the
-  verifier are 32 random bytes each, from `ring::rand::SystemRandom` (already in the tree), sent
-  base64url without padding; the challenge is the S256 of the verifier (`sha2`, already in the
-  tree). The listener answers only `GET /callback`: the first such request ends the sign-in,
-  whatever it carries; any other path gets `404` and does not count. The page it returns is fixed
-  text, never anything from the request, with `Cache-Control: no-store`. The listener closes after
-  that request or at the time limit. The code is exchanged with `client_id`, `code`,
-  `redirect_uri` and `code_verifier`, never a secret.
-
-Both flows end the same way: the token response is parsed (R10), the account's name is learned
-(R3), the account is compared with the one already connected (clarification 2 of the spec), and
-only then is anything written to the vault or the accounts record.
+The sign-in ends with the token response parsed (R10), the account's name learned (R3), the
+account compared with the one already connected (clarification 2 of the spec), and only then is
+anything written to the vault or the accounts record.
 
 The listener is the only socket the host opens that a peer connects to; it lives in
 `runtime/src/network/callback.rs`, and `std::net::TcpListener` joins the types `clippy.toml`
 forbids outside `runtime/src/network/` (R19). Request heads are read within 8 KiB and 2 s and
 parsed with `httparse`, already in the tree through `ureq-proto`.
 
-**Rationale**: GitHub needs the device flow; services that offer the redirect flow to public
-clients (the common case for RFC 8252 native apps), the authors' services of Phase 3 among them,
-need the other. Building both now, behind one account model, keeps the connector format stable.
+**Rationale**: the flow RFC 8252 recommends for native apps, which services that accept public
+clients offer, and the one authors' services of Phase 3 will use.
 
-**Alternatives considered**: device flow only (the maintainer chose both); an embedded web view
-(the user must see the real browser and its address bar, and Principle V keeps plugins out of
-host windows anyway); `localhost` as the redirect host (RFC 8252 §8.3 recommends the literal
-address).
+**Alternatives considered**: the device flow (R1); an embedded web view (the user must see the real
+browser and its address bar, and Principle V keeps plugins out of host windows anyway);
+`localhost` as the redirect host (RFC 8252 §8.3 recommends the literal address).
 
 ## R3. The credential declaration
 
@@ -110,13 +93,13 @@ refused them, now naming `credential` as the field to use.
 
 | Field | Rule |
 | --- | --- |
-| `flow` | `device` or `authorization-code` (R2) |
+| `flow` | `authorization-code` (R2) |
 | `client` | The name of the client registration the host uses (R4) |
-| `device`, `authorize`, `token`, `revoke` | Absolute `https` addresses without credentials or fragment; `device` with the device flow, `authorize` with the other, `token` always, `revoke` optional (RFC 7009). Each host is under a domain the connector reserves (catalog) or is the host of one of its destinations (development) |
-| `scopes` | 0–32 scope names sent at sign-in (GitHub Apps take none) |
+| `authorize`, `token`, `revoke` | Absolute `https` addresses without credentials or fragment; `revoke` optional (RFC 7009). Each host is under a domain the connector reserves (catalog) or is the host of one of its destinations (development) |
+| `scopes` | 0–32 scope names sent at sign-in |
 | `access` | 1–32 `{ "name", "level" }` items, `level` `read` or `write`: what the account lets the connector do, shown before approval and before sign-in; a catalog review checks it is the narrowest the service offers (FR-015) |
 | `identity` | `{ "operation", "name", "id" }`: a read operation of the connector, called by the host with the new credential, and JSON pointers to the account's name and stable id in its response |
-| `access_page` | Optional `https` address, on the same hosts as above, where the user chooses what the account reaches; `{app}` is replaced by the registration's app name (R4) |
+| `access_page` | Optional `https` address, on the same hosts as above, where the user chooses what the account reaches, printed after sign-in |
 | `revoke_page` | Optional `https` address where the user revokes the account by hand, printed when `revoke` is absent |
 
 The header and every value in it belong to the host: a connector that fixes the credential's
@@ -124,24 +107,24 @@ header, or a header named like it, is `invalid-connector` (FR-002); 003 already 
 `Authorization` among fixed headers. A key has no sign-in, no identity and no access beyond what
 the service gives it; `access` is then optional and shown when present.
 
-**Rationale**: one declaration covers GitHub, author services and keys; every address is
+**Rationale**: one declaration covers authors' services, keys and, later, GitHub; every address is
 checked against the same reservation rules as destinations, so a connector cannot send the token
 exchange, or the user, to a host nobody reviewed.
 
 **Alternatives considered**: OpenID Connect discovery (a request to a document the service
-controls decides the endpoints, after approval); scopes alone as the access (GitHub Apps have
-none; `access` is what the person reads).
+controls decides the endpoints, after approval); scopes alone as the access (some services have
+none, such as GitHub Apps; `access` is what the person reads).
 
 ## R4. Client registrations
 
-**Decision**: a client registration is `{ "client_id", "app" }`, never a secret. The host binary
-carries a built-in table from registration name to registration (empty in this feature: the
-project registers its GitHub App in Phase 6). In development, `accounts connect … --client <id>
-[--app <name>]` supplies one and the accounts record remembers it for that connector, so later
-refreshes use the same client. A plugin never supplies or sees one.
+**Decision**: a client registration is `{ "client_id" }`, never a secret. The host binary carries
+a built-in table from registration name to registration, empty in this feature (no catalog
+connector declares a credential yet). In development, `accounts connect … --client <id>` supplies
+one and the accounts record remembers it for that connector, so later refreshes use the same
+client. A plugin never supplies or sees one.
 
-**Rationale**: refresh must use the client the token came from; the developer's own GitHub App
-must not be written into the catalog, which every build ships.
+**Rationale**: refresh must use the client the token came from; a developer's own app must not be
+written into a connector file others may copy.
 
 ## R5. The vault
 
@@ -206,8 +189,9 @@ at connection and access the service reported, connected, refreshed and expiry t
 whether and why it needs connecting again. It also holds the vault id (R5).
 
 Refreshing takes the record's lock, re-reads the record and the vault, and refreshes only if no
-other process did meanwhile: GitHub rotates both tokens on every refresh, so two processes
-refreshing with one refresh token would leave one of them holding a dead token.
+other process did meanwhile: services that rotate refresh tokens (RFC 6749 §10.4, OAuth 2.1),
+GitHub among them, invalidate the old one on use, so two processes refreshing with one refresh
+token would leave one of them holding a dead token.
 
 ## R7. Account use in the manifest, and the login providers
 
@@ -291,11 +275,11 @@ to go for 1.1.0 types); a status function for the widget to ask whether an accou
   `account-not-connected`. The response of the `401` never reaches the widget.
 - A status listed in `subscription_required` answers `subscription-required`, without the
   response.
-- The host's own requests (device code, token, refresh, revocation, identity) go through the same
+- The host's own requests (token, refresh, revocation, identity) go through the same
   agents: HTTPS, public addresses only, Mozilla's roots, no proxy, no cookies; they follow no
   redirect at all. Bodies are form-encoded (`application/x-www-form-urlencoded`) with `Accept:
   application/json`; answers are parsed into typed structs within 64 KiB. They are logged with the
-  plugin `host`, the connector, an operation `sign-in`, `token`, `refresh`, `revoke` or
+  plugin `host`, the connector, an operation `token`, `refresh`, `revoke` or
   `identity`, and the status, never a body.
 
 **Rationale**: adding the header at the last moment, per hop, is what makes "only to its own
@@ -324,7 +308,7 @@ re-check (003 step 7):
 
 **Decision**: `accounts disconnect` deletes the vault entry first, then the record's account, then
 asks the service to revoke when it declares `revoke` (with `client_id` and the token), printing
-whether that succeeded, or prints `revoke_page`; GitHub declares only the page (R1). Each account
+whether that succeeded, or prints `revoke_page`. Each account
 gets an account id, 16 random bytes in hex, when a new account is connected; reconnecting the same
 account (same stable id from `identity`) keeps it. Kept data (003, R14) gains, for each connector
 the widget uses with an account, the account id it was fetched with; a load that finds another or
@@ -336,14 +320,12 @@ disconnected it. Connecting a different account, or a new key while one is store
 
 | Limit | Value |
 | --- | --- |
-| Sign-in time limit | Device flow: the code's `expires_in`, at most 15 min; redirect flow: 10 min |
-| Polling interval | The service's `interval`, at least 5 s; +5 s on each `slow_down` |
+| Sign-in time limit | 10 min |
 | Callback request head | 8 KiB, read within 2 s |
 | Sign-in and refresh responses | 64 KiB; each request within the call's time limit (5 s) |
 | Stored secret | 2,560 bytes (the JSON document) |
 | Key | 1–1,024 bytes, characters `!`–`~` only |
 | Account name and id shown | 100 characters, then cut |
-| User code | 1–32 characters of `A–Z`, `0–9`, `-` |
 | Vault operation | The call's time limit for widgets; 2 min for the tool |
 | Refresh margin | 60 s before expiry |
 | Refreshes per call | 1 |
@@ -351,7 +333,7 @@ disconnected it. Connecting a different account, or a new key while one is store
 ## R14. CLI
 
 **Decision** ([contracts/cli.md](contracts/cli.md)): `runtime accounts connect <connector-id>
-[--client <id>] [--app <name>]`, `runtime accounts list` and `runtime accounts disconnect
+[--client <id>]`, `runtime accounts list` and `runtime accounts disconnect
 <connector-id> [--origin <path>]`; `permissions` shows each connector's credential and the account
 connected; `requests` shows the account of each call and the host's own entries. A key is read
 from the terminal without echo through `rpassword` (only in the binary); the browser is opened
@@ -363,10 +345,10 @@ address on Windows), and the address is always printed too.
 **Decision**:
 
 - A **test sign-in service** in `tests/common/signin.rs`, on the HTTPS test servers of feature 003
-  (test CA, routes through the seam): device and token addresses, an authorization page that
-  redirects to the loopback callback, refresh, revocation and identity; scripted per test to
-  answer pending, slow down, deny, expire, rotate tokens, refuse, or echo the credential. It never
-  reaches GitHub.
+  (test CA, routes through the seam): an authorization page that redirects to the loopback
+  callback (or with a wrong state, a used code, an error, or late), token, refresh, revocation and
+  identity addresses; scripted per test to rotate tokens, refuse, answer another account, or echo
+  the credential. It never reaches a real service.
 - The **vault seam**: `Runtime::with_test_network` also takes a credential store, so library tests
   inject `keyring_core::mock::Store` (in-memory, errors injectable). The seam keeps 003's guard:
   only debug builds with `test-network`.
@@ -384,18 +366,22 @@ address on Windows), and the address is always printed too.
 - The browser is never opened in tests: the tool's `--no-browser` option (prints only) is used,
   and the test service plays the person.
 
-## R16. The catalog connector and the example
+## R16. The example
 
-**Decision**: `catalog/github` 1.1.0 ([draft](contracts/catalog-github.json)) adds the credential
-of R1 (`kind: account`, optional, destination `api`, `Authorization: Bearer`, device flow,
-registration `github`, `identity` through a new read `get-user` → `/login`, `/id`,
-`access_page` `https://github.com/apps/{app}/installations/new`, `revoke_page`
-`https://github.com/settings/apps/authorizations`) and changes nothing else, so widgets that do
-not use the account keep their operation digests. `github-releases` moves to contract 1.3.0
-(`account-widget`), declares `account: true` and calls `list-releases` through `accounts`; with no
-account it shows public releases as before, with one, private ones too. The fixture `net-probe`
-gains a mode that calls through `accounts` and returns every answer, and one that dumps what it
-can find in its environment, arguments and memory for `token-hunt`.
+**Decision**: a new example, `plugins/examples/private-notes` (contract 1.3.0, `account-widget`),
+with its development connector `local/notes` beside it: one read, `list-notes`, on
+`https://notes.test`, with an optional account (`authorization-code`, `Authorization: Bearer`,
+`access` "notes: read", `identity` through `get-me`). The widget declares `account: true`;
+without an account it shows the public notes, with one also the account's own. CI runs it end to
+end through the library with the test sign-in service on `notes.test` (routes and test CA of the
+seam), since a credential needs HTTPS and the development tool's loopback connectors are plain
+HTTP. `github-releases` stays a 1.1.0 widget, unchanged, and `catalog/github` stays 1.0.0. The
+fixture `net-probe` gains a mode that calls through `accounts` and returns every answer, and one
+that returns everything it can find in its environment, arguments and configuration, for
+`token-hunt`.
+
+**Rationale**: the example shows the whole path (declaration, approval, sign-in, calls, private
+data) without a real service, which no catalog connector offers in this feature.
 
 ## R17. Dependencies
 
@@ -409,7 +395,7 @@ can find in its environment, arguments and memory for `token-hunt`.
 | `memchr` 2 | runtime | The echo check (R10) | Yes | Unlicense OR MIT |
 | `httparse` 1 | runtime | The callback request (R2) | Yes | MIT OR Apache-2.0 |
 | `rpassword` 7 | runtime (binary only) | Reading a key without echo | No | Apache-2.0 |
-| `open` 5 | runtime (binary only) | Opening the system browser | Yes (workspace) | MIT |
+| `open` 5 | runtime (binary only) | Opening the system browser at the sign-in address | Yes (workspace) | MIT |
 
 Pins are exact for the vault crates, since they are security core. `rpassword` and `open` are used
 only by `src/bin/runtime.rs`. Each must pass `cargo deny` and `cargo audit` in CI; `memchr`'s
@@ -432,4 +418,5 @@ under 5 ms), the first vault read and a refresh, on the three systems through `b
   four vault crates and `libdbus-sys` under `Cargo.lock`, and asks that the `vendored` feature of
   `libdbus-sys` never be turned on (its C sources are AFL-2.1 or GPL-2.0).
 - The catalog's unit test (003, R20) also checks that every sign-in address and page of a catalog
-  credential is under the domains the connector reserves.
+  credential is under the domains the connector reserves; no catalog connector declares one in
+  this feature, so the test runs on catalog connectors added through the seam.

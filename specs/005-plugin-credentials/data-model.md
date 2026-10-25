@@ -53,9 +53,9 @@ or `subscription-required`.
 
 ## Client registration
 
-`{ "client_id": "<text, 1–100 visible characters>", "app": "<optional name, 1–100 of a–z, 0–9, ->" }`,
-from the host's built-in table (empty in this feature) or, in development, from `--client` and
-`--app`, remembered in the accounts record for the connector. Never a secret.
+`{ "client_id": "<text, 1–100 visible characters>" }`, from the host's built-in table (empty in
+this feature) or, in development, from `--client`, remembered in the accounts record for the
+connector. Never a secret.
 
 ## Vault entry
 
@@ -75,16 +75,16 @@ from the host's built-in table (empty in this feature) or, in development, from 
   "vault": "5f0c…(32 hex)",
   "accounts": [
     {
-      "connector": "catalog/github",
-      "origin": "catalog",
+      "connector": "local/notes",
+      "origin": "/home/ada/dashboard/plugins/examples/private-notes/connectors/notes.json",
       "kind": "account",
-      "flow": "device",
-      "client": { "client_id": "Iv23li…", "app": "dashboard-dev-ada", "from": "option" },
+      "flow": "authorization-code",
+      "client": { "client_id": "dashboard-dev", "from": "option" },
       "account_id": "9b1e…(32 hex)",
       "name": "ada",
       "service_id": "1234567",
-      "access_asked": [{ "name": "Contents", "level": "read" }, { "name": "Metadata", "level": "read" }],
-      "access_reported": [],
+      "access_asked": [{ "name": "notes", "level": "read" }],
+      "access_reported": ["notes:read"],
       "connected_at_ms": 1761400920000,
       "refreshed_at_ms": 1761400920000,
       "expires_at_ms": 1761429720000,
@@ -101,7 +101,7 @@ from the host's built-in table (empty in this feature) or, in development, from 
 | `account_id` | 16 random bytes, hex; new for a new account, kept when the same account reconnects |
 | `name`, `service_id` | From `identity`: the account's name (at most 100 characters) and stable id; for a key, `name` is `key` and `service_id` absent |
 | `access_asked` | The connector's `access` when the account was connected |
-| `access_reported` | The scopes the token response named, as given (empty for GitHub Apps) |
+| `access_reported` | The scopes the token response named, as given (empty when it names none) |
 | `expires_at_ms` | From `expires_in`; absent when the token does not expire |
 | `needs_connecting` | `null`, or `{ "reason": "refused" \| "refresh-failed" \| "missing-from-keychain" \| "less-access", "at_ms": … }` |
 
@@ -127,7 +127,7 @@ Version 3 (feature 004) plus, in each connector entry, only when the connector d
 "account": {
   "uses": true,
   "credential": "sha256:4d1a…",
-  "access": [{ "name": "Contents", "level": "read" }, { "name": "Metadata", "level": "read" }]
+  "access": [{ "name": "notes", "level": "read" }]
 }
 ```
 
@@ -145,7 +145,7 @@ Versions 1–3 are read as 4 without it and written back as 4. Load step 7 appli
 The document of features 003 and 004 gains, in each connector that declares a credential:
 
 ```json
-"account": { "uses": true, "credential": "sha256:4d1a…", "access": [{ "name": "Contents", "level": "read" }] }
+"account": { "uses": true, "credential": "sha256:4d1a…", "access": [{ "name": "notes", "level": "read" }] }
 ```
 
 Connectors without a credential, and widgets without one, keep the digests they had.
@@ -160,7 +160,7 @@ The file of 003 gains `accounts`: for each connector the widget uses with an acc
 
 The entry of 003 gains `account`: the account's name, `key`, or absent when the call carried no
 credential. The host's own requests are entries with `plugin: "host"`, the connector, `operation`
-one of `sign-in`, `token`, `refresh`, `revoke`, `identity`, the method, host and path (no query
+one of `token`, `refresh`, `revoke`, `identity`, the method, host and path (no query
 for `token`, `refresh` and `revoke`, whose bodies hold the secrets), the status or the failure,
 and no arguments.
 
@@ -199,16 +199,18 @@ Steps 1, 7, 7a, 12 and 12a only take away.
 
 ## Sign-in
 
-| Step | Device flow | Authorization code flow |
-| --- | --- | --- |
-| 1 | Load the connector; read its credential; get the client registration | Same |
-| 2 | — | Bind `127.0.0.1:0`; make `state`, verifier, challenge |
-| 3 | `POST device` (`client_id`, `scope`); check `verification_uri` and `user_code` (R2) | Open `authorize?response_type=code&client_id&redirect_uri&scope&state&code_challenge&code_challenge_method=S256` |
-| 4 | Print the code and the warning; open the verification address; poll `token` | Wait for `GET /callback`; check `state`; refuse `error` |
-| 5 | Token response: `access_token`, `token_type` `bearer`, optional `refresh_token`, `expires_in`, `scope` | `POST token` with `code`, `redirect_uri`, `code_verifier`; same response |
-| 6 | Call `identity` with the new credential; read name and id | Same |
-| 7 | Compare with the connected account (clarification 2); refuse another | Same |
-| 8 | Write the vault entry, then the record | Same |
+1. Load the connector; read its credential; get the client registration.
+2. Bind `127.0.0.1:0`; make `state`, the verifier and the challenge (R2).
+3. Open `authorize?response_type=code&client_id&redirect_uri&scope&state&code_challenge&code_challenge_method=S256`
+   in the system browser, and print it.
+4. Wait for `GET /callback`; check `state`; refuse `error`, a missing code, or a code already
+   exchanged.
+5. `POST token` with `grant_type=authorization_code`, `code`, `redirect_uri`, `client_id`,
+   `code_verifier`; the response holds `access_token`, `token_type` `bearer`, and optionally
+   `refresh_token`, `expires_in`, `scope`.
+6. Call `identity` with the new credential; read the account's name and id.
+7. Compare with the connected account (clarification 2); refuse another.
+8. Write the vault entry, then the record.
 
 Nothing is written before step 8; a failure at any step leaves the vault and the record as they
 were, and a token obtained before a refusal at step 7 is revoked when the connector declares
@@ -264,10 +266,6 @@ and the scan of R15 afterwards. Fixtures: `net-probe` (calls and dumps), `hostil
 | `forged-callback` | Callback with a wrong or missing state | Sign-in ends; nothing connected; earlier account kept |
 | `replayed-code` | Callback with a code already exchanged | Sign-in ends; nothing connected |
 | `late-callback` | Callback after the time limit | Listener closed; nothing connected |
-| `device-denied` | The test service answers `access_denied` | Nothing connected |
-| `device-expired` | `expired_token` | Nothing connected |
-| `device-slow-down` | `slow_down` twice | Polls at 5, then 10, then 15 s; never faster |
-| `foreign-verification-address` | Device response names a verification address on another host | `sign-in-failed`; nothing shown to open |
 | `another-account` | Sign-in returns another account's identity | `another-account-connected`; new token revoked or dropped; earlier account kept |
 | `widget-connect` | Widget tries every call while no account is connected | `account-not-connected`; no browser, no sign-in |
 | `revoked-token` | Test service answers 401 | One refresh; then `account-not-connected`; no further retries |

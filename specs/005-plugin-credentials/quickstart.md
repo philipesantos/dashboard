@@ -20,7 +20,7 @@ records follow [data-model.md](data-model.md).
 
 ```sh
 cargo test --workspace --locked              # unit, integration, CLI and hostile cases
-cargo test -p runtime --test hostile credentials   # only the 30 cases of FR-019
+cargo test -p runtime --test hostile credentials   # only the 26 cases of FR-019
 cargo test -p runtime --test vault           # the real keychain round trip
 ```
 
@@ -34,50 +34,35 @@ cargo test -p runtime --test contract_v1     # 1.3.0 only adds to 1.2.0
 cargo test -p runtime --test contract        # 1.0.0, 1.1.0 and 1.2.0 plugins on the 1.3.0 host
 ```
 
-## 3. A real GitHub account (manual, once per developer)
+## 3. The example end to end
 
-1. Register a GitHub App under your account (Settings → Developer settings → GitHub Apps → New):
-   any name and homepage; no callback address; webhook off; **Enable Device Flow** on; **Expire
-   user authorization tokens** on; repository permissions **Contents: Read-only** (Metadata is
-   read-only already); nothing else. Note its client id and its name in the address
-   (`https://github.com/apps/<name>`).
-2. Build the example and connect, with a temporary data directory and grant record as in
-   features 003 and 004:
+```sh
+cargo test -p runtime --test accounts private_notes
+```
 
-   ```sh
-   cargo xtask plugins
-   export D=$(mktemp -d)
-   alias rt="cargo run -q -p runtime --release -- "   # every rt command takes --grants $D/grants.json --data $D
-   rt accounts connect catalog/github --client <client id> --app <name>
-   ```
+Runs `private-notes` with its development connector `local/notes` against the test sign-in service
+on `https://notes.test` (test CA and routes of the seam): connect an account, approve, update,
+render, disconnect. Expected: the render shows the account's own notes after connecting and only
+the public ones after disconnecting; the request log has entries `as ada` and the host's `token`
+entry without a body; the scan finds no token in `$D`, the grant record or the output. There is
+no run against a real service in this feature: the catalog's GitHub connector gains its account
+later (research R1).
 
-   Enter the code the tool shows at `https://github.com/login/device`, approve, then open the
-   address printed after `choose the repositories it may read:` and install the app on one private
-   repository.
-3. Approve and run the example on that repository:
+## 4. What the tool shows, without a service
 
-   ```sh
-   rt permissions target/plugins/github-releases.wasm    # shows "this widget acts as the account: <you>"
-   rt approve target/plugins/github-releases.wasm --expect <digest>
-   rt update target/plugins/github-releases.wasm --config '{"owner":"<you>","repo":"<private repo>"}'
-   rt run target/plugins/github-releases.wasm
-   rt requests                                           # entries "as <you>"; no token anywhere
-   ```
+```sh
+cargo xtask plugins
+export D=$(mktemp -d)
+alias rt="cargo run -q -p runtime --release -- "   # every rt command takes --grants $D/grants.json --data $D
+rt permissions target/plugins/private-notes.wasm --connectors plugins/examples/private-notes/connectors
+rt accounts list
+rt check-connector plugins/hostile/connectors/plain-http-key.json
+```
 
-   Expected: the private repository's releases render; `runtime requests` shows the calls as your
-   account and the host's own `token` entry, with no body.
-4. Check that nothing leaked: `grep -r "ghu_" $D` finds nothing; `rt accounts list`
-   shows the account without any token.
-5. Disconnect:
-
-   ```sh
-   rt accounts disconnect catalog/github
-   rt update target/plugins/github-releases.wasm --config '…'
-   ```
-
-   Expected: the keychain entry is gone, the tool prints where to revoke the app at GitHub, the kept
-   data is discarded, and the private repository now answers 404 (public repositories still work
-   without an account). Revoke the app at `https://github.com/settings/apps/authorizations`.
+Expected: `permissions` shows the `credential:` lines of `local/notes`, `asks for: notes read
+(declared by the developer)` and `this widget acts as the account: none connected (calls go
+without one)`; `accounts list` prints `nothing connected`; the last command fails with
+`credential-needs-https`, since a credential never travels to a loopback address without HTTPS.
 
 ## 4. Numbers
 
