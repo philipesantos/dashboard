@@ -75,6 +75,9 @@ pub struct ConnectorRequest {
     /// As for permissions: required connectors are approved with the other required
     /// permissions; optional ones start off.
     pub required: bool,
+    /// The widget calls this connector as the account connected to it, through `accounts`
+    /// (`specs/005-plugin-credentials/data-model.md`, Manifest: `account`).
+    pub account: bool,
 }
 
 /// The `storage` permission's declaration (`specs/004-plugin-storage/data-model.md`, Manifest).
@@ -503,6 +506,7 @@ fn check_connectors(
             ));
         }
         connectors.push(ConnectorRequest {
+            account: false,
             id: entry.id,
             major,
             operations: entry.operations,
@@ -708,6 +712,7 @@ mod tests {
                 major: 0,
                 operations: vec!["forecast".to_owned(), "now".to_owned()],
                 required: false,
+                account: false,
             })
         );
         assert_eq!(
@@ -1180,16 +1185,47 @@ mod tests {
         assert_invalid_field("login_providers", set("login_providers", json!("github")));
     }
 
+    /// Obsolete since feature 005: accepted as before, never required, and it grants nothing
+    /// (`specs/005-plugin-credentials/data-model.md`, Manifest: `account`).
+    #[test]
+    fn login_providers_are_optional() {
+        let manifest = parse_with(|manifest| {
+            manifest
+                .as_object_mut()
+                .expect("an object")
+                .remove("login_providers");
+        })
+        .expect("valid without login_providers");
+        assert!(manifest.login_providers().is_empty());
+        assert_invalid_field("login_providers", set("login_providers", Value::Null));
+    }
+
+    #[test]
+    fn a_connector_declares_whether_it_uses_the_account() {
+        let manifest = parse_with(connectors(json!([
+            { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true },
+            { "id": "local/weather", "major": 1, "operations": ["now"], "required": false, "account": false },
+            github()
+        ])))
+        .unwrap();
+        assert!(manifest.connector("local/notes").unwrap().account);
+        assert!(!manifest.connector("local/weather").unwrap().account);
+        // Absent means false
+        assert!(!manifest.connector("catalog/github").unwrap().account);
+        for value in [json!("yes"), json!(1), Value::Null] {
+            assert_invalid_field(
+                "connectors[0].account",
+                connectors(json!([{
+                    "id": "local/notes", "major": 1, "operations": ["list-notes"],
+                    "required": true, "account": value
+                }])),
+            );
+        }
+    }
+
     #[test]
     fn every_field_is_required() {
-        for field in [
-            "manifest_version",
-            "id",
-            "version",
-            "author",
-            "permissions",
-            "login_providers",
-        ] {
+        for field in ["manifest_version", "id", "version", "author", "permissions"] {
             assert_invalid_field(field, |manifest| {
                 manifest.as_object_mut().expect("an object").remove(field);
             });
