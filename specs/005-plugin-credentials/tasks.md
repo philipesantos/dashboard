@@ -219,8 +219,8 @@ running and never see the new answers.
 
 ### Implementation for User Story 6
 
-- [ ] T055 [P] [US6] Update `docs/plugin-authors.md`: using a connector's account (`account: true`, calling through `accounts`, the snapshot at load), the answers `account-not-connected` and `subscription-required`, contract 1.3.0 and the `account-widget` worlds, `login_providers` obsolete; and `docs/connectors.md`: declaring a credential (every field of research R3), every destination HTTPS, the narrowest access, the bearer-token set, testing with a development client (`--client`)
-- [ ] T056 [P] [US6] Update `wit/README.md` (contract 1.3.0, `history/1.2.0`, `accounts`, why the answers are a new interface) and `connectors/README.md` (catalog review of a credential: access, addresses under `reserves`, the header)
+- [X] T055 [P] [US6] Update `docs/plugin-authors.md`: using a connector's account (`account: true`, calling through `accounts`, the snapshot at load), the answers `account-not-connected` and `subscription-required`, contract 1.3.0 and the `account-widget` worlds, `login_providers` obsolete; and `docs/connectors.md`: declaring a credential (every field of research R3), every destination HTTPS, the narrowest access, the bearer-token set, testing with a development client (`--client`)
+- [X] T056 [P] [US6] Update `wit/README.md` (contract 1.3.0, `history/1.2.0`, `accounts`, why the answers are a new interface) and `connectors/README.md` (catalog review of a credential: access, addresses under `reserves`, the header)
 
 **Checkpoint**: an author can declare and use a credential from the docs alone
 

@@ -4,20 +4,22 @@ A plugin is a WebAssembly component that renders one widget. It runs in a sandbo
 with no power at all: it gets a capability only when its manifest declares it and the user
 grants it. A plugin never touches the network: it reaches an external service only by calling
 the operations of a connector its manifest declares, and the host makes every request
-itself. It keeps data only in a store of its own, which the host binds to it. This guide covers
-what a plugin needs today; accounts arrive in a later feature.
+itself. It keeps data only in a store of its own, which the host binds to it. When a connector
+needs an account or a key, the host adds it to the requests itself: a plugin never sees a
+credential.
 
 Start from [`plugins/examples/hello-widget`](../plugins/examples/hello-widget), a Rust plugin
 that only renders, from [`plugins/examples/github-releases`](../plugins/examples/github-releases),
 one that fetches data through a connector, or from
 [`plugins/examples/update-counter`](../plugins/examples/update-counter), one that keeps its own
-data. [`docs/connectors.md`](connectors.md) explains how
-to write a connector.
+data, or from [`plugins/examples/private-notes`](../plugins/examples/private-notes), one that
+reads as the user's account. [`docs/connectors.md`](connectors.md) explains how to write a
+connector.
 
 ## The contract
 
 The contract is the WIT interface between the host and a plugin. Build against
-[`wit/v1`](../wit/v1/widget.wit) (`dashboard:widget@1.2.0`), from one of its four worlds:
+[`wit/v1`](../wit/v1/widget.wit) (`dashboard:widget@1.3.0`), from one of its six worlds:
 
 - **`widget`**, a widget that only renders. It exports `renderer`, with
   `render(config: string) -> result<string, string>`: it receives its configuration as JSON
@@ -30,6 +32,9 @@ The contract is the WIT interface between the host and a plugin. Build against
   `updater`, and may import `log` and `storage`: `update` writes its store, and `render` reads
   it (see [Storage](#storage)).
 - **`connected-stored-widget`**, both: it may import `log`, `connectors` and `storage`.
+- **`account-widget`**, a widget that reads as the user's account: it may import `log`,
+  `connectors` and `accounts` (see [Using a connector's account](#using-a-connectors-account)).
+- **`account-stored-widget`**, the same with `storage`.
 
 Every capability function returns `result<T, E>`, and the first case of `E` is `not-granted`.
 That is the answer when the capability is an optional permission the user has not turned on
@@ -37,11 +42,14 @@ That is the answer when the capability is an optional permission the user has no
 missing, inside its own widget.
 
 Each minor version of v1 only adds: 1.1.0 holds everything of 1.0.0 unchanged, plus connectors
-and `updater`, and 1.2.0 everything of 1.1.0, plus `storage`. The host runs a plugin built for
-any v1 minor up to its own, so a plugin built against 1.0.0
-([`wit/history/1.0.0`](../wit/history/1.0.0/widget.wit)) or 1.1.0
-([`wit/history/1.1.0`](../wit/history/1.1.0/widget.wit)) keeps running, as `hello-widget` and
-`github-releases` do. A plugin built against a newer version than the host runs is refused
+and `updater`; 1.2.0 everything of 1.1.0, plus `storage`; and 1.3.0 everything of 1.2.0, plus
+`accounts`. The host runs a plugin built for any v1 minor up to its own, so a plugin built
+against 1.0.0 ([`wit/history/1.0.0`](../wit/history/1.0.0/widget.wit)), 1.1.0
+([`wit/history/1.1.0`](../wit/history/1.1.0/widget.wit)) or 1.2.0
+([`wit/history/1.2.0`](../wit/history/1.2.0/widget.wit)) keeps running, as `hello-widget`,
+`github-releases` and `update-counter` do. Such a plugin never gets an answer its contract does
+not have: it calls a connector whose credential is optional without the credential, and one
+whose credential is required cannot be declared before 1.3.0. A plugin built against a newer version than the host runs is refused
 (`contract-mismatch`, naming both versions), because it may use what the host does not have.
 Every contract name a component uses must carry the one version it was built for.
 
@@ -65,7 +73,6 @@ it and your editor checks the file as you type.
   "permissions": [
     { "name": "log", "required": true }
   ],
-  "login_providers": [],
   "connectors": [
     { "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true }
   ]
@@ -80,8 +87,8 @@ it and your editor checks the file as you type.
 | `version` | [SemVer 2.0.0](https://semver.org), at most 64 characters |
 | `author` | 1 to 100 characters, no control characters |
 | `permissions` | At most 32 entries of `{ "name": …, "required": true \| false }`; `storage` also takes `quota_bytes` (see [Storage](#storage)) |
-| `login_providers` | Accounts the plugin would ask the user to connect: `github`. Shown now; connecting accounts arrives later |
-| `connectors` | Optional, at most 16: each connector the widget calls, its major version, the operations it calls, and whether it is required (see [Connected widgets](#connected-widgets)) |
+| `login_providers` | Obsolete: the accounts a widget uses come from its connectors. A manifest that still carries it stays valid, and it grants nothing |
+| `connectors` | Optional, at most 16: each connector the widget calls, its major version, the operations it calls, whether it is required, and whether it uses the connector's account (see [Connected widgets](#connected-widgets)) |
 
 Any other field, the same field twice, a manifest over 16 KiB, or anything the schema refuses
 is `invalid-manifest`, and the error names the field. A permission the host does not know is
@@ -148,6 +155,8 @@ A widget that shows external data declares, in its manifest, each connector it c
   refused before anything is sent.
 - `required`: as for permissions. A required connector is approved with the widget; an optional
   one starts off.
+- `account`: optional, `true` when your widget calls the connector as the user's account (see
+  [Using a connector's account](#using-a-connectors-account)).
 
 Each connector is a permission of its own. A widget that declares one is built for contract
 1.1.0 (`contract-too-old` otherwise) and exports `updater` (`missing-updater` otherwise). It
@@ -208,6 +217,57 @@ Every call your widget makes, allowed or refused, lands in the host's request lo
 connector, the operation, the destination, the values sent and the outcome. Your widget can
 neither read nor change it, and the user can read every line. Past 20 calls in one run, calls
 are refused and counted in one summary entry.
+
+## Using a connector's account
+
+Some connectors declare a credential: an account the user signs in to, or a key the user types
+(see [`docs/connectors.md`](connectors.md#credentials)). The account belongs to the connector,
+not to your widget: the user connects it once, in the host's controls, and every widget approved
+to use it acts as that one account. Your widget can neither connect, reconnect nor disconnect
+an account, nor open a browser, nor learn the credential: the host adds it to each request
+itself, only to the destinations the connector names, over HTTPS.
+
+To read as the account, set `"account": true` on the connector in your manifest and call it
+through `accounts` instead of `connectors`, from the `account-widget` or
+`account-stored-widget` world. A widget that does so is built for contract 1.3.0
+(`contract-too-old` otherwise); `account: true` on a connector without a credential is
+`invalid-manifest`, and a connector whose credential is required must be declared with it
+(`account-use-not-declared` otherwise). The user sees, before approving, what the account lets
+the connector do and that your widget acts as it.
+
+```json
+"connectors": [
+  { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }
+]
+```
+
+`accounts.call` takes the same arguments as `connectors.call` and answers the same way, with two
+more answers:
+
+- `err(account-not-connected)`: no account is connected and the credential is required, or the
+  account must be connected again (the service refused it, it could not be refreshed, or the
+  connector now asks for more access than it holds). Nothing reached your widget. Show your
+  user that the account needs connecting, in your own words; only they can do it.
+- `err(subscription-required)`: the service answered that the account lacks a paid plan this
+  operation needs. The response was dropped.
+
+When the credential is optional and no account is connected, the call goes without one, and the
+service answers as it does for anyone. A response that carries the credential back is
+`failed(invalid-response)`, and your widget gets nothing of it.
+
+Which account your widget acts as is fixed when the host loads it: an account connected while
+it runs applies from the next load, and one disconnected while it runs stops at the next call.
+The data the host kept from an update made as an account is discarded when that account is
+disconnected, or replaced by another one.
+
+A connector your manifest declares with `account: true` answers only through `accounts`, and one
+without only through `connectors`; the other way, the call is `not-granted`. A widget whose
+connectors all use their account still imports `connectors` for the types `accounts` shares;
+it never calls it.
+
+A new version of your widget that starts using an account, or of a connector that adds a
+credential, changes it, or asks for more access, needs a new approval (`needs-new-approval`,
+naming the change). One that asks for less, or that stops using the account, does not.
 
 ## Storage
 
@@ -274,7 +334,8 @@ could not do it: `damaged`, `busy`, `unavailable`, `over-limit` when the file re
 limit or the disk is full, `run-aborted`), each with a detail for you.
 
 The store is not encrypted, and it is not for secrets: your plugin never receives a password or
-a token to keep (constitution Principle IV), and accounts arrive with the host's own vault.
+a token to keep (constitution Principle IV): accounts and keys live in the host's own vault, in
+the system's keychain (see [Using a connector's account](#using-a-connectors-account)).
 
 ## Building and packing
 
@@ -297,8 +358,10 @@ module or component, is `manifest-mismatch`.
 ## Approving and running in development
 
 There is no app yet: the `runtime` command-line tool stands in for the host. See its contracts
-for [permissions](../specs/002-plugin-permissions/contracts/cli.md) and
-[connectors](../specs/003-plugin-connectors/contracts/cli.md) for every command.
+for [permissions](../specs/002-plugin-permissions/contracts/cli.md),
+[connectors](../specs/003-plugin-connectors/contracts/cli.md),
+[storage](../specs/004-plugin-storage/contracts/cli.md) and
+[accounts](../specs/005-plugin-credentials/contracts/cli.md) for every command.
 
 ```bash
 rt() { cargo run -q -p runtime --release -- "$@"; }
@@ -320,6 +383,18 @@ rt update target/plugins/github-releases.wasm --config '{"owner":"rust-lang","re
 rt run target/plugins/github-releases.wasm --config '{"owner":"rust-lang","repo":"rust"}'
 rt requests                                          # the request log
 rt optional target/plugins/github-releases.wasm catalog/github off   # an optional connector
+```
+
+For a widget that uses an account, `permissions` also shows each connector's credential: what
+it is, the header and destinations it goes to, the sign-in and token addresses, what the
+account lets the connector do, and which account the widget acts as. `accounts` connects one to
+a development vault in your system's keychain, which installed plugins never use; the account
+and the request log name the account, never the credential:
+
+```bash
+rt accounts connect local/notes --client <id>   # signs in in your browser; a key is typed, not shown
+rt accounts list                                # what is connected, and what needs connecting again
+rt accounts disconnect local/notes              # deletes it from the keychain and revokes it
 ```
 
 For a widget with storage, `permissions` shows the quota it declares, the quota last approved
