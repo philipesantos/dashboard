@@ -793,3 +793,168 @@ mod storage {
         assert_eq!(first_answer(&content), json!({ "ok": { "hex": "62" } }));
     }
 }
+
+// Accounts (specs/005-plugin-credentials/, User Story 5): which changes of a widget or its
+// connector's credential need a new approval, and kept data read as an account.
+
+use common::servers::TestPki;
+use common::signin::SignInService;
+use runtime::accounts::Connected;
+
+/// The development connector of `private-notes`, as shipped beside it.
+const NOTES: &str = include_str!("../../plugins/examples/private-notes/connectors/notes.json");
+
+/// The test sign-in service, and a development runtime that reaches it with `local/notes` and
+/// `local/anchor`, a copy of it, among its local connectors.
+fn signed() -> (SignInService, common::World) {
+    let pki = TestPki::new();
+    let service = SignInService::start(&pki);
+    let world = common::World::seam(
+        runtime::TestNetwork {
+            routes: vec![service.route()],
+            public_for_tests: vec![service.server.address()],
+            root: pki.root(),
+            catalog: Vec::new(),
+        },
+        true,
+    );
+    let notes: serde_json::Value = serde_json::from_str(NOTES).unwrap();
+    world.write_connector("notes", &notes);
+    let mut anchor = notes;
+    anchor["id"] = json!("local/anchor");
+    world.write_connector("anchor", &anchor);
+    (service, world)
+}
+
+fn connect(service: &SignInService, world: &common::World) -> runtime::accounts::Account {
+    match world
+        .runtime
+        .connect_account("local/notes", Some("dashboard-dev"), &service.browser())
+        .unwrap_or_else(|error| panic!("signing in: {error}"))
+    {
+        Connected::New(account) | Connected::Again(account) => account,
+    }
+}
+
+/// `account-probe` as `local/use-probe`, using `local/notes` with its account as `account` says,
+/// and `local/anchor` with its account, so its import of `accounts` is always declared.
+fn use_probe(account: bool) -> Vec<u8> {
+    let manifest = json!({
+        "manifest_version": 1, "id": "local/use-probe", "version": "0.1.0", "author": "A",
+        "permissions": [],
+        "connectors": [
+            { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": account },
+            { "id": "local/anchor", "major": 1, "operations": ["list-notes"], "required": true, "account": true }
+        ]
+    });
+    common::repack(&fixture("account-probe"), &manifest.to_string())
+}
+
+/// The probe's approval, as the record holds it.
+fn entry(world: &common::World) -> String {
+    let id = runtime::manifest::PluginId::parse("local/use-probe").unwrap();
+    format!("{:?}", world.grants.entry(&id).unwrap())
+}
+
+#[test]
+fn narrowed_access_and_stopping_to_use_the_account_need_no_new_approval() {
+    let (service, world) = signed();
+    let mut notes: serde_json::Value = serde_json::from_str(NOTES).unwrap();
+    notes["credential"]["account"]["access"] =
+        json!([{ "name": "notes", "level": "write" }, { "name": "tags", "level": "read" }]);
+    world.write_connector("notes", &notes);
+    connect(&service, &world);
+    world.approve(&use_probe(true));
+    let approved = entry(&world);
+
+    // Narrowed: one item gone, the other lowered from write to read
+    notes["credential"]["account"]["access"] = json!([{ "name": "notes", "level": "read" }]);
+    world.write_connector("notes", &notes);
+    let report = world.load(&use_probe(true)).update(
+        &json!({ "calls": [{ "via": "accounts", "connector": "local/notes", "operation": "list-notes" }] })
+            .to_string(),
+    );
+    assert!(
+        common::answers(report.result.as_ref().unwrap())[0]
+            .get("ok")
+            .is_some(),
+        "{report:?}"
+    );
+    // Stopping to use the account
+    world.load(&use_probe(false));
+    assert_eq!(entry(&world), approved, "the approval is left as it is");
+}
+
+#[test]
+fn a_widget_version_that_starts_using_the_account_is_refused_until_approved() {
+    let (service, world) = signed();
+    connect(&service, &world);
+    world.approve_and_load(&use_probe(false));
+    let error = world
+        .try_load_at(&use_probe(true), TEST_ORIGIN)
+        .err()
+        .expect("account use is approved first");
+    assert_eq!(error.kind(), ErrorKind::NeedsNewApproval, "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("account use newly declared: local/notes"),
+        "{error}"
+    );
+    assert!(service.requests_to("/notes").is_empty());
+    world.approve_and_load(&use_probe(true));
+}
+
+/// What `private-notes` renders from its kept data: its notes' titles, or nothing.
+fn rendered(plugin: &Plugin) -> serde_json::Value {
+    plugin.render("{}").result.unwrap()
+}
+
+/// `kept_data_account`: reconnecting the same account keeps the data read as it; disconnecting
+/// discards it at once, and data read as an account that is no longer the one connected is
+/// discarded at the next load.
+#[test]
+fn kept_data_account() {
+    let (service, world) = signed();
+    let first = connect(&service, &world);
+    let package = fixture("private-notes");
+    let plugin = world.approve_and_load(&package);
+    assert!(plugin.update("{}").result.is_ok());
+    let shown = rendered(&plugin);
+    assert_ne!(shown["text"], json!("No notes yet"), "{shown}");
+
+    // The same account again: kept
+    let again = connect(&service, &world);
+    assert_eq!(again.account_id, first.account_id);
+    assert_eq!(rendered(&world.load(&package)), shown);
+
+    // Disconnected: gone at once
+    let kept_dir = world.data.path().join("widget-data");
+    let kept_file = std::fs::read_dir(&kept_dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let kept_bytes = std::fs::read(&kept_file).unwrap();
+    let gone = world
+        .runtime
+        .disconnect_account("local/notes", None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(gone.kept_discarded, ["local/private-notes"]);
+    assert!(!kept_file.exists());
+    assert_eq!(rendered(&plugin)["text"], json!("No notes yet"));
+
+    // Another account connected after the disconnect, and the old data back, as a process that
+    // stopped before deleting it would leave it: discarded at the next load
+    service.script(|script| script.other_account = Some(("7654321".to_owned(), "bob".to_owned())));
+    let other = connect(&service, &world);
+    assert_ne!(other.account_id, first.account_id);
+    std::fs::write(&kept_file, &kept_bytes).unwrap();
+    assert_eq!(
+        rendered(&world.load(&package))["text"],
+        json!("No notes yet")
+    );
+    assert!(!kept_file.exists());
+}

@@ -194,11 +194,11 @@ load.
 ### Tests for User Story 5
 
 - [X] T049 [US5] Add to `runtime/tests/hostile/credentials.rs` the cases `credential-added-update` and `access-widened-update` (`needs-new-approval`; once approved, `account-not-connected` with reason `less-access` until connected again), `disconnect-mid-run` (in-flight response dropped; later requests without the header or `account-not-connected`) and `connect-mid-run` (the run keeps going without the credential; the next load uses the account), with the account changed from another process, as feature 004's mid-run cases do
-- [ ] T050 [P] [US5] Write in `runtime/tests/permissions.rs`: narrowed access and stopping to use the account run without a new approval, with the approval unchanged; a widget version that starts using the account is refused until approved; `kept_data_account` (reconnecting the same account keeps kept data; disconnecting, or connecting another account after a disconnect, discards it, at once and at the next load)
+- [X] T050 [P] [US5] Write in `runtime/tests/permissions.rs`: narrowed access and stopping to use the account run without a new approval, with the approval unchanged; a widget version that starts using the account is refused until approved; `kept_data_account` (reconnecting the same account keeps kept data; disconnecting, or connecting another account after a disconnect, discards it, at once and at the next load)
 
 ### Implementation for User Story 5
 
-- [ ] T051 [US5] Fix whatever T049–T050 find in `runtime/src/grants.rs`, `runtime/src/calls.rs`, `runtime/src/kept.rs` or `runtime/src/lib.rs`
+- [X] T051 [US5] Fix whatever T049–T050 find in `runtime/src/grants.rs`, `runtime/src/calls.rs`, `runtime/src/kept.rs` or `runtime/src/lib.rs`
 
 **Checkpoint**: User Story 5 is complete
 
