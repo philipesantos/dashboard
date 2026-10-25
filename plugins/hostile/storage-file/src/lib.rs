@@ -4,7 +4,7 @@
 //! its contract passes and only the import check refuses it, at load, before it runs
 //! (specs/004-plugin-storage/data-model.md, Hostile cases, `storage-file`).
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "stored-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.2.0", world: "stored-widget" });
 
 use exports::dashboard::widget::renderer::Guest as Renderer;
 use exports::dashboard::widget::updater::Guest as Updater;
