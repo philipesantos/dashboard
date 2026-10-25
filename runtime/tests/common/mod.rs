@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod servers;
+pub mod signin;
 
 use std::path::PathBuf;
 use std::sync::Arc;
