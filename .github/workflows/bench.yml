@@ -6,8 +6,10 @@ name: Bench
 # each job; specs/001-plugin-runtime/performance.md records the load and render times,
 # specs/002-plugin-permissions/performance.md the permission checks (checks_us, relink_us), and
 # specs/003-plugin-connectors/performance.md the connector checks and the render of a connected
-# widget from kept data (render_with_data_us), and specs/004-plugin-storage/performance.md what
-# storage costs and the files stores take (storage_cost). Nothing reaches the network.
+# widget from kept data (render_with_data_us), specs/004-plugin-storage/performance.md what
+# storage costs and the files stores take (storage_cost), and
+# specs/005-plugin-credentials/performance.md what a credential adds to a request and the
+# keychain's reads (credential_cost). Nothing reaches the network.
 #
 # Two ways to run it: from the Actions tab once the workflow is on master, or by adding the
 # "bench" label to a pull request, which also works before the workflow reaches master.
@@ -100,6 +102,18 @@ jobs:
       - name: Storage costs
         run: cargo run -p dashboard-bench --release --locked --bin storage_cost | tee storage.txt
 
+      # What a credential adds to a request, and reads of the system's keychain; on Linux in a
+      # session bus of its own with GNOME Keyring unlocked, as CI's tests run
+      # (specs/005-plugin-credentials/research.md, R18)
+      - name: Credential costs
+        run: |
+          bench='cargo run -p dashboard-bench --release --locked --bin credential_cost'
+          if [ "$RUNNER_OS" = Linux ]; then
+            dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'bench' && $bench" | tee credential.txt
+          else
+            $bench | tee credential.txt
+          fi
+
       # Compiling runs outside every per-call limit (docs/threat-model.md)
       - name: Load packages near the size cap
         run: |
@@ -122,9 +136,12 @@ jobs:
             cat connected.txt compile.txt
             echo 'storage (store-probe):'
             cat storage.txt
+            echo 'credentials:'
+            cat credential.txt
             echo '```'
             echo 'Recorded in specs/001-plugin-runtime/performance.md (load, render, compile),'
-            echo 'specs/002-plugin-permissions/performance.md (checks_us, relink_us) and'
+            echo 'specs/002-plugin-permissions/performance.md (checks_us, relink_us),'
             echo 'specs/003-plugin-connectors/performance.md (checks_us and render_with_data_us of'
-            echo 'github-releases) and specs/004-plugin-storage/performance.md (storage_cost).'
+            echo 'github-releases), specs/004-plugin-storage/performance.md (storage_cost) and'
+            echo 'specs/005-plugin-credentials/performance.md (credential_cost).'
           } >> "$GITHUB_STEP_SUMMARY"

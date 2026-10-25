@@ -21,6 +21,8 @@ mod host;
 mod kept;
 mod limits;
 pub mod manifest;
+#[doc(hidden)]
+pub mod measure;
 mod network;
 pub mod package;
 mod permissions;

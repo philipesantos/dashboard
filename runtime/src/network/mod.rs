@@ -165,6 +165,30 @@ impl std::fmt::Debug for RequestCredential {
     }
 }
 
+/// The request of one hop, as sent: its method, address, headers and body, and the credential
+/// only for the origins it is for, over HTTPS, marked sensitive (research R10).
+pub(crate) fn http_request(request: &Request) -> Result<http::Request<Vec<u8>>, Failure> {
+    let mut builder = http::Request::builder()
+        .method(request.method.as_str())
+        .uri(request.url.as_str());
+    for (name, value) in &request.headers {
+        builder = builder.header(name, value);
+    }
+    if let Some(credential) = request
+        .credential
+        .as_ref()
+        .filter(|credential| credential.applies_to(&request.url))
+    {
+        let mut value = http::HeaderValue::from_str(credential.value.expose())
+            .map_err(|_| Failure::new(FailureRule::Unavailable, NOT_A_BEARER_TOKEN))?;
+        value.set_sensitive(true);
+        builder = builder.header(credential.header.as_str(), value);
+    }
+    builder
+        .body(request.body.clone().unwrap_or_default())
+        .map_err(|error| Failure::new(FailureRule::Unavailable, format!("{error}")))
+}
+
 /// Why a credential cannot be sent at all.
 pub(crate) const NOT_A_BEARER_TOKEN: &str =
     "the credential holds characters outside letters, digits and -._~+/=";
@@ -615,27 +639,7 @@ impl Session {
             &self.loopback
         };
         *self.refused.lock().unwrap_or_else(PoisonError::into_inner) = None;
-        let mut builder = http::Request::builder()
-            .method(request.method.as_str())
-            .uri(request.url.as_str());
-        for (name, value) in &request.headers {
-            builder = builder.header(name, value);
-        }
-        // The credential: only now, only for the origins it is for, over HTTPS (research R10)
-        if let Some(credential) = request
-            .credential
-            .as_ref()
-            .filter(|credential| credential.applies_to(&request.url))
-        {
-            let mut value = http::HeaderValue::from_str(credential.value.expose())
-                .map_err(|_| Failure::new(FailureRule::Unavailable, NOT_A_BEARER_TOKEN))?;
-            value.set_sensitive(true);
-            builder = builder.header(credential.header.as_str(), value);
-        }
-        let body = request.body.clone().unwrap_or_default();
-        let http_request = builder
-            .body(body)
-            .map_err(|error| Failure::new(FailureRule::Unavailable, format!("{error}")))?;
+        let http_request = http_request(request)?;
         let http_request = agent
             .configure_request(http_request)
             .timeout_global(Some(timeout))
