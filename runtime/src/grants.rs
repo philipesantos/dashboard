@@ -14,19 +14,18 @@
 //! showed, so a later version that declares more needs the user again.
 
 use std::collections::BTreeMap;
-use std::ffi::OsString;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::fs::{self, File};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
 
 use crate::error::{ErrorKind, RuntimeError};
 use crate::manifest::{Manifest, PluginId};
 use crate::permissions;
+use crate::records;
 
 /// The record format this host writes. It also reads versions 1 and 2, as version 3 with no
 /// connectors (version 1) and no storage quota, and writes them back as version 3.
@@ -894,26 +893,13 @@ fn approved_entry<'a>(
 /// Takes the record's lock file, `<record>.lock`: shared to read, exclusive to change. The lock
 /// is released when the returned file is dropped.
 fn lock(path: &Path, exclusive: bool) -> Result<File, RuntimeError> {
-    let mut lock_path = OsString::from(path.as_os_str());
-    lock_path.push(".lock");
-    let lock_path = PathBuf::from(lock_path);
-    if exclusive && let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|error| unwritable(path, error))?;
-    }
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&lock_path)
-        .map_err(|error| damaged(&lock_path, error))?;
-    let locked = if exclusive {
-        file.lock()
-    } else {
-        file.lock_shared()
-    };
-    locked.map_err(|error| damaged(&lock_path, error))?;
-    Ok(file)
+    records::lock(path, exclusive).map_err(|(at, error)| {
+        if at == path {
+            unwritable(path, error)
+        } else {
+            damaged(&at, error)
+        }
+    })
 }
 
 /// Reads the record at `path`, under a lock the caller holds.
@@ -928,18 +914,9 @@ fn load(path: &Path) -> Result<GrantRecord, RuntimeError> {
 /// Writes the record beside `path`, syncs it, then renames it over `path`, so a crash leaves
 /// either the old record or the new one, never part of each.
 fn write(path: &Path, record: &GrantRecord) -> Result<(), RuntimeError> {
-    let dir = path.parent().unwrap_or(Path::new(""));
-    let mut temporary = NamedTempFile::new_in(dir).map_err(|error| unwritable(path, error))?;
     let mut json = serde_json::to_vec_pretty(record).expect("a grant record always serializes");
     json.push(b'\n');
-    temporary
-        .write_all(&json)
-        .and_then(|()| temporary.as_file().sync_all())
-        .map_err(|error| unwritable(path, error))?;
-    temporary
-        .persist(path)
-        .map_err(|error| unwritable(path, error.error))?;
-    Ok(())
+    records::write_atomic(path, &json).map_err(|error| unwritable(path, error))
 }
 
 /// A record that cannot be used grants nothing, and is never written over (research R4).

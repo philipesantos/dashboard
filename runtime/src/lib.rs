@@ -24,6 +24,7 @@ pub mod manifest;
 mod network;
 pub mod package;
 mod permissions;
+mod records;
 pub mod requests;
 mod signin;
 pub mod storage;

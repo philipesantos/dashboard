@@ -6,12 +6,15 @@
 //! entries named by the record's vault id; changing the record and the vault together happens
 //! under the record's lock, so no other process sees one without the other.
 
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::connector::Access;
-use crate::error::RuntimeError;
+use crate::error::{ErrorKind, RuntimeError};
+use crate::records;
 
 /// The version of the accounts record this host writes.
 pub const RECORD_VERSION: u64 = 1;
@@ -136,17 +139,27 @@ impl AccountStore {
 
     /// The vault id of this record, created with the record the first time it is asked for.
     pub fn vault_id(&self) -> Result<String, RuntimeError> {
-        todo!("T019")
+        if let Some(record) = self.read()? {
+            return Ok(record.vault);
+        }
+        self.change(|record| Ok((record.vault.clone(), true)))
     }
 
     /// The account connected to `connector` from `origin`, if any.
     pub fn get(&self, connector: &str, origin: &str) -> Result<Option<Account>, RuntimeError> {
-        todo!("T019: {connector} {origin}")
+        Ok(self.read()?.and_then(|record| {
+            record
+                .accounts
+                .into_iter()
+                .find(|account| account.connector == connector && account.origin == origin)
+        }))
     }
 
     /// Every account, sorted by connector id and origin.
     pub fn list(&self) -> Result<Vec<Account>, RuntimeError> {
-        todo!("T019")
+        let mut accounts = self.read()?.map(|record| record.accounts).unwrap_or_default();
+        accounts.sort_by(|a, b| (&a.connector, &a.origin).cmp(&(&b.connector, &b.origin)));
+        Ok(accounts)
     }
 
     /// Connects `new` under the record's lock: the same account (same `service_id`) keeps its
@@ -159,8 +172,62 @@ impl AccountStore {
         new: NewAccount,
         write_vault: impl FnOnce(&Account) -> Result<(), RuntimeError>,
     ) -> Result<Connected, RuntimeError> {
-        drop(write_vault);
-        todo!("T019: {new:?}")
+        self.change(|record| {
+            let position = record
+                .accounts
+                .iter()
+                .position(|account| account.connector == new.connector && account.origin == new.origin);
+            let current = position.map(|index| record.accounts[index].clone());
+            let same = |current: &Account| {
+                current.kind == AccountKind::Account
+                    && new.kind == AccountKind::Account
+                    && current.service_id.is_some()
+                    && current.service_id == new.service_id
+            };
+            let account_id = match &current {
+                Some(current) if same(current) => current.account_id.clone(),
+                Some(current) => {
+                    return Err(RuntimeError::new(
+                        ErrorKind::AnotherAccountConnected,
+                        format!(
+                            "{} already has {} connected; disconnect it first (runtime accounts disconnect {})",
+                            new.connector,
+                            describe(current),
+                            new.connector
+                        ),
+                    ));
+                }
+                None => random_hex()?,
+            };
+            let account = Account {
+                connector: new.connector,
+                origin: new.origin,
+                kind: new.kind,
+                flow: new.flow,
+                client: new.client,
+                account_id,
+                name: new.name.chars().take(MAX_NAME_CHARS).collect(),
+                service_id: new.service_id,
+                access_asked: new.access_asked,
+                access_reported: new.access_reported,
+                connected_at_ms: new.now_ms,
+                refreshed_at_ms: new.now_ms,
+                expires_at_ms: new.expires_at_ms,
+                needs_connecting: None,
+            };
+            write_vault(&account)?;
+            let connected = match position {
+                Some(index) => {
+                    record.accounts[index] = account.clone();
+                    Connected::Again(account)
+                }
+                None => {
+                    record.accounts.push(account.clone());
+                    Connected::New(account)
+                }
+            };
+            Ok((connected, true))
+        })
     }
 
     /// Disconnects the account under the record's lock: `delete_vault` runs first, then the
@@ -172,8 +239,20 @@ impl AccountStore {
         origin: &str,
         delete_vault: impl FnOnce(&Account) -> Result<(), RuntimeError>,
     ) -> Result<Option<Account>, RuntimeError> {
-        drop(delete_vault);
-        todo!("T019: {connector} {origin}")
+        if self.read()?.is_none() {
+            return Ok(None);
+        }
+        self.change(|record| {
+            let Some(index) = record
+                .accounts
+                .iter()
+                .position(|account| account.connector == connector && account.origin == origin)
+            else {
+                return Ok((None, false));
+            };
+            delete_vault(&record.accounts[index])?;
+            Ok((Some(record.accounts.remove(index)), true))
+        })
     }
 
     /// Marks the account as needing connecting again, only if it is still the one `account_id`
@@ -186,8 +265,166 @@ impl AccountStore {
         reason: Reason,
         now_ms: u64,
     ) -> Result<(), RuntimeError> {
-        todo!("T019: {connector} {origin} {account_id} {reason:?} {now_ms}")
+        self.update(connector, origin, account_id, |account| {
+            account.needs_connecting = Some(NeedsConnecting { reason, at_ms: now_ms });
+        })
+        .map(|_| ())
     }
+
+    /// Changes the account under the record's lock, only if it is still the one `account_id`
+    /// names; `false` when it is not there any more.
+    pub(crate) fn update(
+        &self,
+        connector: &str,
+        origin: &str,
+        account_id: &str,
+        change: impl FnOnce(&mut Account),
+    ) -> Result<bool, RuntimeError> {
+        if self.read()?.is_none() {
+            return Ok(false);
+        }
+        self.change(|record| {
+            let Some(account) = record.accounts.iter_mut().find(|account| {
+                account.connector == connector
+                    && account.origin == origin
+                    && account.account_id == account_id
+            }) else {
+                return Ok((false, false));
+            };
+            change(account);
+            Ok((true, true))
+        })
+    }
+
+    /// Runs `f` with the account as the record holds it now, under the record's exclusive lock,
+    /// and writes back the account `f` returns. A refresh runs this way, so two processes never
+    /// spend one refresh token (research R6), and the lock is held until `f` returns, its vault
+    /// write included.
+    pub(crate) fn with_account_locked<T>(
+        &self,
+        connector: &str,
+        origin: &str,
+        f: impl FnOnce(Option<&Account>) -> Result<(T, Option<Account>), RuntimeError>,
+    ) -> Result<T, RuntimeError> {
+        self.change(|record| {
+            let index = record
+                .accounts
+                .iter()
+                .position(|account| account.connector == connector && account.origin == origin);
+            let (value, updated) = f(index.map(|index| &record.accounts[index]))?;
+            match (index, updated) {
+                (Some(index), Some(updated)) => {
+                    record.accounts[index] = updated;
+                    Ok((value, true))
+                }
+                _ => Ok((value, false)),
+            }
+        })
+    }
+
+    /// The record, or `None` when there is none yet; reading creates nothing.
+    fn read(&self) -> Result<Option<AccountsRecord>, RuntimeError> {
+        match fs::metadata(&self.path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(damaged(&self.path, error)),
+            Ok(metadata) if !metadata.is_file() => return Err(damaged(&self.path, "not a file")),
+            Ok(_) => {}
+        }
+        let _lock = records::lock(&self.path, false).map_err(|(at, error)| damaged(&at, error))?;
+        load(&self.path).map(Some)
+    }
+
+    /// Applies `apply` to the record under its exclusive lock, creating it when missing, and
+    /// writes the result when `apply` says it changed it. A refusal leaves it as it was.
+    fn change<T>(
+        &self,
+        apply: impl FnOnce(&mut AccountsRecord) -> Result<(T, bool), RuntimeError>,
+    ) -> Result<T, RuntimeError> {
+        let _lock = records::lock(&self.path, true).map_err(|(at, error)| damaged(&at, error))?;
+        let mut record = match fs::metadata(&self.path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => AccountsRecord {
+                record_version: RECORD_VERSION,
+                vault: random_hex()?,
+                accounts: Vec::new(),
+            },
+            _ => load(&self.path)?,
+        };
+        let (value, changed) = apply(&mut record)?;
+        if changed {
+            let mut json =
+                serde_json::to_vec_pretty(&record).expect("an accounts record always serializes");
+            json.push(b'\n');
+            records::write_atomic(&self.path, &json).map_err(|error| {
+                RuntimeError::new(
+                    ErrorKind::AccountNotConnected,
+                    format!("cannot write the accounts record {}: {error}", self.path.display()),
+                )
+            })?;
+        }
+        Ok(value)
+    }
+}
+
+/// Longest account name kept, in characters (research R13).
+const MAX_NAME_CHARS: usize = 100;
+
+/// The record as stored.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AccountsRecord {
+    record_version: u64,
+    /// 16 random bytes in hex, naming this record's entries in the vault.
+    vault: String,
+    accounts: Vec<Account>,
+}
+
+fn load(path: &Path) -> Result<AccountsRecord, RuntimeError> {
+    let bytes = fs::read(path).map_err(|error| damaged(path, error))?;
+    let record: AccountsRecord =
+        serde_json::from_slice(&bytes).map_err(|error| damaged(path, error))?;
+    if record.record_version != RECORD_VERSION {
+        return Err(damaged(
+            path,
+            format!(
+                "it is version {}, and this host reads version {RECORD_VERSION}",
+                record.record_version
+            ),
+        ));
+    }
+    Ok(record)
+}
+
+/// A record that cannot be used connects nothing, and is never written over.
+fn damaged(path: &Path, reason: impl std::fmt::Display) -> RuntimeError {
+    RuntimeError::new(
+        ErrorKind::AccountNotConnected,
+        format!(
+            "the accounts record {} cannot be used ({reason}); no account is connected until it is fixed or deleted",
+            path.display()
+        ),
+    )
+}
+
+/// The account as the tool names it: its name and, when known, its id.
+fn describe(account: &Account) -> String {
+    match &account.service_id {
+        Some(id) => format!("the account {} (id {id})", account.name),
+        None if account.kind == AccountKind::Key => "a key".to_owned(),
+        None => format!("the account {}", account.name),
+    }
+}
+
+/// 16 random bytes from the system's random source, in hex.
+pub(crate) fn random_hex() -> Result<String, RuntimeError> {
+    use ring::rand::{SecureRandom, SystemRandom};
+    let mut bytes = [0u8; 16];
+    SystemRandom::new().fill(&mut bytes).map_err(|_| {
+        RuntimeError::new(
+            ErrorKind::AccountNotConnected,
+            "the system's random source is unavailable",
+        )
+    })?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 impl Account {

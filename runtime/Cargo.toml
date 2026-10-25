@@ -44,6 +44,9 @@ libsqlite3-sys = { version = "=0.39.0", default-features = false }
 keyring-core = "=1.0.1"
 # Credentials held in memory are wiped when dropped (R5)
 zeroize = "1"
+# Random vault and account ids, PKCE verifiers and sign-in states (R2, R5): the system's random
+# source, from the ring the TLS stack already builds
+ring = { version = "0.17", default-features = false }
 # The echo check: a response must not carry the credential its request sent (R10)
 memchr = "2"
 # Parses the browser's request to the sign-in callback on the loopback address (R2)
