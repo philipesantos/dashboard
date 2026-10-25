@@ -305,6 +305,77 @@ fn spawn(backend: Backend) -> mpsc::Sender<Job> {
     jobs
 }
 
+/// The development vault on the system's keychain, for the runtime's own tests of the keychain
+/// (`runtime/tests/vault.rs`): the same thread, bound and document as the host's, over plain
+/// strings. Only in debug builds with the `test-network` feature, like the seam.
+#[cfg(feature = "test-network")]
+pub struct TestKeychain {
+    vault: Vault,
+}
+
+/// What [`TestKeychain::read`] found.
+#[cfg(feature = "test-network")]
+#[derive(Debug, PartialEq, Eq)]
+pub enum TestEntry {
+    Account {
+        access: String,
+        refresh: Option<String>,
+    },
+    Key(String),
+}
+
+#[cfg(feature = "test-network")]
+impl TestKeychain {
+    /// The system's keychain, with the bound of `limits`.
+    pub fn system(limits: &crate::Limits) -> TestKeychain {
+        TestKeychain {
+            vault: Vault::new(Backend::System, limits.max_secret_bytes),
+        }
+    }
+
+    /// The keychain user name of `connector`'s account at `origin` in the vault `vault_id`.
+    pub fn user(vault_id: &str, connector: &str, origin: &str) -> String {
+        entry_user(vault_id, connector, origin)
+    }
+
+    pub fn write(&self, user: &str, entry: &TestEntry, bound: Duration) -> Result<(), String> {
+        let stored = match entry {
+            TestEntry::Account { access, refresh } => Stored::Account {
+                access: Secret::new(access.clone()),
+                refresh: refresh.clone().map(Secret::new),
+            },
+            TestEntry::Key(key) => Stored::Key {
+                key: Secret::new(key.clone()),
+            },
+        };
+        self.vault
+            .write(user, &stored)
+            .within(bound)
+            .map_err(|error| error.to_string())
+    }
+
+    /// `Ok(None)` when there is no entry.
+    pub fn read(&self, user: &str, bound: Duration) -> Result<Option<TestEntry>, String> {
+        match self.vault.read(user).within(bound) {
+            Ok(Stored::Account { access, refresh }) => Ok(Some(TestEntry::Account {
+                access: access.expose().to_owned(),
+                refresh: refresh.map(|refresh| refresh.expose().to_owned()),
+            })),
+            Ok(Stored::Key { key }) => Ok(Some(TestEntry::Key(key.expose().to_owned()))),
+            Err(VaultError::NoEntry) => Ok(None),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    /// `false` when there was no entry.
+    pub fn delete(&self, user: &str, bound: Duration) -> Result<bool, String> {
+        self.vault
+            .delete(user)
+            .within(bound)
+            .map_err(|error| error.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

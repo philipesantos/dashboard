@@ -855,7 +855,9 @@ fn failed_sign_in(
         Err(error) => error,
     };
     assert_eq!(error.kind(), kind, "{error}");
-    signed.service.script(|script| *script = signin::Script::default());
+    signed
+        .service
+        .script(|script| *script = signin::Script::default());
     error
 }
 
@@ -919,14 +921,18 @@ fn late_callback() {
     let error = signed
         .world
         .runtime
-        .connect_account("local/notes", Some("dashboard-dev"), &|address: &url::Url| {
-            let browser = std::sync::Arc::clone(&browser);
-            let address = address.clone();
-            *late.lock().unwrap() = Some(std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(1500));
-                browser(&address);
-            }));
-        })
+        .connect_account(
+            "local/notes",
+            Some("dashboard-dev"),
+            &|address: &url::Url| {
+                let browser = std::sync::Arc::clone(&browser);
+                let address = address.clone();
+                *late.lock().unwrap() = Some(std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                    browser(&address);
+                }));
+            },
+        )
         .expect_err("a sign-in past its time limit");
     assert_eq!(error.kind(), ErrorKind::SignInFailed, "{error}");
     late.lock().unwrap().take().unwrap().join().unwrap();
@@ -951,7 +957,10 @@ fn another_account() {
     let other_token = signed.token();
     assert_ne!(other_token, token);
     let revoked = signed.service.revoked();
-    assert!(!revoked.is_empty(), "the other account's token was not revoked");
+    assert!(
+        !revoked.is_empty(),
+        "the other account's token was not revoked"
+    );
     assert!(!revoked.contains(&token), "{revoked:?}");
     assert_kept(&signed, &earlier, &token);
     signed.scan(&[("the error", format!("{error} {error:?}"))]);
@@ -998,7 +1007,9 @@ fn revoked_token() {
     );
     assert_eq!(signed.service.server.received().len(), after);
     signed.scan(&[("the updates", format!("{report:?} {again:?}"))]);
-    signed.service.script(|script| *script = signin::Script::default());
+    signed
+        .service
+        .script(|script| *script = signin::Script::default());
     signed.assert_well_behaved();
 }
 
@@ -1008,7 +1019,9 @@ fn revoked_token() {
 fn foreign_401() {
     let signed = Signed::new();
     signed.connect();
-    signed.service.script(|script| script.notes_status = Some(401));
+    signed
+        .service
+        .script(|script| script.notes_status = Some(401));
     let report = signed.update(
         &notes_probe(&["list-notes"]),
         &calls(&[("accounts", "local/notes", "list-notes")]),
@@ -1038,7 +1051,9 @@ fn expired_refresh() {
     // Within the refresh margin from the start
     signed.service.script(|script| script.expires_in = Some(1));
     signed.connect();
-    signed.service.script(|script| script.refresh_refused = true);
+    signed
+        .service
+        .script(|script| script.refresh_refused = true);
     let report = signed.update(
         &notes_probe(&["list-notes"]),
         &calls(&[("accounts", "local/notes", "list-notes")]),
@@ -1049,11 +1064,15 @@ fn expired_refresh() {
         "{report:?}"
     );
     assert_eq!(
-        the_account(&signed).needs_connecting.map(|needs| needs.reason),
+        the_account(&signed)
+            .needs_connecting
+            .map(|needs| needs.reason),
         Some(runtime::accounts::Reason::RefreshFailed)
     );
     signed.scan(&[("the update", format!("{report:?}"))]);
-    signed.service.script(|script| *script = signin::Script::default());
+    signed
+        .service
+        .script(|script| *script = signin::Script::default());
     signed.assert_well_behaved();
 }
 
@@ -1120,7 +1139,9 @@ fn account_spoof() {
     ] {
         assert!(text.contains(escaped), "{name}: {text}");
         assert!(
-            !text.contains('\u{1b}') && !text.contains('\u{202e}') && !text.contains("\nconnected: admin"),
+            !text.contains('\u{1b}')
+                && !text.contains('\u{202e}')
+                && !text.contains("\nconnected: admin"),
             "{name}: {text}"
         );
     }

@@ -60,7 +60,7 @@ pub use permissions::{Contract, ContractVersion};
 pub use storage::StorageCounts;
 pub use text::{escape, quote_entry};
 #[cfg(feature = "test-network")]
-pub use vault::Failure as VaultFailure;
+pub use vault::{Failure as VaultFailure, TestEntry, TestKeychain};
 
 /// Bindings for the `widget` world of plugin contract v0 (`wit/v0`, `dashboard:widget@0.1.0`).
 pub(crate) mod v0 {
