@@ -258,7 +258,7 @@ of TypeScript in feature 006.
 2. **Given** a manifest that still carries login_providers, **When** the host reads it, **Then**
    it is still valid and the field still grants nothing.
 3. **Given** any page that mentioned TypeScript in feature 006, **When** it is read, **Then** it
-   says TypeScript plugins arrive in Phase 5, with a JS engine run by the host.
+   says TypeScript plugins arrive in Phase 5, and promises no toolchain for them.
 
 ---
 
@@ -398,7 +398,8 @@ of TypeScript in feature 006.
   fixtures that test the obsolete field; a manifest that carries it MUST stay valid and the field
   MUST grant nothing.
 - **FR-022**: Every page that promises TypeScript in feature 006 MUST instead say that TypeScript
-  plugins arrive in Phase 5, with a JS engine run by the host.
+  plugins arrive in Phase 5, without naming a toolchain or an engine: the constitution's fixed
+  decision for JS/TS plugins still names jco and componentize-js, and Phase 5 amends it first.
 - **FR-023**: The repository's other docs that describe the contract or the author's workflow
   (the contract directory's overview, the connector format guide, the examples' overview and each
   example's own page) MUST agree with the docs and point to them instead of repeating them.
@@ -406,7 +407,7 @@ of TypeScript in feature 006.
   security suite MUST pass unchanged on Windows, macOS and Linux; a host fix from the review adds
   a test for that fix (FR-005), not a new rule.
 - **FR-025**: The widget content format and user actions, installing from repositories,
-  TypeScript and the host's JS engine, and a docs site MUST NOT be part of this feature.
+  TypeScript plugins, and a docs site MUST NOT be part of this feature.
 
 ### Key Entities
 

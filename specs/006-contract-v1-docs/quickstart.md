@@ -9,6 +9,7 @@ How to check feature 006 end to end. Formats follow
 - Rust 1.99.1 with `wasm32-unknown-unknown`; on Linux `libdbus-1-dev` and `pkg-config`.
 - PowerShell 7 on Windows, for the runner's `PS>` blocks.
 - Docker, for the agent's walk only.
+- On Linux, a running Secret Service (gnome-keyring), for the accounts guide's test runs.
 
 ## 1. The contract
 
@@ -33,8 +34,12 @@ naming the item.
 
 ```sh
 cargo xtask plugins --locked
-cargo test -p runtime --test docs_walk --locked -- --ignored
+DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 cargo test -p runtime --test docs_walk --locked -- --ignored
 ```
+
+Commit first: the walkthrough's clone gets the committed `HEAD`. The variable is required
+outside CI because the runner clears the development data directory (your own development grants
+and stores) before each page.
 
 Expected: every page's blocks run and match, including the connectors and accounts guides
 against the test services. Change one command in `getting-started.md` to fail, or one line of an
@@ -49,7 +54,7 @@ widget's content after `runtime approve`.
 ## 5. CI
 
 On the pull request: the `docs` job runs on the three systems in parallel with `build`, and
-`CI result` requires it. A commit that changes only `docs/authors/getting-started.md` runs every
+`CI result` requires it; `audit` and `deny` also check `docs/authors/getting-started/`. A commit that changes only `docs/authors/getting-started.md` runs every
 job; one that changes only `README.md` skips the build, as before.
 
 ## 6. The walks

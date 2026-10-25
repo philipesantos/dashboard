@@ -55,7 +55,10 @@ name = "my-widget"
 ````
 
 - Info string: the language (`console` for commands, any other for a file), then `check`, then
-  optional `os=linux|macos|windows` (comma-separated), `exit=<n>`, `file=<path>`.
+  optional `os=linux|macos|windows` (comma-separated), `exit=<n>`, `file=<path>`, `output=any`.
+- `output=any` checks only the exit code, for tools whose progress lines vary between runs
+  (cargo, git); the runner refuses it on a block with a `runtime` command, whose output is always
+  compared whole.
 - In `console` blocks, a line starting `$ ` is a command run by bash on Linux and macOS; `PS> `
   by PowerShell 7 on Windows. A block without `os=` must use only one prompt kind that works on
   every system it runs on, or both forms in separate blocks with `os=`.
@@ -66,14 +69,22 @@ name = "my-widget"
   the data directory), `<n>` (an integer), `<time>` (a date-time or duration as the CLI prints
   it), `<version>` (a semver). Each matches only its kind; any other `<…>` is literal.
 - A page whose front matter comment says `<!-- check: service=github,notes -->` runs its
-  `runtime` commands through the test-only CLI, with those test services started (R9).
+  `runtime` commands through the test-only CLI, with those test services started, and has its
+  accounts disconnected after it (R9). Services are declared only there, never on a block.
 - Blocks without `check` are not run; the walkthrough and the guides may use them only for text
   that is not a command or a file (such as a widget's JSON content shown inline).
 
 ## What the runner guarantees per page
 
-- A fresh temporary folder as the working directory; `CLONE` set to the repository's root, which
-  the walkthrough's clone step reads as the clone's location.
-- The development data directory, found by the CLI's own lookup, cleared before the page.
+- A fresh temporary folder as the working directory.
+- The walkthrough's `git clone` of the repository's address runs as written and gets the
+  checkout under test (its committed `HEAD`), through git's `url.<base>.insteadOf` set in the
+  environment; `cargo install` installs into the session's folder, first on `PATH`, building in
+  the job's target folder (R3).
+- The walkthrough's file blocks equal the files of `docs/authors/getting-started/`, and its
+  `Cargo.lock` is in the session's folder before the page and unchanged after it (R8).
+- The development data directory, found by the CLI's own lookup, cleared before the page; the
+  runner refuses to start unless `CI` or `DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1` is set.
+  The test-only CLI uses a data directory of the session's own instead.
 - Blocks run in order; the page fails at the first block that differs, showing the expected and
   the actual lines.

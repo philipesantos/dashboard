@@ -48,11 +48,13 @@ set the drift test derives from the sources (R7).
 | block | a fenced block marked `check`: commands with their whole output, or a file to write |
 | os | the systems the block runs on (all by default) |
 | exit | the exit code each command in the block must return (0 by default) |
-| service | the test services the page needs (`github`, `notes`); the page's `runtime` commands then run through the test-only CLI |
+| output | whole (default) or `any` for blocks without a `runtime` command (cargo, git) |
+| service | page-level: the test services the page needs (`github`, `notes`); the page's `runtime` commands then run through the test-only CLI |
 | placeholders | `<digest>`, `<path>`, `<n>`, `<time>`, `<version>` |
 
 Session state: a fresh temporary folder as the working directory and a cleared development data
-directory, kept across the page's blocks, dropped at its end.
+directory (or, for the test-only CLI, a data directory of the session's own), kept across the
+page's blocks, dropped at its end, with the page's accounts disconnected.
 
 ## Walk (`specs/006-contract-v1-docs/walks.md`)
 

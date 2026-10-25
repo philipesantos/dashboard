@@ -23,10 +23,15 @@ runs (more host code for something a copy does; may come with installation in Ph
 **Decision**: `runtime pack` accepts either a component, as today, or the core module cargo
 builds for `wasm32-unknown-unknown`, which it turns into a component with `wit-component`
 (`ComponentEncoder`, validation on), exactly as `cargo xtask plugins` does, before adding the
-manifest. The runtime takes `wit-component` `=0.261.0`, the release of its `wit-parser`
-`=0.261.0`. A module whose embedded world is missing or invalid is refused as
-`invalid-package`, naming the cause. Nothing else about the package changes, and the host checks
-the result on load as any package.
+manifest. The runtime takes `wit-component` `=0.262.0`, the release `xtask` uses
+(`xtask/Cargo.toml:12`) and the one `wit-bindgen` 0.63.0 embeds its component type with
+(`plugins/Cargo.lock`), so `pack` decodes what the author's build wrote with the encoder that
+wrote it. A module whose embedded world is missing or invalid is refused as `invalid-package`,
+naming the cause, escaped as every plugin text is: the encoder's messages quote import, export
+and section names taken from the module. Nothing else about the package changes, and the host
+checks the result on load as any package. Two tests come with it: `pack` on the core module of
+every example gives the same bytes as `cargo xtask plugins`, and a core module whose import name
+and embedded world hold newlines and control characters is refused on one escaped line.
 
 **Rationale**: the walkthrough must not need the repository's xtask (FR-007), and the fixed
 decision for Rust plugins is wit-bindgen on `wasm32-unknown-unknown` componentized with
@@ -34,7 +39,9 @@ wit-component. With `pack` doing it, an author needs cargo and the CLI, nothing 
 systems.
 
 **Alternatives considered**: `wasm-tools component new` (a second tool to install and pin on
-three systems, one more step to explain; it runs the same library); a `cargo` build script in
+three systems, one more step to explain; it runs the same library); `wit-component` `=0.261.0`,
+the release Wasmtime 50's own build uses (one copy fewer of `wasmparser` in the binary, but a
+decoder one release behind what `wit-bindgen` 0.63.0 writes); a `cargo` build script in
 the author's crate (cannot post-process the final artifact); `wasm32-wasip2`, which builds a
 component directly but imports WASI, which the host refuses.
 
@@ -44,6 +51,12 @@ component directly but imports WASI, which the host refuses.
 <clone>/runtime --locked`, which puts the `runtime` binary on the author's `PATH`; every later
 command calls `runtime …`. On Linux the walkthrough lists `libdbus-1-dev` and `pkg-config`, which
 the vault's store needs to build.
+
+In the runner, both commands run as written without reaching GitHub or the contributor's own
+install: git's `url.<base>.insteadOf`, set through the `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/
+`GIT_CONFIG_VALUE_*` variables, sends the clone to the checkout under test (its committed `HEAD`);
+`CARGO_INSTALL_ROOT` points at the session's folder, put first on `PATH`; and `CARGO_TARGET_DIR`
+points at the job's cached target folder, so the release build of the runtime is incremental.
 
 **Rationale**: there are no releases until Phase 6 (spec, Assumptions); an installed binary
 reads the same on three systems, unlike the `cargo run -p runtime --release --` alias of today's
@@ -105,7 +118,8 @@ for enum cases listed in a table); a separate index file (a second place to keep
 set from: the contract `wit/v1` parsed with `wit-parser` (worlds, interfaces, functions, every
 type and every case or field of enums, variants, records and flags); `wit/manifest.schema.json`
 and `wit/connector.schema.json`, walked through `properties` and `items`; `ErrorKind::ALL`, a
-new constant whose completeness a `match` without a wildcard checks at compile time; and
+new constant declared by one macro together with the enum and `as_str`, so a kind cannot exist
+without being in it (a wildcard-free `match` would check `as_str`, not the array); and
 `Limits`, destructured field by field, so a new field fails to compile until the test names it.
 It reads every marker under `docs/authors/reference/` and fails on a missing item, an item that
 does not exist, a limit default that differs, or a definition it cannot classify, naming each.
@@ -125,9 +139,18 @@ bash; `PS> ` on Windows, run by PowerShell 7) and the whole output each prints, 
 stderr merged by the shell (`2>&1`); `os=` limits a block to systems; ```` ```<lang> file=<path>
 check ```` blocks write a file. A command must exit 0 unless its block says `exit=<n>`. Output is
 compared line by line, with named placeholders (`<digest>`, `<path>`, `<n>`, `<time>`,
-`<version>`) each matching only its kind of value. Before each page, the runner clears the
-development data directory through the function the CLI uses to find it, so pages do not share
-grants or stores. The format is in [contracts/docs-format.md](contracts/docs-format.md).
+`<version>`) each matching only its kind of value. A block may say `output=any` only when none
+of its commands is `runtime`: cargo's and git's progress lines vary from run to run and are not
+this project's text, so for them only the exit code is checked. Before each page, the runner
+clears the development data directory through the function the CLI uses to find it, so pages do
+not share grants or stores; it refuses to start unless `CI` is set or
+`DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1` is, so a contributor's own development record is
+never cleared by surprise. The crate the walkthrough builds is also kept in the repository,
+`docs/authors/getting-started/` (`Cargo.toml`, `Cargo.lock`, `src/lib.rs`, excluded from the
+root workspace like `plugins/`): the runner checks that the page's file blocks equal its files,
+puts its `Cargo.lock` in the session's folder before the page and checks it unchanged after, so
+the walkthrough builds with the dependencies `cargo audit` and `cargo deny` checked (R11). The format is in
+[contracts/docs-format.md](contracts/docs-format.md).
 
 **Rationale**: FR-018 and the clarification ask for whole outputs; one session per page lets a
 guide build on its own earlier steps; clearing the data directory through the CLI's own lookup
@@ -140,20 +163,38 @@ per system, nor knows our placeholders); comparing only marked lines (rejected i
 ## R9. Commands that reach a service: the test-only CLI
 
 **Decision**: the CLI's code moves from `src/bin/runtime.rs` into a library module,
-`runtime::cli`, with one entry point that takes the runtime to start; `src/bin/runtime.rs` calls
-it with the real runtime, as today. A second binary, `runtime-test-network`
-(`required-features = ["test-network"]`, so it never builds without the feature, and the feature
-refuses release builds, which CI already checks), calls it with `Runtime::with_test_network` on
-routes and a test CA the runner writes to a file named in an environment variable, and with an
-opener that, instead of a browser, follows the test sign-in service's page. The runner runs a
-page's `runtime` commands through this binary only when the page's blocks say
-`service=<name>` (the connectors guide: `github`; the accounts guide: `notes`), after starting
-the matching test servers from `runtime/tests/common`. The command text never changes.
+`runtime::cli`, with one entry point that takes how to start the runtime (today five places build
+it, `runtime.rs:528`, `640`, `1428`, `1459`, `1653`) and how to open the sign-in address
+(`runtime.rs:1749`); `src/bin/runtime.rs` calls it with `Runtime::new` and the system browser,
+as today. A second binary, `runtime-test-network` (`required-features = ["test-network"]`, so it
+never builds without the feature, and the feature refuses release builds, which CI already
+checks), calls it with:
+
+- `Runtime::with_test_network_on_keychain`: the seam, on routes and a test CA the runner writes
+  to a file named by `DASHBOARD_TEST_NETWORK`, and the development vault on the system's
+  keychain, because each command is a process of its own and the mock vault lives in one
+  process's memory (`vault/store.rs:25`); the same file names the data directory, which the
+  binary uses instead of the default one, so its grants and accounts never land in the record
+  the real CLI reads;
+- an opener that, instead of a browser, follows the test sign-in service's page. Its HTTP client
+  lives in `runtime/src/network/` behind `test-network`, beside the rest of the network code, so
+  Clippy's rule that only that module opens connections keeps holding with no new `#![allow]`.
+
+The runner runs a page's `runtime` commands through this binary only when the page's front
+matter comment says `service=<names>` (the connectors guide: `github`; the accounts guide:
+`notes`), after starting the matching test servers from `runtime/tests/common`, and disconnects
+the page's accounts after it. The command text never changes. A test in `cli.rs` runs the real
+`runtime` with `DASHBOARD_TEST_NETWORK` naming a live test service and checks that the service
+gets no request and the output is the same as without the variable.
+
+The work goes in two commits: first the code moves unchanged, reviewed as moved lines
+(`git diff --color-moved` shows them identical); then the runtime and the opener become
+parameters, reviewed line by line.
 
 **Rationale**: the seam is library-only by design (003, R15; 005 kept "no test seam in the
 CLI"); a test binary with the same CLI code is the only way the guides' commands run as written
-against test services (FR-018). The move into a module is mechanical and goes in a commit of its
-own, so it reviews as a move (Principle IX).
+against test services (FR-018). Splitting the move from the change keeps the large diff
+mechanical and the small one readable (Principle IX).
 
 **Alternatives considered**: the real GitHub in CI (rate limits per runner address, output
 changes as releases are published, and CI never reaches GitHub since 003); leaving those
@@ -163,8 +204,10 @@ build anyone runs contains the seam).
 ## R10. The accounts guide without a real account
 
 **Decision**: the accounts guide follows `private-notes` and its development connector
-`local/notes`, as 005's quickstart did; in CI the test-only CLI runs it on the mock vault, the
-test sign-in service and the test notes service. The guide tells authors to register an app with
+`local/notes`, as 005's quickstart did; in CI the test-only CLI runs it on the development vault
+in the system's keychain (as `accounts.rs` does for two processes), the test sign-in service and
+the test notes service; the runner disconnects the account at the end of the page, so the
+keychain keeps nothing of a run. The guide tells authors to register an app with
 their own service for real use; no catalog connector has an account until Phase 6.
 
 **Rationale**: 005 left the catalog's GitHub connector without an account; the example that
@@ -178,11 +221,15 @@ no real tokens in tests).
 **Decision**: a `docs` job, matrix `ubuntu-24.04`, `macos-latest`, `windows-latest`, `needs:
 changes`, run when `code` is true, in parallel with `build`, and listed in `result`'s `needs`.
 Steps: checkout; Rust 1.99.1 with `wasm32-unknown-unknown`; the Linux packages the runtime needs
-to build (`libdbus-1-dev`, `pkg-config`; no Tauri packages); the cache; `cargo xtask plugins
---locked` (the guides use the examples); `cargo test -p runtime --test docs_reference --locked`;
-`cargo test -p runtime --test docs_walk --locked -- --ignored`. Timeout 40 minutes. The `changes`
-job counts `docs/authors/`, `wit/` and the example READMEs as code, so a change to them alone
-runs CI in full (FR-019); the comment that cites the constitution is updated.
+to build and the vault needs to run (`libdbus-1-dev`, `pkg-config`, `gnome-keyring`; no Tauri
+packages); the cache; `cargo xtask plugins --locked` (the guides use the examples); `cargo test
+-p runtime --test docs_reference --locked`; `cargo test -p runtime --test docs_walk --locked --
+--ignored`, on Linux inside `dbus-run-session` with gnome-keyring unlocked, as the build job runs
+its tests. Timeout 40 minutes. The `changes` job counts `docs/authors/` and `wit/` as code, the
+files the checks read, so a change to them alone runs CI in full (FR-019); the comment that cites
+the constitution is updated. The `audit` and `deny` jobs also check the walkthrough's crate
+(R8): `cargo audit --file docs/authors/getting-started/Cargo.lock` and `cargo deny
+--manifest-path docs/authors/getting-started/Cargo.toml check`, as they do for `plugins/`.
 
 **Rationale**: the clarification put the runner on its own machines so the timed hostile cases
 keep theirs; running the drift test here too covers changes the build job's filter would
@@ -213,7 +260,7 @@ in 003 to 005).
 **Decision**: after every finding has an outcome, copy `wit/v1/widget.wit` to
 `wit/history/1.3.0/widget.wit`, add its SHA-256 to `frozen_contracts()` in `contract_v1.rs`, and
 add a check that while `wit/v1` declares `dashboard:widget@1.3.0` its bytes equal the frozen
-copy. Doc comments of 1.3.0 may be corrected before this step; the only-adds tests compare
+copy, line endings read as LF as `frozen_contracts` reads them, so a CRLF checkout passes. Doc comments of 1.3.0 may be corrected before this step; the only-adds tests compare
 definitions, not comments, so they keep passing. `private-notes` keeps building from `wit/v1`
 until a new minor.
 
@@ -236,15 +283,19 @@ are rebuilt from their files, so their digests change but no test pins them.
 ## R15. TypeScript mentions and the other pages
 
 **Decision**: replace "TypeScript examples arrive in feature 006" in `plugins/examples/README.md`
-and any other mention found by search with "TypeScript plugins arrive in Phase 5, with a JS
-engine run by the host"; `wit/README.md`, the example READMEs and `plugins/hostile/README.md`
+and any other mention found by search with "TypeScript plugins arrive in Phase 5", naming no
+toolchain or engine: the constitution's fixed decision still names jco and componentize-js, and
+Phase 5 amends it before building anything (FR-022); `wit/README.md`, the example READMEs and `plugins/hostile/README.md`
 point to the guides and the reference instead of repeating them (FR-023).
 
 ## R16. The agent's walk (SC-001)
 
 **Decision**: after the docs pass in CI, an agent with no context of this work runs the
-walkthrough in a disposable `rust:1.99.1` Docker container, with the working tree mounted as the
-"clone" the walkthrough names, told to follow only `docs/authors/` and to read no code or spec.
+walkthrough in a disposable `rust:1.99.1` Docker container, with the committed tree mounted and
+git's `insteadOf` sending the walkthrough's clone to it (R3), told to follow only `docs/authors/`
+and to read no code or spec. The agent runs `runtime approve` on its own package in that
+container's development record: no person's trust decision is made for them (Principle VII), and
+the container and its record are thrown away after the walk.
 It records each point where it got stuck; each is fixed in the docs and the walk is repeated
 until one has none. Results go in `walks.md`.
 
