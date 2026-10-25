@@ -20,7 +20,7 @@ records follow [data-model.md](data-model.md).
 
 ```sh
 cargo test --workspace --locked              # unit, integration, CLI and hostile cases
-cargo test -p runtime --test hostile credentials   # only the 26 cases of FR-019
+cargo test -p runtime --test hostile credentials   # only the cases of FR-019
 cargo test -p runtime --test vault           # the real keychain round trip
 ```
 
@@ -53,9 +53,10 @@ later (research R1).
 ```sh
 cargo xtask plugins
 export D=$(mktemp -d)
-alias rt="cargo run -q -p runtime --release -- "   # every rt command takes --grants $D/grants.json --data $D
-rt permissions target/plugins/private-notes.wasm --connectors plugins/examples/private-notes/connectors
-rt accounts list
+rt() { cargo run -q -p runtime --release -- "$@"; }
+rt permissions target/plugins/private-notes.wasm --grants $D/grants.json --data $D \
+  --connectors plugins/examples/private-notes/connectors
+rt accounts list --grants $D/grants.json --data $D
 rt check-connector plugins/hostile/connectors/plain-http-key.json
 ```
 
@@ -64,7 +65,7 @@ Expected: `permissions` shows the `credential:` lines of `local/notes`, `asks fo
 without one)`; `accounts list` prints `nothing connected`; the last command fails with
 `credential-needs-https`, since a credential never travels to a loopback address without HTTPS.
 
-## 4. Numbers
+## 5. Numbers
 
 `bench.yml` runs `credential_cost` on the three systems (by hand, `gh workflow run bench.yml --ref
 005-plugin-credentials`) and the numbers go into `performance.md`: a call with a credential within
