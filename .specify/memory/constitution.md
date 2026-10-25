@@ -136,7 +136,7 @@ destinations every user trusts; a bug there breaks them all.
 | JS/TS plugins | jco / componentize-js | Most accessible language for authors and for AI generation |
 | Rust plugins | cargo + wit-bindgen on `wasm32-unknown-unknown`, componentized with wit-component | Actively maintained; components import only what their WIT world declares |
 | Go, Python plugins | TinyGo, componentize-py | Advanced authors |
-| Secrets | `keyring` crate (OS keychain) | Tokens stay out of the app's files |
+| Secrets | keyring-rs: `keyring-core` and its store crates (OS keychain) | Tokens stay out of the app's files |
 | Plugin storage | SQLite, one database per plugin | Simple isolation; the host's own records (grants, the data an update returns, the request log) are host files that no plugin can reach |
 | Specifications | GitHub Spec Kit | Independent of the AI agent |
 | Licenses | Client Apache-2.0, servers AGPL-3.0 | Client adoption, protection of paid services |
@@ -172,4 +172,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.4.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-24
+**Version**: 2.4.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-25
