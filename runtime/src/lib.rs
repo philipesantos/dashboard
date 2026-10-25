@@ -42,7 +42,7 @@ use wasmtime::{Config, Engine, Store, Trap};
 
 use calls::{Calls, ConnectorTable, Phase, Rates, RunLog};
 use connector::{Connector, Source};
-use grants::{Approval, ConnectorState, GrantStore};
+use grants::{AccountState, Approval, ConnectorState, GrantStore};
 use host::HostState;
 use kept::{Found, KeptStore};
 use limits::MemoryLimitExceeded;
@@ -228,6 +228,8 @@ pub struct LoadedConnector {
     pub(crate) required: bool,
     /// The operations the manifest declares for it, in its order.
     pub(crate) operations: Vec<String>,
+    /// The manifest's `account`: the widget calls it as the connected account (feature 005).
+    pub(crate) account: bool,
 }
 
 impl LoadedConnector {
@@ -277,6 +279,12 @@ impl LoadedConnector {
                     (name.clone(), digest)
                 })
                 .collect(),
+            account: self.connector.credential().map(|credential| AccountState {
+                uses: self.account,
+                required: credential.required(),
+                credential: credential.digest(),
+                access: credential.access().to_vec(),
+            }),
         }
     }
 }
@@ -794,12 +802,31 @@ impl Connectors<'_> {
                 )),
             ));
         }
+        // Account use (`specs/005-plugin-credentials/data-model.md`, Load decision, step 6a)
+        match connector.credential() {
+            None if request.account => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::InvalidManifest,
+                    names(),
+                    Some("the manifest says the widget uses this connector's account, and the connector declares no credential"),
+                ));
+            }
+            Some(credential) if credential.required() && !request.account => {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::AccountUseNotDeclared,
+                    names(),
+                    Some("this connector's credential is required, so the widget must declare \"account\": true and call it through accounts"),
+                ));
+            }
+            _ => {}
+        }
         Ok(LoadedConnector {
             id: id.to_owned(),
             origin,
             connector,
             required: request.required,
             operations: request.operations.clone(),
+            account: request.account,
         })
     }
 

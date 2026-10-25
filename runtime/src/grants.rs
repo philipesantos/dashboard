@@ -12,6 +12,10 @@
 //!
 //! Version 3 (`specs/004-plugin-storage/data-model.md`) adds the storage quota the last approval
 //! showed, so a later version that declares more needs the user again.
+//!
+//! Version 4 (`specs/005-plugin-credentials/data-model.md`) adds, for each connector that declares
+//! a credential, whether the widget uses its account, the credential's digest and the access
+//! approved, so a new credential, more access or starting to use the account needs the user again.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -23,17 +27,21 @@ use std::sync::{Mutex, PoisonError};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ErrorKind, RuntimeError};
+use crate::connector::Access;
 use crate::manifest::{Manifest, PluginId};
 use crate::permissions;
 use crate::records;
 
-/// The record format this host writes. It also reads versions 1 and 2, as version 3 with no
-/// connectors (version 1) and no storage quota, and writes them back as version 3.
-pub const RECORD_VERSION: u64 = 3;
+/// The record format this host writes. It also reads versions 1 to 3, as version 4 with no
+/// connectors (version 1), no storage quota (versions 1 and 2) and no account (versions 1 to 3),
+/// and writes them back as version 4.
+pub const RECORD_VERSION: u64 = 4;
 /// The format of feature 002, still read.
 const RECORD_VERSION_1: u64 = 1;
 /// The format of feature 003, still read.
 const RECORD_VERSION_2: u64 = 2;
+/// The format of feature 004, still read.
+const RECORD_VERSION_3: u64 = 3;
 
 /// The app's directory inside the system's data directory. Provisional: it moves with the
 /// project's final name, before the first release.
@@ -80,6 +88,22 @@ pub struct ConnectorGrant {
     pub destinations: Vec<String>,
     /// For each operation the widget declares, the digest of its declaration.
     pub operations: BTreeMap<String, String>,
+    /// Present only when the connector declares a credential (record version 4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<AccountGrant>,
+}
+
+/// What an approval covers of a connector's credential (`specs/005-plugin-credentials/
+/// data-model.md`, Grant record, version 4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccountGrant {
+    /// The manifest's `account` when approved: whether the widget acts as the account.
+    pub uses: bool,
+    /// The credential's digest, without its access.
+    pub credential: String,
+    /// The access approved, sorted by name.
+    pub access: Vec<Access>,
 }
 
 impl Entry {
@@ -92,6 +116,14 @@ impl Entry {
         self.connectors
             .get(id)
             .is_some_and(|connector| connector.granted)
+    }
+
+    /// Whether the connector `id` is granted and its account approved for use: the widget is
+    /// linked to it through `accounts` only when its manifest also says `account: true`.
+    pub fn uses_account(&self, id: &str) -> bool {
+        self.connectors.get(id).is_some_and(|connector| {
+            connector.granted && connector.account.as_ref().is_some_and(|account| account.uses)
+        })
     }
 
     /// What a load of `manifest` needs approved again about storage: when storage is required,
@@ -156,6 +188,9 @@ impl Entry {
                     Some(_) => {}
                 }
             }
+            if let Some(account) = &state.account {
+                changes.extend(account_changes(&state.id, account, grant.account.as_ref()));
+            }
         }
         changes
     }
@@ -173,6 +208,54 @@ pub struct ConnectorState {
     pub destinations: Vec<String>,
     /// Each operation the widget declares, with the digest of its declaration.
     pub operations: BTreeMap<String, String>,
+    /// Present only when the connector declares a credential.
+    pub account: Option<AccountState>,
+}
+
+/// A connector's credential as loaded now, and whether the widget declares that it uses it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountState {
+    /// The manifest's `account`.
+    pub uses: bool,
+    /// The credential's own `required`: a required credential applies whether or not the widget
+    /// says it uses it, and loading refuses a widget that does not.
+    pub required: bool,
+    /// The credential's digest, without its access.
+    pub credential: String,
+    /// The access the connector asks for now, sorted.
+    pub access: Vec<Access>,
+}
+
+/// What changed in a connector's credential since its approval (research R8): nothing when the
+/// widget neither uses the account nor needs it.
+fn account_changes(id: &str, now: &AccountState, approved: Option<&AccountGrant>) -> Vec<String> {
+    if !now.uses && !now.required {
+        return Vec::new();
+    }
+    let Some(approved) = approved else {
+        return vec![format!("credential added: {id}")];
+    };
+    let mut changes = Vec::new();
+    if approved.credential != now.credential {
+        changes.push(format!("credential changed: {id}"));
+    }
+    if now.uses && !approved.uses {
+        changes.push(format!("account use newly declared: {id}"));
+    }
+    for item in &now.access {
+        let covered = approved
+            .access
+            .iter()
+            .any(|kept| kept.name == item.name && kept.level >= item.level);
+        if !covered {
+            changes.push(format!(
+                "access added: {id} {} {}",
+                item.name,
+                item.level.as_str()
+            ));
+        }
+    }
+    changes
 }
 
 /// The approval digest (`data-model.md`, Approval digest): `sha256:` and the hex SHA-256 of a
@@ -196,14 +279,24 @@ pub fn approval_digest(
     let connectors: Vec<serde_json::Value> = connectors
         .into_iter()
         .map(|state| {
-            serde_json::json!({
+            let mut connector = serde_json::json!({
                 "id": state.id,
                 "origin": state.origin,
                 "version": state.version,
                 "required": state.required,
                 "destinations": state.destinations,
                 "operations": state.operations,
-            })
+            });
+            // Only when the connector declares a credential, so widgets whose connectors declare
+            // none keep their digests (`specs/005-plugin-credentials/data-model.md`)
+            if let Some(account) = &state.account {
+                connector["account"] = serde_json::json!({
+                    "uses": account.uses,
+                    "credential": account.credential,
+                    "access": account.access,
+                });
+            }
+            connector
         })
         .collect();
     let mut document = serde_json::json!({
@@ -277,7 +370,9 @@ impl GrantRecord {
             .get("record_version")
             .and_then(serde_json::Value::as_u64)
         {
-            Some(version @ (RECORD_VERSION_1 | RECORD_VERSION_2 | RECORD_VERSION)) => version,
+            Some(version @ (RECORD_VERSION_1 | RECORD_VERSION_2 | RECORD_VERSION_3 | RECORD_VERSION)) => {
+                version
+            }
             Some(version) if version > RECORD_VERSION => {
                 return Err(format!(
                     "record_version {version} is newer than this host's {RECORD_VERSION}"
@@ -285,7 +380,7 @@ impl GrantRecord {
             }
             _ => {
                 return Err(format!(
-                    "record_version must be {RECORD_VERSION_1}, {RECORD_VERSION_2} or {RECORD_VERSION}"
+                    "record_version must be {RECORD_VERSION_1} to {RECORD_VERSION}"
                 ));
             }
         };
@@ -302,7 +397,7 @@ impl GrantRecord {
                     "{id} has connectors in a record of version {RECORD_VERSION_1}, which has none"
                 ));
             }
-            if version < RECORD_VERSION && entry.storage_quota_bytes.is_some() {
+            if version < RECORD_VERSION_3 && entry.storage_quota_bytes.is_some() {
                 return Err(format!(
                     "{id} has a storage quota in a record of version {version}, which has none"
                 ));
@@ -313,9 +408,14 @@ impl GrantRecord {
                         "the destinations of {connector} in {id} are not sorted and unique"
                     ));
                 }
+                if version < RECORD_VERSION && grant.account.is_some() {
+                    return Err(format!(
+                        "{connector} in {id} has an account in a record of version {version}, which has none"
+                    ));
+                }
             }
         }
-        // Older records are version 3 with no connectors or storage quota, written back as 3
+        // Older records are version 4 without what they did not have, written back as 4
         record.record_version = RECORD_VERSION;
         Ok(record)
     }
@@ -561,6 +661,11 @@ impl GrantStore {
                 let Some(request) = manifest.connector(&state.id) else {
                     continue;
                 };
+                let account = state.account.as_ref().map(|account| AccountGrant {
+                    uses: account.uses,
+                    credential: account.credential.clone(),
+                    access: account.access.clone(),
+                });
                 let kept_on = same_origin
                     .and_then(|entry| entry.connectors.get(&state.id))
                     .is_some_and(|grant| {
@@ -568,6 +673,7 @@ impl GrantStore {
                             && grant.origin == state.origin
                             && grant.destinations == state.destinations
                             && grant.operations == state.operations
+                            && grant.account == account
                     });
                 grants.insert(
                     state.id.clone(),
@@ -577,6 +683,7 @@ impl GrantStore {
                         granted: request.required || kept_on,
                         destinations: state.destinations.clone(),
                         operations: state.operations.clone(),
+                        account,
                     },
                 );
             }
@@ -1021,7 +1128,7 @@ mod tests {
         assert_eq!(
             record,
             json!({
-                "record_version": 3,
+                "record_version": 4,
                 "plugins": {
                     "local/probe": {
                         "origin": ORIGIN,
@@ -1080,7 +1187,7 @@ mod tests {
             ("not an object", "[]".to_owned()),
             (
                 "a newer record version",
-                r#"{"record_version":4,"plugins":{},"more":1}"#.to_owned(),
+                r#"{"record_version":5,"plugins":{},"more":1}"#.to_owned(),
             ),
             (
                 "an older record version",
@@ -1541,6 +1648,7 @@ mod tests {
             required: true,
             destinations: vec!["https://api.github.com".to_owned()],
             operations: BTreeMap::from([("list-releases".to_owned(), "sha256:51c0".to_owned())]),
+            account: None,
         }
     }
 
@@ -1552,6 +1660,7 @@ mod tests {
             required: false,
             destinations: vec!["http://127.0.0.1:8765".to_owned()],
             operations: BTreeMap::from([("forecast".to_owned(), "sha256:aa".to_owned())]),
+            account: None,
         }
     }
 
@@ -1565,7 +1674,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_1_record_reads_as_version_3_without_connectors_and_is_written_back_as_3() {
+    fn a_version_1_record_reads_as_version_4_without_connectors_and_is_written_back_as_4() {
         let (_dir, store, path) = store_with_text(&format!(
             r#"{{"record_version":1,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}"}}}}}}"#
         ));
@@ -1577,7 +1686,7 @@ mod tests {
             .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
             .expect("approved");
         let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(record["record_version"], 3);
+        assert_eq!(record["record_version"], 4);
         assert_eq!(record["plugins"]["local/probe"]["granted"], json!(["log"]));
         // A version 1 record never has connectors
         let (_dir, store, _) = store_with_text(&format!(
@@ -1606,6 +1715,7 @@ mod tests {
                         "list-releases".to_owned(),
                         "sha256:51c0".to_owned()
                     )]),
+                    account: None,
                 }
             );
             // Optional connectors start off
@@ -1970,7 +2080,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_2_record_reads_as_version_3_and_is_written_back_as_3() {
+    fn a_version_2_record_reads_as_version_4_and_is_written_back_as_4() {
         let (_dir, store, path) = store_with_text(&format!(
             r#"{{"record_version":2,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{}}}}}}}}"#
         ));
@@ -1980,12 +2090,172 @@ mod tests {
             .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
             .expect("approved");
         let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(record["record_version"], 3);
+        assert_eq!(record["record_version"], 4);
         assert!(
             record["plugins"]["local/probe"]
                 .get("storage_quota_bytes")
                 .is_none()
         );
+    }
+
+    /// A connector with a credential (`specs/005-plugin-credentials/data-model.md`, Grant record,
+    /// version 4).
+    fn notes_state(uses: bool) -> ConnectorState {
+        ConnectorState {
+            id: "local/notes".to_owned(),
+            origin: "/dev/connectors/notes.json".to_owned(),
+            version: "1.0.0".to_owned(),
+            required: true,
+            destinations: vec!["https://notes.test".to_owned()],
+            operations: BTreeMap::from([("list-notes".to_owned(), "sha256:cc".to_owned())]),
+            account: Some(AccountState {
+                uses,
+                required: false,
+                credential: "sha256:4d1a".to_owned(),
+                access: vec![Access {
+                    name: "notes".to_owned(),
+                    level: crate::connector::Level::Read,
+                }],
+            }),
+        }
+    }
+
+    fn notes_manifest(account: bool) -> Manifest {
+        let manifest = json!({
+            "manifest_version": 1, "id": "local/private-notes", "version": "0.1.0", "author": "A",
+            "permissions": [],
+            "connectors": [{ "id": "local/notes", "major": 1, "operations": ["list-notes"],
+                             "required": true, "account": account }]
+        });
+        Manifest::parse(&serde_json::to_vec(&manifest).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn an_approval_records_the_account_of_a_connector_with_a_credential() {
+        for_each_store(|store| {
+            let manifest = notes_manifest(true);
+            approve_connected(store, &manifest, &[notes_state(true)]);
+            let entry = entry(store, "local/private-notes").unwrap();
+            assert_eq!(
+                entry.connectors["local/notes"].account,
+                Some(AccountGrant {
+                    uses: true,
+                    credential: "sha256:4d1a".to_owned(),
+                    access: vec![Access {
+                        name: "notes".to_owned(),
+                        level: crate::connector::Level::Read,
+                    }],
+                })
+            );
+            assert!(entry.uses_account("local/notes"));
+            assert!(!entry.uses_account("catalog/github"));
+        });
+        // In the file, `account` appears only for a connector with a credential
+        let (_dir, store) = file_store();
+        approve_connected(&store, &notes_manifest(false), &[notes_state(false)]);
+        approve_connected(&store, &connected_manifest(&["forecast"]), &[github_state(), weather_state()]);
+        let record: Value = serde_json::from_slice(&fs::read(store.path().unwrap()).unwrap()).unwrap();
+        assert_eq!(record["record_version"], 4);
+        assert_eq!(
+            record["plugins"]["local/private-notes"]["connectors"]["local/notes"]["account"],
+            json!({ "uses": false, "credential": "sha256:4d1a", "access": [{ "name": "notes", "level": "read" }] })
+        );
+        assert!(record["plugins"][CONNECTED]["connectors"]["catalog/github"].get("account").is_none());
+    }
+
+    #[test]
+    fn a_version_3_record_reads_as_version_4_and_an_older_one_never_holds_an_account() {
+        let (_dir, store, path) = store_with_text(&format!(
+            r#"{{"record_version":3,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{"catalog/github":{{"origin":"catalog","version":"1.0.0","granted":true,"destinations":[],"operations":{{}}}}}}}}}}}}"#
+        ));
+        assert_eq!(entry(&store, "local/probe").unwrap().connectors["catalog/github"].account, None);
+        store
+            .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
+            .expect("approved");
+        let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(record["record_version"], 4);
+        for version in [1, 2, 3] {
+            let (_dir, store, _) = store_with_text(&format!(
+                r#"{{"record_version":{version},"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":[],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{"local/notes":{{"origin":"/n.json","version":"1.0.0","granted":true,"destinations":[],"operations":{{}},"account":{{"uses":true,"credential":"sha256:1","access":[]}}}}}}}}}}}}"#
+            ));
+            assert_eq!(
+                store.entry(&id("local/probe")).unwrap_err().kind(),
+                ErrorKind::NotGranted,
+                "version {version}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_approval_digest_covers_the_account_of_a_connector_with_a_credential() {
+        let manifest = notes_manifest(true);
+        let base = approval_digest(DIGEST, &manifest, &[notes_state(true)]);
+        let edits: [fn(&mut AccountState); 3] = [
+            |account| account.uses = false,
+            |account| account.credential = "sha256:ff".to_owned(),
+            |account| account.access[0].level = crate::connector::Level::Write,
+        ];
+        for edit in edits {
+            let mut state = notes_state(true);
+            edit(state.account.as_mut().unwrap());
+            assert_ne!(base, approval_digest(DIGEST, &manifest, &[state]));
+        }
+        let mut without = notes_state(true);
+        without.account = None;
+        assert_ne!(base, approval_digest(DIGEST, &manifest, &[without]));
+    }
+
+    /// Research R8: what changes in a credential needs a new approval, and what does not.
+    #[test]
+    fn credential_changes_follow_the_table_of_research_r8() {
+        let store = GrantStore::in_memory();
+        approve_connected(&store, &notes_manifest(true), &[notes_state(true)]);
+        let approved = entry(&store, "local/private-notes").unwrap();
+        let changes = |edit: fn(&mut ConnectorState), account: bool| {
+            let mut state = notes_state(account);
+            edit(&mut state);
+            approved.connector_changes(&notes_manifest(account), &[state])
+        };
+        assert!(changes(|_| {}, true).is_empty());
+        let change = changes(|s| s.account.as_mut().unwrap().credential = "sha256:ff".to_owned(), true);
+        assert_eq!(change, ["credential changed: local/notes"]);
+        let change = changes(
+            |s| {
+                s.account.as_mut().unwrap().access.push(Access {
+                    name: "drafts".to_owned(),
+                    level: crate::connector::Level::Read,
+                })
+            },
+            true,
+        );
+        assert_eq!(change, ["access added: local/notes drafts read"]);
+        let change = changes(|s| s.account.as_mut().unwrap().access[0].level = crate::connector::Level::Write, true);
+        assert_eq!(change, ["access added: local/notes notes write"]);
+        // Narrowed access, or no longer using the account: nothing to approve
+        assert!(changes(|s| s.account.as_mut().unwrap().access.clear(), true).is_empty());
+        assert!(changes(|_| {}, false).is_empty());
+
+        // A credential added to a connector the widget uses, or starting to use the account
+        let store = GrantStore::in_memory();
+        let mut plain = notes_state(false);
+        plain.account = None;
+        approve_connected(&store, &notes_manifest(false), &[plain]);
+        let approved = entry(&store, "local/private-notes").unwrap();
+        assert_eq!(
+            approved.connector_changes(&notes_manifest(true), &[notes_state(true)]),
+            ["credential added: local/notes"]
+        );
+        let store = GrantStore::in_memory();
+        approve_connected(&store, &notes_manifest(false), &[notes_state(false)]);
+        let approved = entry(&store, "local/private-notes").unwrap();
+        assert_eq!(
+            approved.connector_changes(&notes_manifest(true), &[notes_state(true)]),
+            ["account use newly declared: local/notes"]
+        );
+        // A credential the widget neither uses nor needs changes nothing
+        let mut unused = notes_state(false);
+        unused.account.as_mut().unwrap().credential = "sha256:ff".to_owned();
+        assert!(approved.connector_changes(&notes_manifest(false), &[unused]).is_empty());
     }
 
     #[test]

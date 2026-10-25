@@ -631,6 +631,7 @@ mod tests {
                     .iter()
                     .map(|name| (name.clone(), connector.operation_digest(name).unwrap()))
                     .collect(),
+                account: None,
             })
             .collect()
     }
