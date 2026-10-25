@@ -43,6 +43,20 @@ docs/connectors.md and the example READMEs aligned with it, CONTRIBUTING.md sayi
 reference in step with the contract, and the drift and walkthrough checks in CI. No new hostile
 case: the feature adds no security rule, and the existing suite must pass unchanged."
 
+## Clarifications
+
+### Session 2026-10-25
+
+- Q: If the review finds a flaw that only a breaking change can fix, is it fixed now or recorded
+  for a v2? → A: Fixed now, if the maintainer chooses it. No version has been released and the
+  only plugins are this repository's, so a break costs nothing outside it, while a later v2 would
+  leave the host with three contracts before its first user. Before the first public release,
+  such a finding comes to the maintainer with its cost; if they choose the fix, it ships in this
+  feature as contract 2.0.0, v1 is retired in the same feature (the host stops running v1
+  plugins, and the examples and fixtures move to 2.0.0), and 2.0.0 is the version frozen. v0
+  keeps running. After the first public release, such a finding is recorded for the next major
+  instead. (Raised by a side note on the spec.)
+
 ## User Scenarios & Testing *(mandatory)*
 
 The people in these stories are a **plugin author**, who writes a widget against the contract
@@ -88,7 +102,9 @@ step needed a file or a tool the walkthrough did not mention.
 The maintainer closes contract v1 at 1.3.0: it gets an independent review against the host and
 the docs, every finding is resolved, and then 1.3.0 is frozen as published, so an author who
 builds against it today builds against exactly what the host will keep running. From then on v1
-changes only by a new minor that only adds, frozen the same way, or by a v2.
+changes only by a new minor that only adds, frozen the same way, or by a v2. If the review finds
+a flaw that only a breaking change fixes and the maintainer chooses to fix it, the closed
+contract is 2.0.0 instead, and v1 is retired before anyone outside the repository depends on it.
 
 **Why this priority**: an author's work is only as stable as the contract under it; freezing
 before the review would publish mistakes the docs then have to explain forever.
@@ -107,10 +123,12 @@ the review is recorded with an outcome.
 3. **Given** the review of the contract, **When** it finds that a function, type or error case
    cannot be reached, behaves otherwise than its documentation says, or is undocumented, or that
    a world or name promises what the host does not do, **Then** the finding is recorded with its
-   outcome: fixed in the docs, fixed in the host with a test, recorded for v2, or kept with a
-   stated reason; the contract is frozen only when no finding is left without an outcome.
-4. **Given** a finding that only a breaking change could fix, **When** it is recorded, **Then**
-   it goes in a record of what v2 should change, and the published version is not edited.
+   outcome: fixed in the docs, fixed in the host with a test, fixed by a breaking change, or kept
+   with a stated reason; the contract is frozen only when no finding is left without an outcome.
+4. **Given** a finding that only a breaking change could fix, **When** the review reports it,
+   **Then** it goes to the maintainer with its cost (what changes for the examples, the fixtures
+   and the host); if they choose the fix, the closed contract is 2.0.0, v1 is retired in this
+   feature and no published version is edited; if not, it is kept with the reason.
 5. **Given** the contract is frozen, **When** a later feature needs to add to v1, **Then** the
    docs for contributors say how: freeze the current version first, add a new minor that only
    adds, and extend the test that checks it only adds.
@@ -233,11 +251,15 @@ of TypeScript in feature 006.
 
 - A review finding shows the host behaving otherwise than the contract's doc comment says: the
   host is fixed to match, with a test, if the comment describes the safe behavior; if the host's
-  behavior is the safe one, the docs say so, and the comment, which cannot be edited in a frozen
-  version, is listed for the next minor or v2.
+  behavior is the safe one, the comment of 1.3.0 is corrected before the freeze (a comment changes
+  no definition), and a frozen older version's comment stays as it is, with the docs saying what
+  holds.
 - A finding would make the host stricter for plugins that run today, such as refusing a value it
   now accepts: it is a security fix if it closes a hole, with its own test and review; otherwise
-  it is recorded for v2, so plugins that run today keep running.
+  it is a breaking-change finding, and goes to the maintainer (FR-006).
+- The maintainer chooses a breaking fix: every example and fixture built for v1 moves to 2.0.0 in
+  the same feature, the hostile suite keeps every case (rebuilt for 2.0.0 where it was built for
+  v1), and a v1 plugin is refused as a contract the host does not run.
 - The walkthrough's commands differ per system (paths, shell syntax, how an environment variable
   is set): the walkthrough shows each system's form where they differ, and CI runs the form shown
   for that system.
@@ -265,25 +287,34 @@ of TypeScript in feature 006.
 
 - **FR-001**: Contract v1 MUST stay at 1.3.0: this feature MUST NOT add, remove or change any
   interface, function, type, case or world, and the host MUST run every plugin that runs today,
-  except where a review finding closes a security hole (FR-005).
-- **FR-002**: 1.3.0 MUST be frozen under the repository's history of published versions, identical
-  to the contract the host binds, and pinned by its digest in the test that pins 1.0.0, 1.1.0 and
-  1.2.0; editing any byte of a frozen version MUST fail the build, naming the version, and while
-  the current contract declares 1.3.0 it MUST equal the frozen copy.
+  except where a review finding closes a security hole (FR-005) or the maintainer chooses a
+  breaking fix (FR-006). The doc comments of 1.3.0 MAY be corrected before it is frozen.
+- **FR-002**: The closed contract (1.3.0, or 2.0.0 under FR-006) MUST be frozen under the
+  repository's history of published versions, identical to the contract the host binds, and
+  pinned by its digest in the test that pins 1.0.0, 1.1.0 and 1.2.0; editing any byte of a frozen
+  version MUST fail the build, naming the version, and while the current contract declares the
+  closed version it MUST equal the frozen copy.
 - **FR-003**: The contributor docs MUST state how v1 changes from now on: a new minor that only
   adds, freezing the current version first and extending the test that checks a minor only adds;
   anything else is a v2.
-- **FR-004**: Before 1.3.0 is frozen, the contract MUST get a review by someone who did not write
+- **FR-004**: Before the contract is frozen, the contract MUST get a review by someone who did not write
   it, which checks, for every interface, function, type and error case, that a plugin can reach
   it, that the host behaves as its documentation says, and that it is documented; and, for every
   world and name, that it promises nothing the host does not do.
 - **FR-005**: Every review finding MUST be recorded in the feature's directory with its outcome:
-  fixed in the docs; fixed in the host, with a test that fails without the fix; recorded for v2;
-  or kept, with the reason. A fix in the host that refuses something accepted today MUST be a
-  security fix with its own test and line-by-line review (Principle IX); any other such change
-  MUST be recorded for v2 instead. The contract MUST NOT be frozen while a finding has no outcome.
-- **FR-006**: What only a breaking change could fix MUST be kept in a record of changes for v2 in
-  the repository, never applied by editing a published version.
+  fixed in the docs; fixed in the host, with a test that fails without the fix; fixed by a
+  breaking change (FR-006); or kept, with the reason. A fix in the host that refuses something
+  accepted today MUST be a security fix with its own test and line-by-line review (Principle IX);
+  any other such change is a breaking-change finding (FR-006). The contract MUST NOT be frozen
+  while a finding has no outcome.
+- **FR-006**: A finding that only a breaking change could fix MUST go to the maintainer with its
+  cost (what changes for the contract, the host, the examples, the fixtures and the docs). Before
+  the first public release, if the maintainer chooses the fix, it MUST ship in this feature as
+  contract 2.0.0, which becomes the closed contract: v1 is retired in the same feature (the host
+  refuses v1 plugins, naming the versions it runs; the examples and fixtures move to 2.0.0; the
+  hostile suite keeps every case), v0 keeps running, and no published version is edited. A
+  finding the maintainer does not choose to fix is kept, with the reason. After the first public
+  release, such findings MUST instead be recorded for the next major.
 
 **The docs**
 
@@ -359,12 +390,12 @@ of TypeScript in feature 006.
 
 ### Key Entities
 
-- **Published contract version**: a minor of v1, frozen once published and pinned by its digest;
-  1.0.0 to 1.3.0 after this feature.
+- **Published contract version**: a version of the contract, frozen once published and pinned
+  by its digest; 1.0.0 to 1.3.0 after this feature, or 2.0.0 too if a breaking fix was chosen.
 - **Review finding**: something the review found in the contract, with the item it concerns, what
-  was wrong, and its outcome (docs fix, host fix with test, recorded for v2, kept with reason).
-- **Record for v2**: the list of changes only a breaking version could make, each with the finding
-  it came from.
+  was wrong, and its outcome (docs fix, host fix with test, breaking fix, kept with reason).
+- **Breaking-change finding**: a finding only a new major could fix, with its cost and the
+  maintainer's choice.
 - **Reference entry**: one item an author can look up (contract item, manifest or connector
   field, limit, host error, CLI command), with its meaning, when it happens and what to do.
 - **Walkthrough**: the getting-started steps, each with its commands per system and what they
@@ -384,7 +415,7 @@ of TypeScript in feature 006.
 - **SC-003**: 100% of the commands and files shown in the walkthrough and the guides run in CI on
   the three systems, and changing one to a failing command fails the build.
 - **SC-004**: Every review finding has an outcome before the freeze: 0 findings open.
-- **SC-005**: Changing one byte of any of the four frozen versions fails the build, naming the
+- **SC-005**: Changing one byte of any frozen version fails the build, naming the
   version.
 - **SC-006**: The security suite passes unchanged on the three systems, with no hostile case
   removed.

@@ -47,8 +47,11 @@
   2. The reference and the drift check also cover the connector format's fields (FR-012,
      FR-017), since connector authors read the same docs.
   3. A review finding that would make the host refuse something it accepts today is applied only
-     if it closes a security hole; otherwise it goes to the record for v2, so plugins that run
-     today keep running (FR-005, Edge Cases).
+     if it closes a security hole; otherwise it is a breaking-change finding (FR-005, FR-006).
   4. The drift and walkthrough checks run even on a change to Markdown alone, because those docs
      are used as code; the hostile suite keeps its documentation-only rule (FR-019).
+- Clarified after a side note (2026-10-25, see the spec's Clarifications): a flaw only a breaking
+  change can fix is not left for a later v2. Before the first public release it goes to the
+  maintainer, and if chosen ships here as 2.0.0 with v1 retired, so the host keeps one current
+  contract (FR-006). The description said "recorded for v2".
 - SC-001's 30 minutes is a target to confirm when the walkthrough is walked on the three systems.
