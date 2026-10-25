@@ -54,7 +54,10 @@ docs runner's shells are bash on Linux and macOS and PowerShell 7 on Windows (R8
 inside the existing Cargo workspace
 
 **Performance Goals**: the docs job finishes within 25 minutes on each system and runs in
-parallel with the build job, so the run's wall time grows by at most the difference (R11);
+parallel with the build job, so the run's wall time grows by at most the difference; measured on
+the pull request's first run, with the walkthrough's release build of the runtime made without
+LTO for the job (279 s from nothing, 149 s with dependencies cached under LTO, 16 s without
+LTO, on 8 local cores; R3, R11);
 SC-001: a timed walk by hand under 30 minutes
 
 **Constraints**: no change to contract 1.3.0's definitions (doc comments may be corrected before

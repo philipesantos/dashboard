@@ -55,8 +55,14 @@ the vault's store needs to build.
 In the runner, both commands run as written without reaching GitHub or the contributor's own
 install: git's `url.<base>.insteadOf`, set through the `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/
 `GIT_CONFIG_VALUE_*` variables, sends the clone to the checkout under test (its committed `HEAD`);
-`CARGO_INSTALL_ROOT` points at the session's folder, put first on `PATH`; and `CARGO_TARGET_DIR`
-points at the job's cached target folder, so the release build of the runtime is incremental.
+`CARGO_INSTALL_ROOT` points at the session's folder, put first on `PATH`; `CARGO_TARGET_DIR`
+points at the job's cached target folder; and `CARGO_PROFILE_RELEASE_LTO=false` with
+`CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16` turn off the workspace's fat LTO for this build only.
+Measured on an 8-core Linux machine: the release build takes 279 s from nothing and 149 s with
+every dependency built, because fat LTO optimizes Wasmtime again at every link; without LTO and
+with the dependencies cached it takes 16 s. The binary is built from the same code and only less
+optimized, and no output the guides show depends on speed (the limits count fuel, and the time
+limits are far from what the examples use), so the command still runs as written.
 
 **Rationale**: there are no releases until Phase 6 (spec, Assumptions); an installed binary
 reads the same on three systems, unlike the `cargo run -p runtime --release --` alias of today's
@@ -225,7 +231,8 @@ to build and the vault needs to run (`libdbus-1-dev`, `pkg-config`, `gnome-keyri
 packages); the cache; `cargo xtask plugins --locked` (the guides use the examples); `cargo test
 -p runtime --test docs_reference --locked`; `cargo test -p runtime --test docs_walk --locked --
 --ignored`, on Linux inside `dbus-run-session` with gnome-keyring unlocked, as the build job runs
-its tests. Timeout 40 minutes. The `changes` job counts `docs/authors/` and `wit/` as code, the
+its tests. Timeout 40 minutes. The job's time on each system is measured on the pull request's
+first run and recorded in `walks.md`; the 25-minute goal counts as met only then. The `changes` job counts `docs/authors/` and `wit/` as code, the
 files the checks read, so a change to them alone runs CI in full (FR-019); the comment that cites
 the constitution is updated. The `audit` and `deny` jobs also check the walkthrough's crate
 (R8): `cargo audit --file docs/authors/getting-started/Cargo.lock` and `cargo deny
