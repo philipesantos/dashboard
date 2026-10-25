@@ -6,7 +6,9 @@
 //! those of feature 002, one per rule of its FR-016 (`specs/002-plugin-permissions/data-model.md`,
 //! Hostile-plugin cases), then the connector cases of feature 003 in the `connectors` module
 //! (`specs/003-plugin-connectors/data-model.md`, Hostile cases), then the storage cases of
-//! feature 004 in the `storage` module (`specs/004-plugin-storage/data-model.md`, Hostile cases).
+//! feature 004 in the `storage` module (`specs/004-plugin-storage/data-model.md`, Hostile cases),
+//! then the credential cases of feature 005 in the `credentials` module
+//! (`specs/005-plugin-credentials/data-model.md`, Hostile cases).
 
 mod common;
 // Feature 003: the connector cases, in runtime/tests/hostile/
@@ -15,6 +17,9 @@ mod connectors;
 // Feature 004: the storage cases, in runtime/tests/hostile/
 #[path = "hostile/storage.rs"]
 mod storage;
+// Feature 005: the credential cases, in runtime/tests/hostile/
+#[path = "hostile/credentials.rs"]
+mod credentials;
 
 use std::sync::{Arc, mpsc};
 use std::thread;

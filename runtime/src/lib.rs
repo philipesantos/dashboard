@@ -59,6 +59,8 @@ pub use network::{Route, TestNetwork};
 pub use permissions::{Contract, ContractVersion};
 pub use storage::StorageCounts;
 pub use text::{escape, quote_entry};
+#[cfg(feature = "test-network")]
+pub use vault::Failure as VaultFailure;
 
 /// Bindings for the `widget` world of plugin contract v0 (`wit/v0`, `dashboard:widget@0.1.0`).
 pub(crate) mod v0 {
@@ -501,6 +503,35 @@ impl Runtime {
             network::Network::with_seam(test),
             vault::Backend::mock(),
         )
+    }
+
+    /// Makes the next operation on the vault entry of `connector_id`'s account at `origin`
+    /// fail with `failure`, on the mock vault of [`Runtime::with_test_network`].
+    #[cfg(feature = "test-network")]
+    pub fn test_vault_fail_next(&self, connector_id: &str, origin: &str, failure: VaultFailure) {
+        self.vault
+            .fail_next(&self.test_vault_user(connector_id, origin), failure);
+    }
+
+    /// Makes the vault's thread wait `delay` before its next operation.
+    #[cfg(feature = "test-network")]
+    pub fn test_vault_delay_next(&self, delay: Duration) {
+        self.vault.delay_next(delay);
+    }
+
+    /// Writes `bytes`, as they are, as the vault entry of `connector_id`'s account at `origin`.
+    #[cfg(feature = "test-network")]
+    pub fn test_vault_write_raw(&self, connector_id: &str, origin: &str, bytes: Vec<u8>) {
+        self.vault
+            .write_raw(&self.test_vault_user(connector_id, origin), bytes);
+    }
+
+    #[cfg(feature = "test-network")]
+    fn test_vault_user(&self, connector_id: &str, origin: &str) -> String {
+        let vault_id = accounts::AccountStore::open(self.options.data_dir())
+            .vault_id()
+            .expect("the accounts record is readable");
+        vault::entry_user(&vault_id, connector_id, origin)
     }
 
     fn start(

@@ -30,7 +30,7 @@ impl Backend {
 /// A failure the in-memory store answers with once, for the tests.
 #[cfg(any(test, feature = "test-network"))]
 #[derive(Debug, Clone)]
-pub(crate) enum Failure {
+pub enum Failure {
     NoStorageAccess,
     Platform,
     BadEncoding(Vec<u8>),

@@ -41,6 +41,8 @@ pub struct Script {
     pub callback: Callback,
     /// The service gives a token outside the bearer-token set.
     pub bad_token: bool,
+    /// The token answer is cut short, so it does not parse, after the tokens in it.
+    pub token_cut: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,7 +341,11 @@ fn issue(state: &mut State, account: &str) -> Reply {
     if let Some(expires_in) = state.script.expires_in {
         answer["expires_in"] = serde_json::json!(expires_in);
     }
-    Reply::json(&answer.to_string())
+    let text = answer.to_string();
+    if state.script.token_cut {
+        return Reply::json(&text[..text.len() - 2]);
+    }
+    Reply::json(&text)
 }
 
 fn refusal(code: &str, description: &str) -> Reply {
