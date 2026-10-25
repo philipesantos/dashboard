@@ -21,6 +21,7 @@ entry's row. Kinds and ids:
 | `manifest` | a field's path in `manifest.schema.json`, `[]` for array items | `manifest connectors[]/account` |
 | `connector` | a field's path in `connector.schema.json` | `connector operations[]/kind` |
 | `limit` | the field's name in `Limits` | `limit max_package_bytes` |
+| `cli` | `<command>` or `<command> <option>`, as `runtime::cli::USAGE` lists them (not `bench`) | `cli accounts connect --no-browser` |
 
 A `limit` marker sits in a table row whose second cell is the default, written as `10 MiB`,
 `64 KiB`, `1 s`, `500 ms`, `500,000,000` or `30 per minute`; the test formats `Limits::default()`
@@ -28,7 +29,8 @@ the same way and compares.
 
 The drift test fails, naming each item, when: an item of a source has no marker; a marker names
 an item no source has; a marker repeats; a limit's default differs; or a source holds a
-definition the test cannot classify.
+definition the test cannot classify. It also fails on a link from a page under `docs/authors/`
+into `specs/` on a line that does not start with `Background:` (FR-015).
 
 ## Runnable blocks
 
@@ -77,10 +79,21 @@ name = "my-widget"
 ## What the runner guarantees per page
 
 - A fresh temporary folder as the working directory.
+- Every page but the walkthrough starts where the walkthrough ends:
+  - a local clone of the repository at `dashboard/`, cloned as the walkthrough clones it;
+  - `runtime` first on `PATH`: the CLI this test build made (`CARGO_BIN_EXE_runtime`), or the
+    test-only CLI for a page with `service=`.
+
+  A guide then works in its example's folder of that clone. A reference page works in a copy of
+  `docs/authors/getting-started/` at `my-widget/`, with the contract copied into
+  `my-widget/wit/`. Each page says in its first lines where it starts.
+- No page ever runs a `runtime` from outside the session, because the runner puts its own first
+  on `PATH`.
 - The walkthrough's `git clone` of the repository's address runs as written and gets the
   checkout under test (its committed `HEAD`), through git's `url.<base>.insteadOf` set in the
-  environment; `cargo install` installs into the session's folder, first on `PATH`, building in
-  the job's target folder (R3).
+  environment; `cargo install` installs into the session's folder, first on `PATH`. Only that
+  command's environment adds the job's target folder and the release profile without LTO, so the
+  author's own `cargo build` keeps its `target/` (R3).
 - The walkthrough's file blocks equal the files of `docs/authors/getting-started/`, and its
   `Cargo.lock` is in the session's folder before the page and unchanged after it (R8).
 - The development data directory and grant record, found by the CLI's own lookups, cleared

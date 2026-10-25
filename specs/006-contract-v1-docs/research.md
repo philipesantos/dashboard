@@ -55,9 +55,11 @@ the vault's store needs to build.
 In the runner, both commands run as written without reaching GitHub or the contributor's own
 install: git's `url.<base>.insteadOf`, set through the `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/
 `GIT_CONFIG_VALUE_*` variables, sends the clone to the checkout under test (its committed `HEAD`);
-`CARGO_INSTALL_ROOT` points at the session's folder, put first on `PATH`; `CARGO_TARGET_DIR`
-points at the job's cached target folder; and `CARGO_PROFILE_RELEASE_LTO=false` with
-`CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16` turn off the workspace's fat LTO for this build only.
+`CARGO_INSTALL_ROOT` points at the session's folder, put first on `PATH`. For a `cargo install`
+command only, the runner adds `CARGO_TARGET_DIR` (the job's cached target folder),
+`CARGO_PROFILE_RELEASE_LTO=false` and `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16` to that command's
+environment. Set for the whole session, they would move the author's own `cargo build` output
+away from the `target/` the walkthrough packs from.
 Measured on an 8-core Linux machine: the release build takes 279 s from nothing and 149 s with
 every dependency built, because fat LTO optimizes Wasmtime again at every link; without LTO and
 with the dependencies cached it takes 16 s. The binary is built from the same code and only less
@@ -105,7 +107,7 @@ cannot be corrected).
 ## R6. How the reference names what it covers
 
 **Decision**: every entry carries a marker, an HTML comment invisible on GitHub:
-`<!-- ref: <kind> <id> -->`, with kinds `wit`, `error`, `manifest`, `connector`, `limit` and
+`<!-- ref: <kind> <id> -->`, with kinds `wit`, `error`, `manifest`, `connector`, `limit`, `cli` and
 ids such as `wit connectors/call-error/not-granted`, `error capability-refused`, `manifest
 connectors[]/account`, `limit max_package_bytes`. A limit's marker sits in the table row whose
 "Default" cell must equal the host's default in the reference's units. The format is in
@@ -125,8 +127,12 @@ set from: the contract `wit/v1` parsed with `wit-parser` (worlds, interfaces, fu
 type and every case or field of enums, variants, records and flags); `wit/manifest.schema.json`
 and `wit/connector.schema.json`, walked through `properties` and `items`; `ErrorKind::ALL`, a
 new constant declared by one macro together with the enum and `as_str`, so a kind cannot exist
-without being in it (a wildcard-free `match` would check `as_str`, not the array); and
-`Limits`, destructured field by field, so a new field fails to compile until the test names it.
+without being in it (a wildcard-free `match` would check `as_str`, not the array);
+`Limits`, destructured field by field, so a new field fails to compile until the test names it;
+and the commands and options of `runtime::cli::USAGE`, reachable once the CLI is a library
+module (R9), except `bench`, which is for the project's own measurements (FR-020). It also fails
+on a link from `docs/authors/` into `specs/` on a line that does not start with `Background:`
+(FR-015, SC-007).
 It reads every marker under `docs/authors/reference/` and fails on a missing item, an item that
 does not exist, a limit default that differs, or a definition it cannot classify, naming each.
 
@@ -191,8 +197,11 @@ The runner runs a page's `runtime` commands through this binary only when the pa
 matter comment says `service=<names>` (the connectors guide: `github`; the accounts guide:
 `notes`), after starting the matching test servers from `runtime/tests/common`, and disconnects
 the page's accounts after it. The command text never changes. A test in `cli.rs` runs the real
-`runtime` with `DASHBOARD_TEST_NETWORK` naming a live test service and checks that the service
-gets no request and the output is the same as without the variable.
+`runtime` with `DASHBOARD_TEST_NETWORK` routing a `localhost` destination to a live test server
+and checks that the server gets no request and the output is the same as without the variable.
+The output is production's refusal of a destination that is not public, so nothing leaves the
+machine. Pages other than the walkthrough start from a local clone and the CLI this test build
+made, put first on `PATH` (`contracts/docs-format.md`).
 
 The work goes in two commits: first the code moves unchanged, reviewed as moved lines
 (`git diff --color-moved` shows them identical); then the runtime and the opener become

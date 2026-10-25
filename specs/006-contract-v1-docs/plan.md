@@ -66,7 +66,7 @@ in release (003's guard), is never what an author installs, and opens connection
 `runtime/src/network/` (R9); everything under `runtime/`
 and `wit/` gets line-by-line review (Principle IX)
 
-**Scale/Scope**: about 12 pages under `docs/authors/` (index, walkthrough, 5 guides, 6 reference
+**Scale/Scope**: 13 pages under `docs/authors/` (index, walkthrough, 5 guides, 6 reference
 pages); about 70 contract items, 36 error kinds, 44 limits, about 40 manifest and connector
 fields, about 20 CLI commands; 2 new test files, 1 test-only binary, the CLI moved into a library
 module, `pack` extended; 1 CI job on three systems; the walkthrough's crate kept under `docs/authors/getting-started/`

@@ -143,6 +143,7 @@ kinds, and the docs runner every page runs on.
     (`runtime.rs:2014`).
   - `cli::main()` calls `main_with` with `Runtime::new`, `open::that`,
     `RuntimeOptions::default_development_data_dir` and `GrantStore::default_development_path`.
+  - Make `USAGE` `pub`, so the drift test can read the commands and options (T029).
   - Confirm `runtime/tests/cli.rs` passes unchanged.
 
 ### Error kinds (R7)
@@ -177,6 +178,10 @@ kinds, and the docs runner every page runs on.
   - **Front matter:** `<!-- check: service=github,notes -->` is read, and `service=` on a block
     is refused.
   - **Failures:** a differing line fails, showing the expected and the actual lines.
+  - **Starting state:** a page other than the walkthrough runs the session's `runtime`, never
+    another one on `PATH`.
+  - **Cargo variables:** a `cargo build` command does not see `CARGO_TARGET_DIR` or
+    `CARGO_PROFILE_RELEASE_*`, and a `cargo install` command does.
 - [ ] T010 Implement the runner in `runtime/tests/docs_walk.rs` (research R8,
   `contracts/docs-format.md`), so T009 passes:
   - **Entry point:** `#[ignore]`d `every_page_runs_as_written`, over every `.md` under
@@ -196,10 +201,19 @@ kinds, and the docs runner every page runs on.
     - a command must exit `exit=<n>`, or 0 if no `exit=` is given;
     - outputs are compared whole, except in `output=any` blocks;
     - the page stops at the first block that differs.
-  - **Environment, for the walkthrough's `git clone` and `cargo install` (R3):**
+  - **Starting state for every page but `getting-started.md`** (`contracts/docs-format.md`):
+    - a local clone at `<session>/dashboard`, made as the walkthrough makes it;
+    - `CARGO_BIN_EXE_runtime` copied as `runtime` (or `runtime.exe`) into `<session>/bin`, first
+      on `PATH`;
+    - for pages under `reference/`, a copy of `docs/authors/getting-started/` at
+      `<session>/my-widget`, with `wit/history/1.3.0/widget.wit` copied into its `wit/`.
+  - **Environment for the whole session (R3):**
     - `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0` and `GIT_CONFIG_VALUE_0` set
       `url.<repository root>.insteadOf=https://github.com/philipesantos/dashboard`;
-    - `CARGO_INSTALL_ROOT=<session>/install`, with `<session>/install/bin` first on `PATH`;
+    - `CARGO_INSTALL_ROOT=<session>/install`, with `<session>/install/bin` first on `PATH`.
+  - **Environment for a command that starts with `cargo install` only:** setting these for the
+    whole session would move the author's own `cargo build` output away from the `target/` the
+    walkthrough packs from.
     - `CARGO_TARGET_DIR`: `DASHBOARD_DOCS_TARGET_DIR` if set, else the workspace's `target/`;
     - `CARGO_PROFILE_RELEASE_LTO=false` and `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`.
 
@@ -265,7 +279,9 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
     (`wasm32-unknown-unknown/release/<crate>.wasm`) with the example's `manifest.json`. Assert
     the output equals `target/plugins/<crate>.wasm` byte for byte and that `pack` prints
     `packed <output>` and `digest: <sha-256>`. The test fails, never skips, when a core module is
-    missing.
+    missing. It also checks that `pack` writes the manifest section as `xtask`'s
+    `CustomSection::append_to_component` does (`xtask/src/main.rs:148`, `package.rs:104`). If
+    only that differs, align `package.rs` with it, in a change reviewed line by line.
   - `pack_refuses_a_core_module_without_the_contracts_world`: a core module from `wat` with no
     `component-type` section gets exactly `error: invalid-package: <file> is a core module
     without the contract's world (build it with wit-bindgen)` and the exit code of the other
@@ -314,7 +330,8 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
   1. The tools and the versions it was walked with: Rust 1.99.1 and the `wasm32-unknown-unknown`
      target; `libdbus-1-dev` and `pkg-config` on Linux; PowerShell 7 on Windows.
   2. `git clone https://github.com/philipesantos/dashboard` and `cargo install --path
-     dashboard/runtime --locked`, both `output=any`.
+     dashboard/runtime --locked`, both `output=any`. The page says this step builds the runtime
+     and takes several minutes.
   3. An empty folder outside the clone; `Cargo.toml`, `src/lib.rs` and `manifest.json` as file
      blocks.
   4. Copy `dashboard/wit/history/1.3.0/widget.wit` into `wit/`, with a bash form and a
@@ -330,7 +347,9 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
   - building for `wasm32-wasip2`;
   - packing without a manifest, and with an invalid one;
   - running before approving;
-  - a manifest naming a newer contract than the host runs.
+  - a component built against a newer minor than the host runs: `package
+    dashboard:widget@1.4.0;` in the copied `wit/widget.wit`, which the host refuses as
+    `contract-mismatch`. The fix is to copy the version the installed CLI runs.
 
   End by pointing to the guides and the reference. Link a spec only as background.
 - [ ] T019 [P] [US1] Write `docs/authors/README.md`:
@@ -343,8 +362,8 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
   - that Go and Python get no docs yet.
 - [ ] T020 [US1] Run `cargo xtask plugins --locked` and then
   `DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 cargo test -p runtime --test docs_walk --locked
-  -- --ignored` on Linux until `getting-started.md` and `README.md` pass. Fix the page, never the
-  expected output, unless the CLI's output really is what the page should show.
+  -- --ignored` on Linux until `getting-started.md` and `README.md` pass. Fix the command or the
+  code; change an output the page shows only when the CLI's output is the right one.
 
 **Checkpoint**: an author can reach a running widget from the docs alone. The runner proves it on
 Linux; the docs job of US4 proves it on all three systems.
@@ -374,7 +393,8 @@ limit and author-facing command. Each entry has a marker.
   of `ErrorKind::ALL`:
   - the marker `<!-- ref: error <name> -->`;
   - the line as the CLI prints it (`error: <name>: …`), its cause, and its fix;
-  - a `console check` example where the walkthrough's crate can trigger it without a service.
+  - a `console check` example where `my-widget/`, the copy of the walkthrough's crate the runner
+    gives reference pages, can trigger it without a service.
 - [ ] T023 [P] [US3] Write `docs/authors/reference/manifest.md` (FR-012): every field path of
   `wit/manifest.schema.json` (`[]` for array items), with the marker `<!-- ref: manifest <path> -->`,
   what it accepts, whether it is required, and what it changes at approval. `login_providers` is
@@ -392,8 +412,9 @@ limit and author-facing command. Each entry has a marker.
     `run`, `update`, `requests`, `accounts connect`, `accounts list`, `accounts disconnect`,
     `optional`, `remove`, `storage list`, `storage show`, `storage clear` and `check-connector`,
     as the CLI's usage lists them (`bench` is for the project's own measurements).
-  - **Examples:** each command has a `console check` example of what it prints, run against the
-    walkthrough's crate.
+  - **Markers:** each command and option has `<!-- ref: cli <command> [<option>] -->`.
+  - **Examples:** each command has a `console check` example of what it prints, run in
+    `my-widget/`, the copy of the walkthrough's crate the runner gives reference pages.
   - **Commands that reach a service:** link to their checked example in the connectors or the
     accounts guide (US5).
   - **Escaping:** one example with a manifest whose `name` holds control characters shows the
@@ -425,7 +446,10 @@ docs job fails (quickstart §3).
   - a repeated marker fails;
   - a limit row whose default differs fails, naming the limit and both values;
   - an unknown marker kind fails;
-  - a WIT definition the checker cannot classify fails, naming it, and is never skipped.
+  - a WIT definition the checker cannot classify fails, naming it, and is never skipped;
+  - an option in the usage that has no marker fails, naming it;
+  - a link into `specs/` on a line that does not start with `Background:` fails, naming the page
+    and the line.
 
 ### Implementation for User Story 4
 
@@ -439,9 +463,13 @@ docs job fails (quickstart §3).
       `items` (`[]`) and local `$ref`s;
     - take every name in `runtime::ErrorKind::ALL`;
     - destructure `runtime::Limits::default()` field by field, with no `..`, and format each
-      default in the reference's units.
+      default in the reference's units;
+    - take every command and option of `runtime::cli::USAGE` except `bench`; a usage line the
+      parser cannot read fails, naming it.
   - **Reference set:** every `<!-- ref: … -->` under `docs/authors/reference/`.
-  - **Test:** `every_item_is_in_the_reference`, in every `cargo test`.
+  - **Tests:** `every_item_is_in_the_reference` and `no_page_needs_a_spec` (a link from
+    `docs/authors/` into `specs/` fails unless its line starts with `Background:`; FR-015,
+    SC-007), in every `cargo test`.
   - **Pass:** it passes against T021–T026. Fix the pages, never the expected set.
 - [ ] T030 [US4] Update `.github/workflows/ci.yml` (research R11):
   - **`changes` job:** a changed path under `docs/authors/` or `wit/` sets `code=true` before
@@ -468,6 +496,7 @@ docs job fails (quickstart §3).
   - Running the runner locally needs `DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1`, because it
     clears your development data. It needs a committed `HEAD`, and on Linux a Secret Service.
   - `docs/authors/` and `wit/` count as code in CI.
+  - How v1 changes from now on: see `wit/README.md`.
   - A dependency of the walkthrough's crate moves only with its `Cargo.lock` and the page
     together.
 
@@ -489,14 +518,20 @@ ignores `DASHBOARD_TEST_NETWORK`.
 
 - [ ] T032 [US5] Write `the_real_cli_ignores_the_test_network` first, in `runtime/tests/cli.rs`
   (`contracts/cli.md`):
-  - Start the test GitHub server of `runtime/tests/common/servers.rs`.
-  - Write a `DASHBOARD_TEST_NETWORK` file that routes `api.github.com` to it and names a data
-    directory.
-  - Run the real `runtime update` of an approved `github-releases` with `--data <temp>`, once
-    with the variable set and once without.
-  - Assert the server got no request and the two outputs are equal.
+  - Start a test HTTPS server of `runtime/tests/common/servers.rs` on `127.0.0.1:<port>`.
+  - Use a development connector (`--connectors <dir>`) whose destination is
+    `https://localhost:<port>`, and a widget that calls it, approved in `--grants <temp>`.
+  - Write a `DASHBOARD_TEST_NETWORK` file that routes `localhost:<port>` to the server, lists it
+    in `public_for_tests` and names a data directory.
+  - Run the real `runtime update` with `--data <temp>`, once with the variable set and once
+    without.
+  - Assert the server got no request, the two outputs are equal, and both are the production
+    refusal of a destination that is not public.
 
-  This test passes today. It guards T034 and T035.
+  `localhost` resolves on the machine, and production refuses loopback before connecting
+  (`network/resolver.rs:64`), so nothing leaves the machine. This test passes today. It guards
+  T034 and T035. If the connector schema already refuses `localhost`, use another name the
+  system resolves locally to loopback, and record which.
 
 ### Implementation for User Story 5
 
@@ -520,7 +555,8 @@ ignores `DASHBOARD_TEST_NETWORK`.
   - **Declaration:** in `runtime/Cargo.toml`,
     `[[bin]] name = "runtime-test-network" required-features = ["test-network"]`, with a comment.
   - **Startup:** it reads the JSON file named by `DASHBOARD_TEST_NETWORK`, which holds `routes`,
-    `public_for_tests`, `root` as base64 DER, `catalog`, `data_dir` and `grants`. A missing or
+    `public_for_tests`, `root` as a JSON array of the DER's bytes (the runtime has no base64 dependency, and a binary
+    cannot use dev-dependencies), `catalog`, `data_dir` and `grants`. A missing or
     unreadable file is a usage error, and then the binary does nothing.
   - **CLI:** it calls `runtime::cli::main_with` with
     `Runtime::with_test_network_on_keychain` on that `TestNetwork`, an opener that calls
@@ -535,13 +571,18 @@ ignores `DASHBOARD_TEST_NETWORK`.
       server, and `notes` is the sign-in service with the notes API;
     - write the `DASHBOARD_TEST_NETWORK` file with a data directory and a grant record of the
       session's own;
-    - copy `CARGO_BIN_EXE_runtime-test-network` into `<session>/test-bin/` as `runtime` (or
-      `runtime.exe`), first on `PATH`.
+    - replace the `runtime` in `<session>/bin` with `CARGO_BIN_EXE_runtime-test-network`.
   - **After the page:** run `accounts disconnect` for every connected account, so the keychain
     keeps nothing.
 
   Add a self-test that a page with `service=` runs its `runtime` commands through the test-only
   binary.
+Each guide of T037–T040 starts in `dashboard/plugins/examples/<example>` of the session's clone.
+It builds the example with `cargo build --release --target wasm32-unknown-unknown`
+(`output=any`) and packs it with `runtime pack` from
+`../../target/wasm32-unknown-unknown/release/<crate>.wasm`, because the examples build in the
+`plugins/` workspace.
+
 - [ ] T037 [P] [US5] Write `docs/authors/guides/render-and-update.md`, from `hello-widget`
   (FR-009):
   - what `update` and `render` each receive and return;
@@ -639,7 +680,9 @@ the older pages point to the new docs.
   minutes, bring it to the maintainer before going on.
 - [ ] T052 The maintainer's walk (SC-001, research R17): the maintainer follows
   `docs/authors/getting-started.md` by hand on Linux, timed, without the tool downloads. The time
-  and any stuck point go in `walks.md`, and the goal is under 30 minutes.
+  and any stuck point go in `walks.md`, and the goal is under 30 minutes. Record the `cargo
+  install` time apart. If the walk goes over 30 minutes because of it, bring it to the
+  maintainer, since SC-001 counts build time.
 - [ ] T053 Human review (Principle IX):
   - The maintainer reviews every commit under `runtime/`, `wit/` and `plugins/`, and the
     `Cargo.lock` change that adds `wit-component`, line by line. T006 is reviewed as moved lines
@@ -670,7 +713,8 @@ the older pages point to the new docs.
 - **US2 (P1)**: after T005; freezes what the docs name
 - **US1 (P1)**: after US2 (the walkthrough copies `wit/history/1.3.0`), T007 (pack in
   `runtime::cli`) and T010 (the runner)
-- **US3 (P2)**: after T005 and T008; the CLI examples use the walkthrough's crate (T016)
+- **US3 (P2)**: after T005, T008 and T010; the examples run in the copy of the walkthrough's
+  crate (T016)
 - **US4 (P2)**: T028–T029 after US3 (the drift test passes only against the reference); T030
   after US1 (the docs job runs the walkthrough)
 - **US5 (P3)**: after T007 and T010; T038 and T039 after T033–T036

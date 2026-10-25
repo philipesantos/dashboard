@@ -209,8 +209,9 @@ one command in the walkthrough to something that fails; each time the build fail
 2. **Given** the reference names an item that does not exist, or gives a limit's default other
    than the host's, **When** the build runs, **Then** it fails, naming it.
 3. **Given** a command or file shown in the walkthrough or a guide, **When** the build runs on
-   Windows, macOS and Linux, **Then** it is run as written (only an external service's address
-   swapped for a test service) and the build fails if it does not work or if any line of its
+   Windows, macOS and Linux, **Then** it is run as written (against test services instead of an
+   external one, through a test build of the same CLI, with the command's text unchanged) and
+   the build fails if it does not work or if any line of its
    output differs from the docs, apart from placeholders for values that change between runs.
 4. **Given** a pull request that changes only the docs these checks cover, **When** CI decides
    what to run, **Then** it runs everything, as for code, because those docs are used as code.
@@ -278,8 +279,9 @@ of TypeScript in feature 006.
 - The walkthrough's commands differ per system (paths, shell syntax, how an environment variable
   is set): the walkthrough shows each system's form where they differ, and CI runs the form shown
   for that system.
-- A guide reaches GitHub or another service: CI runs it against the test services, with only the
-  address swapped, never the real service.
+- A guide reaches GitHub or another service: CI runs it against the test services, through a
+  test build of the same CLI whose network leads to them, never the real service; the command's
+  text does not change.
 - A tool the walkthrough uses releases a version that breaks a step: the walkthrough names the
   version it was walked with, and the CI check, pinned to it, keeps passing until the pin moves
   in a reviewed change.
@@ -372,8 +374,9 @@ of TypeScript in feature 006.
 **Keeping the docs true**
 
 - **FR-017**: A check MUST fail the build when an interface, function, type, case or world of the
-  current contract, a field of the manifest or connector format, a limit, or an error the host
-  reports for a plugin is missing from the reference, or when the reference names one that does
+  current contract, a field of the manifest or connector format, a limit, an error the host
+  reports for a plugin, or a command or option of the development CLI an author uses is missing
+  from the reference, or when the reference names one that does
   not exist or gives a limit's default other than the host's; it MUST name each item, and MUST
   fail on an item it cannot classify rather than skip it.
 - **FR-018**: Every command and file shown in the walkthrough and the guides MUST run in CI on
@@ -381,8 +384,9 @@ of TypeScript in feature 006.
   command's whole output, and the build MUST fail if a command fails or its output differs from
   the docs in any line; only values that change from run to run (digests, paths, times) MAY be
   written as named placeholders, such as `<digest>`, and each placeholder MUST match only its kind
-  of value. A command that reaches an external service MUST run against the test services, with
-  only the address swapped.
+  of value. A command that reaches an external service MUST run against the test services,
+  through a test build of the same CLI whose network leads to them; the command's text MUST NOT
+  change.
 - **FR-019**: The docs that the checks of FR-017 and FR-018 read are used as code, so they are
   not documentation for the constitution's rule (Development Workflow): a change to them, even to
   Markdown alone, MUST run CI as any code change does, the security suite included. The checks of FR-018 MUST run in a job of their own on each of the three systems, in

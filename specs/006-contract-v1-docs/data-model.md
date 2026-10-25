@@ -32,7 +32,7 @@ States: `open` → one outcome. The contract is frozen only when no finding is `
 
 | Field | Meaning |
 | --- | --- |
-| kind | `wit`, `error`, `manifest`, `connector`, `limit` |
+| kind | `wit`, `error`, `manifest`, `connector`, `limit`, `cli` |
 | id | the item's path (see the marker format) |
 | text | what it is, the minor it arrived in, when it happens, what a widget should do |
 | default | limits only: the default in the reference's units, equal to `Limits::default()` |
