@@ -39,6 +39,22 @@ rusqlite = { version = "=0.41.0", default-features = false, features = ["bundled
 # Pins the SQLite that rusqlite's `bundled` compiles, 3.54.0: rusqlite asks for it only with a
 # caret requirement, so without this a Cargo.lock update alone could change it (R1)
 libsqlite3-sys = { version = "=0.39.0", default-features = false }
+# The secrets vault (specs/005-plugin-credentials/research.md, R5): keyring-rs's API, used only in
+# src/vault/store.rs, with one store per system below. Pinned exactly, as security core.
+keyring-core = "=1.0.1"
+# Credentials held in memory are wiped when dropped (R5)
+zeroize = "1"
+# Random vault and account ids, PKCE verifiers and sign-in states (R2, R5): the system's random
+# source, from the ring the TLS stack already builds
+ring = { version = "0.17", default-features = false }
+# The echo check: a response must not carry the credential its request sent (R10)
+memchr = "2"
+# Parses the browser's request to the sign-in callback on the loopback address (R2)
+httparse = "1"
+# Only the development CLI uses these two (R14): a key read from the terminal without echo, and the
+# system browser opened at the sign-in address; on Windows through ShellExecute, never a shell
+rpassword = "7"
+open = { version = "5", features = ["shellexecute-on-windows"] }
 # Finds the manifest section without compiling the package. Pinned to the version Wasmtime 50
 # uses, so the build carries one copy.
 wasmparser = "=0.261.0"
@@ -52,6 +68,17 @@ wasmtime = { version = "50", default-features = false, features = [
     "runtime",
     "std",
 ] }
+
+# The keychain of each system (R5). Linux: the Secret Service through the system's libdbus,
+# synchronous; never the `vendored` feature, whose libdbus C sources are AFL-2.1 or GPL-2.0
+[target.'cfg(windows)'.dependencies]
+windows-native-keyring-store = { version = "=1.1.0", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "=1.0.2", features = ["keychain"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service-keyring-store = { version = "=1.0.1", features = ["crypto-rust"] }
 
 [features]
 # The test seam of research R15: test routes and roots instead of DNS and Mozilla's roots.
@@ -84,3 +111,8 @@ wasmtime = { version = "50", default-features = false, features = [
     "std",
     "wat",
 ] }
+
+# A pseudo-terminal for the CLI's key prompt, which reads /dev/tty (tests/cli.rs); already in the
+# lock file through Wasmtime
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"

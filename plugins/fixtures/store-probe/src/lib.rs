@@ -16,7 +16,7 @@
 //! repetition's index. `fuel` and `loop` both loop without end: the test's limits decide which
 //! limit stops them.
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "stored-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.2.0", world: "stored-widget" });
 
 use dashboard::widget::storage::{self, Rule, StorageError};
 use exports::dashboard::widget::renderer::Guest as Renderer;

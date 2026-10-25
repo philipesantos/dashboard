@@ -1,0 +1,72 @@
+{
+  "$schema": "../../../wit/connector.schema.json",
+  "connector_version": 1,
+  "id": "local/identity-elsewhere",
+  "version": "1.0.0",
+  "author": "Dashboard contributors",
+  "description": "Hostile: the identity operation on a destination the credential is not for",
+  "destinations": {
+    "api": "https://notes.test",
+    "other": "https://other.test"
+  },
+  "credential": {
+    "kind": "account",
+    "required": false,
+    "destinations": [
+      "api"
+    ],
+    "header": "Authorization",
+    "scheme": "Bearer",
+    "account": {
+      "flow": "authorization-code",
+      "client": "notes",
+      "authorize": "https://notes.test/oauth/authorize",
+      "token": "https://notes.test/oauth/token",
+      "revoke": "https://notes.test/oauth/revoke",
+      "scopes": [
+        "notes:read"
+      ],
+      "access": [
+        {
+          "name": "notes",
+          "level": "read"
+        }
+      ],
+      "identity": {
+        "operation": "get-me",
+        "name": "/name",
+        "id": "/id"
+      }
+    }
+  },
+  "operations": {
+    "list-notes": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "api",
+      "path": "/notes",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "parameters": {},
+      "response": {
+        "format": "json",
+        "headers": []
+      }
+    },
+    "get-me": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "other",
+      "path": "/me",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "parameters": {},
+      "response": {
+        "format": "json",
+        "headers": []
+      }
+    }
+  }
+}

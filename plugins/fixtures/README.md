@@ -21,3 +21,9 @@ a plugin from [`examples/hello-widget`](../examples/hello-widget) instead.
   them, and return output that is not JSON or of a given size. Built without a manifest; each
   test packs it with its own. The storage cases of the hostile suite run on it
   ([`plugins/hostile/README.md`](../hostile/README.md#storage-cases)).
+- `account-probe`: a contract 1.3.0 widget (`account-widget`) that makes, in `update`, the calls
+  its configuration lists, each through `accounts` or `connectors`, and returns every answer;
+  with `dump` it returns everything the host gave it instead, so a test can check that no
+  credential is in it. Built without a manifest; each test packs it with its own. The credential
+  cases of the hostile suite run on it
+  ([`plugins/hostile/README.md`](../hostile/README.md#credential-cases)).

@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "local/private-notes",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "permissions": [],
+  "connectors": [
+    {
+      "id": "local/notes",
+      "major": 1,
+      "operations": ["list-notes"],
+      "required": true,
+      "account": true
+    }
+  ]
+}

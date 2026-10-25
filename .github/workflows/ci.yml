@@ -91,6 +91,9 @@ jobs:
           sudo apt-get $apt_options update
           sudo apt-get $apt_options install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev
+          # The secrets vault: libdbus to build the Secret Service store, gnome-keyring for
+          # the tests that use the real keychain (specs/005-plugin-credentials/research.md, R15)
+          sudo apt-get $apt_options install -y libdbus-1-dev gnome-keyring
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
@@ -121,6 +124,14 @@ jobs:
       - run: cargo clippy --manifest-path plugins/Cargo.toml --target wasm32-unknown-unknown --target-dir target/plugins-build --locked -- -D warnings
 
       - run: cargo test --workspace --locked
+        if: runner.os != 'Linux'
+
+      # On Linux the vault tests need a session bus with an unlocked Secret Service: a login
+      # keyring created with a throwaway password (the here-string's newline is required)
+      - name: cargo test --workspace --locked (in a session with GNOME Keyring)
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'ci' && cargo test --workspace --locked"
 
       # The connectors' test seam replaces DNS and the trusted roots; the runtime refuses to
       # compile with it outside debug builds, so no build anyone runs can include it

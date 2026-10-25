@@ -26,6 +26,13 @@
 //! prints one, every text escaped, and `runtime storage clear` empties one, by package or by id
 //! and origin when the package file is gone.
 //!
+//! For connectors with a credential (`specs/005-plugin-credentials/contracts/cli.md`):
+//! `runtime accounts connect` signs in to a connector's account in the system browser, or reads
+//! its key from the terminal without echo, into the development vault in the system's keychain;
+//! `runtime accounts list` lists what is connected and `runtime accounts disconnect` deletes it
+//! and revokes it. No command prints, reads from a file or takes as an argument any credential.
+//! `permissions` shows each credential and whether the widget acts as the account.
+//!
 //! The tool is the host's control in this phase: it works in development mode only, on local
 //! package files, with the development grant record (`--grants <path>`, or the default one in
 //! the system's data directory). A package's origin is its file's canonical path, and an
@@ -39,7 +46,8 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use runtime::connector::{Kind, ParameterType, Template};
+use runtime::accounts::{Account, AccountKind, Connected, Reason};
+use runtime::connector::{Access, Credential, CredentialKind, Kind, ParameterType, Template};
 use runtime::grants::{GrantStore, Status};
 use runtime::manifest::MAX_MANIFEST_BYTES;
 use runtime::manifest::PluginId;
@@ -57,6 +65,9 @@ const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-fil
        runtime storage list [--grants <path>] [--data <dir>]
        runtime storage show <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime storage clear <plugin> | --id <plugin-id> --origin <path> [--grants <path>] [--data <dir>]
+       runtime accounts connect <connector-id> [--origin <path>] [--client <id>] [--no-browser] [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime accounts list [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime accounts disconnect <connector-id> [--origin <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime check-connector <file>
        runtime pack <component> --manifest <file> --output <file>";
 
@@ -71,8 +82,8 @@ const DEFAULT_ITERATIONS: u32 = 1000;
 /// Entries `requests` prints when `--last` is not given.
 const DEFAULT_LAST: usize = 50;
 
-/// What `permissions` says of login providers until accounts can be connected.
-const LOGIN_PROVIDERS_LATER: &str = "(connecting accounts arrives in feature 005)";
+/// What `permissions` says of login providers: the field grants nothing since feature 005.
+const LOGIN_PROVIDERS_OBSOLETE: &str = "(obsolete: accounts come from connectors)";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Command {
@@ -89,6 +100,9 @@ enum Command {
     StorageList,
     StorageShow,
     StorageClear,
+    AccountsConnect,
+    AccountsList,
+    AccountsDisconnect,
 }
 
 fn main() -> ExitCode {
@@ -111,13 +125,25 @@ fn main() -> ExitCode {
             Some(other) => return usage_error(&format!("unknown storage command `{other}`")),
             None => return usage_error("storage needs list, show or clear"),
         },
+        Some("accounts") => match args.get(1).map(String::as_str) {
+            Some("connect") => Command::AccountsConnect,
+            Some("list") => Command::AccountsList,
+            Some("disconnect") => Command::AccountsDisconnect,
+            Some(other) => return usage_error(&format!("unknown accounts command `{other}`")),
+            None => return usage_error("accounts needs connect, list or disconnect"),
+        },
         Some(command) => return usage_error(&format!("unknown command `{command}`")),
         None => return usage_error("no command given"),
     };
-    // A storage command's arguments start after its subcommand
+    // A storage or accounts command's arguments start after its subcommand
     let skip = if matches!(
         command,
-        Command::StorageList | Command::StorageShow | Command::StorageClear
+        Command::StorageList
+            | Command::StorageShow
+            | Command::StorageClear
+            | Command::AccountsConnect
+            | Command::AccountsList
+            | Command::AccountsDisconnect
     ) {
         2
     } else {
@@ -141,11 +167,15 @@ fn main() -> ExitCode {
         Command::StorageList => storage_list(&options),
         Command::StorageShow => storage_show(&options),
         Command::StorageClear => storage_clear(&options),
+        Command::AccountsConnect => accounts_connect(&options),
+        Command::AccountsList => accounts_list(&options),
+        Command::AccountsDisconnect => accounts_disconnect(&options),
     }
 }
 
 struct Options {
-    /// A package file, or for `remove` a plugin id; empty for `requests`.
+    /// A package file, for `remove` a plugin id, for `accounts connect` and `disconnect` a
+    /// connector id; empty for `requests`, `storage list` and `accounts list`.
     plugin: String,
     /// Already checked to be valid JSON. Only for `run` and `bench`.
     config: String,
@@ -172,6 +202,12 @@ struct Options {
     /// Only for `storage clear`: the store's plugin id and origin, for a package file that is
     /// gone.
     store: Option<(String, String)>,
+    /// Only for `accounts connect` and `disconnect`: the connector's origin, given with
+    /// `--origin`.
+    account_origin: Option<String>,
+    /// Only for `accounts connect`: the client registration, and whether to open the browser.
+    client: Option<String>,
+    no_browser: bool,
 }
 
 fn parse(args: &[String], command: Command) -> Result<Options, String> {
@@ -185,6 +221,13 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
             command,
             Command::Remove | Command::StorageList | Command::StorageClear
         );
+    let names_account = matches!(
+        command,
+        Command::AccountsConnect | Command::AccountsDisconnect
+    );
+    let mut account_origin = None;
+    let mut client = None;
+    let mut no_browser = false;
     let mut store_id = None;
     let mut store_origin = None;
     let mut config = None;
@@ -291,6 +334,19 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
                     return Err(format!("give {option} only once"));
                 }
             }
+            "--origin" if names_account => {
+                let value = args.next().ok_or("--origin needs a path")?;
+                if account_origin.replace(value.clone()).is_some() {
+                    return Err("give --origin only once".to_owned());
+                }
+            }
+            "--client" if command == Command::AccountsConnect => {
+                let value = args.next().ok_or("--client needs a client id")?;
+                if client.replace(value.clone()).is_some() {
+                    return Err("give --client only once".to_owned());
+                }
+            }
+            "--no-browser" if command == Command::AccountsConnect => no_browser = true,
             "--iterations" if command == Command::Bench => {
                 iterations = args
                     .next()
@@ -317,6 +373,7 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
     let mut positional = positional.into_iter();
     let plugin = if command == Command::Requests
         || command == Command::StorageList
+        || command == Command::AccountsList
         || (command == Command::StorageClear && store.is_some())
     {
         String::new()
@@ -325,6 +382,7 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
             Command::Remove => "no plugin id given",
             Command::Pack => "no component file given",
             Command::CheckConnector => "no connector file given",
+            Command::AccountsConnect | Command::AccountsDisconnect => "no connector id given",
             _ => "no plugin file given",
         })?
     };
@@ -364,6 +422,9 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
         last,
         kept_data,
         store,
+        account_origin,
+        client,
+        no_browser,
     })
 }
 
@@ -416,7 +477,7 @@ fn update(options: &Options) -> ExitCode {
                 escape(manifest.version())
             );
             if !manifest.connectors().is_empty() {
-                let calls = report.calls;
+                let calls = &report.calls;
                 println!(
                     "calls: {} ({} not granted, {} refused, {} failed), {} bytes received",
                     calls.calls,
@@ -425,6 +486,13 @@ fn update(options: &Options) -> ExitCode {
                     calls.failed,
                     calls.received_bytes
                 );
+                for id in &calls.needs_connecting {
+                    println!(
+                        "account: {} needs connecting again (runtime accounts connect {})",
+                        escape(id),
+                        escape(id)
+                    );
+                }
             }
             if let Some(storage) = report.storage {
                 println!(
@@ -490,11 +558,13 @@ fn request_line(entry: &Entry) -> String {
         ));
         return line;
     }
-    line.push_str(&format!(
-        " {} {}",
-        escape(&entry.connector),
-        escape(&entry.operation)
-    ));
+    line.push(' ');
+    line.push_str(&escape(&entry.connector));
+    if let Some(account) = &entry.account {
+        line.push_str(&format!(" as {}", escape(account)));
+    }
+    line.push(' ');
+    line.push_str(&escape(&entry.operation));
     if let (Some(method), Some(host), Some(path)) = (&entry.method, &entry.host, &entry.path) {
         line.push_str(&format!(
             " {} {} {}",
@@ -627,7 +697,12 @@ fn permissions(options: &Options) -> ExitCode {
             .runtime
             .storage_used_bytes(checked.manifest().id(), &target.origin)
     });
-    print!("{}", describe(&checked, &status, entry.as_ref(), used));
+    // An account that cannot be read is shown as none connected
+    let accounts = target.runtime.list_accounts().unwrap_or_default();
+    print!(
+        "{}",
+        describe(&checked, &status, entry.as_ref(), used, &accounts)
+    );
     ExitCode::SUCCESS
 }
 
@@ -638,6 +713,7 @@ fn describe(
     status: &Status,
     entry: Option<&runtime::grants::Entry>,
     used: Option<Result<u64, runtime::RuntimeError>>,
+    accounts: &[Account],
 ) -> String {
     let manifest = checked.manifest();
     let mut text = format!(
@@ -686,7 +762,7 @@ fn describe(
     }
     let declares_connectors = !manifest.connectors().is_empty();
     if declares_connectors {
-        text.push_str(&describe_connectors(checked, entry));
+        text.push_str(&describe_connectors(checked, entry, accounts));
     }
     let providers = manifest.login_providers();
     if providers.is_empty() {
@@ -694,7 +770,7 @@ fn describe(
     } else {
         let providers: Vec<String> = providers.iter().map(|name| escape(name)).collect();
         text.push_str(&format!(
-            "login providers: {} {LOGIN_PROVIDERS_LATER}\n",
+            "login providers: {} {LOGIN_PROVIDERS_OBSOLETE}\n",
             providers.join(", ")
         ));
     }
@@ -753,7 +829,11 @@ fn size_in_units(bytes: u64) -> String {
 /// from, every destination, and each operation the widget calls with the parameters it sends
 /// and the fixed values the connector writes; then whether data read from this machine can
 /// reach another destination.
-fn describe_connectors(checked: &CheckedPackage, entry: Option<&runtime::grants::Entry>) -> String {
+fn describe_connectors(
+    checked: &CheckedPackage,
+    entry: Option<&runtime::grants::Entry>,
+    accounts: &[Account],
+) -> String {
     let mut text = String::from("connectors:\n");
     let manifest = checked.manifest();
     for request in manifest.connectors() {
@@ -806,6 +886,17 @@ fn describe_connectors(checked: &CheckedPackage, entry: Option<&runtime::grants:
             .map(|origin| escape(&origin.serialization()))
             .collect();
         text.push_str(&format!("    destinations: {}\n", destinations.join(", ")));
+        if let Some(credential) = connector.credential() {
+            let account = accounts.iter().find(|account| {
+                account.connector == request.id && account.origin == loaded.origin()
+            });
+            text.push_str(&describe_credential(
+                credential,
+                catalog,
+                request.account,
+                account,
+            ));
+        }
         for name in loaded.operations() {
             let Some(operation) = connector.operation(name) else {
                 continue;
@@ -846,6 +937,131 @@ fn describe_connectors(checked: &CheckedPackage, entry: Option<&runtime::grants:
     }
     if let Some(flow) = data_flow(checked) {
         text.push_str(&flow);
+    }
+    text.push_str(&account_data_flow(checked));
+    text
+}
+
+/// The `credential:` block of a connector in `permissions` (`specs/005-plugin-credentials/
+/// contracts/cli.md`): what is sent where, what the account lets the connector do, and whether
+/// this widget acts as the account.
+fn describe_credential(
+    credential: &Credential,
+    catalog: bool,
+    uses: bool,
+    account: Option<&Account>,
+) -> String {
+    let kind = match credential.kind() {
+        CredentialKind::Account => "account",
+        CredentialKind::Key => "key",
+    };
+    let required = if credential.required() {
+        "required"
+    } else {
+        "optional"
+    };
+    let header = match credential.scheme() {
+        Some(scheme) => format!("{}: {}", escape(credential.header()), escape(scheme)),
+        None => escape(credential.header()),
+    };
+    let origins: Vec<String> = credential
+        .origins()
+        .iter()
+        .map(|origin| escape(&origin.serialization()))
+        .collect();
+    let mut text = format!(
+        "    credential: {kind} ({required}), {header}, sent to {}\n",
+        origins.join(", ")
+    );
+    if let Some(declared) = credential.account() {
+        text.push_str(&format!(
+            "      sign-in: {}\n      token: {}\n",
+            escape(declared.authorize().as_str()),
+            escape(declared.token().as_str())
+        ));
+    }
+    if !credential.access().is_empty() {
+        let who = if catalog {
+            "reviewed"
+        } else {
+            "declared by the developer"
+        };
+        text.push_str(&format!(
+            "      asks for: {} ({who})\n",
+            access_list(credential.access())
+        ));
+    }
+    let acts_as = match (uses, account) {
+        (false, _) => "this widget does not use the account".to_owned(),
+        (true, Some(account)) => {
+            format!(
+                "this widget acts as the account: {}",
+                account_label(account)
+            )
+        }
+        (true, None) if credential.required() => {
+            "this widget acts as the account: none connected (calls answer account not connected)"
+                .to_owned()
+        }
+        (true, None) => {
+            "this widget acts as the account: none connected (calls go without one)".to_owned()
+        }
+    };
+    text.push_str(&format!("      {acts_as}\n"));
+    text
+}
+
+/// `notes read, notes write`: what an account lets a connector do.
+fn access_list(access: &[Access]) -> String {
+    let items: Vec<String> = access
+        .iter()
+        .map(|item| format!("{} {}", escape(&item.name), item.level.as_str()))
+        .collect();
+    items.join(", ")
+}
+
+/// `ada (id 1234567)`, or the name alone when the service gave no id.
+fn account_label(account: &Account) -> String {
+    match &account.service_id {
+        Some(id) => format!("{} (id {})", escape(&account.name), escape(id)),
+        None => escape(&account.name),
+    }
+}
+
+/// For each connector the widget uses with an account, a line naming every origin of its other
+/// destinations that data read as the account can reach (research R14, Principle III).
+fn account_data_flow(checked: &CheckedPackage) -> String {
+    let mut text = String::new();
+    for request in checked.manifest().connectors() {
+        let Some(credential) = request
+            .account
+            .then(|| {
+                checked
+                    .connectors()
+                    .iter()
+                    .find(|loaded| loaded.id() == request.id)
+                    .and_then(|loaded| loaded.connector().credential())
+            })
+            .flatten()
+        else {
+            continue;
+        };
+        let mut elsewhere: Vec<String> = Vec::new();
+        for loaded in checked.connectors() {
+            for origin in loaded.connector().destinations() {
+                let serialized = escape(&origin.serialization());
+                if !credential.origins().contains(origin) && !elsewhere.contains(&serialized) {
+                    elsewhere.push(serialized);
+                }
+            }
+        }
+        if !elsewhere.is_empty() {
+            text.push_str(&format!(
+                "data flow: data read as the account of {} can reach {}\n",
+                escape(&request.id),
+                elsewhere.join(", ")
+            ));
+        }
     }
     text
 }
@@ -1008,6 +1224,20 @@ fn approve(options: &Options) -> ExitCode {
             })
             .collect();
         println!("connectors: {}", connectors.join(", "));
+        for request in manifest
+            .connectors()
+            .iter()
+            .filter(|request| request.account)
+        {
+            let access = checked
+                .connectors()
+                .iter()
+                .find(|loaded| loaded.id() == request.id)
+                .and_then(|loaded| loaded.connector().credential())
+                .map(|credential| access_list(credential.access()))
+                .unwrap_or_default();
+            println!("account use: {} ({access})", escape(&request.id));
+        }
     }
     ExitCode::SUCCESS
 }
@@ -1394,16 +1624,7 @@ impl Target {
         let origin = origin(path).map_err(|message| usage_error(&message))?;
         let grants =
             grant_store(options.grants.as_ref()).map_err(|message| usage_error(&message))?;
-        let data_dir = data_dir(options).map_err(|message| usage_error(&message))?;
-        // The development tool, the only place local connectors load (FR-018)
-        let mut runtime_options = RuntimeOptions::new(data_dir).development(true);
-        if let Some(connectors) = &options.connectors {
-            runtime_options = runtime_options.connectors_dir(connectors);
-        }
-        let runtime = Runtime::new(limits, runtime_options).map_err(|error| {
-            eprintln!("error: cannot start the runtime: {error:#}");
-            ExitCode::from(PLUGIN_FAILED)
-        })?;
+        let runtime = development_runtime(options)?;
         Ok(Target {
             bytes,
             origin,
@@ -1418,6 +1639,294 @@ impl Target {
             .check(&self.bytes)
             .map_err(|error| refused(&error))
     }
+}
+
+/// A runtime in development mode over `--data` and `--connectors`. On failure, prints why and
+/// returns the exit status.
+fn development_runtime(options: &Options) -> Result<Runtime, ExitCode> {
+    let data_dir = data_dir(options).map_err(|message| usage_error(&message))?;
+    // The development tool, the only place local connectors load (FR-018)
+    let mut runtime_options = RuntimeOptions::new(data_dir).development(true);
+    if let Some(connectors) = &options.connectors {
+        runtime_options = runtime_options.connectors_dir(connectors);
+    }
+    Runtime::new(Limits::default(), runtime_options).map_err(|error| {
+        eprintln!("error: cannot start the runtime: {error:#}");
+        ExitCode::from(PLUGIN_FAILED)
+    })
+}
+
+/// Where a connector comes from, as `accounts` prints it.
+fn connector_from(origin: &str) -> String {
+    if origin == "catalog" {
+        "official catalog".to_owned()
+    } else {
+        format!("local file {}", escape(origin))
+    }
+}
+
+/// `--origin` as the record names origins: the canonical path of a file that exists, or the
+/// path as given when the file is gone.
+fn given_origin(options: &Options) -> Option<String> {
+    options.account_origin.as_ref().map(|given| {
+        if given == "catalog" {
+            return given.clone();
+        }
+        std::fs::canonicalize(given)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| given.clone())
+    })
+}
+
+/// The `used by:` line: the widgets approved to use the account, when there are any.
+fn used_by(options: &Options, connector: &str, origin: &str) -> Option<String> {
+    let plugins = grant_store(options.grants.as_ref())
+        .ok()?
+        .using_account(connector, origin)
+        .ok()?;
+    let plugins: Vec<String> = plugins.iter().map(|plugin| escape(plugin)).collect();
+    (!plugins.is_empty()).then(|| format!("used by: {}", plugins.join(", ")))
+}
+
+/// Connects an account or a key to a connector, in the development vault
+/// (`specs/005-plugin-credentials/contracts/cli.md`). The sign-in's address is printed and opened
+/// in the system browser; a key is read from the terminal without echo, never from an argument.
+fn accounts_connect(options: &Options) -> ExitCode {
+    let runtime = match development_runtime(options) {
+        Ok(runtime) => runtime,
+        Err(status) => return status,
+    };
+    let id = &options.plugin;
+    let (connector, origin) = match runtime.find_connector(id) {
+        Ok(found) => found,
+        Err(error) => return refused(&error),
+    };
+    if let Some(given) = given_origin(options)
+        && given != origin
+    {
+        return usage_error(&format!(
+            "{} is found at {}, not at {}",
+            escape(id),
+            escape(&origin),
+            escape(&given)
+        ));
+    }
+    let Some(credential) = connector.credential() else {
+        eprintln!(
+            "error: invalid-connector: {} declares no credential",
+            escape(id)
+        );
+        return ExitCode::from(PLUGIN_FAILED);
+    };
+    let development = if origin == "catalog" {
+        ""
+    } else {
+        ", development"
+    };
+    let kind = match credential.kind() {
+        CredentialKind::Account => "account",
+        CredentialKind::Key => "key",
+    };
+    println!(
+        "{kind} for {} ({}{development})",
+        escape(id),
+        connector_from(&origin)
+    );
+    if !credential.access().is_empty() {
+        println!("asks for: {}", access_list(credential.access()));
+    }
+    let connected = match credential.kind() {
+        CredentialKind::Account => {
+            let minutes = Limits::default().sign_in_time_limit.as_secs().div_ceil(60);
+            let no_browser = options.no_browser;
+            let open = move |address: &url::Url| {
+                // The address holds the state and the challenge, never the verifier
+                let shown = escape(address.as_str());
+                if no_browser {
+                    println!("open {shown} in a browser");
+                } else {
+                    println!("opening {shown} in the browser");
+                    if let Err(error) = open::that(address.as_str()) {
+                        println!(
+                            "the browser did not open ({}): open the address yourself",
+                            escape(&error.to_string())
+                        );
+                    }
+                }
+                println!("waiting for the browser ({minutes} min)…");
+            };
+            runtime.connect_account(id, options.client.as_deref(), &open)
+        }
+        CredentialKind::Key => {
+            use std::io::Write as _;
+            eprint!("type the key (it is not shown): ");
+            let _ = std::io::stderr().flush();
+            let key = zeroize::Zeroizing::new(rpassword::read_password().unwrap_or_default());
+            runtime.connect_key(id, &key)
+        }
+    };
+    match connected {
+        Ok(Connected::New(account)) => println!("connected: {}", account_label(&account)),
+        Ok(Connected::Again(account)) => println!("reconnected: {}", account_label(&account)),
+        Err(error) => return refused(&error),
+    }
+    if let Some(line) = used_by(options, id, &origin) {
+        println!("{line}");
+    }
+    ExitCode::SUCCESS
+}
+
+/// Every account in the development vault's record, sorted by connector id and origin; changes
+/// nothing.
+fn accounts_list(options: &Options) -> ExitCode {
+    let runtime = match development_runtime(options) {
+        Ok(runtime) => runtime,
+        Err(status) => return status,
+    };
+    let mut accounts = match runtime.list_accounts() {
+        Ok(accounts) => accounts,
+        Err(error) => return refused(&error),
+    };
+    if accounts.is_empty() {
+        println!("nothing connected");
+        return ExitCode::SUCCESS;
+    }
+    accounts.sort_by(|a, b| (&a.connector, &a.origin).cmp(&(&b.connector, &b.origin)));
+    for account in &accounts {
+        let gone = if account.origin_exists() {
+            ""
+        } else {
+            " (no file)"
+        };
+        println!(
+            "{}  {}{gone}",
+            escape(&account.connector),
+            connector_from(&account.origin)
+        );
+        // The connector as found now, when it is still the one at the account's origin
+        let current = runtime
+            .find_connector(&account.connector)
+            .ok()
+            .filter(|(_, origin)| *origin == account.origin)
+            .and_then(|(connector, _)| {
+                connector
+                    .credential()
+                    .map(|credential| credential.access().to_vec())
+            });
+        let state = match &account.needs_connecting {
+            Some(needs) => {
+                let why = match needs.reason {
+                    Reason::Refused => "the service refused it".to_owned(),
+                    Reason::RefreshFailed => "it could not be refreshed".to_owned(),
+                    Reason::MissingFromKeychain => "it is missing from the keychain".to_owned(),
+                    Reason::LessAccess => format!(
+                        "the connector asks for more access than it holds ({})",
+                        current.as_deref().map(access_list).unwrap_or_default()
+                    ),
+                };
+                format!("needs connecting again: {why}")
+            }
+            None => {
+                let mut state = format!(
+                    "connected {}, refreshed {}",
+                    minute(account.connected_at_ms),
+                    minute(account.refreshed_at_ms)
+                );
+                if let Some(expires) = account.expires_at_ms {
+                    state.push_str(&format!(", expires {}", minute(expires)));
+                }
+                state
+            }
+        };
+        println!("  account: {}, {state}", account_label(account));
+        if account.kind == AccountKind::Account || !account.access_asked.is_empty() {
+            let remark = match &current {
+                Some(now) if account.access_asked.iter().any(|item| !now.contains(item)) => {
+                    " (more than the connector asks for now: connect again to narrow it)"
+                }
+                _ => " (as asked)",
+            };
+            println!("  access: {}{remark}", access_list(&account.access_asked));
+        }
+        if let Some(client) = &account.client {
+            let from = if client.from == "option" {
+                "from --client"
+            } else {
+                "built in"
+            };
+            println!("  client: {} ({from})", escape(&client.client_id));
+        }
+        if let Some(line) = used_by(options, &account.connector, &account.origin) {
+            println!("  {line}");
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// `2026-10-25 14:02 UTC`.
+fn minute(at_ms: u64) -> String {
+    let time = utc(at_ms);
+    format!("{} {} UTC", &time[..10], &time[11..16])
+}
+
+/// Disconnects a connector's account: deletes its credential from the keychain, the account from
+/// the record and the kept data read as it, then asks the service to revoke it.
+fn accounts_disconnect(options: &Options) -> ExitCode {
+    let runtime = match development_runtime(options) {
+        Ok(runtime) => runtime,
+        Err(status) => return status,
+    };
+    let id = &options.plugin;
+    let origin = given_origin(options);
+    // Where the service revokes, from the connector as found now, for the output
+    let revoke_host = runtime
+        .find_connector(id)
+        .ok()
+        .and_then(|(connector, _)| {
+            connector
+                .credential()
+                .and_then(|credential| credential.account())
+                .and_then(|account| account.revoke())
+                .and_then(|revoke| revoke.host_str().map(str::to_owned))
+        })
+        .unwrap_or_else(|| "the service".to_owned());
+    let gone = match runtime.disconnect_account(id, origin.as_deref()) {
+        Ok(Some(gone)) => gone,
+        Ok(None) => {
+            eprintln!(
+                "error: account-not-connected: no account is connected to {}",
+                escape(id)
+            );
+            return ExitCode::from(PLUGIN_FAILED);
+        }
+        Err(error) => return refused(&error),
+    };
+    println!(
+        "disconnected {}: {}",
+        escape(id),
+        account_label(&gone.account)
+    );
+    println!("deleted from the keychain");
+    let revoke_at = match &gone.revoke_page {
+        Some(page) => format!("revoke it at {}", escape(page)),
+        None => "revoke it at the service".to_owned(),
+    };
+    match &gone.revoked {
+        Some(Ok(())) => println!("revoked at {}", escape(&revoke_host)),
+        Some(Err(why)) => println!("revocation failed: {}; {revoke_at}", escape(why)),
+        None => println!("the service offers no revocation: {revoke_at}"),
+    }
+    let discarded: Vec<String> = gone
+        .kept_discarded
+        .iter()
+        .map(|plugin| escape(plugin))
+        .collect();
+    if discarded.is_empty() {
+        println!("kept data discarded: none");
+    } else {
+        println!("kept data discarded: {}", discarded.join(", "));
+    }
+    ExitCode::SUCCESS
 }
 
 /// The data directory given with `--data`, or the default development one.

@@ -244,11 +244,18 @@ fn der(tag: u8, content: &[u8]) -> Vec<u8> {
     element
 }
 
+/// How a server answers one path: always the same, or computed from each request.
+#[derive(Clone)]
+enum Route {
+    Fixed(Reply),
+    Computed(Arc<dyn Fn(&Received) -> Reply + Send + Sync>),
+}
+
 /// A test server on `127.0.0.1`: answers each path as scripted (404 otherwise) and records
 /// every request. Each connection serves one request and closes.
 pub struct Server {
     address: SocketAddr,
-    routes: Arc<Mutex<HashMap<String, Reply>>>,
+    routes: Arc<Mutex<HashMap<String, Route>>>,
     received: Arc<Mutex<Vec<Received>>>,
     stopped: Arc<AtomicBool>,
 }
@@ -333,7 +340,20 @@ impl Server {
         self.routes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(path.to_owned(), reply);
+            .insert(path.to_owned(), Route::Fixed(reply));
+    }
+
+    /// Answers `path` with what `answer` computes from each request, such as the test sign-in
+    /// service's tokens (`specs/005-plugin-credentials/research.md`, R15).
+    pub fn route_with(
+        &self,
+        path: &str,
+        answer: impl Fn(&Received) -> Reply + Send + Sync + 'static,
+    ) {
+        self.routes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(path.to_owned(), Route::Computed(Arc::new(answer)));
     }
 
     /// Every request received so far, oldest first.
@@ -362,7 +382,7 @@ impl Drop for Server {
 fn serve(
     stream: TcpStream,
     tls: Option<Arc<rustls::ServerConfig>>,
-    routes: &Mutex<HashMap<String, Reply>>,
+    routes: &Mutex<HashMap<String, Route>>,
     received: &Mutex<Vec<Received>>,
 ) -> io::Result<()> {
     stream.set_nonblocking(false)?;
@@ -411,7 +431,7 @@ impl<S: Write> Write for Shared<S> {
 fn exchange(
     reader: impl Read,
     mut writer: impl Write,
-    routes: &Mutex<HashMap<String, Reply>>,
+    routes: &Mutex<HashMap<String, Route>>,
     received: &Mutex<Vec<Received>>,
 ) -> io::Result<()> {
     let mut reader = BufReader::new(reader);
@@ -447,28 +467,30 @@ fn exchange(
         Some((path, query)) => (path.to_owned(), Some(query.to_owned())),
         None => (target.clone(), None),
     };
+    let request = Received {
+        method: method.clone(),
+        target: target.clone(),
+        path: path.clone(),
+        query,
+        headers,
+        body,
+        at: Instant::now(),
+    };
     received
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .push(Received {
-            method: method.clone(),
-            target: target.clone(),
-            path: path.clone(),
-            query,
-            headers,
-            body,
-            at: Instant::now(),
-        });
+        .push(request.clone());
 
-    let reply = if method == "CONNECT" {
-        Reply::status(502)
-    } else {
-        routes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&path)
-            .cloned()
-            .unwrap_or_else(|| Reply::status(404))
+    let route = routes
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&path)
+        .cloned();
+    let reply = match route {
+        _ if method == "CONNECT" => Reply::status(502),
+        Some(Route::Fixed(reply)) => reply,
+        Some(Route::Computed(answer)) => answer(&request),
+        None => Reply::status(404),
     };
     thread::sleep(reply.delay);
     let mut response = format!("HTTP/1.1 {} Test\r\n", reply.status);

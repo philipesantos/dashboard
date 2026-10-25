@@ -8,6 +8,7 @@ members = [
     "examples/hello-widget",
     "examples/github-releases",
     "examples/update-counter",
+    "examples/private-notes",
     "hostile/infinite-loop",
     "hostile/huge-alloc",
     "hostile/deep-recursion",
@@ -20,11 +21,13 @@ members = [
     "hostile/out-of-bounds",
     "hostile/log-spoof",
     "hostile/storage-file",
+    "hostile/token-hunt",
     "fixtures/hello-v0",
     "fixtures/probe",
     "fixtures/quiet",
     "fixtures/net-probe",
     "fixtures/store-probe",
+    "fixtures/account-probe",
 ]
 
 [workspace.package]

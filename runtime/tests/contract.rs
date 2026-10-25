@@ -249,13 +249,13 @@ fn component_with(exports: &[&str], manifest: &str) -> Vec<u8> {
 #[test]
 fn a_component_built_for_a_newer_minor_is_a_contract_mismatch_naming_both_versions() {
     let package = component_with(
-        &["dashboard:widget/renderer@1.3.0"],
+        &["dashboard:widget/renderer@1.4.0"],
         &manifest("local/newer", "0.1.0", &[]),
     );
     let (kind, detail) = load_error(&runtime(), &package);
     assert_eq!(kind, ErrorKind::ContractMismatch);
     assert!(
-        detail.contains("1.3.0") && detail.contains("1.2.0"),
+        detail.contains("1.4.0") && detail.contains("1.3.0"),
         "{detail}"
     );
 }
@@ -346,4 +346,144 @@ fn every_older_minor_fixture_still_renders() {
         assert_eq!(plugin.contract_version().display(), "v1 (1.0.0)", "{name}");
         assert!(plugin.render("{}").result.is_ok(), "{name}");
     }
+}
+
+// Feature 005: contract 1.3.0 (FR-016)
+
+/// The development connector of `private-notes`, as shipped beside it.
+const NOTES: &str = include_str!("../../plugins/examples/private-notes/connectors/notes.json");
+
+/// A development runtime that reaches the test sign-in service as `https://notes.test`, with
+/// `connector` as `local/notes`.
+fn notes_world(connector: &serde_json::Value) -> (common::signin::SignInService, common::World) {
+    let pki = common::servers::TestPki::new();
+    let service = common::signin::SignInService::start(&pki);
+    let world = common::World::seam(
+        runtime::TestNetwork {
+            routes: vec![service.route()],
+            public_for_tests: vec![service.server.address()],
+            root: pki.root(),
+            catalog: Vec::new(),
+        },
+        true,
+    );
+    world.write_connector("notes", connector);
+    (service, world)
+}
+
+/// Plugins built from the frozen 1.0.0, 1.1.0 and 1.2.0 contracts run as before on the 1.3.0
+/// host (SC-007).
+#[test]
+fn contract_1_0_0_to_1_2_0_plugins_run_on_the_1_3_0_host() {
+    let world = common::World::production(false);
+    for (name, version, config) in [
+        ("hello-widget", "1.0.0", "{}"),
+        (
+            "github-releases",
+            "1.1.0",
+            r#"{"owner":"rust-lang","repo":"rust"}"#,
+        ),
+        ("update-counter", "1.2.0", "{}"),
+    ] {
+        let plugin = world.approve_and_load(&fixture(name));
+        assert_eq!(
+            plugin.contract_version().display(),
+            format!("v1 ({version})"),
+            "{name}"
+        );
+        let report = plugin.render(config);
+        assert!(report.result.is_ok(), "{name}: {report:?}");
+    }
+    let counter = world.load(&fixture("update-counter"));
+    assert!(counter.update("{}").result.is_ok());
+}
+
+/// A plugin built for 1.2.0 whose manifest uses a connector's account is refused, naming 1.3.0.
+#[test]
+fn a_1_2_0_plugin_that_uses_an_account_is_contract_too_old() {
+    let (_service, world) = notes_world(&serde_json::from_str(NOTES).unwrap());
+    let manifest = json!({
+        "manifest_version": 1, "id": "local/store-probe", "version": "0.1.0", "author": "A",
+        "permissions": [],
+        "connectors": [{ "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }]
+    });
+    let package = repack(&fixture("store-probe"), &manifest.to_string());
+    let error = world.runtime.check(&package).err().expect("refused");
+    assert_eq!(error.kind(), ErrorKind::ContractTooOld, "{error}");
+    assert!(
+        error.detail().contains("1.3.0") && error.detail().contains("1.2.0"),
+        "{error}"
+    );
+}
+
+/// `connectors_type_only` (research R9): a widget whose connectors are all used with their
+/// account imports `connectors` only for the types `accounts` shares; it loads, `connectors` is
+/// the stand-in, and its calls work through `accounts`.
+#[test]
+fn connectors_type_only() {
+    let (_service, world) = notes_world(&serde_json::from_str(NOTES).unwrap());
+    let manifest = json!({
+        "manifest_version": 1, "id": "local/account-probe", "version": "0.1.0", "author": "A",
+        "permissions": [],
+        "connectors": [{ "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }]
+    });
+    let plugin = world.approve_and_load(&repack(&fixture("account-probe"), &manifest.to_string()));
+    assert_eq!(plugin.contract_version().display(), "v1 (1.3.0)");
+    assert_eq!(plugin.connector_table(), None, "connectors is the stand-in");
+    let report = plugin.update(
+        &json!({ "calls": [
+            { "via": "accounts", "connector": "local/notes", "operation": "list-notes" },
+            { "via": "connectors", "connector": "local/notes", "operation": "list-notes" }
+        ] })
+        .to_string(),
+    );
+    let answers = common::answers(report.result.as_ref().unwrap());
+    assert!(answers[0].get("ok").is_some(), "{answers:?}");
+    assert_eq!(answers[1]["error"], json!("not-granted"), "{answers:?}");
+}
+
+/// `subscription-required` answers only widgets of 1.3.0, which call through `accounts`: a
+/// widget built for an older minor calls a connector with an optional credential without it,
+/// and sees the service's answer as before.
+#[test]
+fn subscription_required_answers_only_1_3_0_widgets() {
+    let mut notes: serde_json::Value = serde_json::from_str(NOTES).unwrap();
+    notes["credential"]["subscription_required"] = json!([402]);
+    let (service, world) = notes_world(&notes);
+    service.script(|script| script.notes_status = Some(402));
+    world
+        .runtime
+        .connect_account("local/notes", Some("dashboard-dev"), &service.browser())
+        .unwrap();
+    // 1.1.0: through `connectors`, without the credential, so the service's public answer
+    let old = world.approve_and_load(&common::probe(&common::connected_manifest(
+        "local/net-probe",
+        &[("local/notes", 1, &["list-notes"], true)],
+    )));
+    assert_eq!(old.contract_version().display(), "v1 (1.1.0)");
+    let report = old.update(&common::calls(&[("local/notes", "list-notes", json!([]))]));
+    let answers = common::answers(report.result.as_ref().unwrap());
+    assert_eq!(answers[0]["status"], 200, "{answers:?}");
+    assert!(
+        service.requests_to("/notes")[0]
+            .header("authorization")
+            .is_none()
+    );
+    // 1.3.0, as the account: the service refuses for lack of a plan
+    let manifest = json!({
+        "manifest_version": 1, "id": "local/account-probe", "version": "0.1.0", "author": "A",
+        "permissions": [],
+        "connectors": [{ "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }]
+    });
+    let new = world.approve_and_load(&repack(&fixture("account-probe"), &manifest.to_string()));
+    let report = new.update(
+        &json!({ "calls": [{ "via": "accounts", "connector": "local/notes", "operation": "list-notes" }] })
+            .to_string(),
+    );
+    let answers = common::answers(report.result.as_ref().unwrap());
+    assert_eq!(
+        answers[0]["error"],
+        json!("subscription-required"),
+        "{answers:?}"
+    );
 }

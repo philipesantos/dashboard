@@ -1,0 +1,50 @@
+{
+  "$schema": "../../../wit/connector.schema.json",
+  "connector_version": 1,
+  "id": "local/plain-http-key",
+  "version": "1.0.0",
+  "author": "Dashboard contributors",
+  "description": "Hostile: a key sent to a loopback address without HTTPS",
+  "destinations": {
+    "api": "http://127.0.0.1:9"
+  },
+  "credential": {
+    "kind": "key",
+    "required": true,
+    "destinations": [
+      "api"
+    ],
+    "header": "Authorization",
+    "scheme": "Bearer"
+  },
+  "operations": {
+    "list-notes": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "api",
+      "path": "/notes",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "parameters": {},
+      "response": {
+        "format": "json",
+        "headers": []
+      }
+    },
+    "get-me": {
+      "kind": "read",
+      "method": "GET",
+      "destination": "api",
+      "path": "/me",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "parameters": {},
+      "response": {
+        "format": "json",
+        "headers": []
+      }
+    }
+  }
+}

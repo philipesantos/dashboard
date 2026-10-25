@@ -2,7 +2,7 @@
 //! ran, and the last five notes its configuration gave it, in its own storage. `update` writes
 //! them, and `render` reads them back, on any later run of the host.
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "stored-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.2.0", world: "stored-widget" });
 
 use dashboard::widget::storage::{StorageError, delete, get, list, set};
 use exports::dashboard::widget::renderer::Guest as Renderer;

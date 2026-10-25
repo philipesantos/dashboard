@@ -1,5 +1,5 @@
 //! Host-defined resource limits (FR-005, FR-006 of feature 001; FR-008, FR-010 of feature 003;
-//! FR-005, FR-007 of feature 004).
+//! FR-005, FR-007 of feature 004; FR-009 to FR-011 of feature 005).
 //! A plugin can neither read nor change them.
 
 use std::fmt;
@@ -16,8 +16,9 @@ const MIB: usize = 1024 * KIB;
 /// defaults (`specs/001-plugin-runtime/performance.md`). The update and network limits are
 /// provisional values of `specs/003-plugin-connectors/research.md` (R10), measured before the
 /// feature closes. An update runs with the same fuel and memory caps as a render. The storage
-/// limits are provisional values of `specs/004-plugin-storage/research.md` (R10), measured the
-/// same way.
+/// limits are provisional values of `specs/004-plugin-storage/research.md` (R10), and the
+/// credential limits those of `specs/005-plugin-credentials/research.md` (R13), measured the same
+/// way.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Limits {
     /// Larger packages are refused as `invalid-package`.
@@ -97,6 +98,27 @@ pub struct Limits {
     /// The longest a storage call waits for another process writing the store, cut to what is
     /// left of the run's time limit.
     pub max_storage_busy_wait: Duration,
+    /// The longest a sign-in waits for the browser's callback.
+    pub sign_in_time_limit: Duration,
+    /// Largest request head the sign-in's loopback listener reads.
+    pub max_callback_head_bytes: usize,
+    /// The longest the listener waits for a request head once a connection is open.
+    pub callback_read_time: Duration,
+    /// Largest answer of a token, refresh, revocation or identity request.
+    pub max_sign_in_response_bytes: usize,
+    /// Largest document the vault stores for one account (Windows' credential blob limit).
+    pub max_secret_bytes: usize,
+    /// Longest key a maintainer may type, in bytes.
+    pub max_key_bytes: usize,
+    /// Longest account name or id shown, in characters, before it is cut.
+    pub max_account_name_chars: usize,
+    /// The longest the development tool waits for the keychain, time for the person to unlock
+    /// it; a widget's call waits at most its own time limit.
+    pub vault_wait_tool: Duration,
+    /// A token that expires within this is refreshed before it is sent.
+    pub refresh_margin: Duration,
+    /// Refreshes one call may cause.
+    pub refreshes_per_call: usize,
 }
 
 impl Default for Limits {
@@ -136,6 +158,16 @@ impl Default for Limits {
             storage_file_cap_factor: 5,
             storage_file_cap_extra_bytes: 64 * KIB as u64,
             max_storage_busy_wait: Duration::from_secs(2),
+            sign_in_time_limit: Duration::from_secs(10 * 60),
+            max_callback_head_bytes: 8 * KIB,
+            callback_read_time: Duration::from_secs(2),
+            max_sign_in_response_bytes: 64 * KIB,
+            max_secret_bytes: 2560,
+            max_key_bytes: 1024,
+            max_account_name_chars: 100,
+            vault_wait_tool: Duration::from_secs(2 * 60),
+            refresh_margin: Duration::from_secs(60),
+            refreshes_per_call: 1,
         }
     }
 }
@@ -271,6 +303,24 @@ mod tests {
         assert_eq!(limits.max_storage_busy_wait, Duration::from_secs(2));
         // The smallest quota holds one empty entry
         assert!(limits.storage_entry_cost_bytes <= limits.max_storage_quota_bytes);
+    }
+
+    /// The defaults of research R13 (`specs/005-plugin-credentials/research.md`).
+    #[test]
+    fn credential_defaults_are_those_of_the_plan() {
+        let limits = Limits::default();
+        assert_eq!(limits.sign_in_time_limit, Duration::from_secs(600));
+        assert_eq!(limits.max_callback_head_bytes, 8 * KIB);
+        assert_eq!(limits.callback_read_time, Duration::from_secs(2));
+        assert_eq!(limits.max_sign_in_response_bytes, 64 * KIB);
+        assert_eq!(limits.max_secret_bytes, 2560);
+        assert_eq!(limits.max_key_bytes, 1024);
+        assert_eq!(limits.max_account_name_chars, 100);
+        assert_eq!(limits.vault_wait_tool, Duration::from_secs(120));
+        assert_eq!(limits.refresh_margin, Duration::from_secs(60));
+        assert_eq!(limits.refreshes_per_call, 1);
+        // A key, with its JSON around it, fits in what the vault stores
+        assert!(limits.max_key_bytes + 16 <= limits.max_secret_bytes);
     }
 
     #[test]

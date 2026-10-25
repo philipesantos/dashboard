@@ -19,6 +19,7 @@ normally. They are security test fixtures and are never shipped.
 | `out-of-bounds` | Reads far beyond its own memory | `plugin-crashed` |
 | `log-spoof` | Logs and errors with line breaks and terminal escapes | `plugin-error`, with every text escaped |
 | `storage-file` | Declares storage, then opens a store file with `std::fs` | `capability-refused`, listing `wasi:filesystem/*` |
+| `token-hunt` | Declares a connector with an account, then reads its environment, arguments and files with the standard library | `capability-refused`, listing `wasi:cli/*` and `wasi:filesystem/*` |
 
 The [data model](../../specs/001-plugin-runtime/data-model.md#hostile-plugin-case) is the
 source of these outcomes, and [`docs/threat-model.md`](../../docs/threat-model.md) maps them to
@@ -69,7 +70,7 @@ runtime. Nothing reaches the internet.
 | `generic-http` | FR-001 | `capability-refused` for `wasi:http` 0.2 and 0.3 |
 | `read-with-body` | FR-002 | `invalid-connector`: outside the catalog a read is a body-less `GET` or `HEAD` |
 | `fixed-headers` | FR-002 | `invalid-connector` for `X-` headers outside the catalog and the headers the host owns |
-| `credentials` | FR-017 | `credentials-not-supported` |
+| `credentials` | FR-017 | `credentials-not-supported` for `credentials` and `auth`, and for `credential` below the top level (feature 005 declares it there) |
 | `value-outside-type` | FR-003 | `refused(value-outside-type)`, nothing sent |
 | `value-encoding` | FR-003 | Values stay in their own path segment, query value or body field |
 | `repository-connector` | FR-004 | `destination-not-verified` |
@@ -137,10 +138,61 @@ runtime.
 | `store-binding` (white box) | FR-002 | The bound store is the file of the plugin's id and origin; the stand-in has none |
 | `host-records-untouched` | FR-013 | Every case above leaves the host's records and other stores as they were |
 
+## Credential cases
+
+The cases of [feature 005](../../specs/005-plugin-credentials/data-model.md#hostile-cases-fr-019)
+are the token case of the Phase 2 gate: no plugin obtains a credential, and the host sends one
+only where its connector says. They live in
+[`runtime/tests/hostile/credentials.rs`](../../runtime/tests/hostile/credentials.rs) and pack
+the fixture [`account-probe`](../fixtures/account-probe) with each case's manifest, against the
+test sign-in service of `runtime/tests/common/signin.rs`; `token-hunt` is the one crate of its
+own. The connector files of the cases refused at load are in [`connectors/`](connectors):
+
+| File | What it breaks | Expected outcome |
+| --- | --- | --- |
+| `plain-http-key.json` | A key sent to a loopback address without HTTPS | `credential-needs-https` |
+| `plain-http-beside.json` | A credential on an HTTPS destination beside a plain-HTTP one | `credential-needs-https` |
+| `token-host-elsewhere.json` | The token address on a destination the credential is not for | `invalid-connector`, naming `credential.account.token` |
+| `identity-elsewhere.json` | The identity operation on a destination the credential is not for | `invalid-connector`, naming `credential.account.identity` |
+| `fixed-auth-header.json` | An operation fixing `authorization`, in lowercase | `invalid-connector`, naming the header |
+
+After every case, a scan looks for each token, refresh token, code and verifier the test service
+issued in every file of the data directory, the grant record, the request log, kept data, stores,
+the captured output and what the fixture returned, and fails naming where it found one. Then the
+example [`private-notes`](../examples/private-notes) updates and renders normally on the same
+runtime.
+
+| Case | Rule | Expected outcome |
+| --- | --- | --- |
+| `token-hunt` | FR-008 | The WASI build `capability-refused` before it runs; `account-probe`'s dump of all it is given holds no secret |
+| `echo-body`, `echo-header`, `echo-location`, `echo-json-escaped` | FR-008 | `failed(invalid-response)`; nothing of the response reaches the widget, and a redirect's target is not logged |
+| `widget-connect` | FR-009 | Every call `account-not-connected` or `not-granted`; no sign-in starts, nothing reaches the service |
+| `copied-widget-id` | FR-004 | A file elsewhere claiming the probe's id gets no grant and sends no credential |
+| `secret_free_errors` | FR-006 | A keychain error carrying the token, a stored document and a token answer that do not parse: no secret in an error, the log or the output |
+| `other-destination` | FR-007 | Sent without the header to the destination the credential is not for |
+| `redirect-other-host` | FR-007 | A redirect to another host of the connector, followed without the header |
+| `header-smuggling` | FR-002 | Line breaks, `Authorization:` text, the scheme or the header's name in a value: sent as data; one header, never replaced |
+| `hostile_connectors_are_refused_at_load` | FR-001, FR-002, FR-007 | Each file above refused with its kind, at load and when connecting a key; nothing sent |
+| `bad-certificate` | FR-007 | `failed(unavailable)`; the destination receives nothing |
+| `wrong-interface` | FR-003 | An account connector through `connectors`, a plain one through `accounts`: `not-granted` both ways |
+| `no-account-use` | FR-003 | Sent without the header while an account is connected |
+| `optional-off` | FR-007 | `not-granted`; nothing sent |
+| `copied-connector-id` | FR-004 | A connector file elsewhere with the same id has no account; sent without the header |
+| `forged-callback`, `replayed-code`, `late-callback` | FR-009 | The sign-in ends; nothing connected, the earlier account kept and still working |
+| `another-account` | FR-009 | `another-account-connected`; the new token revoked and dropped; the earlier account kept |
+| `revoked-token` | FR-011 | One refresh, one resend, one identity call, then `account-not-connected` and marked; no further request |
+| `foreign-401` | FR-011 | Only that call `account-not-connected`; the account stays connected for another widget |
+| `expired-refresh` | FR-011 | `account-not-connected`, marked `refresh-failed` |
+| `account-spoof` | FR-014 | A name with line breaks and terminal escapes kept and printed escaped by `accounts list`, `permissions` and `requests` |
+| `credential-added-update` | FR-005 | `needs-new-approval`, naming the credential added |
+| `access-widened-update` | FR-005 | `needs-new-approval`; once approved, `account-not-connected` (less access) until connected again |
+| `disconnect-mid-run` | FR-013 | The response in flight dropped; later requests without the header |
+| `connect-mid-run` | FR-011 | The run goes on without the credential; the next load uses the account |
+
 ## How they are built
 
 Like any plugin, from source, by `cargo xtask plugins`, into `target/plugins/<crate>.wasm`;
-no built `.wasm` is ever committed. `read-file`, `open-socket` and `storage-file` declare
+no built `.wasm` is ever committed. `read-file`, `open-socket`, `storage-file` and `token-hunt` declare
 `[package.metadata.dashboard] target = "wasm32-wasip2"`, so they import WASI the way the
 standard library does; the others build for `wasm32-unknown-unknown`. A test whose fixture was
 not built fails instead of skipping.

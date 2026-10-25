@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "account-probe"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -261,6 +269,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "private-notes"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "probe"
 version = "0.1.0"
 dependencies = [
@@ -390,6 +406,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "token-hunt"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen",
 ]
 
 [[package]]

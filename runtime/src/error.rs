@@ -7,7 +7,7 @@ use crate::text;
 
 /// The rule behind a [`RuntimeError`]. The names are part of the CLI contract
 /// (`specs/001-plugin-runtime/contracts/cli.md`, `specs/002-plugin-permissions/contracts/cli.md`,
-/// `specs/003-plugin-connectors/contracts/cli.md`).
+/// `specs/003-plugin-connectors/contracts/cli.md`, `specs/005-plugin-credentials/contracts/cli.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
     /// Not a WebAssembly component, corrupted, or larger than the package limit.
@@ -54,7 +54,8 @@ pub enum ErrorKind {
     /// A connector file is too large, not JSON, or breaks the connector schema or a rule of the
     /// host.
     InvalidConnector,
-    /// A connector declares a credential, which arrives with feature 005.
+    /// A connector declares a credential under a field other than `credential` (`credentials`
+    /// or `auth`).
     CredentialsNotSupported,
     /// A connector's id names a repository, whose destinations nothing verifies yet, or is a
     /// local id while the runtime is not in development mode.
@@ -75,6 +76,26 @@ pub enum ErrorKind {
     /// An update's storage could not be committed (busy, damaged, unavailable, the file cap, or
     /// a run an earlier failure ended), or required storage is unavailable at load.
     StorageFailed,
+    /// A connector that declares a credential has a destination without HTTPS: only a connector
+    /// that sends no credential may go without it.
+    CredentialNeedsHttps,
+    /// A widget declares a connector whose credential is required without `"account": true`.
+    AccountUseNotDeclared,
+    /// A sign-in ended without connecting an account: a wrong or missing state, a code already
+    /// used, the time limit, a token outside the bearer-token set, or the service's error.
+    SignInFailed,
+    /// Another account, or another key, is connected to the connector: disconnect it first.
+    AnotherAccountConnected,
+    /// A key typed for a connector is empty, too long or holds a character a bearer token
+    /// cannot.
+    KeyRefused,
+    /// The system's keychain is locked, missing or did not answer in time.
+    KeychainUnavailable,
+    /// A connector's account needs a client registration the host has none of; `--client`
+    /// gives one in development.
+    NoClientConfigured,
+    /// No account is connected to the connector, or it must be connected again.
+    AccountNotConnected,
 }
 
 impl ErrorKind {
@@ -109,6 +130,14 @@ impl ErrorKind {
             ErrorKind::MissingUpdater => "missing-updater",
             ErrorKind::ApprovalChanged => "approval-changed",
             ErrorKind::StorageFailed => "storage-failed",
+            ErrorKind::CredentialNeedsHttps => "credential-needs-https",
+            ErrorKind::AccountUseNotDeclared => "account-use-not-declared",
+            ErrorKind::SignInFailed => "sign-in-failed",
+            ErrorKind::AnotherAccountConnected => "another-account-connected",
+            ErrorKind::KeyRefused => "key-refused",
+            ErrorKind::KeychainUnavailable => "keychain-unavailable",
+            ErrorKind::NoClientConfigured => "no-client-configured",
+            ErrorKind::AccountNotConnected => "account-not-connected",
         }
     }
 }
@@ -234,6 +263,17 @@ mod tests {
             (ErrorKind::MissingUpdater, "missing-updater"),
             (ErrorKind::ApprovalChanged, "approval-changed"),
             (ErrorKind::StorageFailed, "storage-failed"),
+            (ErrorKind::CredentialNeedsHttps, "credential-needs-https"),
+            (ErrorKind::AccountUseNotDeclared, "account-use-not-declared"),
+            (ErrorKind::SignInFailed, "sign-in-failed"),
+            (
+                ErrorKind::AnotherAccountConnected,
+                "another-account-connected",
+            ),
+            (ErrorKind::KeyRefused, "key-refused"),
+            (ErrorKind::KeychainUnavailable, "keychain-unavailable"),
+            (ErrorKind::NoClientConfigured, "no-client-configured"),
+            (ErrorKind::AccountNotConnected, "account-not-connected"),
         ];
         for (kind, name) in kinds {
             assert_eq!(kind.as_str(), name);

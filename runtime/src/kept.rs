@@ -6,6 +6,7 @@
 //! that no longer matches the package or its approval is discarded, so no version or approval
 //! ever receives data another one produced (clarification 4).
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -29,6 +30,9 @@ pub(crate) struct Key {
     pub(crate) approval: String,
     /// The connectors that are on, sorted.
     pub(crate) connectors_on: Vec<String>,
+    /// For each connector the widget uses with an account, the account id it acts as, or `None`
+    /// without one (`specs/005-plugin-credentials/data-model.md`, Kept data).
+    pub(crate) accounts: BTreeMap<String, Option<String>>,
 }
 
 /// One kept data file, as stored.
@@ -44,6 +48,10 @@ pub(crate) struct Kept {
     /// The JSON document the last successful update returned.
     pub(crate) data: Option<Value>,
     pub(crate) last_update: Option<LastUpdate>,
+    /// For each connector the widget uses with an account, the account id the data was fetched
+    /// with, or `None` without one. Absent for widgets that use no account.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) accounts: BTreeMap<String, Option<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,7 +82,7 @@ pub(crate) enum Outcome {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Found {
     /// Data that matches the package and its approval, or `None` when there is none yet.
-    Current(Option<Kept>),
+    Current(Option<Box<Kept>>),
     /// A file that no longer matched, now deleted: why.
     Discarded(String),
     /// A file that cannot be read, counted as no data: why. It stays for the user to look at,
@@ -126,11 +134,16 @@ impl KeptStore {
             .any(|id| !key.connectors_on.contains(id))
         {
             Some("a connector it used is off")
+        } else if kept.accounts.iter().any(|(connector, fetched_with)| {
+            fetched_with.is_some() && key.accounts.get(connector) != Some(fetched_with)
+        }) {
+            // Data read as an account never outlives it: another account, or none (FR-013)
+            Some("the account it was fetched with is not connected")
         } else {
             None
         };
         match why {
-            None => Found::Current(Some(kept)),
+            None => Found::Current(Some(Box::new(kept))),
             Some(why) => {
                 let _ = fs::remove_file(&path);
                 Found::Discarded(why.to_owned())
@@ -148,6 +161,7 @@ impl KeptStore {
         };
         kept.fetched_at_ms = Some(at_ms);
         kept.data = Some(data);
+        kept.accounts = key.accounts.clone();
         kept.last_update = Some(LastUpdate {
             at_ms,
             outcome: Outcome::Ok,
@@ -165,6 +179,38 @@ impl KeptStore {
             error: Some(error.to_owned()),
         });
         self.write(&kept)
+    }
+
+    /// Removes every kept data file fetched as the account `account_id` of `connector`, at once
+    /// (FR-013): the ids of the widgets whose data went.
+    pub(crate) fn discard_account(
+        &self,
+        connector: &str,
+        account_id: &str,
+    ) -> io::Result<Vec<String>> {
+        let entries = match fs::read_dir(&self.dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error),
+        };
+        let mut discarded = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(Some(kept)) = self.read_file(&path) else {
+                continue;
+            };
+            if kept
+                .accounts
+                .get(connector)
+                .is_some_and(|fetched| fetched.as_deref() == Some(account_id))
+            {
+                fs::remove_file(&path)?;
+                discarded.push(kept.id);
+            }
+        }
+        discarded.sort();
+        discarded.dedup();
+        Ok(discarded)
     }
 
     /// Removes every kept data file of the plugin `id`, whatever its origin. Returns how many.
@@ -196,7 +242,7 @@ impl KeptStore {
     /// The file of `key`, current, or a new one under `key`'s approval.
     fn current(&self, key: &Key) -> Kept {
         match self.read(key) {
-            Found::Current(Some(kept)) => kept,
+            Found::Current(Some(kept)) => *kept,
             _ => Kept {
                 id: key.id.clone(),
                 origin: key.origin.clone(),
@@ -208,6 +254,7 @@ impl KeptStore {
                 fetched_at_ms: None,
                 data: None,
                 last_update: None,
+                accounts: BTreeMap::new(),
             },
         }
     }
@@ -271,6 +318,7 @@ mod tests {
             digest: "sha256:aa".to_owned(),
             approval: "sha256:bb".to_owned(),
             connectors_on: vec!["catalog/github".to_owned()],
+            accounts: BTreeMap::new(),
         }
     }
 
@@ -436,7 +484,7 @@ mod tests {
             panic!("kept data")
         };
         assert_eq!(
-            render_document(json!({"owner": "rust-lang"}), kept.as_ref()),
+            render_document(json!({"owner": "rust-lang"}), kept.as_deref()),
             json!({
                 "config": {"owner": "rust-lang"},
                 "data": {"releases": []},

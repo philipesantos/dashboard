@@ -6,6 +6,12 @@
 # Likewise only runtime/src/storage/ opens a plugin's store, and it is the only user of rusqlite:
 # the review of that module then covers every SQL statement the host runs and every hardening
 # layer (Principle IX, specs/004-plugin-storage/research.md, R15). It allows them the same way.
+#
+# Only runtime/src/vault/ touches the keychain, through keyring-core and one store per system: the
+# review of that module covers every credential the host reads or writes
+# (specs/005-plugin-credentials/research.md, R19). The sign-in's loopback listener is the only
+# socket a peer connects to, in runtime/src/network/ with the rest of the network code. The
+# store types of other systems do not resolve on every system, hence `allow-invalid`.
 
 disallowed-types = [
     { path = "ureq::Agent", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
@@ -16,6 +22,14 @@ disallowed-types = [
     { path = "std::net::TcpStream", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
     { path = "std::net::UdpSocket", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
     { path = "rusqlite::Connection", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    { path = "std::net::TcpListener", reason = "only runtime/src/network/ opens sockets (Principle III, research R19)" },
+    { path = "keyring_core::Entry", reason = "only runtime/src/vault/ touches the keychain (Principle IX, research R19)" },
+    { path = "keyring_core::api::CredentialStoreApi", reason = "only runtime/src/vault/ touches the keychain (Principle IX, research R19)" },
+    { path = "keyring_core::api::CredentialApi", reason = "only runtime/src/vault/ touches the keychain (Principle IX, research R19)" },
+    { path = "keyring_core::mock::Store", reason = "only runtime/src/vault/ touches the keychain (Principle IX, research R19)" },
+    { path = "dbus_secret_service_keyring_store::Store", reason = "only runtime/src/vault/ touches the keychain (Principle IX, research R19)", allow-invalid = true },
+    { path = "windows_native_keyring_store::Store", reason = "only runtime/src/vault/ touches the keychain (Principle IX, research R19)", allow-invalid = true },
+    { path = "apple_native_keyring_store::keychain::Store", reason = "only runtime/src/vault/ touches the keychain (Principle IX, research R19)", allow-invalid = true },
 ]
 
 disallowed-methods = [
@@ -35,6 +49,9 @@ disallowed-methods = [
     { path = "std::net::TcpStream::connect", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
     { path = "std::net::TcpStream::connect_timeout", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
     { path = "std::net::UdpSocket::bind", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
+    { path = "std::net::TcpListener::bind", reason = "only runtime/src/network/ opens sockets (Principle III, research R19)" },
+    { path = "keyring_core::set_default_store", reason = "the vault injects its store and never uses the global default (research R5)" },
+    { path = "keyring_core::get_default_store", reason = "the vault injects its store and never uses the global default (research R5)" },
     # Every constructor of rusqlite 0.41.0's Connection
     { path = "rusqlite::Connection::open", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
     { path = "rusqlite::Connection::open_with_flags", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },

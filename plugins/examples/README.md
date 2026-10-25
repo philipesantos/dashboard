@@ -10,7 +10,10 @@ Example plugins, one folder each.
   from the frozen contract 1.1.0 (`wit/history/1.1.0`).
 - [update-counter](update-counter/README.md): Rust, contract 1.2.0. Counts its updates and keeps
   the last notes its configuration gives it, in its own storage: `update` writes, `render`
-  reads.
+  reads. It builds from the frozen contract 1.2.0 (`wit/history/1.2.0`).
+- [private-notes](private-notes/README.md): Rust, contract 1.3.0. Shows notes read as the user's
+  account, through its development connector `local/notes`: the host adds the account's
+  credential to each request, and the widget never sees it.
 
 Each example has a `manifest.json` beside its `Cargo.toml`: who the plugin is and the
 permissions it needs. [`docs/plugin-authors.md`](../../docs/plugin-authors.md) explains the

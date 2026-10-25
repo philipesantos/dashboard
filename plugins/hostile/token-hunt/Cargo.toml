@@ -1,0 +1,17 @@
+[package]
+name = "token-hunt"
+version = "0.1.0"
+description = "Hostile plugin (security test fixture, never shipped): looks for credentials in its environment, arguments and files"
+edition.workspace = true
+publish.workspace = true
+
+# Built with the standard library for WASI, which is what an author ignoring the contract ships
+[package.metadata.dashboard]
+target = "wasm32-wasip2"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json.workspace = true
+wit-bindgen.workspace = true
