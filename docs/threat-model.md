@@ -1,6 +1,7 @@
 # Threat model v0
 
-Status: draft, 2026-10-21, revised 2026-10-23 for connectors (feature 003). It describes the
+Status: draft, 2026-10-21, revised 2026-10-23 for connectors (feature 003) and 2026-10-25 for
+credentials (feature 005). It describes the
 planned architecture; many components do not exist yet. Revisit it at every phase gate and whenever a new component crosses a trust boundary.
 
 The rules referenced as I–IX are the principles of the
@@ -79,7 +80,7 @@ code, which the host runs, with a fixed destination and typed parameters the hos
 | --- | --- | --- | --- |
 | B1 | Plugin ↔ host (Wasm sandbox, WIT interface) | Host function calls, widget render data, named values the plugin stores | WebAssembly only (I); no capabilities until granted, only granted imports linked (II); CPU, memory and time limits; storage bound at link time to the plugin's id and origin, run by the host's own statements on a hardened SQLite connection, within a quota the user approved, read-only in render and all or nothing in update |
 | B2 | Host ↔ network | Connector calls a plugin makes | No generic network: only declared operations of connectors, run by the host (III); destinations from the catalog, whose domains are reserved, or local in development; HTTPS with Mozilla's roots, public addresses only at every connection, redirects only to the connector's origins, no system proxy, no cookies; size, time, call and rate limits; a request log no plugin can read or flood; calls only in `update`, never in render |
-| B3 | Host ↔ secrets | Tokens and keys | Never handed to plugins; the host injects them into requests (IV) |
+| B3 | Host ↔ secrets | Tokens and keys, the sign-in | Kept only in the OS keychain, through the host's vault; never handed to plugins: the host adds them to each hop of a request to the credential's own HTTPS origins, in its one header, and withholds any response that carries them back (IV); accounts connected only from the host's controls, with the authorization code and PKCE on a loopback redirect (VII) |
 | B4 | Plugin UI ↔ user | Widget content | Declarative UI inside the host frame, no password fields, no windows or dialogs (V); personal visual secret on every host dialog |
 | B5 | AI ↔ host | Prompts out, model output in | Output treated as untrusted: safe rendering, taint tracking, human confirmation of actions (VI); trust decisions only in host dialogs (VII) |
 | B6 | Distribution ↔ host | Plugin packages, app updates | ed25519 signatures, hash check on install, revocation list, signed updater |
@@ -111,7 +112,7 @@ suite grows with every phase and never shrinks.
 | Floods the request log to push earlier entries out, or forges entries | T1 | A4 | B2 | Past a run's call limit, one summary entry; names and values cut before writing and escaped when shown (III) | Phase 2 |
 | Approval covers something else than what was shown (the connector changed in between) | T1 | A4 | B2 | `approve` grants only the digest `permissions` printed; a connector change that widens what the widget reaches needs a new approval (II, VII) | Phase 2 |
 | Waits on the network in render to stall the dashboard | T1 | A3 | B1, B2 | Connectors are called only in `update`, with its own time limit; render shows the data the host kept (III) | Phase 2 |
-| Connector reaches a credential or hides one in a fixed value | T1 | A2 | B3 | Connectors with credentials refused until feature 005; fixed values are public, shown before approval (IV) | Phase 2 |
+| Connector hides a credential in a fixed value | T1 | A2 | B3 | Fixed values are public, shown before approval; a credential is declared only in `credential` and kept by the host, and a connector that fixes its header is refused (IV) | Phase 2 (`fixed-auth-header`) |
 | Reads or changes another plugin's storage, by using its names or by claiming its id from another file | T1 | A1 | B1 | One database per plugin, chosen by the host at link time from the plugin's id and origin; no call names a store, file or place (II) | Phase 2 (`other-plugin`, `same-id-other-origin`, `store-binding`) |
 | Stored names that look like paths, SQL or `ATTACH` reach outside the plugin's store | T1 | A1, A3 | B1 | Names are opaque bytes bound as parameters to the host's own statements; no attached databases, no extensions, defensive mode, triggers and views off, and an authorizer that allows only the host's statements | Phase 2 (`name-injection`, `store-hardened`) |
 | Opens the store file directly through the file system | T1 | A1 | B1 | No file system capability (I, II) | Phase 2 (`storage-file`) |
@@ -122,7 +123,21 @@ suite grows with every phase and never shrinks.
 | Writes from render, which the host may run at any time | T1 | A1 | B1 | Render's connection is read-only and its writes refused | Phase 2 (`write-in-render`) |
 | Keeps writing after the user turned storage off or removed the approval | T1 | A1, A4 | B1 | The grant record read again on every call and at the commit, under its lock (II) | Phase 2 (`optional-off`, `taken-away-mid-update`) |
 | Stored names and values imitate the CLI's output when shown | T1 | A4 | B1 | Every text quoted and escaped, `"` and `\` included, one entry per line | Phase 2 (`show-spoof`) |
-| Obtains an OAuth token or AI key | T1 | A2 | B3 | IV | Phase 2 |
+| Reads a credential from the plugin's side: its environment, arguments, configuration, the keychain's files, the host records, any import | T1 | A2 | B1, B3 | No import, file, variable or argument carries one; WASI imports are refused; the host adds the credential to the request itself (I, II, IV) | Phase 2 (`token-hunt`) |
+| A destination sends the credential back, raw or escaped, in its body, a header or a redirect | T1, T2 | A2 | B2, B3 | Every response checked for the credential in each form an encoder or a URL could write it; one that holds it is `failed(invalid-response)`, and the widget gets nothing of it (IV) | Phase 2 (`echo-body`, `echo-header`, `echo-location`, `echo-json-escaped`, `credential_rules`) |
+| The credential sent to another host: another destination, a redirect, token, revoke or identity addresses elsewhere, plain HTTP, an invalid certificate, a parameter that builds a header | T1 | A2 | B2, B3 | Added per hop only for the credential's own origins, over HTTPS with a valid certificate; every destination of a connector with a credential is HTTPS; token, revoke and identity on the credential's destinations; the header is the host's, never fixed and never built from a parameter (III, IV) | Phase 2 (`other-destination`, `redirect-other-host`, `token-host-elsewhere`, `identity-elsewhere`, `plain-http-credential`, `plain-http-beside`, `bad-certificate`, `header-smuggling`, `credential_combinations`) |
+| A widget acts as an account it was not approved to use: no account use declared, the connector optional and off, the other interface, a copied widget id or connector file | T1 | A1, A2, A4 | B1 | Account use declared, approved and linked at load in a table of its own; a call through the other interface is `not-granted`; approvals and accounts belong to their origins (II) | Phase 2 (`no-account-use`, `optional-off`, `wrong-interface`, `copied-widget-id`, `copied-connector-id`) |
+| A widget starts a sign-in or opens the browser | T1 | A2, A4 | B4 | No import can; only the host's controls connect, reconnect or disconnect an account (VII) | Phase 2 (`widget-connect`) |
+| Forged or replayed sign-in: a callback with a wrong or missing state, a code already used, a callback after the time limit | T1, T2 | A2, A4 | B3 | PKCE (S256) and a fresh state per sign-in; a loopback listener on a port the system chooses, closed after the first callback or the time limit; nothing kept before the exchange and the identity call succeed (IV, VII) | Phase 2 (`forged-callback`, `replayed-code`, `late-callback`) |
+| A sign-in phished with a device code the attacker started | T1, T2 | A2, A4 | B3 | No device flow: the person approving a device code cannot tell whose flow it is, so the host signs in only with the authorization code and PKCE on a loopback redirect it started itself; GitHub, whose web flow needs a client secret, waits for Phase 6 (IV, VII) | Phase 2 (`connector_schema`: no other flow is accepted) |
+| Another account slipped in when an account connects again | T2 | A1, A4 | B3 | The new identity's stable id compared with the connected account's; another one is `another-account-connected`, its token revoked and dropped, the earlier account kept (VII) | Phase 2 (`another-account`) |
+| One widget locks an account out for every widget, through a `401` on one operation | T1, T2 | A4 | B2 | A `401` gets one refresh and one resend, then the identity call: the account is marked only when the service refuses that too; no retry loop (VII) | Phase 2 (`foreign-401`, `revoked-token`, `expired-refresh`) |
+| An account appears or disappears while a widget runs | T1 | A1, A2 | B1, B3 | The account is fixed at load; a call checks again and only takes away: a disconnect drops the response in flight, later calls go without; a new account applies from the next load (II) | Phase 2 (`disconnect-mid-run`, `connect-mid-run`) |
+| An update widens what an account lets a widget do, silently | T1, T4 | A2, A4 | B1 | The approval covers the credential, the account use and the access; a credential added or changed, account use started or access widened needs a new approval, and the account connects again (II, VII) | Phase 2 (`credential-added-update`, `access-widened-update`) |
+| A secret in an error, a log, kept data, a record or the tool's output | T1, T2 | A2 | B3 | Keychain errors mapped to text without their payload; the credential prints as `[credential]`; after every case, a scan for every secret the test service issued in every file and output (IV) | Phase 2 (`secret_free_errors`, the scan of every credential case) |
+| An account name imitates the tool's output | T2 | A4 | B3 | Kept escaped, printed escaped by every command (VII) | Phase 2 (`account-spoof`) |
+| Another process of the user reads the keychain | — | A2 | B3 | Outside the model: the OS keychain's own access control decides; the development vault is a keychain service of its own, which installed plugins never use | — |
+| Obtains an AI provider key | T1, T3 | A2 | B3 | The same vault and rules (IV) | Phase 4 |
 | Update adds a permission without approval | T1, T4 | A4 | B1 | Re-approval on new permissions (II) | Phase 2 |
 | Uses an optional capability the user left off | T1 | A1, A2 | B1 | A stand-in that gives nothing and answers "not granted" (II) | Phase 2 |
 | Package carries two manifests, or one in a nested part, so a tool and the host read different ones | T1 | A4 | B1 | Exactly one top-level manifest section; any other package is refused (`manifest-mismatch`) | Phase 2 |
@@ -142,8 +157,8 @@ suite grows with every phase and never shrinks.
 
 ## Assumptions and out of scope
 
-- Trusted: the operating system, the OS keychain, and the sandboxing of Wasmtime and the
-  webview. Their vulnerabilities are handled by pinned versions, `cargo audit` and fast
+- Trusted: the operating system, the OS keychain and its access control between the user's
+  processes, and the sandboxing of Wasmtime and the webview. Their vulnerabilities are handled by pinned versions, `cargo audit` and fast
   updates, not by this design.
 - Out of scope: malware already running on the machine, an attacker with administrator or
   physical access, and the AI provider reading the prompts the user chose to send it.
