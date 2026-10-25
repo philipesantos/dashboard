@@ -37,7 +37,7 @@ the binary only (R5, R17)
 **Storage**: credentials in the system keychain (development vault, R5); `<data dir>/accounts.json`
 (R6); the grant record moves to version 4 (R8); kept data and the request log gain account fields
 
-**Testing**: `cargo test`; the sign-in, the example and the hostile cases as library tests
+**Testing**: `cargo test`, hostile cases on a new `account-probe` fixture and a `token-hunt` crate; the sign-in, the example and the hostile cases as library tests
 through the seam, with a test sign-in service on the HTTPS test servers of 003 and the mock store;
 CLI tests for the `accounts` commands without the seam (003's rule kept), a key typed in a
 pseudo-terminal on Linux and macOS; the real keychain in CLI and `vault` tests on ubuntu-24.04
@@ -60,7 +60,7 @@ gets line-by-line review, the vault included (Principle IX)
 in the network module), contract 1.3.0 with 1 interface and 2 worlds, grant record v4, accounts
 record v1, 8 new error kinds, 3 new CLI subcommands (`accounts connect|list|disconnect`) and
 account and data-flow lines in `permissions`, `approve`, `requests`, `update`; 32 hostile cases
-and 14 other named tests; 1 new example with its development connector, 1 fixture extended, 1
+and 14 other named tests; 1 new example with its development connector, 1 new fixture, 1
 hostile crate, 1 bench binary
 
 ## Constitution Check
@@ -171,7 +171,7 @@ bench/src/bin/credential_cost.rs  # New (R18)
 plugins/
 ├── Cargo.toml                  # + the new crates
 ├── examples/private-notes/     # New: contract 1.3.0, account-widget, with connectors/notes.json (R16)
-├── fixtures/net-probe/         # + calls through accounts; dump mode
+├── fixtures/account-probe/     # New: contract 1.3.0, calls through accounts or connectors; dump mode
 ├── hostile/token-hunt/         # New: looks for credentials everywhere it can (wasm32-wasip2 half)
 └── hostile/connectors/         # New: connector files of the load-time cases (plain-http-key.json, …)
 

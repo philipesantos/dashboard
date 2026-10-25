@@ -434,10 +434,11 @@ with its development connector `local/notes` beside it: one read, `list-notes`, 
 without an account it shows the public notes, with one also the account's own. CI runs it end to
 end through the library with the test sign-in service on `notes.test` (routes and test CA of the
 seam), since a credential needs HTTPS and the development tool's loopback connectors are plain
-HTTP. `github-releases` stays a 1.1.0 widget, unchanged, and `catalog/github` stays 1.0.0. The
-fixture `net-probe` gains a mode that calls through `accounts` and returns every answer, and one
-that returns everything it can find in its environment, arguments and configuration, for
-`token-hunt`.
+HTTP. `github-releases` stays a 1.1.0 widget, unchanged, and `catalog/github` stays 1.0.0. A new
+fixture, `account-probe` (contract 1.3.0, `account-widget`), makes the calls its configuration
+lists through `accounts` or `connectors` and returns every answer, or returns everything it can
+find in its configuration, for `token-hunt`; `net-probe` stays a 1.1.0 plugin, as the contract
+tests need it.
 
 **Rationale**: the example shows the whole path (declaration, approval, sign-in, calls, private
 data) without a real service, which no catalog connector offers in this feature.

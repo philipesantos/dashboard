@@ -248,7 +248,7 @@ destination one it is for.
 ## Hostile cases (FR-019)
 
 All with an account connected through the test sign-in service, a fresh random token per case,
-and the scan of R15 afterwards. Fixtures: `net-probe` (calls and dumps), `hostile/token-hunt`
+and the scan of R15 afterwards. Fixtures: `account-probe` (calls and dumps), `hostile/token-hunt`
 (WASI, looks everywhere).
 
 | Case | What it does | Expected |
