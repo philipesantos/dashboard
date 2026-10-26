@@ -64,6 +64,8 @@ name = "my-widget"
 - In `console` blocks, a line starting `$ ` is a command run by bash on Linux and macOS; `PS> `
   by PowerShell 7 on Windows. A block without `os=` must use only one prompt kind that works on
   every system it runs on, or both forms in separate blocks with `os=`.
+- Each command runs in a shell of its own, so no shell state carries over between commands,
+  except `cd <dir>` alone on a line, which the runner applies to the commands after it.
 - Each command's stdout and stderr are merged as the shell does with `2>&1`; every line up to the
   next prompt or the end of the block is its expected output, compared line by line after
   trimming trailing spaces and normalizing line endings.

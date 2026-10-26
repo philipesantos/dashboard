@@ -158,7 +158,7 @@ kinds, and the docs runner every page runs on.
 
 ### The docs runner's core (R8)
 
-- [ ] T009 Write the self-tests of the runner in `runtime/tests/docs_walk.rs`. They are not
+- [X] T009 Write the self-tests of the runner in `runtime/tests/docs_walk.rs`. They are not
   `#[ignore]`d and they fail until T010. Each runs on in-memory Markdown:
   - **Info string:** `check`, `os=linux,macos,windows`, `exit=<n>`, `file=<path>` and
     `output=any` are parsed. A block without `check` is not run.
@@ -182,7 +182,7 @@ kinds, and the docs runner every page runs on.
     another one on `PATH`.
   - **Cargo variables:** a `cargo build` command does not see `CARGO_TARGET_DIR` or
     `CARGO_PROFILE_RELEASE_*`, and a `cargo install` command does.
-- [ ] T010 Implement the runner in `runtime/tests/docs_walk.rs` (research R8,
+- [X] T010 Implement the runner in `runtime/tests/docs_walk.rs` (research R8,
   `contracts/docs-format.md`), so T009 passes:
   - **Entry point:** `#[ignore]`d `every_page_runs_as_written`, over every `.md` under
     `docs/authors/`, in path order, one session per page.
