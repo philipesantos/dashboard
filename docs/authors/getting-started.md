@@ -13,13 +13,13 @@ It was walked with Rust 1.99.1 and its `wasm32-unknown-unknown` target, `wit-bin
 
 ## 1. The tools
 
-- Rust 1.99.1, installed with [rustup](https://rustup.rs), and the target widgets build for:
-  `rustup toolchain install 1.99.1` and `rustup target add wasm32-unknown-unknown`. If your
-  default toolchain is another version, `rustup default 1.99.1` makes this one the default: it is
-  the version this page is walked with.
+- Rust 1.99.1, the version this page is walked with, installed with
+  [rustup](https://rustup.rs) and made the default, and the target widgets build for, in this
+  order: `rustup toolchain install 1.99.1`, `rustup default 1.99.1` and
+  `rustup target add wasm32-unknown-unknown`.
 - git.
 - On Linux, the two packages the development CLI's keychain support builds with: on Debian and
-  Ubuntu, `sudo apt-get update && sudo apt-get install libdbus-1-dev pkg-config`.
+  Ubuntu, `sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config`.
 
 ## 2. The development CLI
 
@@ -175,8 +175,8 @@ more; a version that asks for more needs a new approval, and a package at anothe
 own. The last line, `login providers`, reports a manifest field that grants nothing since contract
 1.3.0: a widget acts as an account only through a connector ([accounts](guides/accounts.md)).
 
-Now it runs. Its log message comes first, then the content `render` returned, which the CLI
-prints as indented JSON:
+Now it runs. Its log message comes first, on standard error, then the content `render`
+returned, on standard output, which the CLI prints as indented JSON:
 
 ```console check
 $ runtime run my-widget.wasm --config '{"name":"Ada"}'
@@ -192,6 +192,10 @@ act as the user's account and keep data of its own; the [reference](README.md#re
 every part of the contract.
 
 ## When something goes wrong
+
+Three mistakes a widget's author meets early, and what the CLI says about each. You need not run
+them; if you do, run them in `my-widget/` as before, and delete the files they leave
+(`wasi.wasm`, `broken.json`, `newer.wasm`) afterwards.
 
 ### A target that imports WASI
 
@@ -283,3 +287,6 @@ $ cargo build --release --target wasm32-unknown-unknown
 PS> Copy-Item ../dashboard/wit/history/1.3.0/widget.wit wit/
 PS> cargo build --release --target wasm32-unknown-unknown
 ```
+
+The widget is as it was in step 6: packed again to `my-widget.wasm`, it runs without a new
+approval.
