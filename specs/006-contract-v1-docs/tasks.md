@@ -148,7 +148,7 @@ kinds, and the docs runner every page runs on.
 
 ### Error kinds (R7)
 
-- [ ] T008 [P] Define `ErrorKind` through one macro in `runtime/src/error.rs` (research R7):
+- [X] T008 [P] Define `ErrorKind` through one macro in `runtime/src/error.rs` (research R7):
   - Each entry gives a variant's doc comment, its name and its `as_str` text. The macro declares
     the enum, `as_str` and `pub const ALL: [ErrorKind; 36]` together, so no kind can exist
     outside `ALL`.
