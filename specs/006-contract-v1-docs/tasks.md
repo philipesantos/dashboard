@@ -700,8 +700,9 @@ the older pages point to the new docs.
     `docs/authors/getting-started/Cargo.lock`.
 - [X] T048 Confirm FR-024: `git diff master -- runtime/tests/hostile.rs runtime/tests/hostile/
   plugins/hostile/` shows only the `login_providers` removal, README links, the tests of the
-  review's host fixes (T055, T056) and `foreign_store`'s changed expectation for an update that
-  cannot open its store (T057), and that no hostile case was removed.
+  review's host fixes (T055, T056, and P1 of T058: `foreign_401_on_a_key`) and `foreign_store`'s
+  changed expectation for an update that cannot open its store (T057), and that no hostile case
+  was removed.
 - [X] T058 Review the prose of the docs for authors independently: the drift test checks that
   every item is there with its name and default, and the runner that every command prints what
   the page shows, but no test reads what the text says. A fresh agent with none of this

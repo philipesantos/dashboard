@@ -212,7 +212,7 @@ The type of `connectors`, used here as it is: its rule is one of `connectors/rul
 | `not-granted` | The connector is optional and off, its approval was removed, or the manifest does not declare it with an account. Nothing was sent; or, when the approval was removed while the request was in flight, the response was dropped | Show the widget without this connector's data <!-- ref: wit accounts/account-call-error/not-granted --> |
 | `refused(problem)` | The host refused the call before sending it; a token refresh of the host's own may have gone first | See the rule <!-- ref: wit accounts/account-call-error/refused --> |
 | `failed(problem)` | The call could not complete and no response reached the widget: the request failed, or the host stopped it before sending, such as when the keychain could not be read. A response that carried the credential back is `invalid-response` | See the rule <!-- ref: wit accounts/account-call-error/failed --> |
-| `account-not-connected` | No account is connected and the credential is required, or the account must be connected again: the service refused it, it could not be refreshed, or the connector now asks for more access than it holds. Also when the service refused this one request as unauthorized even after a refresh while the account still works for its identity operation, and when the host cannot read its record of accounts. Nothing was sent, or the response was dropped | Show that the account may need connecting; only the person can connect it, in the host's controls. When only this request was refused, the account needs nothing and other operations may work <!-- ref: wit accounts/account-call-error/account-not-connected --> |
+| `account-not-connected` | No account is connected and the credential is required, or the account must be connected again: the service refused it, it could not be refreshed, or the connector now asks for more access than it holds. Also when the service refused this one request as unauthorized even after a refresh while the account still works for its identity operation, or to a key or an account that declares no identity operation, and when the host cannot read its record of accounts. Nothing was sent, or the response was dropped | Show that the account may need connecting; only the person can connect it, in the host's controls. When only this request was refused, the account needs nothing and other operations may work <!-- ref: wit accounts/account-call-error/account-not-connected --> |
 | `subscription-required` | The service answered, with a status the connector declares as meaning that, that a paid plan this operation needs is missing; also for a request sent without an account. The response was dropped | Show that the operation needs a plan the account does not have <!-- ref: wit accounts/account-call-error/subscription-required --> |
 
 <!-- ref: wit accounts/call -->
@@ -226,7 +226,9 @@ that carried the credential gets 401, the host refreshes an account's token and 
 once more, unless this call refreshed it already. If the answer is still 401, the host calls the
 connector's identity operation, when it declares one, to tell whether the account still works. A
 key is never refreshed, and neither a key nor an account without an identity operation can be
-confirmed: one 401 marks it as needing to be connected again, for every widget that uses it. All
+confirmed: a 401 then stops that call only and marks nothing, so one widget cannot lock the
+credential out for the others. A key the service no longer accepts keeps being sent, and refused,
+until the person connects another. All
 of that counts as one call for the calls-per-run and per-minute limits; each request has its own
 time limit, and every response body counts toward the update's.
 

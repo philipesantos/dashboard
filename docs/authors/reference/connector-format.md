@@ -101,7 +101,7 @@ the connector at all when the credential is required.
 | `credential/account/access` | 1–32 items: what the account lets the connector do, read at approval and at sign-in | Yes <!-- ref: connector credential/account/access --> |
 | `credential/account/access[]/name` | What the item reaches | Yes <!-- ref: connector credential/account/access[]/name --> |
 | `credential/account/access[]/level` | `read` or `write`. Adding an item, or raising one to `write`, needs a new approval and a new sign-in | Yes <!-- ref: connector credential/account/access[]/level --> |
-| `credential/account/identity` | A read operation of the connector, `GET` without parameters, on one of the credential's destinations, that names the account. The host calls it after sign-in, and after a 401 to tell a revoked token from a refusal of one operation | No <!-- ref: connector credential/account/identity --> |
+| `credential/account/identity` | A read operation of the connector, `GET` without parameters, on one of the credential's destinations, that names the account. The host calls it after sign-in, and after a 401 to tell a revoked token from a refusal of one operation. Without it, a 401 never marks the account as needing to be connected again | No <!-- ref: connector credential/account/identity --> |
 | `credential/account/identity/operation` | The operation's name | Yes <!-- ref: connector credential/account/identity/operation --> |
 | `credential/account/identity/name` | A JSON pointer to the account's name in the answer | Yes <!-- ref: connector credential/account/identity/name --> |
 | `credential/account/identity/id` | A JSON pointer to the account's stable id in the answer | Yes <!-- ref: connector credential/account/identity/id --> |

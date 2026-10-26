@@ -159,7 +159,7 @@ answers more ([the contract](../reference/contract.md#accounts)):
   asks for more access than it holds. Show that the account needs connecting; only the person can
   connect it. `private-notes` returns no notes with a note saying so, and keeps working. It also
   answers when the service refused this one request while the account still works for its
-  identity operation, and when the host cannot read its record of accounts: then the account may
+  identity operation, or refused it to a key, which has none to check with, and when the host cannot read its record of accounts: then the account may
   need nothing, so don't tell the person it is gone.
 - `subscription-required`: the service said the account lacks a paid plan the operation needs.
   The response is dropped.

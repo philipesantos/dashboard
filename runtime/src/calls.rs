@@ -1032,7 +1032,9 @@ impl Calls {
 
     /// Step 9a's end: a `401` that a refresh did not cure is confirmed with the identity
     /// operation. Refused too, the account is marked; answered, only this call stops, so one
-    /// widget cannot lock the shared account out for the others (FR-011).
+    /// widget cannot lock the shared account out for the others (FR-011). A key, or an account
+    /// without an identity operation, cannot be confirmed: only this call stops, for the same
+    /// reason (`specs/006-contract-v1-docs/review.md`, P1).
     fn confirm_refusal(
         &mut self,
         id: &str,
@@ -1044,56 +1046,57 @@ impl Calls {
         let Some(snapshot) = binding.account.clone() else {
             return Answer::AccountNotConnected(format!("no account is connected to {id}"));
         };
-        let refused_too = match declared.account().and_then(|account| account.identity()) {
-            None => true,
-            Some(identity) => {
-                let stored = self
-                    .account
-                    .as_ref()
-                    .and_then(|access| access.secrets.get(id))
-                    .cloned();
-                let operation = connector.operation(identity.operation());
-                match (stored, operation, &self.session) {
-                    (Some(stored), Some(operation), Some(session)) => {
-                        match (
-                            network::build_request(
+        let Some(identity) = declared.account().and_then(|account| account.identity()) else {
+            return Answer::AccountNotConnected(format!(
+                "the service refused this request as unauthorized (401); {id} declares no identity operation to tell whether its credential still works"
+            ));
+        };
+        let refused_too = {
+            let stored = self
+                .account
+                .as_ref()
+                .and_then(|access| access.secrets.get(id))
+                .cloned();
+            let operation = connector.operation(identity.operation());
+            match (stored, operation, &self.session) {
+                (Some(stored), Some(operation), Some(session)) => {
+                    match (
+                        network::build_request(
+                            connector,
+                            operation,
+                            &BTreeMap::new(),
+                            &self.limits,
+                        ),
+                        request_credential(declared, &stored),
+                    ) {
+                        (Ok(mut request), Ok(credential)) => {
+                            let url = request.url.clone();
+                            request.credential = Some(credential);
+                            let started = now_ms();
+                            let exchange = session.send(
                                 connector,
                                 operation,
-                                &BTreeMap::new(),
-                                &self.limits,
-                            ),
-                            request_credential(declared, &stored),
-                        ) {
-                            (Ok(mut request), Ok(credential)) => {
-                                let url = request.url.clone();
-                                request.credential = Some(credential);
-                                let started = now_ms();
-                                let exchange = session.send(
-                                    connector,
-                                    operation,
-                                    request,
-                                    self.deadline,
-                                    &mut self
-                                        .update_bytes_left
-                                        .lock()
-                                        .unwrap_or_else(PoisonError::into_inner),
-                                );
-                                let status =
-                                    exchange.result.as_ref().map(|response| response.status);
-                                host_entries.push(identity_entry(
-                                    id,
-                                    &url,
-                                    started,
-                                    &exchange,
-                                    account_name(Some(binding)),
-                                ));
-                                matches!(status, Ok(401))
-                            }
-                            _ => true,
+                                request,
+                                self.deadline,
+                                &mut self
+                                    .update_bytes_left
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner),
+                            );
+                            let status = exchange.result.as_ref().map(|response| response.status);
+                            host_entries.push(identity_entry(
+                                id,
+                                &url,
+                                started,
+                                &exchange,
+                                account_name(Some(binding)),
+                            ));
+                            matches!(status, Ok(401))
                         }
+                        _ => true,
                     }
-                    _ => true,
                 }
+                _ => true,
             }
         };
         if refused_too {

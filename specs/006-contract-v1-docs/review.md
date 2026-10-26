@@ -55,7 +55,7 @@ page changed; line numbers are at df4bb6c.
 
 | id | page | what | checked | outcome |
 | --- | --- | --- | --- | --- |
-| P1 | `contract.md` (`accounts/call`) | "When the service answers 401, the host refreshes the token and sends the request once more, then may call the identity operation": a key is never refreshed, an account refreshed earlier in the call is not resent, and without an identity operation (every key) one 401 marks the credential for every widget that uses it | `calls.rs:594-596`, `calls.rs:1047-1048`, `calls.rs:1099-1100`; 005 research §302 confirms only "when declared" | docs: the paragraph says each case; the marking without an identity operation is 005's design and stays |
+| P1 | `contract.md` (`accounts/call`) | "When the service answers 401, the host refreshes the token and sends the request once more, then may call the identity operation": a key is never refreshed, an account refreshed earlier in the call is not resent, and without an identity operation (every key) one 401 marks the credential for every widget that uses it | `calls.rs:594-596`, `calls.rs:1047-1048`, `calls.rs:1099-1100`; 005 research §302 confirms only "when declared" | host, chosen by the maintainer on 2026-10-26: without an identity operation to confirm with, a 401 stops that call only and marks nothing, as FR-011 of 005 means (one widget cannot lock a shared credential out for the others); hostile `foreign_401_on_a_key` fails without it. Docs: the paragraph says each case |
 | P2 | `errors.md` (`credential-needs-https`) | Plain HTTP "only to the local network": only a local connector in development, only to this machine | `connector.rs:1020-1034`, `network/resolver.rs:22-23` | docs |
 | P3 | `contract.md` (`over-limit`, `failed`) | "Keep what the previous update fetched": `update` cannot read it, and `ok` replaces it | `kept.rs:158-163`, `kept.rs:173-181` | docs: return an error to keep it |
 | P4 | `contract.md` (storage `unavailable`) | "Carry on without the store": a write that answers it ends the run's writes and fails the update | `storage/mod.rs:740-760`, `storage/mod.rs:496-507`; hostile `unwritable_store` | docs |
@@ -98,8 +98,7 @@ page changed; line numbers are at df4bb6c.
 | P41 | `guides/accounts.md` (`account-not-connected`) | Also when only this request was refused, or the record cannot be read | the WIT; `calls.rs:793-820` | docs |
 | P42 | `guides/accounts.md` (answers) | A `refused` through `accounts` may follow a token refresh | `calls.rs:536-566` | docs |
 
-No finding is `breaking`. P18 is the one host fix. Three findings rest on decisions of earlier
-features that the pages now state, and are left to the maintainer: P1 (one 401 marks a key for
-every widget that uses it, since a key has no identity operation to confirm with), P17 (any local
-file may carry a repository id until Phase 3) and P35 (disconnecting an account does not clear
+No finding is `breaking`. P18 and P1 are host fixes, P1 chosen by the maintainer. Two findings
+rest on decisions of earlier features that the pages now state: P17 (any local file may carry a
+repository id until Phase 3) and P35 (disconnecting an account does not clear
 what widgets copied from it into their stores; deferred to the Phase 4 spec).
