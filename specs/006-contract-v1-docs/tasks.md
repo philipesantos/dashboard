@@ -89,7 +89,7 @@ kinds, and the docs runner every page runs on.
 
 ### The review (R12)
 
-- [ ] T003 Run the independent review of contract 1.3.0 (FR-004, research R12):
+- [X] T003 Run the independent review of contract 1.3.0 (FR-004, research R12):
   - **Reviewer:** a fresh agent that did not write the contract and has none of this
     conversation's context.
   - **Inputs:** `wit/v1/widget.wit`, `wit/manifest.schema.json`, `wit/connector.schema.json`,
@@ -99,7 +99,7 @@ kinds, and the docs runner every page runs on.
     reach it, that the host behaves as its doc comment says, and that it is documented; for
     every world and name, that it promises nothing the host does not do.
   - **What it returns:** each finding with the file and line it rests on. It edits nothing.
-- [ ] T004 Check each finding of T003 at the source, by code, a test or a small run, then record
+- [X] T004 Check each finding of T003 at the source, by code, a test or a small run, then record
   it in `specs/006-contract-v1-docs/review.md` with its outcome. By outcome:
   - **`docs`:** the fix goes to the docs (US3, US5) or to a doc comment of `wit/v1/widget.wit`
     (T005).
@@ -114,9 +114,31 @@ kinds, and the docs runner every page runs on.
   - **`kept`:** record the reason.
 
   No finding may stay `open`.
-- [ ] T005 Apply the doc-comment outcomes of T004 to `wit/v1/widget.wit`, changing comments only,
+- [X] T005 Apply the doc-comment outcomes of T004 to `wit/v1/widget.wit`, changing comments only,
   never a definition (FR-001). Confirm `cargo test -p runtime --test contract_v1 --locked` still
   passes: the only-adds tests compare definitions, not comments.
+
+### Host fixes from the review (T004)
+
+- [ ] T055 Fix F1 of `review.md`, so the accounts a widget acts as are fixed at load:
+  - **Test first:** add one to `runtime/tests/accounts.rs` that fails without the fix. Load
+    `private-notes`, run an update, then connect the account through the test sign-in. Approve
+    another plugin through the same grant store, then update again. Assert the request went
+    without the credential and the answer is `account-not-connected` (the credential is
+    required), until the plugin is loaded again.
+  - **Fix:** in `runtime/src/lib.rs`, read the accounts record once at load and give `prepare`
+    the accounts taken then, so `ConnectorTable::build_accounts` binds the same accounts at
+    every relink. A connector granted later, which had no account at load, gets none until the
+    next load.
+  - **Checks:** `accounts.rs` and the hostile suite pass. Review line by line.
+- [ ] T056 Fix F2 of `review.md`, so one update receives at most `max_update_response_bytes` of
+  response bodies across `connectors` and `accounts` together:
+  - **Test first:** add one to `runtime/tests/hostile/connectors.rs` (or `credentials.rs`) that
+    fails without the fix. A widget with both interfaces reads 3 MiB through each in one update;
+    the second read's answer is `failed(over-limit)`.
+  - **Fix:** in `runtime/src/lib.rs` and `runtime/src/calls.rs`, make `update_bytes_left` one
+    budget the two `Calls` of a run share (`Arc<Mutex<usize>>`), as they share `rates`.
+  - **Checks:** the hostile suite passes. Review line by line.
 
 ### The CLI as a library module (R9)
 
@@ -722,7 +744,7 @@ the older pages point to the new docs.
 
 ### Within Each Phase
 
-- Foundational: T003 → T004 → T005; T006 → T007 (two commits, in order); T008 with either; T009
+- Foundational: T003 → T004 → T005 → T055 → T056; T006 → T007 (two commits, in order); T008 with either; T009
   → T010
 - US1: T014 → T015; T016 → T017 → T018 → T020; T019 with T018
 - US4: T028 → T029; T030 and T031 after T029
