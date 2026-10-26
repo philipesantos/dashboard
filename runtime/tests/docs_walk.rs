@@ -5,11 +5,15 @@
 //! because it builds and installs the CLI; the docs job runs it with `--ignored`. The other tests
 //! check the runner itself, on Markdown in memory.
 
+mod common;
+
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use common::servers::{Reply, Server, TestPki};
+use common::signin::SignInService;
 use regex::Regex;
 use tempfile::TempDir;
 
@@ -707,14 +711,147 @@ impl Kept {
     }
 }
 
+/// The releases the test GitHub answers with for `rust-lang/rust`, which the connectors guide
+/// shows; GitHub itself answers with the releases of the day.
+const RELEASES: &str = r#"[
+    {"name": "Rust 1.99.1", "tag_name": "1.99.1", "published_at": "2026-10-16T00:00:00Z",
+     "html_url": "https://github.com/rust-lang/rust/releases/tag/1.99.1"},
+    {"name": "Rust 1.99.0", "tag_name": "1.99.0", "published_at": "2026-10-02T00:00:00Z",
+     "html_url": "https://github.com/rust-lang/rust/releases/tag/1.99.0"}
+]"#;
+
+/// The test services a page's check comment names, and the seam that routes to them, which the
+/// test-only CLI reads from a file (research R9).
+struct Services {
+    _github: Option<Server>,
+    notes: Option<SignInService>,
+    network: runtime::TestNetwork,
+    data_dir: PathBuf,
+}
+
+impl Services {
+    fn start(names: &[String], records: &Path) -> Services {
+        let pki = TestPki::new();
+        let mut routes = Vec::new();
+        let mut public = Vec::new();
+        let github = names.iter().any(|name| name == "github").then(|| {
+            let server = Server::https(&pki.leaf(&["api.github.com"]));
+            server.route(
+                "/repos/rust-lang/rust/releases",
+                Reply::json(RELEASES).header("Content-Type", "application/json; charset=utf-8"),
+            );
+            routes.push(runtime::Route {
+                host: "api.github.com".to_owned(),
+                port: 443,
+                answers: vec![vec![server.address()]],
+            });
+            public.push(server.address());
+            server
+        });
+        let notes = names.iter().any(|name| name == "notes").then(|| {
+            let service = SignInService::start(&pki);
+            routes.push(service.route());
+            public.push(service.server.address());
+            service
+        });
+        Services {
+            _github: github,
+            notes,
+            network: runtime::TestNetwork {
+                routes,
+                public_for_tests: public,
+                root: pki.root(),
+                catalog: Vec::new(),
+            },
+            data_dir: records.join("data"),
+        }
+    }
+
+    /// The file the test-only CLI reads: the seam, and a data directory and grant record of the
+    /// session's own.
+    fn write_file(&self, path: &Path) {
+        let routes: Vec<serde_json::Value> = self
+            .network
+            .routes
+            .iter()
+            .map(|route| {
+                serde_json::json!({
+                    "host": route.host,
+                    "port": route.port,
+                    "addresses": route.answers[0].iter().map(ToString::to_string).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        let file = serde_json::json!({
+            "routes": routes,
+            "public_for_tests": self.network.public_for_tests.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "root": self.network.root,
+            "catalog": self.network.catalog,
+            "data_dir": self.data_dir,
+            "grants": self.data_dir.join("grants.json"),
+        });
+        fs::create_dir_all(&self.data_dir).expect("the session's data directory");
+        fs::write(path, file.to_string()).expect("the test network's file is written");
+    }
+
+    /// Disconnects what the page connected, so the system's keychain keeps nothing of it.
+    fn disconnect(&self) {
+        if self.notes.is_some() {
+            let runtime = runtime::Runtime::with_test_network_on_keychain(
+                runtime::Limits::default(),
+                runtime::RuntimeOptions::new(&self.data_dir).development(true),
+                self.network.clone(),
+            )
+            .expect("a runtime over the session's data");
+            let _ = runtime.disconnect_account("local/notes", None);
+        }
+    }
+}
+
+/// Puts the test-only CLI first on the session's `PATH` as `runtime`, reading `network`.
+fn use_test_cli(session: &mut Session, network: &Path) {
+    fs::create_dir_all(session.folder().join("bin")).expect("the session's bin folder");
+    fs::copy(
+        env!("CARGO_BIN_EXE_runtime-test-network"),
+        session.folder().join("bin").join(executable("runtime")),
+    )
+    .expect("the test-only CLI is copied into the session");
+    session.env.push((
+        "DASHBOARD_TEST_NETWORK".to_owned(),
+        network.display().to_string(),
+    ));
+}
+
 /// Runs one page's blocks in order and returns the first difference.
 fn run_page(relative: &str, path: &Path, page: &Page) -> Result<(), String> {
-    let system = System::current();
     clear_development_records();
     let mut session = Session::start();
     if relative != "getting-started.md" {
         set_up(&mut session, relative);
     }
+    let services = (!page.services.is_empty()).then(|| {
+        let services = Services::start(&page.services, session.scratch.path());
+        let file = session.scratch.path().join("test-network.json");
+        services.write_file(&file);
+        use_test_cli(&mut session, &file);
+        session
+            .roots
+            .push(session.scratch.path().display().to_string());
+        if let Ok(canonical) = session.scratch.path().canonicalize() {
+            session.roots.push(canonical.display().to_string());
+        }
+        services
+    });
+    let walked = walk_blocks(&mut session, path, page);
+    if let Some(services) = &services {
+        services.disconnect();
+    }
+    walked
+}
+
+/// The blocks of a page for this system, in order.
+fn walk_blocks(session: &mut Session, path: &Path, page: &Page) -> Result<(), String> {
+    let system = System::current();
     let mut kept = Kept::of(path);
     for block in page
         .blocks
@@ -1108,4 +1245,19 @@ fn a_page_with_a_kept_crate_writes_its_files_and_builds_with_its_lock() {
     let changed = kept.check_end().unwrap_err();
     assert!(changed.contains("cargo changed"), "{changed}");
     assert!(Kept::of(&docs.path().join("other.md")).is_none());
+}
+
+#[test]
+fn a_page_with_services_runs_its_runtime_commands_through_the_test_only_cli() {
+    let mut session = Session::start();
+    let network = session.scratch.path().join("missing.json");
+    use_test_cli(&mut session, &network);
+    assert_eq!(
+        fs::read(session.folder().join("bin").join(executable("runtime"))).unwrap(),
+        fs::read(env!("CARGO_BIN_EXE_runtime-test-network")).unwrap()
+    );
+    // Only the test-only CLI reads the variable, and refuses a file that is not there
+    let (code, printed) = session.run("runtime requests");
+    assert_eq!(code, 2, "{printed:?}");
+    assert!(printed[0].starts_with("error: cannot read "), "{printed:?}");
 }

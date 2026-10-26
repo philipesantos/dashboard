@@ -598,7 +598,7 @@ ignores `DASHBOARD_TEST_NETWORK`.
   - **Checks:** confirm `cargo install --path runtime --locked --root <temp>` installs only
     `runtime`, and that the CI step "The test seam never builds in release" still fails as it
     must.
-- [ ] T036 [US5] Extend the runner in `runtime/tests/docs_walk.rs` for a page with a
+- [X] T036 [US5] Extend the runner in `runtime/tests/docs_walk.rs` for a page with a
   `service=<names>` front-matter comment:
   - **Before the page:**
     - start the named test servers from `runtime/tests/common`: `github` is the GitHub releases
