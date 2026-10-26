@@ -168,9 +168,9 @@ interface accounts {
 /// bytes in UTF-8, compared and sorted as bytes; values are bytes, up to 256 KiB. Reads work in
 /// `render` and `update`; writes only in `update`, and they are kept together only when `update`
 /// returns `ok` with data the host keeps. In `update`, the first call opens the store for
-/// writing; when it cannot (`busy`, `damaged`, `unavailable`), the run ends as `run-aborted`
-/// says and the update fails as `storage-failed`, even when the plugin handles the error and
-/// returns `ok`, so the data it returned is not kept either. New in 1.2.0.
+/// writing; when it cannot (`busy`, `damaged`, `unavailable`), that call answers so and every
+/// later call of the run answers `run-aborted`: the run reads and writes nothing, and what
+/// `update` returns stands. New in 1.2.0.
 interface storage {
   /// The rule behind a call that was refused or failed.
   enum rule {
@@ -193,8 +193,9 @@ interface storage {
     /// cannot be written, such as a read-only file. A full disk answers `over-limit`.
     unavailable,
     /// An earlier call of this run failed in a way that ended its transaction, such as reaching
-    /// the store's file size or the store not opening in `update`: nothing was done, and nothing
-    /// this run wrote will be kept.
+    /// the store's file size: nothing was done, and nothing this run wrote will be kept, and the
+    /// update fails. Or an earlier call of `update` could not open the store: nothing was done,
+    /// and the run reads and writes nothing more.
     run-aborted,
   }
 
@@ -259,8 +260,9 @@ interface renderer {
 interface updater {
   /// `config` is the widget's configuration, chosen by the host. On success the plugin
   /// returns its data as a JSON document of at most 256 KiB, which the host keeps and gives to
-  /// `render`, unless the run's store failed (storage `run-aborted`); on failure, a message for
-  /// the maintainer, and the host keeps the previous data.
+  /// `render`, unless a write of the run failed and ended its transaction (storage
+  /// `run-aborted`), which fails the update; on failure, a message for the maintainer, and the
+  /// host keeps the previous data.
   update: func(config: string) -> result<string, string>;
 }
 

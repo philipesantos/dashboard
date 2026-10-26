@@ -140,6 +140,17 @@ kinds, and the docs runner every page runs on.
     budget the two `Calls` of a run share (`Arc<Mutex<usize>>`), as they share `rates`.
   - **Checks:** the hostile suite passes. Review line by line.
 
+- [X] T057 Fix F7 of `review.md`, as the maintainer chose: an update whose store cannot be
+  opened (`busy`, `damaged`, `unavailable`) gets that error, then `run-aborted` for every later
+  storage call, writes nothing, and its own result stands.
+  - **Tests first:** change the expectation of `storage.rs`'s busy case
+    (`an_update_that_cannot_take_its_store_writes_nothing_and_its_result_stands`) and of the
+    hostile `foreign_store`: the update returns `ok`, its data is kept, the store is unchanged.
+  - **Fix:** in `runtime/src/storage/mod.rs`, a run that could not open its store in `update`
+    records why and answers `run-aborted` without opening it; `finish` then keeps nothing and
+    fails nothing. Correct the comments of 1.3.0 to match.
+  - **Checks:** `storage`, `hostile`, `cli` and `contract_v1` pass. Review line by line.
+
 ### The CLI as a library module (R9)
 
 - [X] T006 Move the CLI unchanged into a library module, as its own commit:
@@ -687,9 +698,9 @@ the older pages point to the new docs.
   - `cargo deny check`, and `cargo audit` on `Cargo.lock`, `plugins/Cargo.lock` and
     `docs/authors/getting-started/Cargo.lock`.
 - [ ] T048 Confirm FR-024: `git diff master -- runtime/tests/hostile.rs runtime/tests/hostile/
-  plugins/hostile/` shows only the `login_providers` removal, README links and the tests of the
-  review's host fixes (T055, T056), which check rules of earlier features, and that no hostile
-  case was removed.
+  plugins/hostile/` shows only the `login_providers` removal, README links, the tests of the
+  review's host fixes (T055, T056) and `foreign_store`'s changed expectation for an update that
+  cannot open its store (T057), and that no hostile case was removed.
 - [ ] T049 Walk through `specs/006-contract-v1-docs/quickstart.md` §1–§4, including each
   mutation (a byte of a frozen contract, a marker, a limit's default, a command), and fix any
   drift between it, the docs and the CLI.
@@ -745,7 +756,7 @@ the older pages point to the new docs.
 
 ### Within Each Phase
 
-- Foundational: T003 → T004 → T005 → T055 → T056; T006 → T007 (two commits, in order); T008 with either; T009
+- Foundational: T003 → T004 → T005 → T055 → T056 → T057; T006 → T007 (two commits, in order); T008 with either; T009
   → T010
 - US1: T014 → T015; T016 → T017 → T018 → T020; T019 with T018
 - US4: T028 → T029; T030 and T031 after T029

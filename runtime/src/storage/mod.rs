@@ -300,6 +300,10 @@ pub(crate) struct StorageRun {
     taken_away: bool,
     /// The failure that ended the run's transaction, when SQLite ended it (research R7).
     aborted: Option<String>,
+    /// Why an update could not open its store: every later call answers `run-aborted` without
+    /// opening it, so the run reads and writes nothing, and the update's own result stands
+    /// (`specs/006-contract-v1-docs/review.md`, F7).
+    unopened: Option<String>,
 }
 
 impl StorageRun {
@@ -342,6 +346,7 @@ impl StorageRun {
             writes: 0,
             taken_away: false,
             aborted: None,
+            unopened: None,
         }
     }
 
@@ -480,7 +485,8 @@ impl StorageRun {
     /// returned `ok` with valid output), the run was not aborted and storage is still granted,
     /// checked under the grant record's lock until the commit ends; otherwise they are rolled
     /// back. An aborted run or a failed commit is `storage-failed`, and storage taken away
-    /// `not-granted`, both naming why.
+    /// `not-granted`, both naming why. An update that could not open its store wrote nothing,
+    /// so its own result stands.
     pub(crate) fn finish(self, succeeded: bool) -> Result<StorageCounts, RuntimeError> {
         let counts = |writes_kept, used_bytes| StorageCounts {
             calls: self.calls,
@@ -577,6 +583,14 @@ impl StorageRun {
                 Rule::RunAborted,
                 format!(
                     "an earlier call of this update ended its writes ({first}); nothing it wrote will be kept"
+                ),
+            ));
+        }
+        if let Some(why) = &self.unopened {
+            return Err(CallError::Failed(
+                Rule::RunAborted,
+                format!(
+                    "an earlier call of this update could not open the store ({why}); this update reads and writes nothing in it"
                 ),
             ));
         }
@@ -697,9 +711,11 @@ impl StorageRun {
             ) {
                 Ok(opened) => opened,
                 Err(error) => {
-                    // An update that cannot take its store ends its writes: a later call that
+                    // An update that cannot take its store never opens it: a later call that
                     // got in (the store no longer busy) would keep part of the update
-                    self.abort_if(true, &error);
+                    if self.phase == Phase::Update {
+                        self.unopened = Some(describe(&error));
+                    }
                     return Err(call_error(error));
                 }
             };

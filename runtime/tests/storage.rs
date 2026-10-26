@@ -371,8 +371,11 @@ fn a_render_during_an_update_sees_it_before_or_after_never_in_part() {
     );
 }
 
+/// The second update cannot open the store another process is writing: it gets `busy`, then
+/// `run-aborted`, and writes nothing, while what it returns stands
+/// (`specs/006-contract-v1-docs/review.md`, F7).
 #[test]
-fn an_update_that_cannot_take_its_store_fails_as_busy_and_keeps_nothing() {
+fn an_update_that_cannot_take_its_store_writes_nothing_and_its_result_stands() {
     let world = World::production_with(spinning(), false);
     let plugin = world.approve_and_load(&probe(true));
     update(&plugin, &[set("a", "before")]);
@@ -411,11 +414,16 @@ fn an_update_that_cannot_take_its_store_fails_as_busy_and_keeps_nothing() {
             assert!(started.elapsed() < std::time::Duration::from_secs(20));
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        // The second waits at most 2 s, then fails as busy
+        // The second waits at most 2 s, then gets busy; its later call never opens the store
         let report = second.update(&steps(&[set("a", "second"), set("b", "second")], None));
-        let error = report.result.expect_err("busy");
-        assert_eq!(error.kind(), ErrorKind::StorageFailed, "{error}");
-        assert!(error.to_string().contains("busy"), "{error}");
+        let returned = report.result.expect("the update's own result stands");
+        let found = answers(&returned);
+        assert_eq!(found[0]["error"], "failed:busy", "{returned}");
+        assert_eq!(found[1]["error"], "failed:run-aborted", "{returned}");
+        // Kept, in place of the previous data, until the first update ends and keeps its own
+        let kept = second.render(&render_steps(&[])).result.unwrap();
+        assert_eq!(kept["render_config"]["data"], returned);
+        assert_ne!(kept["render_config"]["data"], previous);
         holder.join().unwrap();
     });
     let content = second
@@ -423,8 +431,6 @@ fn an_update_that_cannot_take_its_store_fails_as_busy_and_keeps_nothing() {
         .result
         .unwrap();
     assert_eq!(answers(&content), [hex("before"), json!({ "ok": null })]);
-    // The second runtime's view of the previous kept data is the first one's
-    assert_eq!(content["render_config"]["data"], previous);
 }
 
 /// A widget built for a contract without storage that declares it; a 1.2.0 widget that
