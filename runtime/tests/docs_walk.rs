@@ -23,6 +23,9 @@ const REPOSITORY: &str = "https://github.com/philipesantos/dashboard";
 /// Outside CI, the runner starts only with this set, since it clears the development data.
 const OPT_IN: &str = "DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA";
 
+/// `1`: a page goes on past a difference and reports all of them, for writing a page.
+const KEEP_GOING: &str = "DASHBOARD_DOCS_WALK_KEEP_GOING";
+
 /// Only the pages under `docs/authors/` whose path starts with one of these, comma-separated.
 const PAGES: &str = "DASHBOARD_DOCS_WALK_PAGES";
 
@@ -901,6 +904,10 @@ fn walk_blocks(session: &mut Session, path: &Path, page: &Page) -> Result<(), St
     let system = System::current();
     let mut kept = Kept::of(path);
     let mut last_digest: Option<String> = None;
+    // While a page is written, every difference at once, the later ones on what the earlier
+    // left behind
+    let keep_going = std::env::var(KEEP_GOING).as_deref() == Ok("1");
+    let mut differences = Vec::new();
     for block in page
         .blocks
         .iter()
@@ -944,16 +951,23 @@ fn walk_blocks(session: &mut Session, path: &Path, page: &Page) -> Result<(), St
                         }
                     };
                     if code != *exit || differs.is_some() {
-                        return Err(format!(
+                        let difference = format!(
                             "line {}: {}\nexit code {code}, expected {exit}\n{}",
                             step.line,
                             step.text,
                             differs.unwrap_or_else(|| format!("output:\n{}", indent(&printed)))
-                        ));
+                        );
+                        if !keep_going {
+                            return Err(difference);
+                        }
+                        differences.push(difference);
                     }
                 }
             }
         }
+    }
+    if !differences.is_empty() {
+        return Err(differences.join("\n\n"));
     }
     match &kept {
         Some(kept) => kept.check_end(),
