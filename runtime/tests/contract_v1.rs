@@ -203,6 +203,10 @@ fn frozen_contracts() {
             "1.2.0",
             "bf3f73c173baeaab6de4a395ba2767acc8e79ebca2601d3bff993baad1ad3cbb",
         ),
+        (
+            "1.3.0",
+            "7a03fde5494b73e54469550c8d3e26282d6738e32e330d8d0c4be7bebfe3d45b",
+        ),
     ] {
         let path = wit().join("history").join(version).join("widget.wit");
         let text = std::fs::read_to_string(&path)
@@ -336,4 +340,31 @@ fn define(resolve: &Resolve, kind: &TypeDefKind) -> String {
         TypeDefKind::Type(ty) => format!("type = {}", render(resolve, ty)),
         other => format!("{other:?}"),
     }
+}
+
+/// While `wit/v1` declares a frozen version, it is that version byte for byte: a comment fixed in
+/// `wit/v1` after the freeze would change what authors bind without a new minor
+/// (`specs/006-contract-v1-docs/research.md`, R13). Line endings are read as LF, as above.
+#[test]
+fn v1_equals_its_frozen_copy() {
+    let read = |path: &Path| {
+        std::fs::read_to_string(path)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+            .replace("\r\n", "\n")
+    };
+    let current = read(&wit().join("v1").join("widget.wit"));
+    let version = current
+        .lines()
+        .find_map(|line| line.strip_prefix("package dashboard:widget@"))
+        .and_then(|rest| rest.strip_suffix(';'))
+        .expect("wit/v1 declares its package");
+    let frozen = wit().join("history").join(version).join("widget.wit");
+    assert!(
+        frozen.is_file(),
+        "wit/v1 declares {version}, which is not frozen under wit/history/{version}"
+    );
+    assert!(
+        read(&frozen) == current,
+        "wit/v1 differs from wit/history/{version}: a published contract changes only by a new minor"
+    );
 }
