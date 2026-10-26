@@ -7,8 +7,10 @@
 //! granted, and `runtime approve <plugin>` grants its required permissions, all together.
 //! `runtime optional <plugin> <permission> on|off` turns one optional permission on or off, and
 //! `runtime remove <plugin-id>` removes a plugin's approval and every grant with it.
-//! `runtime pack <component> --manifest <file> --output <file>` checks a manifest and adds it to
-//! a component, for authors outside this repository's xtask.
+//! `runtime pack <module-or-component> --manifest <file> --output <file>` checks a manifest and
+//! adds it to a component, for authors outside this repository's xtask; given the core module
+//! cargo builds, it first turns it into a component, as the xtask does
+//! (`specs/006-contract-v1-docs/contracts/cli.md`).
 //!
 //! For widgets with connectors (`specs/003-plugin-connectors/contracts/cli.md`): `permissions`
 //! also shows each connector, its destinations and the operations the widget calls, with an
@@ -74,7 +76,7 @@ pub const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config
        runtime accounts list [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime accounts disconnect <connector-id> [--origin <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime check-connector <file>
-       runtime pack <component> --manifest <file> --output <file>";
+       runtime pack <module-or-component> --manifest <file> --output <file>";
 
 /// Exit status when the plugin or the change was refused, or the plugin failed or was stopped.
 const PLUGIN_FAILED: u8 = 1;
@@ -1428,9 +1430,15 @@ fn pack(options: &Options) -> ExitCode {
     let (Some(manifest_path), Some(output)) = (&options.manifest, &options.output) else {
         return usage_error("pack needs --manifest <file> and --output <file>");
     };
-    let component = match read_plugin(&options.plugin, Limits::default().max_package_bytes) {
-        Ok(component) => component,
+    let max_bytes = Limits::default().max_package_bytes;
+    let input = match read_plugin(&options.plugin, max_bytes) {
+        Ok(input) => input,
         Err(message) => return usage_error(&message),
+    };
+    // The core module cargo builds becomes a component first, as cargo xtask plugins does
+    let component = match package::componentize(&input, &options.plugin, max_bytes) {
+        Ok(component) => component,
+        Err(error) => return refused(&error),
     };
     // At most one byte over the limit, which the manifest check then refuses
     let manifest_name = manifest_path.display().to_string();

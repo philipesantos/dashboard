@@ -627,6 +627,199 @@ fn pack_needs_its_options_and_takes_no_grant_record() {
     }
 }
 
+// `pack` on the core module cargo builds (specs/006-contract-v1-docs/contracts/cli.md)
+
+/// The examples, which authors build from.
+const EXAMPLES: [&str; 4] = [
+    "hello-widget",
+    "github-releases",
+    "private-notes",
+    "update-counter",
+];
+
+/// The core module cargo built for `name`, as `cargo xtask plugins` left it before turning it
+/// into a component.
+fn core_module(name: &str) -> PathBuf {
+    let path = [
+        env!("CARGO_MANIFEST_DIR"),
+        "..",
+        "target",
+        "plugins-build",
+        "wasm32-unknown-unknown",
+        "release",
+    ]
+    .iter()
+    .collect::<PathBuf>()
+    .join(format!("{}.wasm", name.replace('-', "_")));
+    assert!(
+        path.is_file(),
+        "missing core module {}: run cargo xtask plugins",
+        path.display()
+    );
+    path
+}
+
+/// The custom sections of a core module whose names start with `component-type`: the world
+/// wit-bindgen embeds, appended as they are to another module.
+fn component_type_sections(module: &[u8]) -> Vec<u8> {
+    let mut sections = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(module) {
+        if let wasmparser::Payload::CustomSection(section) = payload.unwrap()
+            && section.name().starts_with("component-type")
+        {
+            let name = section.name().as_bytes();
+            let mut contents = Vec::new();
+            leb128(name.len(), &mut contents);
+            contents.extend_from_slice(name);
+            contents.extend_from_slice(section.data());
+            sections.push(0);
+            leb128(contents.len(), &mut sections);
+            sections.extend_from_slice(&contents);
+        }
+    }
+    sections
+}
+
+fn leb128(mut value: usize, out: &mut Vec<u8>) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            out.push(byte);
+            return;
+        }
+        out.push(byte | 0x80);
+    }
+}
+
+/// Runs `pack` on `input` with `manifest` into `output`.
+fn pack(input: &Path, manifest: &Path, output: &Path) -> Output {
+    runtime(&[
+        "pack",
+        path_str(input),
+        "--manifest",
+        path_str(manifest),
+        "--output",
+        path_str(output),
+    ])
+}
+
+fn example_manifest(name: &str) -> PathBuf {
+    [
+        env!("CARGO_MANIFEST_DIR"),
+        "..",
+        "plugins",
+        "examples",
+        name,
+        "manifest.json",
+    ]
+    .iter()
+    .collect()
+}
+
+#[test]
+fn pack_turns_a_core_module_into_the_component_xtask_builds() {
+    let dir = TempDir::new().unwrap();
+    for name in EXAMPLES {
+        let output_path = dir.path().join(format!("{name}.wasm"));
+        let output = pack(&core_module(name), &example_manifest(name), &output_path);
+        assert_eq!(output.status.code(), Some(0), "{name}: {}", stderr(&output));
+        let packed = std::fs::read(&output_path).expect("the package was written");
+        // The same encoder and the same manifest section as cargo xtask plugins
+        assert!(
+            packed == std::fs::read(fixture_path(name)).unwrap(),
+            "{name}: pack and cargo xtask plugins built different packages"
+        );
+        assert_eq!(
+            stdout(&output),
+            format!(
+                "packed {}\ndigest: {}\n",
+                path_str(&output_path),
+                runtime::package::digest(&packed)
+            )
+        );
+    }
+}
+
+#[test]
+fn pack_refuses_a_core_module_without_the_contracts_world() {
+    let dir = TempDir::new().unwrap();
+    let module = dir.path().join("plain.wasm");
+    std::fs::write(&module, wat::parse_str("(module)").unwrap()).unwrap();
+    let output_path = dir.path().join("out.wasm");
+    let output = pack(&module, &example_manifest("hello-widget"), &output_path);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        format!(
+            "error: invalid-package: {} is a core module without the contract's world (build it with wit-bindgen)\n",
+            path_str(&module)
+        )
+    );
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn pack_escapes_the_encoders_cause() {
+    let dir = TempDir::new().unwrap();
+    // A module whose import names a module the embedded world does not have, with a name
+    // that would add a line and colour the terminal if shown raw
+    let mut module =
+        wat::parse_str(r#"(module (import "evil\0a\0d\1b[31m\07" "f" (func)))"#).unwrap();
+    module.extend(component_type_sections(
+        &std::fs::read(core_module("hello-widget")).unwrap(),
+    ));
+    let input = dir.path().join("evil.wasm");
+    std::fs::write(&input, module).unwrap();
+    let output_path = dir.path().join("out.wasm");
+    let output = pack(&input, &example_manifest("hello-widget"), &output_path);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    let error = stderr(&output);
+    assert_eq!(error.lines().count(), 1, "{error}");
+    assert!(error.starts_with("error: invalid-package: "), "{error}");
+    // The encoder's cause names the import, escaped as every text from a package is
+    assert!(error.contains(r"evil\n\r\u{1b}[31m\u{7}"), "{error}");
+    assert!(
+        !error.contains('\u{1b}') && !error.contains('\u{7}') && !error.contains('\r'),
+        "{error:?}"
+    );
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn pack_checks_the_component_against_the_size_cap() {
+    let dir = TempDir::new().unwrap();
+    let mut module = std::fs::read(core_module("hello-widget")).unwrap();
+    // A custom section that brings the module just under the cap: the component around it,
+    // with its type and adapters, goes over
+    let cap = runtime::Limits::default().max_package_bytes;
+    let name = b"padding";
+    let size = cap - module.len() - 64;
+    let mut contents = Vec::new();
+    leb128(name.len(), &mut contents);
+    contents.extend_from_slice(name);
+    contents.resize(size - 8, 0);
+    module.push(0);
+    leb128(contents.len(), &mut module);
+    module.extend(contents);
+    assert!(module.len() < cap);
+    let input = dir.path().join("big.wasm");
+    std::fs::write(&input, module).unwrap();
+    let output_path = dir.path().join("out.wasm");
+    let output = pack(&input, &example_manifest("hello-widget"), &output_path);
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(
+        stderr(&output).starts_with(&format!(
+            "error: invalid-package: the component made from {} is ",
+            path_str(&input)
+        )),
+        "{}",
+        stderr(&output)
+    );
+    assert!(stderr(&output).contains("over the package limit"));
+    assert!(!output_path.exists());
+}
+
 // Connectors (specs/003-plugin-connectors/contracts/cli.md). Every command gets --grants and
 // --data in a temporary directory, and local connectors reach a test service on loopback.
 
