@@ -358,7 +358,7 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
   - after the page, it must be unchanged. Otherwise the run fails, naming the file.
 
   Add self-tests for the three rules beside T009's.
-- [ ] T018 [US1] Write `docs/authors/getting-started.md` (FR-007, FR-008, FR-015,
+- [X] T018 [US1] Write `docs/authors/getting-started.md` (FR-007, FR-008, FR-015,
   `contracts/docs-format.md`). Every command block is marked `check`, and the expected outputs
   come from real runs.
   1. The tools and the versions it was walked with: Rust 1.99.1 and the `wasm32-unknown-unknown`
@@ -386,7 +386,7 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
     `contract-mismatch`. The fix is to copy the version the installed CLI runs.
 
   End by pointing to the guides and the reference. Link a spec only as background.
-- [ ] T019 [P] [US1] Write `docs/authors/README.md`:
+- [X] T019 [P] [US1] Write `docs/authors/README.md`:
   - where to start (the walkthrough, then the guides, then the reference);
   - the versions the docs were walked with;
   - what contract v0 still runs, and that new plugins use v1 (FR-016);
@@ -394,7 +394,7 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
     draws comes in Phase 3 in a later minor, and that widgets adopt it then (FR-014);
   - that TypeScript plugins arrive in Phase 5, naming no toolchain or engine (FR-022);
   - that Go and Python get no docs yet.
-- [ ] T020 [US1] Run `cargo xtask plugins --locked` and then
+- [X] T020 [US1] Run `cargo xtask plugins --locked` and then
   `DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 cargo test -p runtime --test docs_walk --locked
   -- --ignored` on Linux until `getting-started.md` and `README.md` pass. Fix the command or the
   code; change an output the page shows only when the CLI's output is the right one.
