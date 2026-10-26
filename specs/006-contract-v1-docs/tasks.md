@@ -715,7 +715,7 @@ the older pages point to the new docs.
 - [X] T049 Walk through `specs/006-contract-v1-docs/quickstart.md` §1–§4, including each
   mutation (a byte of a frozen contract, a marker, a limit's default, a command), and fix any
   drift between it, the docs and the CLI.
-- [ ] T050 The agent's walk (SC-001, research R16):
+- [X] T050 The agent's walk (SC-001, research R16):
   - Run a fresh agent with no context in a disposable `rust:1.99.1` container, with the committed
     tree mounted and git's `insteadOf` sending the clone to it.
   - Tell it to follow only `docs/authors/` and to read no code or spec.
