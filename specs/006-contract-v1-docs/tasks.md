@@ -689,7 +689,7 @@ the older pages point to the new docs.
 - [X] T046 [P] Update `.github/pull_request_template.md`: the security core comment names
   `runtime/src/cli/`, `runtime/src/bin/runtime-test-network.rs` and
   `runtime/src/network/test_signin.rs`; the `Cargo.lock` line names `wit-component`.
-- [ ] T047 Run every local check:
+- [X] T047 Run every local check:
   - `cargo fmt --all --check`;
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`, and the same for
     `plugins/` on `wasm32-unknown-unknown`;
