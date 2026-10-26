@@ -22,9 +22,9 @@ The names of the answers are those of [the contract](contract.md) and of [the er
 
 | Limit | Default | What it bounds | Past it |
 | --- | --- | --- | --- |
-| `max_calls_per_run` | 20 | Connector calls per run of `update`, refused ones included | `refused(over-limit)`, after `not-granted`, `operation-not-declared` and `called-outside-update` <!-- ref: limit max_calls_per_run --> |
-| `calls_per_minute_per_widget` | 30 per minute | Calls of one widget | `refused(over-limit)` <!-- ref: limit calls_per_minute_per_widget --> |
-| `calls_per_minute_per_host` | 60 per minute | Calls to one destination host, every widget together | `refused(over-limit)` <!-- ref: limit calls_per_minute_per_host --> |
+| `max_calls_per_run` | 20 | Connector calls per run of `update`, refused ones included | `refused(over-limit)`, after `not-granted`, `called-outside-update`, `operation-not-declared`, `change-needs-user-action` and `value-outside-type`; the calls past it are logged as one summary entry <!-- ref: limit max_calls_per_run --> |
+| `calls_per_minute_per_widget` | 30 per minute | Calls of one widget, within one running host; each CLI command starts afresh | `refused(over-limit)` <!-- ref: limit calls_per_minute_per_widget --> |
+| `calls_per_minute_per_host` | 60 per minute | Calls to one destination host, every widget together, within one running host; each CLI command starts afresh | `refused(over-limit)` <!-- ref: limit calls_per_minute_per_host --> |
 | `call_time_limit` | 5 s | One call: name resolution, connection, TLS and response, cut to what is left of the update | `failed(over-limit)` <!-- ref: limit call_time_limit --> |
 | `max_arguments` | 16 | Arguments of one call | `refused(value-outside-type)` <!-- ref: limit max_arguments --> |
 | `max_request_address_bytes` | 8 KiB | The request's path and query | `refused(over-limit)` <!-- ref: limit max_request_address_bytes --> |
@@ -56,8 +56,8 @@ What `runtime requests` shows. These bound the log, not the calls.
 | `max_storage_calls_per_run` | 1,000 | Storage calls per run of `render` or `update`, refused ones included | `refused(over-limit)` <!-- ref: limit max_storage_calls_per_run --> |
 | `max_storage_written_bytes_per_update` | 1 MiB | Names and values of every `set` of one update together | `refused(over-limit)` <!-- ref: limit max_storage_written_bytes_per_update --> |
 | `storage_list_page` | 100 | Names in one page of `list` | The rest come in the next page, from `next` <!-- ref: limit storage_list_page --> |
-| `storage_file_cap_factor` | 5 | The store's file may grow to this many times the approved quota, plus the next limit | `failed(over-limit)`, which ends the run's writes <!-- ref: limit storage_file_cap_factor --> |
-| `storage_file_cap_extra_bytes` | 64 KiB | Added to the file's cap, for its own pages | `failed(over-limit)`, which ends the run's writes <!-- ref: limit storage_file_cap_extra_bytes --> |
+| `storage_file_cap_factor` | 5 | The store's file may grow to this many times the approved quota, plus the next limit | `failed(over-limit)`; every later storage call of the run answers `run-aborted`, nothing the update wrote is kept, and the update fails, keeping the previous data <!-- ref: limit storage_file_cap_factor --> |
+| `storage_file_cap_extra_bytes` | 64 KiB | Added to the file's cap, for its own pages | `failed(over-limit)`; every later storage call of the run answers `run-aborted`, nothing the update wrote is kept, and the update fails, keeping the previous data <!-- ref: limit storage_file_cap_extra_bytes --> |
 | `max_storage_busy_wait` | 2 s | How long a call waits for another process writing the store, within the run's time | `failed(busy)` <!-- ref: limit max_storage_busy_wait --> |
 
 ## Accounts and the development CLI
@@ -67,12 +67,12 @@ These bound what the host does for an account, and what `runtime accounts connec
 | Limit | Default | What it bounds | Past it |
 | --- | --- | --- | --- |
 | `sign_in_time_limit` | 10 min | How long a sign-in waits for the browser | `sign-in-failed` <!-- ref: limit sign_in_time_limit --> |
-| `max_callback_head_bytes` | 8 KiB | The browser's request to the sign-in's loopback address | `sign-in-failed` <!-- ref: limit max_callback_head_bytes --> |
+| `max_callback_head_bytes` | 8 KiB | The browser's request to the sign-in's loopback address | That request is dropped, and the sign-in keeps waiting <!-- ref: limit max_callback_head_bytes --> |
 | `callback_read_time` | 2 s | How long the loopback listener waits for a request once a connection is open | The connection is dropped; the sign-in keeps waiting <!-- ref: limit callback_read_time --> |
-| `max_sign_in_response_bytes` | 64 KiB | An answer of the service's token, refresh, revocation or identity address | `sign-in-failed`; in a call, `account-not-connected` <!-- ref: limit max_sign_in_response_bytes --> |
+| `max_sign_in_response_bytes` | 64 KiB | An answer of the service's token, refresh or revocation address; the identity operation's answer has `max_response_body_bytes` | `sign-in-failed`; in a call, `account-not-connected`; at disconnecting, the revocation is reported as failed <!-- ref: limit max_sign_in_response_bytes --> |
 | `max_secret_bytes` | 2560 bytes | What the keychain keeps for one account | `keychain-unavailable` <!-- ref: limit max_secret_bytes --> |
 | `max_key_bytes` | 1 KiB | A key typed at `runtime accounts connect` | `key-refused` <!-- ref: limit max_key_bytes --> |
 | `max_account_name_chars` | 100 | An account's name or id as shown, in characters | Cut <!-- ref: limit max_account_name_chars --> |
 | `vault_wait_tool` | 2 min | How long the CLI waits for the keychain, for the person to unlock it | `keychain-unavailable` <!-- ref: limit vault_wait_tool --> |
-| `refresh_margin` | 1 min | A token that expires within this is refreshed before it is sent | The refresh happens first; a call never sends a token about to expire <!-- ref: limit refresh_margin --> |
+| `refresh_margin` | 1 min | A token that expires within this is refreshed before it is sent | The refresh happens first; a call never sends a token about to expire, when the service said when it expires <!-- ref: limit refresh_margin --> |
 | `refreshes_per_call` | 1 | Token refreshes one call may cause | A call that would need a second refresh answers `account-not-connected` <!-- ref: limit refreshes_per_call --> |

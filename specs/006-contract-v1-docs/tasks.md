@@ -702,7 +702,7 @@ the older pages point to the new docs.
   plugins/hostile/` shows only the `login_providers` removal, README links, the tests of the
   review's host fixes (T055, T056) and `foreign_store`'s changed expectation for an update that
   cannot open its store (T057), and that no hostile case was removed.
-- [ ] T058 Review the prose of the docs for authors independently: the drift test checks that
+- [X] T058 Review the prose of the docs for authors independently: the drift test checks that
   every item is there with its name and default, and the runner that every command prints what
   the page shows, but no test reads what the text says. A fresh agent with none of this
   feature's context reads `docs/authors/reference/` and `docs/authors/guides/` against

@@ -28,7 +28,8 @@ through it, because its manifest declares the connector with `"account": true`:
 The connector, `connectors/notes.json` beside the example, declares the credential: an account of
 the service, signed in to in the browser, sent as a bearer token to its API, for reading notes
 ([the connector format](../reference/connector-format.md#credential)). A local connector loads
-only in the development CLI, from the folder `--connectors` names.
+only in the development CLI, from the folder `--connectors` names, or else from
+`<data>/connectors/`.
 
 ```console check output=any
 $ cd dashboard/plugins/examples/private-notes
@@ -149,18 +150,23 @@ $ runtime run private-notes.wasm --connectors connectors
 
 ## Every answer of a call
 
-`call` answers like a connector's ([connectors](connectors.md#every-answer-of-a-call)), with two
+`call` answers like a connector's ([connectors](connectors.md#every-answer-of-a-call)), except
+that before a `refused`, a token refresh of the host's own may have gone to the service. It has two
 answers more ([the contract](../reference/contract.md#accounts)):
 
 - `account-not-connected`: no account is connected and the credential is required, or the account
   must be connected again: the service refused it, it could not be refreshed, or the connector now
   asks for more access than it holds. Show that the account needs connecting; only the person can
-  connect it. `private-notes` returns no notes with a note saying so, and keeps working.
+  connect it. `private-notes` returns no notes with a note saying so, and keeps working. It also
+  answers when the service refused this one request while the account still works for its
+  identity operation, and when the host cannot read its record of accounts: then the account may
+  need nothing, so don't tell the person it is gone.
 - `subscription-required`: the service said the account lacks a paid plan the operation needs.
   The response is dropped.
 
 `not-granted` comes first, as in every capability: the connector is optional and off, or its
-approval was removed.
+approval was removed. It also answers a connector the manifest declares without `"account": true`,
+which goes through `connectors` instead.
 
 ## Disconnecting
 
@@ -172,9 +178,11 @@ revoked at notes.test
 kept data discarded: local/private-notes
 ```
 
-Disconnecting deletes the account from the vault, revokes it at the service, when the connector
-declares how, and discards the data the host kept from the widgets that used it, so no widget
-shows the account's notes once it is gone. The widget's next load goes without it.
+Disconnecting deletes the account from the vault, asks the service to revoke it, when the
+connector declares how, and discards the data the host kept that was fetched as that account. It
+does not touch a widget's own store: what a widget copied there from the account stays until the
+person clears the store, so keep account data out of storage. On its next load, the widget calls
+without the account, or gets `account-not-connected` when the credential is required.
 
 ## For real use
 

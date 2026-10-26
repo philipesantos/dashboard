@@ -132,7 +132,8 @@ Cargo writes a WebAssembly module, `target/wasm32-unknown-unknown/release/my_wid
 
 The host loads packages: one WebAssembly component with the manifest inside. `runtime pack` turns
 cargo's module into a component, checks the manifest and adds it, and prints the package's
-digest, which approvals are tied to.
+digest. An approval belongs to the package's file, not to its digest: a package rebuilt in place
+keeps it as long as it asks for nothing more.
 
 ```console check
 $ runtime pack target/wasm32-unknown-unknown/release/my_widget.wasm --manifest manifest.json --output my-widget.wasm

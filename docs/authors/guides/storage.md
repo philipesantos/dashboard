@@ -83,13 +83,17 @@ Each storage function answers `ok` or one of three errors
 ([the contract](../reference/contract.md#storage)):
 
 - `not-granted`: storage is optional and off, or was turned off during the run. Nothing was read
-  or written. `update-counter`'s `render` shows "Storage is off" instead of failing.
+  or written; when it was turned off during an `update`, the update fails and none of its writes
+  are kept. `update-counter`'s `render` shows "Storage is off" instead of failing.
 - `refused(problem)`: the host refused before changing anything: a write in `render`, a write
   past the quota, a name too long, a limit.
 - `failed(problem)`: the store could not do it: another process is writing it (`busy`), its
-  file is not one the host wrote (`damaged`), the data directory is unavailable. When the store
-  cannot be opened in `update`, every later storage call of that run answers `run-aborted`, and
-  what `update` returns still stands.
+  file is not one the host wrote (`damaged`), the data directory is unavailable, the store's file
+  or the disk is full (`over-limit`). A write that fails ends the update's writes: every later
+  storage call of the run answers `run-aborted`, and the update fails whatever it returns, keeping
+  none of them. When the store cannot be opened in `update`, later calls answer `run-aborted` too,
+  but nothing was written, so what `update` returns still stands.
 
-The person can see a store with `runtime storage show` and empty it with `runtime storage clear`;
-removing the widget (`runtime remove`) removes its store too.
+The person can see a store with `runtime storage show` and empty it with `runtime storage clear`.
+Removing the widget (`runtime remove`) removes its approval and the data the host kept, but keeps
+its store, until `runtime storage clear` deletes it.

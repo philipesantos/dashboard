@@ -137,7 +137,8 @@ decides what a 404 means for it.
 <!-- ref: wit connectors/rule -->
 ### `rule`
 
-The rule behind a call that was refused or failed. With `refused`, nothing was sent; with
+The rule behind a call that was refused or failed. With `refused`, nothing the widget asked for
+was sent (through `accounts`, a token refresh of the host's own may have gone first); with
 `failed`, the call could not complete and nothing reached the widget.
 
 | Case | When | What to do |
@@ -146,7 +147,7 @@ The rule behind a call that was refused or failed. With `refused`, nothing was s
 | `value-outside-type` | An argument is unknown, repeated, missing or outside its parameter's type, or the call passes more than 16 arguments | Check the value before calling, or show that it is invalid <!-- ref: wit connectors/rule/value-outside-type --> |
 | `called-outside-update` | The call came from `render`, which never reaches the network | Call from `update`, and render what it kept <!-- ref: wit connectors/rule/called-outside-update --> |
 | `change-needs-user-action` | The operation changes data; until user actions arrive (Phase 3), `update` only reads | Call reads only <!-- ref: wit connectors/rule/change-needs-user-action --> |
-| `over-limit` | A limit: calls per run or per minute, the request's address or body, the response's body or headers, the update's bodies together, or time ([limits](limits.md)) | Call less; keep what the previous update fetched <!-- ref: wit connectors/rule/over-limit --> |
+| `over-limit` | A limit: calls per run or per minute, the request's address or body, the response's body or headers, the update's bodies together, or time ([limits](limits.md)) | Call less; to keep the previous data, return an error from `update`: the host keeps it, while `ok` replaces it <!-- ref: wit connectors/rule/over-limit --> |
 | `non-public-address` | The destination's name led only to addresses that are not public | Nothing the widget can do; show that the service is unreachable <!-- ref: wit connectors/rule/non-public-address --> |
 | `redirect-not-allowed` | The service redirected to a destination the connector does not declare, to one whose name leads only to non-public addresses, or more than five times | As above <!-- ref: wit connectors/rule/redirect-not-allowed --> |
 | `unavailable` | The request could not complete: name resolution, connection or certificate; through `accounts`, also the system's keychain or a stored credential the host cannot send | Show that the service is unreachable; the next update tries again <!-- ref: wit connectors/rule/unavailable --> |
@@ -167,7 +168,7 @@ The rule behind a call that was refused or failed. With `refused`, nothing was s
 | --- | --- | --- |
 | `not-granted` | The connector is optional and off, its approval was removed, or the manifest does not declare it. Nothing was sent; or, when the approval was removed while the request was in flight, the response was dropped | Show the widget without this connector's data <!-- ref: wit connectors/call-error/not-granted --> |
 | `refused(problem)` | The host refused the call before sending anything | See the rule <!-- ref: wit connectors/call-error/refused --> |
-| `failed(problem)` | The call could not complete and no response reached the widget: the request failed, or the host stopped it before sending, such as when the update's time ran out | See the rule; keep what the previous update fetched <!-- ref: wit connectors/call-error/failed --> |
+| `failed(problem)` | The call could not complete and no response reached the widget: the request failed, or the host stopped it before sending, such as when the update's time ran out | See the rule; to keep the previous data, return an error from `update`: the host keeps it, while `ok` replaces it <!-- ref: wit connectors/call-error/failed --> |
 
 <!-- ref: wit connectors/call -->
 ### `call(connector, operation, arguments) -> result<response, call-error>`
@@ -211,7 +212,7 @@ The type of `connectors`, used here as it is: its rule is one of `connectors/rul
 | `not-granted` | The connector is optional and off, its approval was removed, or the manifest does not declare it with an account. Nothing was sent; or, when the approval was removed while the request was in flight, the response was dropped | Show the widget without this connector's data <!-- ref: wit accounts/account-call-error/not-granted --> |
 | `refused(problem)` | The host refused the call before sending it; a token refresh of the host's own may have gone first | See the rule <!-- ref: wit accounts/account-call-error/refused --> |
 | `failed(problem)` | The call could not complete and no response reached the widget: the request failed, or the host stopped it before sending, such as when the keychain could not be read. A response that carried the credential back is `invalid-response` | See the rule <!-- ref: wit accounts/account-call-error/failed --> |
-| `account-not-connected` | No account is connected and the credential is required, or the account must be connected again: the service refused it, it could not be refreshed, or the connector now asks for more access than it holds. Also when the service refused this one request as unauthorized even after a refresh while the account still works for its identity operation, and when the host cannot read its record of accounts. Nothing was sent, or the response was dropped | Show that the account needs connecting; only the person can connect it, in the host's controls <!-- ref: wit accounts/account-call-error/account-not-connected --> |
+| `account-not-connected` | No account is connected and the credential is required, or the account must be connected again: the service refused it, it could not be refreshed, or the connector now asks for more access than it holds. Also when the service refused this one request as unauthorized even after a refresh while the account still works for its identity operation, and when the host cannot read its record of accounts. Nothing was sent, or the response was dropped | Show that the account may need connecting; only the person can connect it, in the host's controls. When only this request was refused, the account needs nothing and other operations may work <!-- ref: wit accounts/account-call-error/account-not-connected --> |
 | `subscription-required` | The service answered, with a status the connector declares as meaning that, that a paid plan this operation needs is missing; also for a request sent without an account. The response was dropped | Show that the operation needs a plan the account does not have <!-- ref: wit accounts/account-call-error/subscription-required --> |
 
 <!-- ref: wit accounts/call -->
@@ -220,10 +221,14 @@ The type of `connectors`, used here as it is: its rule is one of `connectors/rul
 Calls `operation` of `connector`, an id the manifest declares with an account. When no account
 was connected as the host loaded the widget and the credential is optional, the request goes
 without one, and the service answers as it does for anyone. One call at a time; the host follows
-allowed redirects itself and refreshes an expired token at most once per call. When the service
-answers 401, the host refreshes the token and sends the request once more, then may call the
-connector's identity operation to tell whether the account still works; all of that counts as one
-call for the limits.
+allowed redirects itself and refreshes an expired token at most once per call. When a request
+that carried the credential gets 401, the host refreshes an account's token and sends the request
+once more, unless this call refreshed it already. If the answer is still 401, the host calls the
+connector's identity operation, when it declares one, to tell whether the account still works. A
+key is never refreshed, and neither a key nor an account without an identity operation can be
+confirmed: one 401 marks it as needing to be connected again, for every widget that uses it. All
+of that counts as one call for the calls-per-run and per-minute limits; each request has its own
+time limit, and every response body counts toward the update's.
 
 ## `storage`
 
@@ -233,9 +238,11 @@ host picks the store from the widget's id and origin: no function names a store,
 place, and no widget reaches another's. Names are any non-empty text up to 256 bytes of UTF-8,
 compared and sorted as bytes; values are bytes, up to 256 KiB. Reads work in `render` and
 `update`; writes only in `update`, kept together only when `update` returns `ok` with data the
-host keeps. In `update`, the first call opens the store for writing; when it cannot (`busy`,
-`damaged`, `unavailable`), that call answers so and every later call of the run answers
-`run-aborted`: the run reads and writes nothing, and what `update` returns stands. Since 1.2.0.
+host keeps. In `update`, the first call that reaches the store opens it for writing; when it cannot
+(`busy`, `damaged`, `unavailable`), that call answers so and every later call of the run answers
+`run-aborted`: the run reads and writes nothing, and what `update` returns stands. When the data
+directory was unavailable as the host loaded a widget whose storage is optional, every call
+answers `unavailable` instead; required storage is then `storage-failed` at load. Since 1.2.0.
 [The storage guide](../guides/storage.md) walks through one.
 
 <!-- ref: wit storage/rule -->
@@ -249,7 +256,7 @@ host keeps. In `update`, the first call opens the store for writing; when it can
 | `invalid-name` | The name is empty or longer than 256 bytes, or a `list` prefix or `after` is longer than that | A mistake to fix <!-- ref: wit storage/rule/invalid-name --> |
 | `damaged` | The store's file is not one the host wrote for this widget; the host left it as it is | Show that the stored data is unavailable; the person can clear the store <!-- ref: wit storage/rule/damaged --> |
 | `busy` | Another process is writing the store, past the time the call could wait | Try again in the next update <!-- ref: wit storage/rule/busy --> |
-| `unavailable` | The store could not be read or written: the data directory is unavailable, or the file is read-only. A full disk answers `over-limit` | Carry on without the store <!-- ref: wit storage/rule/unavailable --> |
+| `unavailable` | The store could not be read or written: the data directory is unavailable, or the file is read-only. A full disk answers `over-limit` | When opening the store answers it, carry on without the store. When a write answers it, the run's writes have ended and the update fails as `storage-failed`, whatever it returns <!-- ref: wit storage/rule/unavailable --> |
 | `run-aborted` | An earlier call of this run ended its transaction, such as by reaching the file's size: nothing was done, nothing this run wrote is kept, and the update fails. Or an earlier call of `update` could not open the store: nothing was done, and the run reads and writes nothing more | Stop calling storage in this run <!-- ref: wit storage/rule/run-aborted --> |
 
 <!-- ref: wit storage/problem -->
@@ -265,7 +272,7 @@ host keeps. In `update`, the first call opens the store for writing; when it can
 
 | Case | When | What to do |
 | --- | --- | --- |
-| `not-granted` | `storage` is optional and off, or it was turned off or its approval removed during this run: nothing was read or written, and nothing this run wrote will be kept | Show the widget without its stored data <!-- ref: wit storage/storage-error/not-granted --> |
+| `not-granted` | `storage` is optional and off, or it was turned off or its approval removed during this run: nothing was read or written, and nothing this run wrote will be kept; turned off during an `update`, it fails the update as `not-granted` | Show the widget without its stored data <!-- ref: wit storage/storage-error/not-granted --> |
 | `refused(problem)` | The host refused the call before changing anything | See the rule <!-- ref: wit storage/storage-error/refused --> |
 | `failed(problem)` | The store could not do it | See the rule <!-- ref: wit storage/storage-error/failed --> |
 
@@ -331,13 +338,16 @@ For a widget that also exports `updater`, `config` is:
 ```json
 {
   "config": "<the widget's configuration>",
-  "data": "<the last data update returned, or null>",
+  "data": "<the data the last successful update returned, or null>",
   "fetched_at_ms": "<when, or null>",
   "last_update": null
 }
 ```
 
-with `last_update` either `null` or `{"at_ms": …, "outcome": "ok" | "failed", "error":
+`data` is `null` before the first successful update, and again once the host discards what it
+kept: when the package or its approval changes (a rebuild included), when a connector it used is
+turned off, or when the account it was fetched as is disconnected. `fetched_at_ms` and
+`last_update` go with it. `last_update` is either `null` or `{"at_ms": …, "outcome": "ok" | "failed", "error":
 "<kind>: <detail>"}`, `error` only when the outcome is `failed`. The configuration is JSON, or a
 JSON string of its text when it is not JSON. Each call runs in a fresh instance, with nothing kept
 from the last one, and render never waits on the network.
@@ -351,7 +361,9 @@ The entry point of widgets that fetch data through connectors or write their sto
 ### `update(config) -> result<string, string>`
 
 `config` is the widget's configuration, chosen by the host. On success the widget returns its data
-as a JSON document of at most 256 KiB, which the host keeps and gives to `render`, unless a write
-of the run failed and ended its transaction (storage `run-aborted`), which fails the update. On
+as a JSON document of at most 256 KiB, which the host keeps and gives to `render`, unless storage
+fails the update: a write of the run failed and ended its transaction (storage `run-aborted`), the
+store could not commit (`busy`, `damaged`, `unavailable`), or storage was turned off during the
+run (`not-granted`). On
 failure, a message for the maintainer, and the host keeps the previous data. Each call runs in a
 fresh instance, with a 10-second limit and render's fuel and memory.

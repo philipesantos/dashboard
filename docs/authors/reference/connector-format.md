@@ -25,9 +25,11 @@ at the top, is `credentials-not-supported` ([errors](errors.md)).
 | `operations` | 1–64 operations by name: a lowercase letter, then lowercase letters, digits and hyphens | Yes <!-- ref: connector operations --> |
 | `credential` | The one account or key the operations need, which the host adds itself (below) | No <!-- ref: connector credential --> |
 
-The host connects only to public addresses: a name that leads to this machine (outside
-development), the local network or a cloud metadata address is refused at every connection, as
-`non-public-address`. It uses no proxy set in the system, and checks certificates against
+The host connects only to public addresses: a name that leads to this machine, the local network
+or a cloud metadata address is never connected to, checked at every connection, and the call fails
+as `failed(non-public-address)`, or `failed(redirect-not-allowed)` after a redirect. Only a
+development connector's `http://` destinations on `localhost`, `127.0.0.1` or `[::1]` reach this
+machine. It uses no proxy set in the system, and checks certificates against
 Mozilla's root list, the same on every system. Redirects are followed only to an origin the same
 connector declares, at most five times.
 
@@ -62,18 +64,21 @@ arguments is `refused(value-outside-type)`.
 | `operations/*/parameters/*/max_length` | For `text`, 1–2048 characters | For `text` <!-- ref: connector operations/*/parameters/*/max_length --> |
 | `operations/*/parameters/*/pattern` | For `text`, a regular expression of 1–512 characters the whole value must match; it runs in linear time, so no value can stall a call. In a path segment, `""`, `.` and `..` are refused whatever the pattern | No <!-- ref: connector operations/*/parameters/*/pattern --> |
 | `operations/*/parameters/*/values` | For `text`, instead of `pattern`: 1–64 allowed strings | No <!-- ref: connector operations/*/parameters/*/values --> |
-| `operations/*/parameters/*/minimum` | For `integer`, the smallest value (64-bit) | No <!-- ref: connector operations/*/parameters/*/minimum --> |
-| `operations/*/parameters/*/maximum` | For `integer`, the largest value (64-bit) | No <!-- ref: connector operations/*/parameters/*/maximum --> |
+| `operations/*/parameters/*/minimum` | For `integer`, the smallest value (64-bit) | For `integer` <!-- ref: connector operations/*/parameters/*/minimum --> |
+| `operations/*/parameters/*/maximum` | For `integer`, the largest value (64-bit) | For `integer` <!-- ref: connector operations/*/parameters/*/maximum --> |
 
 ## Credential
 
 The connector never holds the secret. The person connects the account or types the key in the
-host's controls, the host keeps it in the system's keychain and adds it to each request to the
-credential's destinations, in the one header it names; no widget ever sees it. A response that
+host's controls, the host keeps it in the system's keychain and adds it, in the one header it names, to each
+request to the credential's destinations that a widget makes through `accounts`, as a widget whose
+manifest declares the connector with `"account": true`; calls through `connectors` never carry
+it. No widget ever sees it. A response that
 carries the credential back, in its body, a header or a redirect, raw or escaped, is
 `failed(invalid-response)`. A connector with a credential has only HTTPS destinations
 (`credential-needs-https`). A new version that adds or changes a credential, or asks for more
-access, is approved again by every widget that uses it.
+access, is approved again by every widget that uses its account, and by every widget that calls
+the connector at all when the credential is required.
 
 | Field | Accepts | Required |
 | --- | --- | --- |
@@ -100,7 +105,7 @@ access, is approved again by every widget that uses it.
 | `credential/account/identity/operation` | The operation's name | Yes <!-- ref: connector credential/account/identity/operation --> |
 | `credential/account/identity/name` | A JSON pointer to the account's name in the answer | Yes <!-- ref: connector credential/account/identity/name --> |
 | `credential/account/identity/id` | A JSON pointer to the account's stable id in the answer | Yes <!-- ref: connector credential/account/identity/id --> |
-| `credential/account/access_page` | An `https` address on a host of `authorize`, where the person chooses what the account reaches | No <!-- ref: connector credential/account/access_page --> |
-| `credential/account/revoke_page` | An `https` address on a host of `authorize`, where the person revokes the account by hand when there is no `revoke` | No <!-- ref: connector credential/account/revoke_page --> |
+| `credential/account/access_page` | An `https` address on a host of a destination (in the catalog, under `reserves`), where the person chooses what the account reaches | No <!-- ref: connector credential/account/access_page --> |
+| `credential/account/revoke_page` | An `https` address on a host of a destination (in the catalog, under `reserves`), where the person revokes the account by hand when there is no `revoke` | No <!-- ref: connector credential/account/revoke_page --> |
 
 Tokens and keys are bearer tokens: letters, digits and `-._~+/=`; a key is 1 to 1,024 of them.

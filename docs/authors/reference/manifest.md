@@ -30,7 +30,7 @@ Unknown fields are refused, so a misspelt one never passes silently: the error i
 | --- | --- | --- | --- |
 | `$schema` | Any text up to 2048 characters | No | Ignored; it is for editors <!-- ref: manifest $schema --> |
 | `manifest_version` | `1` | Yes | The format's version <!-- ref: manifest manifest_version --> |
-| `id` | `local/<name>` for a widget from no repository, or `github.com/<owner>/<repo>`; lowercase, at most 160 characters. A repository id is refused until installing from repositories arrives (Phase 3) | Yes | An approval is for this id from this package's file: another file with the same id has none <!-- ref: manifest id --> |
+| `id` | `local/<name>` for a widget from no repository, or `github.com/<owner>/<repo>`; lowercase, at most 160 characters. A repository id is accepted, but nothing checks yet that the package came from that repository: installing from repositories (Phase 3) will | Yes | An approval is for this id from this package's file: another file with the same id has none <!-- ref: manifest id --> |
 | `version` | A Semantic Versioning 2.0.0 version, such as `0.1.0` | Yes | Shown; a later version that asks for more needs a new approval <!-- ref: manifest version --> |
 | `author` | 1 to 100 characters, no control characters | Yes | Shown to the person, escaped <!-- ref: manifest author --> |
 | `login_providers` | `["github"]` or `[]` | No | Obsolete since contract 1.3.0: accepted, ignored, grants nothing. Accounts come from the connectors a widget declares <!-- ref: manifest login_providers --> |
@@ -68,8 +68,8 @@ exports `updater` ([the connectors guide](../guides/connectors.md)).
 - **Required and optional.** The person approves every required permission and connector
   together, or the widget does not run; they change only with a new version, approved again, or
   by removing the widget's approval (`runtime remove`). An optional one starts off and is turned
-  on and off at any time; while it is off, every call to it answers `not-granted` and does
-  nothing. A widget cannot read its grants, ask for a permission while it runs, or open a
+  on and off at any time, except optional `storage`, which turns on only with a quota already
+  approved; while it is off, every call to it answers `not-granted` and does nothing. A widget cannot read its grants, ask for a permission while it runs, or open a
   dialog: it learns that something is off only from `not-granted`.
 - **An approval belongs to a package file.** Rebuilding the widget in place keeps it; a copy
   elsewhere, even byte for byte the same, needs its own approval, which replaces the first one.
@@ -77,7 +77,11 @@ exports `updater` ([the connectors guide](../guides/connectors.md)).
 - **A new version keeps its approval** as long as it asks for nothing new. One that requires a
   permission, a connector, an operation, a larger quota or more of an account's access than was
   approved is refused as `needs-new-approval`, naming the change, until the person approves it
-  again; the grants it had stay as they were. An optional permission a new version adds starts
-  off and needs no approval, and a permission it no longer declares stops being granted.
+  again; the grants it had stay as they were. An optional permission a new version adds starts off
+  and needs no approval; a connector it adds, optional or not, needs one, and so does a connector that
+  was optional and off and is now required. A permission it no longer declares stops being
+  granted.
 - **Data the host kept** for a widget is discarded when a connector it used is turned off, when
-  the approval is removed, and when the account its data was fetched as is disconnected.
+  the approval is removed or changes, when the package changes (a rebuild included), and when the
+  account its data was fetched as is disconnected. The widget's own store is not: it stays until
+  the person clears it.

@@ -56,8 +56,8 @@ never an IP address, a path or a user. A redirect is followed only to an origin 
 declares, at most five times.
 
 The host connects only to public addresses: a name that leads to this machine, the local network
-or a cloud metadata address is refused at every connection, so a connector cannot be turned on the
-person's own network. It uses no proxy set in the system and checks certificates against
+or a cloud metadata address is never connected to, checked at every connection, and the call fails
+as `non-public-address`, so a connector cannot be turned on the person's own network. It uses no proxy set in the system and checks certificates against
 Mozilla's root list, the same on every system.
 
 ## Operations, reads and changes
@@ -90,9 +90,9 @@ secret. `plugins/examples/private-notes/connectors/notes.json` in the clone is a
 with an account, and [the accounts guide](accounts.md) uses it.
 
 Ask for the narrowest access the service offers: only the scopes the operations need, and access
-items that say exactly what they let the connector do. A new version that asks for more is
-approved again by every widget that uses it, and the account is connected again; one that asks
-for less is not.
+items that say exactly what they let the connector do. Any change to the credential, its
+scopes included, is approved again by every widget that uses it. A new version that adds access
+items also needs the account connected again; one that only removes access items needs neither.
 
 ## Testing against your own service
 
@@ -100,7 +100,9 @@ In development, a connector `local/<name>` is read from the folder given with
 `--connectors <dir>`, or from `<data>/connectors/`, and its file carries that id. Besides HTTPS on
 a public name, it may reach this machine over plain HTTP, `http://localhost:<port>`,
 `http://127.0.0.1:<port>` or `http://[::1]:<port>`, for a service you run yourself; never another
-address of the local network, and never a host the catalog reserves. Only the development CLI
+address of the local network, and never a host the catalog reserves. Plain HTTP is only for a
+connector without a credential: one with an account or a key reaches every destination over HTTPS
+on a public name, so test it against a deployment of your service the internet can reach. Only the development CLI
 loads local connectors, and their approvals stay in its development record.
 
 For a connector with an account, register a development app with your service: a public client,

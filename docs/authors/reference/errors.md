@@ -78,8 +78,9 @@ the detail names the field. A storage quota above the host's cap is refused this
 <!-- ref: error unknown-permission -->
 ### `unknown-permission`
 
-The manifest asks for a permission this host does not know. The permissions are `log`,
-`storage` and one per connector ([the manifest](manifest.md)).
+The manifest asks for a permission this host does not know. The permissions are `log` and
+`storage`; each connector is a permission of its own, but it is declared under `connectors`, not
+`permissions` ([the manifest](manifest.md)).
 
 <!-- ref: error optional-needs-v1 -->
 ### `optional-needs-v1`
@@ -104,9 +105,10 @@ widget that uses such a connector acts as the person's account and must say so.
 <!-- ref: error not-granted -->
 ### `not-granted`
 
-The widget has no approval for this package, or the grant record cannot be read. Run
-`runtime permissions`, then `runtime approve`. An approval is for one package file: another file,
-even with the same id, has none.
+The widget has no approval for this package, it was approved from another file, or the grant
+record cannot be read. Run `runtime permissions`, then `runtime approve`. An approval is for one
+package file: another file, even with the same id, has none. An update also fails with it when
+its storage was turned off or its approval removed while it ran: nothing it wrote was kept.
 
 <!-- ref: error needs-new-approval -->
 ### `needs-new-approval`
@@ -185,15 +187,16 @@ A connector declares a credential under `credentials` or `auth`. The field is `c
 <!-- ref: error credential-needs-https -->
 ### `credential-needs-https`
 
-A connector that declares a credential has a destination without HTTPS. Only a connector that
-sends no credential may use plain HTTP, and only to the local network.
+A connector that declares a credential has a destination without HTTPS. Only a local connector
+that sends no credential may use plain HTTP, in development, and only to this machine
+(`localhost`, `127.0.0.1` or `[::1]`).
 
 <!-- ref: error destination-not-verified -->
 ### `destination-not-verified`
 
 A connector's id names a repository, whose destinations nothing verifies yet, or it is a local id
 (`local/<name>`) while the runtime is not in development mode. Local connectors load only in the
-development CLI, from `--connectors <dir>`.
+development CLI, from `--connectors <dir>`, or else from `<data>/connectors/`.
 
 <!-- ref: error destination-reserved -->
 ### `destination-reserved`
@@ -215,7 +218,8 @@ the widget declares. The detail names which.
 The writes of an update could not be committed: the store was busy, damaged or unavailable, a
 write reached the file's size cap, or an earlier failure ended the run's writes; or a widget's
 required store is unavailable as it loads. Nothing the update wrote was kept. From
-`runtime storage show` and `runtime storage clear`, also: the store is damaged or busy. An update
+`runtime storage show` and `runtime storage clear`, also: the store is busy or unavailable, and,
+for `show`, damaged; `clear` deletes a damaged store instead. An update
 whose store could not be opened at all writes nothing and keeps what it returned
 ([storage](contract.md#storage)).
 
@@ -224,8 +228,11 @@ whose store could not be opened at all writes nothing and keeps what it returned
 <!-- ref: error account-not-connected -->
 ### `account-not-connected`
 
-No account is connected to the connector, or the one connected must be connected again. Run
-`runtime accounts connect <connector-id>`. Inside `update`, a widget gets this as an answer of
+No account is connected to the connector, or the one connected must be connected again: run
+`runtime accounts connect <connector-id>`. The CLI also gives it when the record of accounts is
+damaged or cannot be written, which connecting does not fix until the record is fixed or deleted,
+when the system's random source is unavailable, and when `accounts disconnect` cannot find the
+connector and needs `--origin`. Inside `update`, a widget gets this as an answer of
 `accounts`, never as an error that stops it.
 
 <!-- ref: error another-account-connected -->

@@ -33,7 +33,9 @@ runtime pack <module-or-component> --manifest <file> --output <file>
 ```
 
 Turns the core module cargo builds into a component, as needed, checks the manifest and adds it,
-and writes the package. It prints the package's digest, which approvals are tied to.
+and writes the package. It prints the package's digest. An approval belongs to the package's
+file, not to its digest ([approvals](manifest.md#approvals-and-new-versions)); the data the host
+kept for the widget is discarded when the digest changes.
 
 | Option | Meaning |
 | --- | --- |
@@ -101,8 +103,9 @@ runtime approve <plugin> [--expect <digest>] [--grants <path>] [--data <dir>] [-
 ```
 
 Grants every required permission of the package, together, for this package file. A widget that
-declares connectors or storage needs `--expect`: the approval digest `permissions` printed, so
-what is approved is what was shown, or it is refused as `approval-changed`.
+declares connectors or storage needs `--expect`, the approval digest `permissions` printed, or the
+CLI prints its usage. A digest that no longer matches is refused as `approval-changed`, so what is
+approved is what was shown.
 
 | Option | Meaning |
 | --- | --- |
@@ -202,8 +205,9 @@ error: missing-updater: local/my-widget exports no updater, so it has nothing to
 runtime requests [--plugin <plugin-id>] [--last <n>] [--data <dir>]
 ```
 
-Prints the request log: every connector call of every update, the refused ones included, with
-when, what and how it ended. It prints nothing while the log is empty; [the connectors
+Prints the request log: every connector call, the refused ones included, with when, what and
+how it ended; the calls of a run past its limit as one summary entry; and the host's own requests
+to a service, to sign in, refresh, confirm an account or revoke it. It prints nothing while the log is empty; [the connectors
 guide](../guides/connectors.md) shows one.
 
 | Option | Meaning |
@@ -223,7 +227,8 @@ $ runtime requests --plugin local/my-widget --last 5
 runtime remove <plugin-id> [--grants <path>] [--data <dir>]
 ```
 
-Removes a widget's approval, every grant with it, and the data the host kept for it.
+Removes a widget's approval, every grant with it, and the data its updates kept. Its store stays
+until `runtime storage clear` deletes it.
 
 | Option | Meaning |
 | --- | --- |
@@ -311,7 +316,7 @@ as an argument. [The accounts guide](../guides/accounts.md) shows one.
 
 | Option | Meaning |
 | --- | --- |
-| `--origin <path>` | The connector's file, for a local connector the CLI cannot find from its id <!-- ref: cli accounts connect --origin --> |
+| `--origin <path>` | The connector's file, checked against the one the CLI finds from its id <!-- ref: cli accounts connect --origin --> |
 | `--client <id>` | The client id of the app you registered with the service, which the CLI remembers for the connector <!-- ref: cli accounts connect --client --> |
 | `--no-browser` | Prints the sign-in address instead of opening it <!-- ref: cli accounts connect --no-browser --> |
 | `--grants <path>` | As above <!-- ref: cli accounts connect --grants --> |

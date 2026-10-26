@@ -117,8 +117,9 @@ $ runtime requests
 ```
 
 Every call a widget makes, allowed or refused, lands in this log: the connector, the operation,
-the destination, the values sent and the outcome. A widget can neither read nor change it, and
-the person can read every line. Past 20 calls in one run, calls are refused and counted in one
+the destination once the request is built, the values sent (each cut at 256 characters) and the
+outcome. A widget can neither read nor change it, and the person can read every line, back to
+the log's last rotation: past 2 MiB it starts again, keeping one previous file. Past 20 calls in one run, calls are refused and counted in one
 summary entry.
 
 ## Every answer of a call
@@ -127,7 +128,10 @@ summary entry.
 means for it. Otherwise it answers one of three errors ([the contract](../reference/contract.md#connectors)):
 
 - `not-granted`: the connector is optional and off, or its approval was removed. Nothing was
-  sent. Show the widget without its data; never fail because of it.
+  sent, or, when the approval was removed while the request was in flight, its response was
+  dropped. Show the widget without its data; never fail because of it. It also answers a
+  connector the manifest does not declare, and one declared with `"account": true`, which goes
+  through `accounts`: mistakes to fix while writing the widget.
 - `refused(problem)`: the host refused the call before sending anything, naming the rule: an
   operation the manifest does not declare, a value outside its parameter's type, a call from
   `render`, a limit. Most are mistakes to fix while writing the widget.
