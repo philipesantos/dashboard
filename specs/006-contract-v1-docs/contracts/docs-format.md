@@ -96,8 +96,10 @@ name = "my-widget"
   environment; `cargo install` installs into the session's folder, first on `PATH`. Only that
   command's environment adds the job's target folder and the release profile without LTO, so the
   author's own `cargo build` keeps its `target/` (R3).
-- The walkthrough's file blocks equal the files of `docs/authors/getting-started/`, and its
-  `Cargo.lock` is in the session's folder before the page and unchanged after it (R8).
+- Each file of `docs/authors/getting-started/` is a file block of the walkthrough with the same
+  content; other file blocks, such as a broken manifest shown on purpose, are the page's own. The
+  crate's `Cargo.lock` is put beside the `Cargo.toml` the page writes, and must be unchanged
+  after the page (R8).
 - The development data directory and grant record, found by the CLI's own lookups, cleared
   before the page; the runner refuses to start unless `CI` or
   `DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1` is set. The test-only CLI uses a data directory

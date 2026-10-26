@@ -305,7 +305,7 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
 
 ### Tests for User Story 1
 
-- [ ] T014 [US1] Write the `pack` tests first, in `runtime/tests/cli.rs` (`contracts/cli.md`).
+- [X] T014 [US1] Write the `pack` tests first, in `runtime/tests/cli.rs` (`contracts/cli.md`).
   They fail until T015:
   - `pack_turns_a_core_module_into_the_component_xtask_builds`: for each example under
     `plugins/examples/`, run `pack` on the core module cargo built in the plugins' target folder
@@ -324,7 +324,7 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
     `runtime/tests/cli.rs:107` checks for plugin text.
   - `pack_checks_the_component_against_the_size_cap`: a core module under 10 MiB whose component
     is over it is refused as the size cap refuses today.
-- [ ] T015 [US1] Implement it in `runtime/src/package.rs` and the `pack` command of
+- [X] T015 [US1] Implement it in `runtime/src/package.rs` and the `pack` command of
   `runtime/src/cli/mod.rs`, so T014 passes (research R2):
   - Tell a core module from a component by its header, with `wasmparser`.
   - Encode a core module with `wit_component::ComponentEncoder::default().validate(true)
@@ -337,7 +337,7 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Create the walkthrough's crate, `docs/authors/getting-started/` (research R1, R4,
+- [X] T016 [US1] Create the walkthrough's crate, `docs/authors/getting-started/` (research R1, R4,
   R8):
   - **Files:** `Cargo.toml`, `src/lib.rs` and `manifest.json`.
   - **`Cargo.toml`:** the package `my-widget`, `crate-type = ["cdylib"]`,
@@ -350,10 +350,11 @@ matches. Then follow the walkthrough by hand in an empty folder (quickstart §4)
     clone.
   - **Checks:** confirm `cargo audit --file docs/authors/getting-started/Cargo.lock` and
     `cargo deny --manifest-path docs/authors/getting-started/Cargo.toml check` pass.
-- [ ] T017 [US1] Extend the runner in `runtime/tests/docs_walk.rs` (research R8) for a page with a
+- [X] T017 [US1] Extend the runner in `runtime/tests/docs_walk.rs` (research R8) for a page with a
   folder of the same name beside it (`getting-started.md` and `getting-started/`):
-  - each `file=` block of the page must equal the file of that path in the folder;
-  - the folder's `Cargo.lock` is copied into the session's folder before the page;
+  - each file of the folder is a `file=` block of the page with the same content; other file
+    blocks are the page's own;
+  - the folder's `Cargo.lock` is copied beside the `Cargo.toml` the page writes;
   - after the page, it must be unchanged. Otherwise the run fails, naming the file.
 
   Add self-tests for the three rules beside T009's.

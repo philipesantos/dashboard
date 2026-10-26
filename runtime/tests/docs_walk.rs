@@ -605,14 +605,109 @@ fn set_up(session: &mut Session, page: &str) {
     }
 }
 
+/// The crate a page builds, kept beside it as a folder of the same name
+/// (`docs/authors/getting-started/` for `getting-started.md`): each of its files is a file block
+/// of the page with the same content, and the page builds with its `Cargo.lock`, which
+/// `cargo audit` and `cargo deny` check (research R8). Other file blocks, such as a broken
+/// manifest the page shows on purpose, are the page's own.
+struct Kept {
+    dir: PathBuf,
+    /// Where the page's `Cargo.toml` went, so its `Cargo.lock` beside it.
+    locks: Vec<PathBuf>,
+    /// The kept files the page wrote so far.
+    written: Vec<String>,
+}
+
+impl Kept {
+    fn of(page: &Path) -> Option<Kept> {
+        let dir = page.with_extension("");
+        dir.is_dir().then_some(Kept {
+            dir,
+            locks: Vec::new(),
+            written: Vec::new(),
+        })
+    }
+
+    /// The kept files, by their path in the crate, `Cargo.lock` aside.
+    fn files(&self) -> Vec<String> {
+        fn walk(dir: &Path, root: &Path, found: &mut Vec<String>) {
+            for entry in fs::read_dir(dir).expect("the kept crate is read") {
+                let path = entry.expect("an entry").path();
+                if path.is_dir() {
+                    walk(&path, root, found);
+                } else {
+                    let relative = path.strip_prefix(root).expect("under the crate");
+                    found.push(relative.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(&self.dir, &self.dir, &mut found);
+        found.retain(|path| path != "Cargo.lock" && !path.starts_with("target/"));
+        found.sort();
+        found
+    }
+
+    /// A file block of a kept file's path has its content.
+    fn check_file(&mut self, path: &str, content: &str) -> Result<(), String> {
+        let kept = self.dir.join(path);
+        let Ok(kept_text) = fs::read_to_string(&kept) else {
+            return Ok(());
+        };
+        self.written.push(path.to_owned());
+        if kept_text.replace("\r\n", "\n") == content {
+            Ok(())
+        } else {
+            Err(format!(
+                "{path} differs from {}; the page and the kept crate change together",
+                kept.display()
+            ))
+        }
+    }
+
+    /// Puts the kept `Cargo.lock` beside a `Cargo.toml` the page wrote.
+    fn seed_lock(&mut self, written: &Path) {
+        if written.file_name().is_some_and(|name| name == "Cargo.toml") {
+            let lock = written.with_file_name("Cargo.lock");
+            fs::copy(self.dir.join("Cargo.lock"), &lock).expect("the kept Cargo.lock is copied");
+            self.locks.push(lock);
+        }
+    }
+
+    /// Every kept file was a file block of the page, and the page built with the kept
+    /// dependencies: cargo changed no `Cargo.lock` it was given.
+    fn check_end(&self) -> Result<(), String> {
+        for path in self.files() {
+            if !self.written.contains(&path) {
+                return Err(format!(
+                    "{} is not a file block of the page",
+                    self.dir.join(&path).display()
+                ));
+            }
+        }
+        let kept = fs::read(self.dir.join("Cargo.lock")).expect("the kept Cargo.lock is read");
+        for lock in &self.locks {
+            if fs::read(lock).ok().as_ref() != Some(&kept) {
+                return Err(format!(
+                    "cargo changed {}: update {} with the page",
+                    lock.display(),
+                    self.dir.join("Cargo.lock").display()
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Runs one page's blocks in order and returns the first difference.
-fn run_page(relative: &str, page: &Page) -> Result<(), String> {
+fn run_page(relative: &str, path: &Path, page: &Page) -> Result<(), String> {
     let system = System::current();
     clear_development_records();
     let mut session = Session::start();
     if relative != "getting-started.md" {
         set_up(&mut session, relative);
     }
+    let mut kept = Kept::of(path);
     for block in page
         .blocks
         .iter()
@@ -620,11 +715,18 @@ fn run_page(relative: &str, page: &Page) -> Result<(), String> {
     {
         match &block.kind {
             BlockKind::File { path, content } => {
+                if let Some(kept) = &mut kept {
+                    kept.check_file(path, content)
+                        .map_err(|error| format!("line {}: {error}", block.line))?;
+                }
                 let target = session.cwd.join(path);
                 if let Some(parent) = target.parent() {
                     fs::create_dir_all(parent).expect("the file's folder");
                 }
                 fs::write(&target, content).expect("the file is written");
+                if let Some(kept) = &mut kept {
+                    kept.seed_lock(&target);
+                }
             }
             BlockKind::Commands {
                 exit,
@@ -650,7 +752,10 @@ fn run_page(relative: &str, page: &Page) -> Result<(), String> {
             }
         }
     }
-    Ok(())
+    match &kept {
+        Some(kept) => kept.check_end(),
+        None => Ok(()),
+    }
 }
 
 fn pages() -> Vec<(String, PathBuf)> {
@@ -695,7 +800,7 @@ fn every_page_runs_as_written() {
         if page.blocks.is_empty() {
             continue;
         }
-        if let Err(error) = run_page(&relative, &page) {
+        if let Err(error) = run_page(&relative, &path, &page) {
             failures.push(format!("docs/authors/{relative}, {error}"));
         }
     }
@@ -931,4 +1036,58 @@ fn only_cargo_install_gets_the_target_folder_and_the_profile() {
         )
         .is_empty()
     );
+}
+
+#[test]
+fn a_page_with_a_kept_crate_writes_its_files_and_builds_with_its_lock() {
+    let docs = TempDir::new().expect("a folder");
+    let page = docs.path().join("getting-started.md");
+    fs::write(&page, "").unwrap();
+    let crate_dir = docs.path().join("getting-started");
+    fs::create_dir_all(crate_dir.join("src")).unwrap();
+    fs::write(
+        crate_dir.join("Cargo.toml"),
+        "[package]\nname = \"my-widget\"\n",
+    )
+    .unwrap();
+    fs::write(crate_dir.join("Cargo.lock"), "version = 4\n").unwrap();
+    fs::write(crate_dir.join("src/lib.rs"), "").unwrap();
+    let mut kept = Kept::of(&page).expect("the folder beside the page");
+
+    let differs = kept
+        .check_file("Cargo.toml", "[package]\nname = \"other\"\n")
+        .unwrap_err();
+    assert!(differs.contains("differs"), "{differs}");
+    assert!(
+        kept.check_file("Cargo.toml", "[package]\nname = \"my-widget\"\n")
+            .is_ok()
+    );
+    assert!(
+        kept.check_file("broken.json", "{").is_ok(),
+        "a file of the page's own"
+    );
+    let missing = kept.check_end().unwrap_err();
+    assert!(
+        missing.contains("src/lib.rs"),
+        "a kept file the page never wrote: {missing}"
+    );
+    assert!(kept.check_file("src/lib.rs", "").is_ok());
+
+    let session = TempDir::new().expect("a folder");
+    let written = session.path().join("Cargo.toml");
+    fs::write(&written, "").unwrap();
+    kept.seed_lock(&written);
+    assert_eq!(
+        fs::read_to_string(session.path().join("Cargo.lock")).unwrap(),
+        "version = 4\n"
+    );
+    assert!(kept.check_end().is_ok());
+    fs::write(
+        session.path().join("Cargo.lock"),
+        "version = 4\n# resolved again\n",
+    )
+    .unwrap();
+    let changed = kept.check_end().unwrap_err();
+    assert!(changed.contains("cargo changed"), "{changed}");
+    assert!(Kept::of(&docs.path().join("other.md")).is_none());
 }
