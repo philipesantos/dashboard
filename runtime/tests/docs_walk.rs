@@ -19,6 +19,9 @@ const REPOSITORY: &str = "https://github.com/philipesantos/dashboard";
 /// Outside CI, the runner starts only with this set, since it clears the development data.
 const OPT_IN: &str = "DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA";
 
+/// Only the pages under `docs/authors/` whose path starts with one of these, comma-separated.
+const PAGES: &str = "DASHBOARD_DOCS_WALK_PAGES";
+
 /// The target folder `cargo install` builds in, when the docs job gives its cached one.
 const TARGET_DIR: &str = "DASHBOARD_DOCS_TARGET_DIR";
 
@@ -792,8 +795,15 @@ fn every_page_runs_as_written() {
     ) {
         panic!("{message}");
     }
+    // A contributor checking one page can name it, or several, by their start
+    let only: Vec<String> = std::env::var(PAGES)
+        .map(|pages| pages.split(',').map(str::to_owned).collect())
+        .unwrap_or_default();
     let mut failures = Vec::new();
     for (relative, path) in pages() {
+        if !only.is_empty() && !only.iter().any(|page| relative.starts_with(page.as_str())) {
+            continue;
+        }
         let markdown = fs::read_to_string(&path).expect("the page is read");
         let page = match parse_page(&markdown) {
             Ok(page) => page,
