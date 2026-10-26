@@ -267,7 +267,7 @@ the contributor docs say how v1 changes from now on.
 
 ### Tests for User Story 2
 
-- [ ] T011 [US2] Write the tests first, in `runtime/tests/contract_v1.rs`. Both fail until T012:
+- [X] T011 [US2] Write the tests first, in `runtime/tests/contract_v1.rs`. Both fail until T012:
   - Add `("1.3.0", "<digest>")` to `frozen_contracts()`.
   - Add `v1_equals_its_frozen_copy`: read the version `wit/v1/widget.wit` declares (`package
     dashboard:widget@<version>;`), then assert that `wit/history/<version>/widget.wit` exists and
@@ -276,13 +276,13 @@ the contributor docs say how v1 changes from now on.
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Freeze the contract (research R13):
+- [X] T012 [US2] Freeze the contract (research R13):
   - After T005, copy `wit/v1/widget.wit` unchanged to `wit/history/1.3.0/widget.wit`.
   - Put its SHA-256, LF-normalized, in place of the placeholder from T011.
   - `plugins/examples/private-notes` keeps building from `wit/v1`.
   - Confirm `contract_v1` passes, and that editing one byte of either file fails it, naming the
     version.
-- [ ] T013 [P] [US2] Update `wit/README.md` (FR-003, FR-023):
+- [X] T013 [P] [US2] Update `wit/README.md` (FR-003, FR-023):
   - 1.0.0 to 1.3.0 are frozen under `wit/history/`.
   - A new plugin binds its copy of `wit/history/1.3.0`.
   - How v1 changes from now on: freeze the current version first, add a new minor that only adds,
