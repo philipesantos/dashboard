@@ -120,7 +120,7 @@ kinds, and the docs runner every page runs on.
 
 ### The CLI as a library module (R9)
 
-- [ ] T006 Move the CLI unchanged into a library module, as its own commit:
+- [X] T006 Move the CLI unchanged into a library module, as its own commit:
   - Move the whole body of `runtime/src/bin/runtime.rs` into `runtime/src/cli/mod.rs`, declared
     as `#[doc(hidden)] pub mod cli;` in `runtime/src/lib.rs`, with one entry point
     `pub fn main() -> std::process::ExitCode` that holds what `main` holds today.
