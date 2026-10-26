@@ -2690,11 +2690,17 @@ fn the_real_cli_ignores_the_test_network() {
     assert_eq!(stdout(&with), stdout(&without));
     assert_eq!(stderr(&with), stderr(&without));
     // Both calls failed the way production fails a destination on this machine
-    let log = stdout(&runtime(&["requests", "--data", path_str(connected.dir.path())]));
+    let log = stdout(&runtime(&[
+        "requests",
+        "--data",
+        path_str(connected.dir.path()),
+    ]));
     let failures: Vec<&str> = log.lines().collect();
     assert_eq!(failures.len(), 2, "{log}");
     assert!(
-        failures.iter().all(|line| line.contains("non-public-address")),
+        failures
+            .iter()
+            .all(|line| line.contains("non-public-address")),
         "{log}"
     );
 }
