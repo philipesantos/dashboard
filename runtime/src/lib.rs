@@ -61,6 +61,8 @@ pub use calls::CallCounts;
 pub use error::{ErrorKind, RuntimeError};
 pub use limits::Limits;
 #[cfg(feature = "test-network")]
+pub use network::test_signin::follow as follow_test_sign_in;
+#[cfg(feature = "test-network")]
 pub use network::{Route, TestNetwork};
 pub use permissions::{Contract, ContractVersion};
 pub use storage::StorageCounts;

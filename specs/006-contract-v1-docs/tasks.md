@@ -569,7 +569,7 @@ ignores `DASHBOARD_TEST_NETWORK`.
 
 ### Implementation for User Story 5
 
-- [ ] T033 [US5] Add an HTTP sign-in route to the test sign-in service in
+- [X] T033 [US5] Add an HTTP sign-in route to the test sign-in service in
   `runtime/tests/common/signin.rs`:
   - `GET /oauth/authorize` does what `SignInService::browser` does today, using the same script,
     codes and secrets, and answers `302` with `Location` set to the callback address and its
@@ -577,7 +577,7 @@ ignores `DASHBOARD_TEST_NETWORK`.
   - `browser()` stays as it is for the library tests.
   - Add a test in `runtime/tests/accounts.rs` that signs in through the route, with no
     `browser()`.
-- [ ] T034 [US5] Add the test sign-in follower to `runtime/src/network/test_signin.rs`, declared
+- [X] T034 [US5] Add the test sign-in follower to `runtime/src/network/test_signin.rs`, declared
   under `#[cfg(feature = "test-network")]` in `runtime/src/network/mod.rs` (research R9):
   - `pub fn follow(test: &TestNetwork, address: &str) -> std::io::Result<()>` sends `GET` to the
     sign-in address through the seam's routes and test root, as connector requests do, reads the
@@ -702,6 +702,15 @@ the older pages point to the new docs.
   plugins/hostile/` shows only the `login_providers` removal, README links, the tests of the
   review's host fixes (T055, T056) and `foreign_store`'s changed expectation for an update that
   cannot open its store (T057), and that no hostile case was removed.
+- [ ] T058 Review the prose of the docs for authors independently: the drift test checks that
+  every item is there with its name and default, and the runner that every command prints what
+  the page shows, but no test reads what the text says. A fresh agent with none of this
+  feature's context reads `docs/authors/reference/` and `docs/authors/guides/` against
+  `wit/history/1.3.0/widget.wit`, `runtime/src/` and the schemas, sentence by sentence, first
+  where safety rests on the text: when nothing is sent, when a response or data is dropped,
+  when an account is used, what a widget may rely on. It returns each claim it finds wrong or
+  unsupported, with the file and line it rests on. Each finding is checked at the source before
+  the page changes; record them in `review.md` under their own heading.
 - [ ] T049 Walk through `specs/006-contract-v1-docs/quickstart.md` §1–§4, including each
   mutation (a byte of a frozen contract, a marker, a limit's default, a command), and fix any
   drift between it, the docs and the CLI.
