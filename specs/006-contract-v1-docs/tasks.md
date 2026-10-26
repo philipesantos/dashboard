@@ -686,7 +686,7 @@ the older pages point to the new docs.
 
 **Purpose**: checks, walks, review and merge
 
-- [ ] T046 [P] Update `.github/pull_request_template.md`: the security core comment names
+- [X] T046 [P] Update `.github/pull_request_template.md`: the security core comment names
   `runtime/src/cli/`, `runtime/src/bin/runtime-test-network.rs` and
   `runtime/src/network/test_signin.rs`; the `Cargo.lock` line names `wit-component`.
 - [ ] T047 Run every local check:
