@@ -4,6 +4,5 @@
   "id": "local/state-leak",
   "version": "0.1.0",
   "author": "Dashboard contributors",
-  "permissions": [],
-  "login_providers": []
+  "permissions": []
 }
