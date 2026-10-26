@@ -62,3 +62,22 @@ exports `updater` ([the connectors guide](../guides/connectors.md)).
 | `connectors[]/operations` | 1 to 32 operation names, each once | Yes | Only these are shown and callable; any other is `refused(operation-not-declared)` <!-- ref: manifest connectors[]/operations --> |
 | `connectors[]/required` | `true` or `false`, as for a permission | Yes | As for a permission <!-- ref: manifest connectors[]/required --> |
 | `connectors[]/account` | `true`: the widget calls this connector as the account connected to it, through `accounts` (contract 1.3.0 or later); the connector must declare a credential. `false`, the default: calls go through `connectors`, without a credential | No | Shown with the credential and the access it carries. A connector whose credential is required needs `true`, or the widget is refused as `account-use-not-declared` <!-- ref: manifest connectors[]/account --> |
+
+## Approvals and new versions
+
+- **Required and optional.** The person approves every required permission and connector
+  together, or the widget does not run; they change only with a new version, approved again, or
+  by removing the widget's approval (`runtime remove`). An optional one starts off and is turned
+  on and off at any time; while it is off, every call to it answers `not-granted` and does
+  nothing. A widget cannot read its grants, ask for a permission while it runs, or open a
+  dialog: it learns that something is off only from `not-granted`.
+- **An approval belongs to a package file.** Rebuilding the widget in place keeps it; a copy
+  elsewhere, even byte for byte the same, needs its own approval, which replaces the first one.
+  So another file that claims a widget's id gets none of its grants.
+- **A new version keeps its approval** as long as it asks for nothing new. One that requires a
+  permission, a connector, an operation, a larger quota or more of an account's access than was
+  approved is refused as `needs-new-approval`, naming the change, until the person approves it
+  again; the grants it had stay as they were. An optional permission a new version adds starts
+  off and needs no approval, and a permission it no longer declares stops being granted.
+- **Data the host kept** for a widget is discarded when a connector it used is turned off, when
+  the approval is removed, and when the account its data was fetched as is disconnected.

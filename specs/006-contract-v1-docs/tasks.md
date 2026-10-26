@@ -673,7 +673,7 @@ the older pages point to the new docs.
 
   Each example's own `README.md` and `plugins/hostile/README.md` link to the guides and the
   reference instead of repeating them.
-- [ ] T045 [P] [US6] Turn `docs/plugin-authors.md` and `docs/connectors.md` into short pointers to
+- [X] T045 [P] [US6] Turn `docs/plugin-authors.md` and `docs/connectors.md` into short pointers to
   `docs/authors/` and `docs/authors/guides/writing-connectors.md`. Check that every link to them
   from `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `connectors/README.md` and the READMEs under
   `plugins/` still leads to the right page.

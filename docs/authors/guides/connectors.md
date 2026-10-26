@@ -116,6 +116,11 @@ $ runtime requests
 <time> local/github-releases catalog/github list-releases GET api.github.com /repos/rust-lang/rust/releases?per_page=5 200 332B <time>
 ```
 
+Every call a widget makes, allowed or refused, lands in this log: the connector, the operation,
+the destination, the values sent and the outcome. A widget can neither read nor change it, and
+the person can read every line. Past 20 calls in one run, calls are refused and counted in one
+summary entry.
+
 ## Every answer of a call
 
 `call` answers `ok` with the service's response, whatever its status: a widget decides what a 404
