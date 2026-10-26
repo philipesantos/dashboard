@@ -555,10 +555,15 @@ fn clear_development_records() {
         }
     }
     if let Some(grants) = runtime::grants::GrantStore::default_development_path() {
-        match fs::remove_file(&grants) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => panic!("cannot clear {}: {error}", grants.display()),
+        // The record and its lock file, `<record>.lock`
+        let mut lock = grants.clone().into_os_string();
+        lock.push(".lock");
+        for file in [grants, PathBuf::from(lock)] {
+            match fs::remove_file(&file) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => panic!("cannot clear {}: {error}", file.display()),
+            }
         }
     }
 }
@@ -800,7 +805,10 @@ fn every_page_runs_as_written() {
         if page.blocks.is_empty() {
             continue;
         }
-        if let Err(error) = run_page(&relative, &path, &page) {
+        let walked = run_page(&relative, &path, &page);
+        // Nothing of a page stays in the development records once it ends
+        clear_development_records();
+        if let Err(error) = walked {
             failures.push(format!("docs/authors/{relative}, {error}"));
         }
     }
