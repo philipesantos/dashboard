@@ -550,7 +550,7 @@ ignores `DASHBOARD_TEST_NETWORK`.
 
 ### Tests for User Story 5
 
-- [ ] T032 [US5] Write `the_real_cli_ignores_the_test_network` first, in `runtime/tests/cli.rs`
+- [X] T032 [US5] Write `the_real_cli_ignores_the_test_network` first, in `runtime/tests/cli.rs`
   (`contracts/cli.md`):
   - Start a test HTTPS server of `runtime/tests/common/servers.rs` on `127.0.0.1:<port>`.
   - Use a development connector (`--connectors <dir>`) whose destination is

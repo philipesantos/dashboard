@@ -2629,3 +2629,72 @@ kept data discarded: local/private-notes
         &service.secrets(),
     );
 }
+
+// The test-only CLI's variable (specs/006-contract-v1-docs/contracts/cli.md): the real one
+// never reads it
+
+/// The real `runtime` ignores `DASHBOARD_TEST_NETWORK`: with the variable naming a test network
+/// that would route a destination to a live test server, the server gets no request and the
+/// command prints and exits as without it. The destination is `localhost`, which production
+/// refuses before connecting, so nothing leaves this machine either way.
+#[test]
+fn the_real_cli_ignores_the_test_network() {
+    let pki = common::servers::TestPki::new();
+    let server = Server::https(&pki.leaf(&["localhost"]));
+    server.route("/hello.json", Reply::json(r#"{"hello":"world"}"#));
+    let port = server.address().port();
+    let mut connector = hello(&server);
+    connector["destinations"]["here"] = json!(format!("https://localhost:{port}"));
+    let connected = Connected::hello_only(&server);
+    std::fs::write(
+        connected.dir.path().join("connectors").join("hello.json"),
+        connector.to_string(),
+    )
+    .unwrap();
+    connected.approve();
+    let network = connected.dir.path().join("test-network.json");
+    std::fs::write(
+        &network,
+        json!({
+            "routes": [{ "host": "localhost", "port": port, "addresses": [server.address().to_string()] }],
+            "public_for_tests": [server.address().to_string()],
+            "root": pki.root(),
+            "catalog": [],
+            "data_dir": connected.dir.path(),
+            "grants": connected.grants
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let update = |with_network: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_runtime"));
+        command.args([
+            "update",
+            path_str(&connected.plugin),
+            "--config",
+            r#"{"calls":[{"connector":"local/hello","operation":"get","arguments":[]}]}"#,
+            "--grants",
+            path_str(&connected.grants),
+            "--data",
+            path_str(connected.dir.path()),
+        ]);
+        if with_network {
+            command.env("DASHBOARD_TEST_NETWORK", &network);
+        }
+        command.output().expect("the runtime binary starts")
+    };
+    let without = update(false);
+    let with = update(true);
+    assert!(server.received().is_empty(), "{:?}", server.received());
+    assert_eq!(with.status.code(), without.status.code());
+    assert_eq!(stdout(&with), stdout(&without));
+    assert_eq!(stderr(&with), stderr(&without));
+    // Both calls failed the way production fails a destination on this machine
+    let log = stdout(&runtime(&["requests", "--data", path_str(connected.dir.path())]));
+    let failures: Vec<&str> = log.lines().collect();
+    assert_eq!(failures.len(), 2, "{log}");
+    assert!(
+        failures.iter().all(|line| line.contains("non-public-address")),
+        "{log}"
+    );
+}
