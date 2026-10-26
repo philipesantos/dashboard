@@ -698,7 +698,7 @@ the older pages point to the new docs.
   - the runner, with the opt-in variable, on a committed `HEAD`;
   - `cargo deny check`, and `cargo audit` on `Cargo.lock`, `plugins/Cargo.lock` and
     `docs/authors/getting-started/Cargo.lock`.
-- [ ] T048 Confirm FR-024: `git diff master -- runtime/tests/hostile.rs runtime/tests/hostile/
+- [X] T048 Confirm FR-024: `git diff master -- runtime/tests/hostile.rs runtime/tests/hostile/
   plugins/hostile/` shows only the `login_providers` removal, README links, the tests of the
   review's host fixes (T055, T056) and `foreign_store`'s changed expectation for an update that
   cannot open its store (T057), and that no hostile case was removed.
