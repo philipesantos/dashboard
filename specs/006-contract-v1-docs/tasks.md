@@ -505,7 +505,7 @@ docs job fails (quickstart §3).
     `docs/authors/` into `specs/` fails unless its line starts with `Background:`; FR-015,
     SC-007), in every `cargo test`.
   - **Pass:** it passes against T021–T026. Fix the pages, never the expected set.
-- [ ] T030 [US4] Update `.github/workflows/ci.yml` (research R11):
+- [X] T030 [US4] Update `.github/workflows/ci.yml` (research R11):
   - **`changes` job:** a changed path under `docs/authors/` or `wit/` sets `code=true` before
     the documentation-only test. Update the comment so it cites constitution v2.4.1 and says that
     those files are used as code (FR-019).
