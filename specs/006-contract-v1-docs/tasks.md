@@ -712,7 +712,7 @@ the older pages point to the new docs.
   when an account is used, what a widget may rely on. It returns each claim it finds wrong or
   unsupported, with the file and line it rests on. Each finding is checked at the source before
   the page changes; record them in `review.md` under their own heading.
-- [ ] T049 Walk through `specs/006-contract-v1-docs/quickstart.md` §1–§4, including each
+- [X] T049 Walk through `specs/006-contract-v1-docs/quickstart.md` §1–§4, including each
   mutation (a byte of a frozen contract, a marker, a limit's default, a command), and fix any
   drift between it, the docs and the CLI.
 - [ ] T050 The agent's walk (SC-001, research R16):
