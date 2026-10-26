@@ -473,7 +473,7 @@ docs job fails (quickstart §3).
 
 ### Tests for User Story 4
 
-- [ ] T028 [US4] Write the self-tests of the drift test first, in `runtime/tests/docs_reference.rs`.
+- [X] T028 [US4] Write the self-tests of the drift test first, in `runtime/tests/docs_reference.rs`.
   They fail until T029. Each runs the checker on an in-memory expected set and reference text:
   - a missing marker fails, naming the item;
   - a marker for an item that does not exist fails, naming it;
@@ -487,7 +487,7 @@ docs job fails (quickstart §3).
 
 ### Implementation for User Story 4
 
-- [ ] T029 [US4] Implement the drift test in `runtime/tests/docs_reference.rs` (research R7), so
+- [X] T029 [US4] Implement the drift test in `runtime/tests/docs_reference.rs` (research R7), so
   T028 passes:
   - **Expected set:**
     - parse `wit/v1` with `wit_parser::Resolve` and take every world, interface, function, named
