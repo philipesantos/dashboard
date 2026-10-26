@@ -1399,3 +1399,48 @@ fn connect_mid_run() {
     );
     signed.scan(&[("the updates", format!("{report:?} {next:?}"))]);
 }
+
+/// `connect-after-load`: an account connected after the widget loaded stays unused by it, even
+/// once its link is rebuilt for another plugin's approval through the same grant record; the
+/// next load uses it (`specs/006-contract-v1-docs/review.md`, F1).
+#[test]
+fn connect_after_load_waits_for_the_next_load() {
+    let signed = Signed::new();
+    let plugin = signed.world.approve_and_load(&mid_run_probe());
+    let config = calls(&[("accounts", "local/notes", "list-notes")]).to_string();
+    let before = signed.service.requests_to("/notes").len();
+    let first = plugin.update(&config);
+    signed.connect();
+    let second = plugin.update(&config);
+    // Moves the grant record's generation, so the widget is linked again before its next call
+    signed
+        .world
+        .approve(&crate::common::fixture("hello-widget"));
+    let third = plugin.update(&config);
+    let sent = signed.service.requests_to("/notes")[before..].to_vec();
+    assert_eq!(sent.len(), 3, "{sent:?}");
+    assert!(
+        sent.iter()
+            .all(|request| request.header("authorization").is_none()),
+        "an account connected after load was used: {sent:?}"
+    );
+    let next = signed.update(
+        &mid_run_probe(),
+        &calls(&[("accounts", "local/notes", "list-notes")]),
+    );
+    assert!(probe_answers(&next)[0].get("ok").is_some(), "{next:?}");
+    assert!(
+        signed
+            .service
+            .requests_to("/notes")
+            .last()
+            .unwrap()
+            .header("authorization")
+            .is_some()
+    );
+    signed.scan(&[(
+        "the updates",
+        format!("{first:?} {second:?} {third:?} {next:?}"),
+    )]);
+    signed.assert_well_behaved();
+}

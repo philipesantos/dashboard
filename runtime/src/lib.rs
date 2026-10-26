@@ -424,6 +424,8 @@ pub struct Plugin {
     origin: String,
     grants: Arc<GrantStore>,
     linked: Mutex<Linked>,
+    /// The accounts the plugin acts as while it stays loaded, read once at load.
+    accounts_at_load: AccountsAtLoad,
     limits: Limits,
     clock: Arc<EpochClock>,
     network: network::Network,
@@ -434,6 +436,26 @@ pub struct Plugin {
     /// Where declared connectors are found, for [`Plugin::recheck`].
     catalog: catalog::Catalog,
     options: RuntimeOptions,
+}
+
+/// The account connected to each connector of a package, by id and origin, as the host loaded
+/// it (`None`: none was).
+type AccountsAtLoad = std::collections::BTreeMap<(String, String), Option<accounts::Account>>;
+
+/// The accounts connected to the connectors `package` declares, read as the host loads it: what
+/// the widget acts as for as long as it stays loaded, however often a grant change links it
+/// again (research R11, step 0; `specs/006-contract-v1-docs/review.md`, F1). One connected
+/// afterwards, by any process, waits for the next load.
+fn accounts_at_load(package: &CheckedPackage, data_dir: &Path) -> AccountsAtLoad {
+    let store = accounts::AccountStore::open(data_dir);
+    package
+        .connectors
+        .iter()
+        .map(|loaded| {
+            let account = store.get(&loaded.id, &loaded.origin).ok().flatten();
+            ((loaded.id.clone(), loaded.origin.clone()), account)
+        })
+        .collect()
 }
 
 /// The plugin linked for one generation of its grant store, or the refusal that generation
@@ -930,7 +952,14 @@ impl Runtime {
         let package = self.check(bytes)?;
         // Read before the grants, so a change made while linking is seen on the next call
         let generation = grants.generation();
-        let prepared = prepare(&package, origin, &grants, self.options.data_dir())?;
+        let accounts_at_load = accounts_at_load(&package, self.options.data_dir());
+        let prepared = prepare(
+            &package,
+            origin,
+            &grants,
+            &accounts_at_load,
+            self.options.data_dir(),
+        )?;
         let plugin = Plugin {
             package,
             origin: origin.to_owned(),
@@ -939,6 +968,7 @@ impl Runtime {
                 generation,
                 prepared: Ok(Arc::new(prepared)),
             }),
+            accounts_at_load,
             limits: self.limits.clone(),
             clock: Arc::clone(&self.clock),
             network: self.network.clone(),
@@ -1136,6 +1166,7 @@ fn prepare(
     package: &CheckedPackage,
     origin: &str,
     grants: &GrantStore,
+    accounts_at_load: &AccountsAtLoad,
     data_dir: &Path,
 ) -> Result<Prepared, RuntimeError> {
     let manifest = &package.manifest;
@@ -1224,7 +1255,7 @@ fn prepare(
         None
     };
     // Step 9 for accounts: the real interface over a table of the connectors used with an
-    // account, each with the account connected now, or the stand-in (research R9, R11 step 0)
+    // account, each with the account connected at load, or the stand-in (research R9, R11 step 0)
     let accounts = accounts::AccountStore::open(data_dir);
     let (account_table, vault_id) = if plan.accounts {
         let loaded: Vec<(String, String, Arc<Connector>)> = package
@@ -1242,7 +1273,10 @@ fn prepare(
             .as_ref()
             .expect("step 7 refused a plugin without an approval");
         let table = ConnectorTable::build_accounts(manifest, &loaded, entry, |id, origin| {
-            accounts.get(id, origin).ok().flatten()
+            accounts_at_load
+                .get(&(id.to_owned(), origin.to_owned()))
+                .cloned()
+                .flatten()
         })
         .map(Arc::new);
         let link = if table.is_some() {
@@ -1684,6 +1718,7 @@ impl Plugin {
             &self.package,
             &self.origin,
             &self.grants,
+            &self.accounts_at_load,
             self.options.data_dir(),
         )
         .map(Arc::new);
@@ -1700,6 +1735,7 @@ impl Plugin {
                 &self.package,
                 &self.origin,
                 &self.grants,
+                &self.accounts_at_load,
                 self.options.data_dir(),
             )
             .map(Arc::new);

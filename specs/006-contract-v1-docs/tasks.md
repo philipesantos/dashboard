@@ -120,7 +120,7 @@ kinds, and the docs runner every page runs on.
 
 ### Host fixes from the review (T004)
 
-- [ ] T055 Fix F1 of `review.md`, so the accounts a widget acts as are fixed at load:
+- [X] T055 Fix F1 of `review.md`, so the accounts a widget acts as are fixed at load:
   - **Test first:** add one to `runtime/tests/accounts.rs` that fails without the fix. Load
     `private-notes`, run an update, then connect the account through the test sign-in. Approve
     another plugin through the same grant store, then update again. Assert the request went
@@ -687,8 +687,9 @@ the older pages point to the new docs.
   - `cargo deny check`, and `cargo audit` on `Cargo.lock`, `plugins/Cargo.lock` and
     `docs/authors/getting-started/Cargo.lock`.
 - [ ] T048 Confirm FR-024: `git diff master -- runtime/tests/hostile.rs runtime/tests/hostile/
-  plugins/hostile/` shows only the `login_providers` removal and README links, and no hostile
-  case was added or removed.
+  plugins/hostile/` shows only the `login_providers` removal, README links and the tests of the
+  review's host fixes (T055, T056), which check rules of earlier features, and that no hostile
+  case was removed.
 - [ ] T049 Walk through `specs/006-contract-v1-docs/quickstart.md` §1–§4, including each
   mutation (a byte of a frozen contract, a marker, a limit's default, a command), and fix any
   drift between it, the docs and the CLI.
