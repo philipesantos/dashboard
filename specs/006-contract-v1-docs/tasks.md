@@ -584,7 +584,7 @@ ignores `DASHBOARD_TEST_NETWORK`.
     `Location` of the `302`, and sends `GET` to it on the loopback callback.
   - It is covered by the network module's existing `#![allow]`; add no new one.
   - Confirm `cargo clippy --workspace --all-targets --locked -- -D warnings` passes.
-- [ ] T035 [US5] Create the test-only binary, `runtime/src/bin/runtime-test-network.rs`
+- [X] T035 [US5] Create the test-only binary, `runtime/src/bin/runtime-test-network.rs`
   (`contracts/cli.md`):
   - **Declaration:** in `runtime/Cargo.toml`,
     `[[bin]] name = "runtime-test-network" required-features = ["test-network"]`, with a comment.
