@@ -14,10 +14,12 @@ It was walked with Rust 1.99.1 and its `wasm32-unknown-unknown` target, `wit-bin
 ## 1. The tools
 
 - Rust 1.99.1, installed with [rustup](https://rustup.rs), and the target widgets build for:
-  `rustup toolchain install 1.99.1` and `rustup target add wasm32-unknown-unknown`.
+  `rustup toolchain install 1.99.1` and `rustup target add wasm32-unknown-unknown`. If your
+  default toolchain is another version, `rustup default 1.99.1` makes this one the default: it is
+  the version this page is walked with.
 - git.
 - On Linux, the two packages the development CLI's keychain support builds with: on Debian and
-  Ubuntu, `sudo apt-get install libdbus-1-dev pkg-config`.
+  Ubuntu, `sudo apt-get update && sudo apt-get install libdbus-1-dev pkg-config`.
 
 ## 2. The development CLI
 
@@ -36,7 +38,8 @@ $ cargo install --path dashboard/runtime --locked
 
 A widget is a Rust library built for WebAssembly. Make its folder beside the clone, with the
 contract copied into it: `wit/history/1.3.0/widget.wit` is contract 1.3.0 as published, and it
-never changes, so your widget keeps building whatever the clone does later.
+never changes, so your widget keeps building whatever the clone does later. Run this from the
+folder that holds `dashboard/`:
 
 ```console check os=linux,macos
 $ mkdir -p my-widget/src my-widget/wit
@@ -132,8 +135,7 @@ Cargo writes a WebAssembly module, `target/wasm32-unknown-unknown/release/my_wid
 
 The host loads packages: one WebAssembly component with the manifest inside. `runtime pack` turns
 cargo's module into a component, checks the manifest and adds it, and prints the package's
-digest. An approval belongs to the package's file, not to its digest: a package rebuilt in place
-keeps it as long as it asks for nothing more.
+digest.
 
 ```console check
 $ runtime pack target/wasm32-unknown-unknown/release/my_widget.wasm --manifest manifest.json --output my-widget.wasm
@@ -167,8 +169,11 @@ approved local/my-widget 0.1.0
 granted: log
 ```
 
-The approval is for this package file. Pack the widget again after a change and it still runs as
-long as it asks for nothing more; a version that asks for more needs a new approval.
+The approval is for the package at this path, `my-widget.wasm`, not for its digest. Pack the
+widget again to the same path after a change and it still runs, as long as it asks for nothing
+more; a version that asks for more needs a new approval, and a package at another path needs its
+own. The last line, `login providers`, reports a manifest field that grants nothing since contract
+1.3.0: a widget acts as an account only through a connector ([accounts](guides/accounts.md)).
 
 Now it runs. Its log message comes first, then the content `render` returned, which the CLI
 prints as indented JSON:
@@ -265,5 +270,16 @@ $ runtime approve newer.wasm
 error: contract-mismatch: dashboard:widget/renderer@1.4.0 (is built for contract 1.4.0, newer than 1.3.0, the newest this host runs; update the host)
 ```
 
-Copy the contract the installed CLI runs, `wit/history/1.3.0/widget.wit` of the clone it was built
-from, and build again.
+Copy back the contract the installed CLI runs, `wit/history/1.3.0/widget.wit` of the clone it was
+built from, and build again:
+
+```console check os=linux,macos output=any
+$ cp ../dashboard/wit/history/1.3.0/widget.wit wit/
+$ rm wit/widget.wit.bak
+$ cargo build --release --target wasm32-unknown-unknown
+```
+
+```console check os=windows output=any
+PS> Copy-Item ../dashboard/wit/history/1.3.0/widget.wit wit/
+PS> cargo build --release --target wasm32-unknown-unknown
+```
