@@ -302,17 +302,25 @@ fn runs_runtime(text: &str) -> bool {
 }
 
 /// The pattern for one expected line: placeholders match only their kind, anything else is
-/// literal. `<path>` captures, so its value can be checked against the session's folders.
-fn line_pattern(expected: &str) -> Regex {
-    let placeholder = Regex::new(r"<(digest|path|n|time|version)>").expect("a valid pattern");
+/// literal. `<path>` and `<digest>` capture, in the order of the kinds returned: a path to check
+/// against the session's folders, a digest for a later command to use.
+fn line_pattern(expected: &str) -> (Regex, Vec<&'static str>) {
+    let placeholder = Regex::new(r"<(digest|path|n|time|version|url)>").expect("a valid pattern");
     let mut pattern = String::from("^");
+    let mut captures = Vec::new();
     let mut last = 0;
     for found in placeholder.captures_iter(expected) {
         let whole = found.get(0).expect("the match");
         pattern.push_str(&regex::escape(&expected[last..whole.start()]));
+        match &found[1] {
+            "digest" => captures.push("digest"),
+            "path" => captures.push("path"),
+            _ => {}
+        }
         pattern.push_str(match &found[1] {
-            "digest" => "[0-9a-f]{64}",
+            "digest" => "([0-9a-f]{64})",
             "path" => "(.+?)",
+            "url" => r"https?://[^\s]+",
             "n" => "[0-9]+",
             "time" => {
                 r"(?:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z|[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} UTC|[0-9]+ms)"
@@ -323,18 +331,35 @@ fn line_pattern(expected: &str) -> Regex {
     }
     pattern.push_str(&regex::escape(&expected[last..]));
     pattern.push('$');
-    Regex::new(&pattern).expect("an escaped pattern is valid")
+    (
+        Regex::new(&pattern).expect("an escaped pattern is valid"),
+        captures,
+    )
 }
 
-/// Whether `actual` is what `expected` shows; every `<path>` must lie under one of `roots`.
+/// The digests of `actual` when it is what `expected` shows, every `<path>` under one of
+/// `roots`; `None` when it is not.
+fn line_values(expected: &str, actual: &str, roots: &[String]) -> Option<Vec<String>> {
+    let (pattern, kinds) = line_pattern(expected);
+    let found = pattern.captures(actual)?;
+    let mut digests = Vec::new();
+    for (kind, value) in kinds.iter().zip(found.iter().skip(1)) {
+        let value = value.expect("every group takes part").as_str();
+        if *kind == "digest" {
+            digests.push(value.to_owned());
+        } else {
+            let path = normalize(value);
+            if !roots.iter().any(|root| path.starts_with(&normalize(root))) {
+                return None;
+            }
+        }
+    }
+    Some(digests)
+}
+
+/// Whether `actual` is what `expected` shows.
 fn line_matches(expected: &str, actual: &str, roots: &[String]) -> bool {
-    let Some(found) = line_pattern(expected).captures(actual) else {
-        return false;
-    };
-    found.iter().skip(1).flatten().all(|path| {
-        let path = normalize(path.as_str());
-        roots.iter().any(|root| path.starts_with(&normalize(root)))
-    })
+    line_values(expected, actual, roots).is_some()
 }
 
 fn normalize(path: &str) -> String {
@@ -348,19 +373,41 @@ fn normalize(path: &str) -> String {
 
 /// Compares a command's whole output with the page; `None` when they agree.
 fn compare(expected: &[String], actual: &[String], roots: &[String]) -> Option<String> {
-    let agree = expected.len() == actual.len()
-        && expected
-            .iter()
-            .zip(actual)
-            .all(|(expected, actual)| line_matches(expected, actual, roots));
-    if agree {
-        return None;
+    digests(expected, actual, roots).err()
+}
+
+/// The digests a command's output showed, in order, when it is what the page shows; otherwise
+/// both outputs.
+fn digests(
+    expected: &[String],
+    actual: &[String],
+    roots: &[String],
+) -> Result<Vec<String>, String> {
+    let differs = || {
+        format!(
+            "expected:\n{}\nactual:\n{}",
+            indent(expected),
+            indent(actual)
+        )
+    };
+    if expected.len() != actual.len() {
+        return Err(differs());
     }
-    Some(format!(
-        "expected:\n{}\nactual:\n{}",
-        indent(expected),
-        indent(actual)
-    ))
+    let mut found = Vec::new();
+    for (expected, actual) in expected.iter().zip(actual) {
+        found.extend(line_values(expected, actual, roots).ok_or_else(differs)?);
+    }
+    Ok(found)
+}
+
+/// A command as it runs: `<digest>` in it stands for the last digest an output showed, such as
+/// the approval digest `runtime permissions` printed.
+fn with_digest(text: &str, last: Option<&str>) -> Result<String, String> {
+    if !text.contains("<digest>") {
+        return Ok(text.to_owned());
+    }
+    last.map(|digest| text.replace("<digest>", digest))
+        .ok_or_else(|| "the command uses <digest>, and no output showed one before".to_owned())
 }
 
 fn indent(lines: &[String]) -> String {
@@ -853,6 +900,7 @@ fn run_page(relative: &str, path: &Path, page: &Page) -> Result<(), String> {
 fn walk_blocks(session: &mut Session, path: &Path, page: &Page) -> Result<(), String> {
     let system = System::current();
     let mut kept = Kept::of(path);
+    let mut last_digest: Option<String> = None;
     for block in page
         .blocks
         .iter()
@@ -879,11 +927,21 @@ fn walk_blocks(session: &mut Session, path: &Path, page: &Page) -> Result<(), St
                 steps,
             } => {
                 for step in steps {
-                    let (code, printed) = session.run(&step.text);
+                    let text = with_digest(&step.text, last_digest.as_deref())
+                        .map_err(|error| format!("line {}: {error}", step.line))?;
+                    let (code, printed) = session.run(&text);
                     let differs = if *any_output {
                         None
                     } else {
-                        compare(&step.expected, &printed, &session.roots)
+                        match digests(&step.expected, &printed, &session.roots) {
+                            Ok(found) => {
+                                if let Some(digest) = found.last() {
+                                    last_digest = Some(digest.clone());
+                                }
+                                None
+                            }
+                            Err(differs) => Some(differs),
+                        }
                     };
                     if code != *exit || differs.is_some() {
                         return Err(format!(
@@ -1260,4 +1318,45 @@ fn a_page_with_services_runs_its_runtime_commands_through_the_test_only_cli() {
     let (code, printed) = session.run("runtime requests");
     assert_eq!(code, 2, "{printed:?}");
     assert!(printed[0].starts_with("error: cannot read "), "{printed:?}");
+}
+
+#[test]
+fn a_command_can_use_the_last_digest_an_output_showed() {
+    let roots = ["/tmp".to_owned()];
+    let digest = "ab".repeat(32);
+    let shown = digests(
+        &["approval digest: sha256:<digest>".to_owned()],
+        &[format!("approval digest: sha256:{digest}")],
+        &roots,
+    )
+    .expect("the output agrees");
+    assert_eq!(shown, std::slice::from_ref(&digest));
+    assert_eq!(
+        with_digest(
+            "runtime approve x.wasm --expect sha256:<digest>",
+            Some(&digest)
+        )
+        .unwrap(),
+        format!("runtime approve x.wasm --expect sha256:{digest}")
+    );
+    assert!(with_digest("runtime approve x.wasm --expect sha256:<digest>", None).is_err());
+    assert_eq!(
+        with_digest("runtime run x.wasm", None).unwrap(),
+        "runtime run x.wasm"
+    );
+}
+
+#[test]
+fn a_url_placeholder_matches_one_address() {
+    let roots = ["/tmp".to_owned()];
+    assert!(line_matches(
+        "opening <url> in the browser",
+        "opening https://notes.test/oauth/authorize?state=x&code_challenge=y in the browser",
+        &roots
+    ));
+    assert!(!line_matches(
+        "opening <url> in the browser",
+        "opening a b in the browser",
+        &roots
+    ));
 }

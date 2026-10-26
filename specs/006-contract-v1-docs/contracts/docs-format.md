@@ -71,7 +71,11 @@ name = "my-widget"
   trimming trailing spaces and normalizing line endings.
 - Placeholders: `<digest>` (64 lowercase hex), `<path>` (a path under the session's folder or
   the data directory), `<n>` (an integer), `<time>` (a date-time or duration as the CLI prints
-  it), `<version>` (a semver). Each matches only its kind; any other `<…>` is literal.
+  it), `<version>` (a semver), `<url>` (one `http` or `https` address, such as a sign-in address
+  with its random state). Each matches only its kind; any other `<…>` is literal.
+- In a command, `<digest>` stands for the last digest an output of the page showed, such as the
+  approval digest `runtime permissions` printed: the page reads `--expect sha256:<digest>`, as
+  a reader copies it.
 - A page whose front matter comment says `<!-- check: service=github,notes -->` runs its
   `runtime` commands through the test-only CLI, with those test services started, and has its
   accounts disconnected after it (R9). Services are declared only there, never on a block.
