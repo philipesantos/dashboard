@@ -617,7 +617,7 @@ It builds the example with `cargo build --release --target wasm32-unknown-unknow
 `../../target/wasm32-unknown-unknown/release/<crate>.wasm`, because the examples build in the
 `plugins/` workspace.
 
-- [ ] T037 [P] [US5] Write `docs/authors/guides/render-and-update.md`, from `hello-widget`
+- [X] T037 [P] [US5] Write `docs/authors/guides/render-and-update.md`, from `hello-widget`
   (FR-009):
   - what `update` and `render` each receive and return;
   - that each call runs in a fresh instance;
@@ -625,28 +625,28 @@ It builds the example with `cargo build --release --target wasm32-unknown-unknow
   - the 64 KiB output and the content format in Phase 3.
 
   End with the widget running, in checked blocks.
-- [ ] T038 [P] [US5] Write `docs/authors/guides/connectors.md`, from `github-releases`, with
+- [X] T038 [P] [US5] Write `docs/authors/guides/connectors.md`, from `github-releases`, with
   `<!-- check: service=github -->`:
   - the connector a widget declares, and what the maintainer approves (the data flow);
   - `runtime update` and `runtime requests`;
   - handling `not-granted`, `refused` and `failed`.
 
   End with `runtime run` showing the releases.
-- [ ] T039 [P] [US5] Write `docs/authors/guides/accounts.md`, from `private-notes` and
+- [X] T039 [P] [US5] Write `docs/authors/guides/accounts.md`, from `private-notes` and
   `local/notes`, with `<!-- check: service=notes -->`:
   - `runtime accounts connect local/notes`, then `update` and `run` with the notes;
   - handling `not-granted` and `account-not-connected`;
   - `accounts disconnect`;
   - registering an app with your own service for real use (no catalog connector has an account
     until Phase 6).
-- [ ] T040 [P] [US5] Write `docs/authors/guides/storage.md`, from `update-counter`: what the store
+- [X] T040 [P] [US5] Write `docs/authors/guides/storage.md`, from `update-counter`: what the store
   keeps, its limits, handling `not-granted`, and the widget running twice so it shows the count
   growing.
-- [ ] T041 [P] [US5] Move the content of `docs/connectors.md` into
+- [X] T041 [P] [US5] Move the content of `docs/connectors.md` into
   `docs/authors/guides/writing-connectors.md`. Align it with the reference: link to
   `reference/connector-format.md` for each field instead of repeating it, and make its checked
   examples run.
-- [ ] T042 [US5] Run the runner on `docs/authors/guides/` and fix every page until it passes on
+- [X] T042 [US5] Run the runner on `docs/authors/guides/` and fix every page until it passes on
   Linux.
 
 **Checkpoint**: every guide runs as written against the test services, never GitHub.
