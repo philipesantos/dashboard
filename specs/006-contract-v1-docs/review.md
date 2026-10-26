@@ -89,7 +89,7 @@ page changed; line numbers are at df4bb6c.
 | P32 | `cli.md` (`approve`) | Without `--expect` the CLI prints usage; `approval-changed` is a digest that differs | `cli/mod.rs:1237-1241` | docs |
 | P33 | `cli.md` (`requests`) | Also render's refused calls, a summary entry past the limit, and the host's own sign-in and refresh requests | `calls.rs` `RunLog`, `host_entry`, `identity_entry` | docs |
 | P34 | `manifest.md` (kept data) | Read as a complete list: kept data also goes when the package or the approval changes | `kept.rs:124-130` | docs |
-| P35 | `guides/accounts.md` (disconnecting) | "No widget shows the account's notes once it is gone": only kept data fetched as the account is discarded; what a widget copied to its store stays, and a required credential answers `account-not-connected` | `lib.rs:706-783`, `kept.rs:186-213`, `calls.rs:741-747`; 005 FR-013 discards kept data only | docs: says so and tells authors to keep account data out of storage; open for the maintainer, below |
+| P35 | `guides/accounts.md` (disconnecting) | "No widget shows the account's notes once it is gone": only kept data fetched as the account is discarded; what a widget copied to its store stays, and a required credential answers `account-not-connected` | `lib.rs:706-783`, `kept.rs:186-213`, `calls.rs:741-747`; 005 FR-013 discards kept data only | docs: says so and tells authors to keep account data out of storage. The maintainer chose, on 2026-10-26, to leave the host as it is in 006 and decide in the Phase 4 spec, with the taint review of Principle VI: the host cannot tell which part of a store came from an account |
 | P36 | `guides/writing-connectors.md` (testing) | Plain HTTP to this machine read as usable for a connector with an account: every destination of a credential is HTTPS on a public name | `connector.rs:1684-1690` | docs |
 | P37 | `guides/connectors.md` (`not-granted`) | Also a response dropped in flight, and the answer for an undeclared connector or the wrong interface | `calls.rs:459-462`, `calls.rs:654-657`; the WIT | docs |
 | P38 | `guides/writing-connectors.md` (new version) | "One that asks for less is not" approved again: any credential change, scopes included, is; only access items decide reconnecting | `connector.rs:3323-3344`, `grants.rs:235-262`, `calls.rs:752-770` | docs |
@@ -102,4 +102,4 @@ No finding is `breaking`. P18 is the one host fix. Three findings rest on decisi
 features that the pages now state, and are left to the maintainer: P1 (one 401 marks a key for
 every widget that uses it, since a key has no identity operation to confirm with), P17 (any local
 file may carry a repository id until Phase 3) and P35 (disconnecting an account does not clear
-what widgets copied from it into their stores).
+what widgets copied from it into their stores; deferred to the Phase 4 spec).
