@@ -522,7 +522,7 @@ docs job fails (quickstart §3).
   - **`result` job:** add `docs` to its `needs`.
   - **`audit` and `deny` jobs:** add `cargo audit --file docs/authors/getting-started/Cargo.lock`
     and `cargo deny --manifest-path docs/authors/getting-started/Cargo.toml check`.
-- [ ] T031 [P] [US4] Update `CONTRIBUTING.md` (FR-020):
+- [X] T031 [P] [US4] Update `CONTRIBUTING.md` (FR-020):
   - A change to the contract, a schema, a limit, a host error or an author-facing CLI command
     updates `docs/authors/reference/` in the same pull request, and `docs_reference` names what
     is missing.
