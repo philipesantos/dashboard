@@ -1444,3 +1444,47 @@ fn connect_after_load_waits_for_the_next_load() {
     )]);
     signed.assert_well_behaved();
 }
+
+/// `one-response-budget`: the response bodies of one update count against one budget, across
+/// `connectors` and `accounts` together (`specs/006-contract-v1-docs/review.md`, F2).
+#[test]
+fn one_response_budget_per_update() {
+    const BODY: usize = 4096;
+    let limits = runtime::Limits {
+        sign_in_time_limit: std::time::Duration::from_secs(5),
+        max_update_response_bytes: BODY,
+        ..runtime::Limits::default()
+    };
+    let signed = Signed::with(notes(), limits);
+    signed.connect();
+    let mut plain = notes();
+    plain["id"] = json!("local/plain");
+    plain["destinations"]["api"] = json!("https://other.test");
+    plain.as_object_mut().unwrap().remove("credential");
+    signed.world.write_connector("plain", &plain);
+    signed.other.route("/notes", Reply::json_of_size(BODY));
+    let package = probe(
+        "local/budget-probe",
+        json!([
+            { "id": "local/plain", "major": 1, "operations": ["list-notes"], "required": true },
+            { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }
+        ]),
+    );
+    let report = signed.update(
+        &package,
+        &calls(&[
+            ("connectors", "local/plain", "list-notes"),
+            ("accounts", "local/notes", "list-notes"),
+        ]),
+    );
+    let answers = probe_answers(&report);
+    assert!(answers[0].get("ok").is_some(), "{}", answers[0]["error"]);
+    assert_eq!(
+        answers[1]["error"],
+        json!("failed:over-limit"),
+        "the accounts call had a budget of its own: {}",
+        answers[1]
+    );
+    signed.scan(&[("the update", format!("{report:?}"))]);
+    signed.assert_well_behaved();
+}

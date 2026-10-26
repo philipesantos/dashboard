@@ -131,7 +131,7 @@ kinds, and the docs runner every page runs on.
     every relink. A connector granted later, which had no account at load, gets none until the
     next load.
   - **Checks:** `accounts.rs` and the hostile suite pass. Review line by line.
-- [ ] T056 Fix F2 of `review.md`, so one update receives at most `max_update_response_bytes` of
+- [X] T056 Fix F2 of `review.md`, so one update receives at most `max_update_response_bytes` of
   response bodies across `connectors` and `accounts` together:
   - **Test first:** add one to `runtime/tests/hostile/connectors.rs` (or `credentials.rs`) that
     fails without the fix. A widget with both interfaces reads 3 MiB through each in one update;

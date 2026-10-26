@@ -1536,6 +1536,8 @@ impl Plugin {
         };
         let log = (!self.package.connectors.is_empty()).then(|| self.log.clone());
         let run = RunLog::new(self.manifest().id(), log, &self.limits);
+        // One budget of response bodies for the run, whichever interface a call goes through
+        let update_bytes_left = Arc::new(Mutex::new(self.limits.max_update_response_bytes));
         let calls = table.map(|table| Calls {
             plugin: self.manifest().id().clone(),
             origin: self.origin.clone(),
@@ -1544,7 +1546,7 @@ impl Plugin {
             phase,
             session: (phase == Phase::Update).then(|| self.network.session(&self.limits)),
             deadline: Instant::now() + self.limits.update_time_limit,
-            update_bytes_left: self.limits.max_update_response_bytes,
+            update_bytes_left: Arc::clone(&update_bytes_left),
             limits: self.limits.clone(),
             rates: Arc::clone(&self.rates),
             account: None,
@@ -1557,7 +1559,7 @@ impl Plugin {
             phase,
             session: (phase == Phase::Update).then(|| self.network.session(&self.limits)),
             deadline: Instant::now() + self.limits.update_time_limit,
-            update_bytes_left: self.limits.max_update_response_bytes,
+            update_bytes_left: Arc::clone(&update_bytes_left),
             limits: self.limits.clone(),
             rates: Arc::clone(&self.rates),
             account: Some(calls::AccountAccess {

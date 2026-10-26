@@ -418,7 +418,9 @@ pub(crate) struct Calls {
     /// The update's agents; `None` in render, which never reaches the network.
     pub(crate) session: Option<Session>,
     pub(crate) deadline: Instant,
-    pub(crate) update_bytes_left: usize,
+    /// What is left of the update's response bodies, one budget for the run's `connectors` and
+    /// `accounts` calls together (`specs/006-contract-v1-docs/review.md`, F2).
+    pub(crate) update_bytes_left: Arc<Mutex<usize>>,
     pub(crate) limits: Limits,
     pub(crate) rates: Arc<Rates>,
     /// For the account table only.
@@ -575,7 +577,10 @@ impl Calls {
             operation,
             request,
             self.deadline,
-            &mut self.update_bytes_left,
+            &mut self
+                .update_bytes_left
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
         );
         let carried = exchange.hops.iter().any(|hop| hop.with_credential);
         let unauthorized = matches!(&exchange.result, Ok(response) if response.status == 401);
@@ -607,7 +612,10 @@ impl Calls {
                     operation,
                     again,
                     self.deadline,
-                    &mut self.update_bytes_left,
+                    &mut self
+                        .update_bytes_left
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner),
                 );
                 retried = Some(second);
             }
@@ -1065,7 +1073,10 @@ impl Calls {
                                     operation,
                                     request,
                                     self.deadline,
-                                    &mut self.update_bytes_left,
+                                    &mut self
+                                        .update_bytes_left
+                                        .lock()
+                                        .unwrap_or_else(PoisonError::into_inner),
                                 );
                                 let status =
                                     exchange.result.as_ref().map(|response| response.status);
@@ -1404,7 +1415,7 @@ mod tests {
                 session: (phase == Phase::Update)
                     .then(|| Network::with_seam(TestNetwork::default()).session(&limits)),
                 deadline: Instant::now() + limits.update_time_limit,
-                update_bytes_left: limits.max_update_response_bytes,
+                update_bytes_left: Arc::new(Mutex::new(limits.max_update_response_bytes)),
                 limits,
                 rates: Arc::clone(&self.rates),
                 account: None,
@@ -1833,7 +1844,7 @@ mod tests {
                 phase: Phase::Update,
                 session: Some(Network::with_seam(TestNetwork::default()).session(&limits)),
                 deadline: Instant::now() + limits.update_time_limit,
-                update_bytes_left: limits.max_update_response_bytes,
+                update_bytes_left: Arc::new(Mutex::new(limits.max_update_response_bytes)),
                 limits,
                 rates: Arc::default(),
                 account: Some(AccountAccess {
