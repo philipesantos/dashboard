@@ -130,7 +130,7 @@ kinds, and the docs runner every page runs on.
   - `git diff --color-moved=dimmed-zebra HEAD~1` must show every other line as moved.
   - Confirm `cargo test -p runtime --test cli --locked` passes with `runtime/tests/cli.rs`
     unchanged, and that `cargo clippy --workspace --all-targets --locked -- -D warnings` passes.
-- [ ] T007 Make the runtime, the opener and the default data locations parameters, as its own
+- [X] T007 Make the runtime, the opener and the default data locations parameters, as its own
   commit after T006 and reviewed line by line:
   - Add a `pub struct Host` in `runtime/src/cli/mod.rs` with four fields:
     - `start: fn(Limits, RuntimeOptions) -> wasmtime::Result<Runtime>`;

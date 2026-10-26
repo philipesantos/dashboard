@@ -46,7 +46,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use runtime::accounts::{Account, AccountKind, Connected, Reason};
@@ -57,7 +57,9 @@ use runtime::manifest::PluginId;
 use runtime::requests::{Entry, Outcome};
 use runtime::{CheckedPackage, Limits, Plugin, Runtime, RuntimeOptions, escape, package};
 
-const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+/// Every command and option, as printed on a usage error; the reference for authors lists each
+/// (tests/docs_reference.rs).
+pub const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime update <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime bench <plugin> [--iterations <n>] [--kept-data <file>] [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime permissions <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]
@@ -108,8 +110,50 @@ enum Command {
     AccountsDisconnect,
 }
 
+/// What the CLI runs on: the runtime it starts, how it opens a sign-in address and where its
+/// development records are when no option names them. The `runtime` binary runs on the system's
+/// ([`Host::system`]); a test-only binary gives the test seam's
+/// (`specs/006-contract-v1-docs/research.md`, R9).
+#[derive(Debug, Clone, Copy)]
+pub struct Host {
+    /// Starts the runtime a command uses.
+    pub start: fn(Limits, RuntimeOptions) -> wasmtime::Result<Runtime>,
+    /// Opens a sign-in address for the person.
+    pub open: fn(&str) -> std::io::Result<()>,
+    /// The data directory when `--data` is not given.
+    pub data_dir: fn() -> Option<PathBuf>,
+    /// The grant record when `--grants` is not given.
+    pub grants_path: fn() -> Option<PathBuf>,
+}
+
+impl Host {
+    /// The production runtime, the system browser and the development records in the system's
+    /// data directory.
+    pub fn system() -> Host {
+        Host {
+            start: Runtime::new,
+            open: |address| open::that(address),
+            data_dir: RuntimeOptions::default_development_data_dir,
+            grants_path: GrantStore::default_development_path,
+        }
+    }
+}
+
+/// The host of this process, set once by [`main_with`].
+static HOST: OnceLock<Host> = OnceLock::new();
+
+fn host() -> &'static Host {
+    HOST.get_or_init(Host::system)
+}
+
 /// The CLI's entry point: reads the arguments and runs the command they name.
 pub fn main() -> ExitCode {
+    main_with(Host::system())
+}
+
+/// As [`main`], on `host`.
+pub fn main_with(host: Host) -> ExitCode {
+    HOST.get_or_init(|| host);
     let args: Vec<String> = std::env::args().skip(1).collect();
     let command = match args.first().map(String::as_str) {
         Some("run") => Command::Run,
@@ -529,7 +573,7 @@ fn requests(options: &Options) -> ExitCode {
         Ok(data) => data,
         Err(message) => return usage_error(&message),
     };
-    let runtime = match Runtime::new(Limits::default(), RuntimeOptions::new(data)) {
+    let runtime = match (host().start)(Limits::default(), RuntimeOptions::new(data)) {
         Ok(runtime) => runtime,
         Err(error) => {
             eprintln!("error: cannot start the runtime: {error:#}");
@@ -641,7 +685,8 @@ fn check_connector(options: &Options) -> ExitCode {
         return usage_error("the connector file has no UTF-8 name");
     };
     // Nothing is written: the data directory is only where a runtime would keep its data
-    let runtime = match Runtime::new(Limits::default(), RuntimeOptions::new(std::env::temp_dir())) {
+    let runtime = match (host().start)(Limits::default(), RuntimeOptions::new(std::env::temp_dir()))
+    {
         Ok(runtime) => runtime,
         Err(error) => {
             eprintln!("error: cannot start the runtime: {error:#}");
@@ -1429,7 +1474,7 @@ fn remove(options: &Options) -> ExitCode {
         Ok(data) => data,
         Err(message) => return usage_error(&message),
     };
-    match Runtime::new(Limits::default(), RuntimeOptions::new(data)) {
+    match (host().start)(Limits::default(), RuntimeOptions::new(data)) {
         Ok(runtime) => {
             if let Err(error) = runtime.discard_kept_data(&id) {
                 eprintln!("error: cannot discard the kept data of {id}: {error}");
@@ -1460,7 +1505,7 @@ const SHOWN_ENTRY_BYTES: usize = 1024;
 /// A runtime on the data directory of `options`, for the storage commands that need no package.
 fn storage_runtime(options: &Options) -> Result<Runtime, ExitCode> {
     let data = data_dir(options).map_err(|message| usage_error(&message))?;
-    Runtime::new(Limits::default(), RuntimeOptions::new(data)).map_err(|error| {
+    (host().start)(Limits::default(), RuntimeOptions::new(data)).map_err(|error| {
         eprintln!("error: cannot start the runtime: {error:#}");
         ExitCode::from(PLUGIN_FAILED)
     })
@@ -1654,7 +1699,7 @@ fn development_runtime(options: &Options) -> Result<Runtime, ExitCode> {
     if let Some(connectors) = &options.connectors {
         runtime_options = runtime_options.connectors_dir(connectors);
     }
-    Runtime::new(Limits::default(), runtime_options).map_err(|error| {
+    (host().start)(Limits::default(), runtime_options).map_err(|error| {
         eprintln!("error: cannot start the runtime: {error:#}");
         ExitCode::from(PLUGIN_FAILED)
     })
@@ -1750,7 +1795,7 @@ fn accounts_connect(options: &Options) -> ExitCode {
                     println!("open {shown} in a browser");
                 } else {
                     println!("opening {shown} in the browser");
-                    if let Err(error) = open::that(address.as_str()) {
+                    if let Err(error) = (host().open)(address.as_str()) {
                         println!(
                             "the browser did not open ({}): open the address yourself",
                             escape(&error.to_string())
@@ -1991,7 +2036,7 @@ fn accounts_disconnect(options: &Options) -> ExitCode {
 fn data_dir(options: &Options) -> Result<PathBuf, String> {
     match &options.data {
         Some(data) => Ok(data.clone()),
-        None => RuntimeOptions::default_development_data_dir().ok_or_else(|| {
+        None => (host().data_dir)().ok_or_else(|| {
             "this system has no data directory for kept data and the request log; give --data <dir>"
                 .to_owned()
         }),
@@ -2018,12 +2063,10 @@ fn origin(path: &str) -> Result<String, String> {
 fn grant_store(path: Option<&PathBuf>) -> Result<GrantStore, String> {
     match path {
         Some(path) => Ok(GrantStore::open(path)),
-        None => GrantStore::default_development_path()
-            .map(GrantStore::open)
-            .ok_or_else(|| {
-                "this system has no data directory for the grant record; give --grants <path>"
-                    .to_owned()
-            }),
+        None => (host().grants_path)().map(GrantStore::open).ok_or_else(|| {
+            "this system has no data directory for the grant record; give --grants <path>"
+                .to_owned()
+        }),
     }
 }
 
