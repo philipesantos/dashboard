@@ -415,7 +415,7 @@ limit and author-facing command. Each entry has a marker.
 
 ### Implementation for User Story 3
 
-- [ ] T021 [P] [US3] Write `docs/authors/reference/contract.md` (FR-010, R6):
+- [X] T021 [P] [US3] Write `docs/authors/reference/contract.md` (FR-010, R6):
   - **Coverage:** every world, interface, function, type and enum or variant case or record field
     of 1.3.0, each with a marker `<!-- ref: wit <id> -->` on the line before its heading or at the
     end of its table row.
@@ -423,25 +423,25 @@ limit and author-facing command. Each entry has a marker.
     widget should do with it.
   - **Order:** `not-granted` comes first in every error type.
   - **Sources:** apply the `docs` outcomes of `review.md`.
-- [ ] T022 [P] [US3] Write `docs/authors/reference/errors.md` (FR-011). For each of the 36 kinds
+- [X] T022 [P] [US3] Write `docs/authors/reference/errors.md` (FR-011). For each of the 36 kinds
   of `ErrorKind::ALL`:
   - the marker `<!-- ref: error <name> -->`;
   - the line as the CLI prints it (`error: <name>: …`), its cause, and its fix;
   - a `console check` example where `my-widget/`, the copy of the walkthrough's crate the runner
     gives reference pages, can trigger it without a service.
-- [ ] T023 [P] [US3] Write `docs/authors/reference/manifest.md` (FR-012): every field path of
+- [X] T023 [P] [US3] Write `docs/authors/reference/manifest.md` (FR-012): every field path of
   `wit/manifest.schema.json` (`[]` for array items), with the marker `<!-- ref: manifest <path> -->`,
   what it accepts, whether it is required, and what it changes at approval. `login_providers` is
   obsolete, accepted and grants nothing.
-- [ ] T024 [P] [US3] Write `docs/authors/reference/connector-format.md` (FR-012): every field path
+- [X] T024 [P] [US3] Write `docs/authors/reference/connector-format.md` (FR-012): every field path
   of `wit/connector.schema.json`, `$defs` resolved where they are referenced, with the marker
   `<!-- ref: connector <path> -->`, what it accepts and whether it is required.
-- [ ] T025 [P] [US3] Write `docs/authors/reference/limits.md` (FR-012):
+- [X] T025 [P] [US3] Write `docs/authors/reference/limits.md` (FR-012):
   - One table row per field of `Limits` (44): the name, the default and the error past it.
   - Each row ends with `<!-- ref: limit <field> -->`.
   - The second cell is the default in the format of `contracts/docs-format.md` (`10 MiB`,
     `64 KiB`, `1 s`, `500 ms`, `500,000,000`, `30 per minute`).
-- [ ] T026 [P] [US3] Write `docs/authors/reference/cli.md` (FR-013):
+- [X] T026 [P] [US3] Write `docs/authors/reference/cli.md` (FR-013):
   - **Commands:** each command and option an author uses: `pack`, `permissions`, `approve`,
     `run`, `update`, `requests`, `accounts connect`, `accounts list`, `accounts disconnect`,
     `optional`, `remove`, `storage list`, `storage show`, `storage clear` and `check-connector`,
@@ -453,7 +453,7 @@ limit and author-facing command. Each entry has a marker.
     accounts guide (US5).
   - **Escaping:** one example with a manifest whose `name` holds control characters shows the
     escaped text exactly as the CLI prints it.
-- [ ] T027 [US3] Run the runner on `docs/authors/reference/` and fix every page until its checked
+- [X] T027 [US3] Run the runner on `docs/authors/reference/` and fix every page until its checked
   blocks pass.
 
 **Checkpoint**: every fact an author looks up is in the reference (FR-015). US4's drift test

@@ -19,7 +19,7 @@ entry's row. Kinds and ids:
 | `wit` | `<world>`, `<interface>`, `<interface>/<function>`, `<interface>/<type>`, `<interface>/<type>/<case or field>` | `wit connectors/call-error/not-granted` |
 | `error` | the name `ErrorKind::as_str` returns | `error capability-refused` |
 | `manifest` | a field's path in `manifest.schema.json`, `[]` for array items | `manifest connectors[]/account` |
-| `connector` | a field's path in `connector.schema.json` | `connector operations[]/kind` |
+| `connector` | a field's path in `connector.schema.json`, `*` for the keys of a map | `connector operations/*/kind` |
 | `limit` | the field's name in `Limits` | `limit max_package_bytes` |
 | `cli` | `<command>` or `<command> <option>`, as `runtime::cli::USAGE` lists them (not `bench`) | `cli accounts connect --no-browser` |
 
@@ -75,6 +75,8 @@ name = "my-widget"
 - A page whose front matter comment says `<!-- check: service=github,notes -->` runs its
   `runtime` commands through the test-only CLI, with those test services started, and has its
   accounts disconnected after it (R9). Services are declared only there, never on a block.
+- `DASHBOARD_DOCS_WALK_PAGES=<start>[,<start>…]` runs only the pages whose path under
+  `docs/authors/` starts with one of them, for a contributor checking one page.
 - Blocks without `check` are not run; the walkthrough and the guides may use them only for text
   that is not a command or a file (such as a widget's JSON content shown inline).
 
