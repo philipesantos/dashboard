@@ -666,7 +666,7 @@ the older pages point to the new docs.
 - [X] T043 [P] [US6] Remove `login_providers` from the 16 manifests under `plugins/` that carry
   it (research R14). Keep the field in the tests that check it: `manifest_schema.rs`, `cli.rs` and
   `tests/common`. Run `cargo xtask plugins --locked` and `cargo test --workspace --locked`.
-- [ ] T044 [P] [US6] Update `plugins/examples/README.md` (FR-022, FR-023):
+- [X] T044 [P] [US6] Update `plugins/examples/README.md` (FR-022, FR-023):
   - Replace "TypeScript examples arrive in feature 006" with "TypeScript plugins arrive in
     Phase 5".
   - Point each example to its guide.
