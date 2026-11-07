@@ -28,3 +28,4 @@ Performance Goals).
 
 | run | Linux | macOS | Windows |
 | --- | --- | --- | --- |
+| [42410269814](https://github.com/philipesantos/dashboard/actions/runs/42410269814), PR #11 at f574207 | 6m50s | 7m54s | 11m49s |

@@ -720,7 +720,7 @@ the older pages point to the new docs.
     tree mounted and git's `insteadOf` sending the clone to it.
   - Tell it to follow only `docs/authors/` and to read no code or spec.
   - Record each stuck point and its fix in `walks.md`, and repeat until a walk has none.
-- [ ] T051 Only once the maintainer has pushed and opened the pull request, as they ask: record in
+- [X] T051 Only once the maintainer has pushed and opened the pull request, as they ask: record in
   `walks.md` the docs job's time on each system from the first run. If any system goes over 25
   minutes, bring it to the maintainer before going on.
 - [X] T052 The maintainer's walk (SC-001, research R17): the maintainer follows
