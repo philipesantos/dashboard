@@ -1,0 +1,48 @@
+# Spike: only the Windows binary of the GPUI spike with the check scripts, fast (no LTO, no
+# tests, no measurement), for testing by hand. Runs when this file changes on spike/gpui.
+name: Spike GPUI, Windows binary only
+
+on:
+  push:
+    branches: [spike/gpui]
+    paths: [".github/workflows/spike-gpui-windows-quick.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      # Faster than the release profile; enough for testing by hand
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Build the plugins and the spike
+        run: |
+          cargo xtask plugins --locked
+          cargo run --locked --manifest-path spikes/gpui/Cargo.toml -p pack -- --locked
+          cargo build --release --locked --manifest-path spikes/gpui/Cargo.toml -p dashboard-gpui-spike
+          mkdir artifact
+          cp spikes/gpui/target/release/dashboard-gpui-spike.exe spikes/gpui/scripts/windows-check.ps1 \
+            spikes/gpui/scripts/measure-windows.ps1 spikes/gpui/scripts/run-check.cmd artifact/
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gpui-spike-Windows-quick
+          path: artifact/
+          retention-days: 30
