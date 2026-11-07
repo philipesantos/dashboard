@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["app/src-tauri", "bench", "runtime", "xtask"]
+members = ["bench", "runtime", "xtask"]
 # Guest crates build for WebAssembly in their own workspace (cargo xtask plugins); the crate the
 # authors' walkthrough builds is kept beside its page for cargo audit and cargo deny
 exclude = ["plugins", "docs/authors/getting-started"]
@@ -14,7 +14,8 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 
-# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+# Release builds favor a small, fast binary over build time: one codegen unit, fat LTO, abort on
+# panic, symbols stripped.
 [profile.release]
 codegen-units = 1
 lto = true
