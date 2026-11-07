@@ -65,7 +65,9 @@ Install `cargo audit` and `cargo deny` with `cargo install --locked cargo-audit 
 The runtime's integration tests build as one executable, `runtime/tests/it.rs`, since each
 executable links the whole runtime (about 100 MB in a debug build). Each file in `runtime/tests/`
 is a module of it: a new file goes in with `mod <name>;` there, and a test fails until it does.
-Run one file's tests with `cargo test -p runtime --test it <file>::`.
+Run one file's tests with `cargo test -p runtime --test it <file>::`. When the disk fills up,
+`cargo xtask clean-space` removes the incremental caches, the executables a newer build replaced
+and `plugins/target/`, without a full rebuild.
 
 ### The docs for authors
 
