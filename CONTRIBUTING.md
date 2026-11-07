@@ -20,21 +20,17 @@ You need:
 
 - Rust (stable), installed with [rustup](https://rustup.rs/), with the WebAssembly targets
   plugins build for: `rustup target add wasm32-unknown-unknown wasm32-wasip2`
-- Node.js 24 or newer
-- [pnpm](https://pnpm.io/installation) 12 (the exact version is pinned in `package.json`)
-- The [Tauri system prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
-  On Debian or Ubuntu:
+- On Linux, the packages the secrets vault builds with. On Debian or Ubuntu:
 
   ```bash
-  sudo apt-get install libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-    libayatana-appindicator3-dev librsvg2-dev
+  sudo apt-get install libdbus-1-dev pkg-config
   ```
 
-Then, from the repository root:
+Then, from the repository root, build the plugins and check everything:
 
 ```bash
-pnpm install
-pnpm tauri dev
+cargo xtask plugins
+cargo check --workspace
 ```
 
 See the [README](README.md) for the repository layout.
@@ -49,7 +45,6 @@ session bus of their own, as CI does:
 
 
 ```bash
-pnpm --filter ./app build                                      # UI type-check and build
 cargo xtask plugins --locked                                   # the plugins the tests load
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo clippy --manifest-path plugins/Cargo.toml --target wasm32-unknown-unknown \
