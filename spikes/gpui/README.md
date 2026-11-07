@@ -83,6 +83,11 @@ and start it from a terminal.
 | `SPIKE_REQUEST_ADD=<entry>` | Asks to add a catalog entry at start (`hello`, `sampler`, `overflow`, `spoof`, `password`, `host-color`), so the approval dialog opens. |
 | `RUST_LOG=gpui_wgpu=info` | Shows which graphics adapter and backend GPUI picked. |
 
+`scripts/linux-gpu-check.sh <binary>` runs the Linux GPU matrix on one machine in one command:
+the GPU, the adapter GPUI picks on Wayland, X11 and X11 without Vulkan, startup, memory, idle
+CPU, and the drag benchmark in GPUI and in WebKitGTK (`scripts/webkitgtk-bench.py`, Tauri's
+engine on Linux, on the same dashboard as a web page).
+
 `scripts/measure-linux.sh` and `scripts/measure-windows.ps1` measure any app the same way (time
 until the window appears, memory over the whole process tree, idle CPU), so the Tauri app is
 measured with the same scripts.

@@ -1,0 +1,59 @@
+== gpui-spike-Linux-gpui-fast/
+release-gpui-fast clean_s=779 incremental_s=315.2
+debug-gpui-fast clean_s=227 incremental_s=3.7
+binary-gpui-fast bytes=43959560
+gpui-gpui-fast window_ms=967 pss_mib=189.4 rss_mib=194.7 idle_cpu=0.7% processes=1
+[2026-11-07T15:13:42Z INFO  gpui_wgpu::wgpu_context] Selected GPU adapter: "llvmpipe (LLVM 20.1.2, 256 bits)" (Vulkan)
+spike: first frame presented 277 ms after start
+== gpui-spike-Linux-gpui-pre/
+release-gpui-pre clean_s=684 incremental_s=292.2
+debug-gpui-pre clean_s=204 incremental_s=3.4
+binary-gpui-pre bytes=42474888
+gpui-gpui-pre window_ms=199 pss_mib=179.6 rss_mib=185.0 idle_cpu=0.4% processes=1
+[2026-11-07T15:10:42Z INFO  gpui_wgpu::wgpu_context] Selected GPU adapter: "llvmpipe (LLVM 20.1.2, 256 bits)" (Vulkan)
+spike: first frame presented 225 ms after start
+== gpui-spike-macOS-gpui-fast/
+release-gpui-fast clean_s=751 incremental_s=248.8
+debug-gpui-fast clean_s=224 incremental_s=5.5
+binary-gpui-fast bytes= 21475760
+gpui-gpui-fast rss_mib=87.1 cpu=  1.1
+spike: first frame presented 2848 ms after start
+== gpui-spike-macOS-gpui-pre/
+release-gpui-pre clean_s=737 incremental_s=262.5
+debug-gpui-pre clean_s=284 incremental_s=5.6
+binary-gpui-pre bytes= 20417616
+gpui-gpui-pre rss_mib=86.5 cpu=  0.0
+spike: first frame presented 2748 ms after start
+== gpui-spike-Windows-gpui-fast/
+release-gpui-fast clean_s=780 incremental_s=325.6
+debug-gpui-fast clean_s=215 incremental_s=6.2
+binary-gpui-fast bytes=26953728
+gpui-gpui-fast window_ms=278 working_set_mib=70.2 private_mib=48.7 idle_cpu=0.0% processes=2
+spike: first frame presented 178 ms after start
+== gpui-spike-Windows-gpui-pre/
+release-gpui-pre clean_s=729 incremental_s=296.9
+debug-gpui-pre clean_s=204 incremental_s=6.0
+binary-gpui-pre bytes=25594368
+gpui-gpui-pre window_ms=281 working_set_mib=65.7 private_mib=43.7 idle_cpu=0.6% processes=2
+spike: first frame presented 172 ms after start
+== tauri-baseline-Linux/
+frontend build_s=3.0
+release-tauri clean_s=236 incremental_s=79.6
+debug-tauri clean_s=90 incremental_s=4.2
+binary-tauri bytes=6185664
+binary-runtime-cli bytes=17989768
+tauri-webkitgtk window_ms=360 pss_mib=58.6 rss_mib=86.3 idle_cpu=0.0% processes=1
+tauri-webkitgtk-nodmabuf window_ms=87 pss_mib=58.8 rss_mib=86.4 idle_cpu=0.0% processes=1
+== tauri-baseline-macOS/
+frontend build_s=3.6
+release-tauri clean_s=221 incremental_s=108.1
+debug-tauri clean_s=74 incremental_s=7.0
+binary-tauri bytes= 4191392
+binary-runtime-cli bytes= 12057664
+== tauri-baseline-Windows/
+frontend build_s=5.5
+release-tauri clean_s=326 incremental_s=129.8
+debug-tauri clean_s=133 incremental_s=7.8
+binary-tauri bytes=4544000
+binary-runtime-cli bytes=15810048
+tauri-webview2 window_ms=94 working_set_mib=318.9 private_mib=113.2 idle_cpu=0.3% processes=7
