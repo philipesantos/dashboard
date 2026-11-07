@@ -28,7 +28,7 @@ Phase 3.
 
 ## Contributing a connector
 
-[`docs/connectors.md`](../docs/connectors.md) explains the format and how to test a connector
+[Writing connectors](../docs/authors/guides/writing-connectors.md) explains the format and how to test a connector
 against your own service first, as a local connector. To propose one for the catalog, add
 `catalog/<name>.json` with the id `catalog/<name>` and the whole domains of its service in
 `reserves`, add it to the list in `runtime/src/catalog.rs`, and say in the pull request why each

@@ -49,7 +49,9 @@ interface connectors {
   }
 
   /// A response header the operation declares; `value` is `none` when the response did not
-  /// carry it. Headers the operation does not declare never reach the plugin.
+  /// carry it. A header the response repeats arrives as its values joined with `, `, and bytes
+  /// that are not UTF-8 are replaced. Headers the operation does not declare never reach the
+  /// plugin.
   record header {
     name: string,
     value: option<string>,
@@ -68,7 +70,8 @@ interface connectors {
   enum rule {
     /// The manifest does not declare this operation for this connector.
     operation-not-declared,
-    /// An argument is unknown, repeated, missing or outside its parameter's type.
+    /// An argument is unknown, repeated, missing or outside its parameter's type, or the call
+    /// passes more arguments than the limit.
     value-outside-type,
     /// The call came from `render`; connectors are called only in `update`.
     called-outside-update,
@@ -78,9 +81,11 @@ interface connectors {
     over-limit,
     /// The destination's name led only to addresses that are not public.
     non-public-address,
-    /// The service redirected to a destination the connector does not declare.
+    /// The service redirected to a destination the connector does not declare, to one whose
+    /// name leads only to addresses that are not public, or more times than the limit.
     redirect-not-allowed,
-    /// The request could not complete: name resolution, connection or certificate.
+    /// The request could not complete: name resolution, connection or certificate; through
+    /// `accounts`, also the system's keychain or a stored credential the host cannot send.
     unavailable,
     /// The response is not in the format the operation declares.
     invalid-response,
@@ -94,11 +99,13 @@ interface connectors {
 
   variant call-error {
     /// The connector is an optional permission the user has not turned on, its approval was
-    /// removed, or the manifest does not declare it: nothing was sent.
+    /// removed, or the manifest does not declare it: nothing was sent, or, when the approval was
+    /// removed while the request was in flight, the response was dropped.
     not-granted,
     /// The host refused the call before sending anything.
     refused(problem),
-    /// The request was attempted and produced no response for the plugin.
+    /// The call could not complete and no response reached the plugin: the request failed, or
+    /// the host stopped it before sending, such as when the update's time ran out.
     failed(problem),
   }
 
@@ -119,22 +126,28 @@ interface accounts {
   use connectors.{argument, response, problem};
 
   variant account-call-error {
-    /// The connector is an optional permission the user has not turned on, its approval (or its
-    /// approval to use the account) was removed, or the manifest does not declare it with an
-    /// account: nothing was sent.
+    /// The connector is an optional permission the user has not turned on, its approval was
+    /// removed, or the manifest does not declare it with an account: nothing was sent, or, when
+    /// the approval was removed while the request was in flight, the response was dropped.
     not-granted,
-    /// The host refused the call before sending anything.
+    /// The host refused the call before sending it; a token refresh of the host's own may have
+    /// gone first.
     refused(problem),
-    /// The request was attempted and produced no response for the plugin. A response that
-    /// carried the credential back is `invalid-response`.
+    /// The call could not complete and no response reached the plugin: the request failed, or
+    /// the host stopped it before sending, such as when the keychain could not be read. A
+    /// response that carried the credential back is `invalid-response`.
     failed(problem),
     /// No account is connected to the connector and its credential is required, or the account
     /// must be connected again: the service refused it, it could not be refreshed, or the
     /// connector now asks for more access than it holds. Nothing was sent, or the response was
-    /// dropped. Only the user can connect an account, in the host's controls.
+    /// dropped. Only the user can connect an account, in the host's controls. Also when the
+    /// service refused this one request as unauthorized even after a refresh, while the account
+    /// still works for its identity operation: then the account needs nothing, and other
+    /// operations may work; and when the host cannot read its record of accounts.
     account-not-connected,
-    /// The service answered that the account lacks a paid plan this operation needs, with a
-    /// status the connector declares as meaning that. The response was dropped.
+    /// The service answered, with a status the connector declares as meaning that, that a paid
+    /// plan this operation needs is missing; this applies to a request sent without an account
+    /// too. The response was dropped.
     subscription-required,
   }
 
@@ -142,6 +155,9 @@ interface accounts {
   /// `arguments`. When no account was connected as the host loaded the plugin and the
   /// connector's credential is optional, the request goes without one. One call at a time; the
   /// host follows allowed redirects itself and refreshes an expired token at most once per call.
+  /// When the service answers 401, the host refreshes the token and sends the request once more,
+  /// then may call the connector's identity operation to tell whether the account still works;
+  /// all of that is one call for the limits.
   call: func(connector: string, operation: string, arguments: list<argument>)
     -> result<response, account-call-error>;
 }
@@ -151,7 +167,10 @@ interface accounts {
 /// a file or a place, and no plugin reaches another's. Names are any non-empty text up to 256
 /// bytes in UTF-8, compared and sorted as bytes; values are bytes, up to 256 KiB. Reads work in
 /// `render` and `update`; writes only in `update`, and they are kept together only when `update`
-/// returns `ok`. New in 1.2.0.
+/// returns `ok` with data the host keeps. In `update`, the first call opens the store for
+/// writing; when it cannot (`busy`, `damaged`, `unavailable`), that call answers so and every
+/// later call of the run answers `run-aborted`: the run reads and writes nothing, and what
+/// `update` returns stands. New in 1.2.0.
 interface storage {
   /// The rule behind a call that was refused or failed.
   enum rule {
@@ -174,7 +193,9 @@ interface storage {
     /// cannot be written, such as a read-only file. A full disk answers `over-limit`.
     unavailable,
     /// An earlier call of this run failed in a way that ended its transaction, such as reaching
-    /// the store's file size: nothing was done, and nothing this run wrote will be kept.
+    /// the store's file size: nothing was done, and nothing this run wrote will be kept, and the
+    /// update fails. Or an earlier call of `update` could not open the store: nothing was done,
+    /// and the run reads and writes nothing more.
     run-aborted,
   }
 
@@ -228,7 +249,9 @@ interface renderer {
   /// For a plugin that also exports `updater`, `config` is
   /// `{"config": <the widget's configuration>, "data": <the last data update returned, or
   /// null>, "fetched_at_ms": <when, or null>, "last_update": null | {"at_ms": …, "outcome":
-  /// "ok" | "failed", "error": "<kind>: <detail>"}}`. Render never waits on the network.
+  /// "ok" | "failed", "error": "<kind>: <detail>"}}`, with `error` only when the outcome is
+  /// `failed`, and the configuration as JSON, or as a JSON string of its text when it is not
+  /// JSON. Render never waits on the network.
   render: func(config: string) -> result<string, string>;
 }
 
@@ -237,7 +260,9 @@ interface renderer {
 interface updater {
   /// `config` is the widget's configuration, chosen by the host. On success the plugin
   /// returns its data as a JSON document of at most 256 KiB, which the host keeps and gives to
-  /// `render`; on failure, a message for the maintainer, and the host keeps the previous data.
+  /// `render`, unless a write of the run failed and ended its transaction (storage
+  /// `run-aborted`), which fails the update; on failure, a message for the maintainer, and the
+  /// host keeps the previous data.
   update: func(config: string) -> result<string, string>;
 }
 

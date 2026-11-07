@@ -969,3 +969,30 @@ fn vault_order() {
         "{accounts:?}"
     );
 }
+
+/// The sign-in page over HTTP connects an account as the in-process browser does, for a
+/// browser in another process: the test-only CLI's, which follows it through the seam
+/// (`specs/006-contract-v1-docs/research.md`, R9).
+#[test]
+fn the_sign_in_page_over_http_connects_an_account() {
+    let pki = TestPki::new();
+    let service = SignInService::start(&pki);
+    let test = runtime::TestNetwork {
+        routes: vec![service.route()],
+        public_for_tests: vec![service.server.address()],
+        root: pki.root(),
+        catalog: Vec::new(),
+    };
+    let world = World::seam(test.clone(), true);
+    world.write_connector("notes", &serde_json::from_str(NOTES).unwrap());
+    let follow = |address: &url::Url| {
+        runtime::follow_test_sign_in(&test, address.as_str()).expect("the page is followed")
+    };
+    let connected = world
+        .runtime
+        .connect_account("local/notes", Some("dashboard-dev"), &follow)
+        .unwrap_or_else(|error| panic!("signing in: {error}"));
+    assert!(matches!(connected, Connected::New(_)), "{connected:?}");
+    assert_eq!(service.requests_to("/oauth/authorize").len(), 1);
+    Setup { service, world }.scan(&[("the sign-in", format!("{connected:?}"))]);
+}

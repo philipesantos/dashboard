@@ -5,141 +5,121 @@ use std::fmt;
 
 use crate::text;
 
-/// The rule behind a [`RuntimeError`]. The names are part of the CLI contract
-/// (`specs/001-plugin-runtime/contracts/cli.md`, `specs/002-plugin-permissions/contracts/cli.md`,
-/// `specs/003-plugin-connectors/contracts/cli.md`, `specs/005-plugin-credentials/contracts/cli.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorKind {
-    /// Not a WebAssembly component, corrupted, or larger than the package limit.
-    InvalidPackage,
-    /// Implements no contract version the host runs, or imports from another version than the
-    /// one it implements, including a newer minor version.
-    ContractMismatch,
-    /// Imports something the host does not offer.
-    CapabilityRefused,
-    /// The package has no manifest section.
-    NoManifest,
-    /// The package has more than one manifest section, or one inside a nested module or
-    /// component; or `pack` was given a component that already has one.
-    ManifestMismatch,
-    /// The manifest is too large, not JSON, or breaks the schema.
-    InvalidManifest,
-    /// The manifest requests a permission this host does not know.
-    UnknownPermission,
-    /// A contract v0 plugin marks a permission optional, which only v1 can answer.
-    OptionalNeedsV1,
-    /// The component imports a capability its manifest does not declare.
-    NotDeclared,
-    /// The plugin has no approval for this package, or the grant record cannot be read.
-    NotGranted,
-    /// An earlier version was approved, and this one requires permissions not granted.
-    NeedsNewApproval,
-    /// A required permission was turned on or off alone: required permissions change only
-    /// together.
-    RequiredTogether,
-    /// Ran out of fuel, the CPU budget.
-    CpuBudgetExceeded,
-    /// Hit the wall-clock time limit.
-    TimeLimitExceeded,
-    /// Tried to grow memory beyond the cap.
-    MemoryLimitExceeded,
-    /// Any other trap.
-    PluginCrashed,
-    /// `render` returned an error.
-    PluginError,
-    /// The widget content is not valid JSON.
-    InvalidOutput,
-    /// The widget content exceeds the size cap.
-    OutputTooLarge,
-    /// A connector file is too large, not JSON, or breaks the connector schema or a rule of the
-    /// host.
-    InvalidConnector,
-    /// A connector declares a credential under a field other than `credential` (`credentials`
-    /// or `auth`).
-    CredentialsNotSupported,
-    /// A connector's id names a repository, whose destinations nothing verifies yet, or is a
-    /// local id while the runtime is not in development mode.
-    DestinationNotVerified,
-    /// A connector outside the catalog claims a catalog id or a host the catalog reserves.
-    DestinationReserved,
-    /// A declared connector is not found, has another major version, or lacks an operation the
-    /// widget declares.
-    ConnectorUnavailable,
-    /// A widget declares a connector or storage but is built for a contract older than the one
-    /// that added it (1.1.0 and 1.2.0).
-    ContractTooOld,
-    /// A widget declares a connector or storage but exports no `updater`, or `update` was asked
-    /// of a widget without one.
-    MissingUpdater,
-    /// An approval was given the digest of something other than what it would approve now.
-    ApprovalChanged,
-    /// An update's storage could not be committed (busy, damaged, unavailable, the file cap, or
-    /// a run an earlier failure ended), or required storage is unavailable at load.
-    StorageFailed,
-    /// A connector that declares a credential has a destination without HTTPS: only a connector
-    /// that sends no credential may go without it.
-    CredentialNeedsHttps,
-    /// A widget declares a connector whose credential is required without `"account": true`.
-    AccountUseNotDeclared,
-    /// A sign-in ended without connecting an account: a wrong or missing state, a code already
-    /// used, the time limit, a token outside the bearer-token set, or the service's error.
-    SignInFailed,
-    /// Another account, or another key, is connected to the connector: disconnect it first.
-    AnotherAccountConnected,
-    /// A key typed for a connector is empty, too long or holds a character a bearer token
-    /// cannot.
-    KeyRefused,
-    /// The system's keychain is locked, missing or did not answer in time.
-    KeychainUnavailable,
-    /// A connector's account needs a client registration the host has none of; `--client`
-    /// gives one in development.
-    NoClientConfigured,
-    /// No account is connected to the connector, or it must be connected again.
-    AccountNotConnected,
+/// Declares [`ErrorKind`], its names and [`ErrorKind::ALL`] from one list, so no kind can exist
+/// outside `ALL` (`specs/006-contract-v1-docs/research.md`, R7).
+macro_rules! error_kinds {
+    ($($(#[$doc:meta])* $kind:ident => $name:literal,)*) => {
+        /// The rule behind a [`RuntimeError`]. The names are part of the CLI contract
+        /// (`specs/001-plugin-runtime/contracts/cli.md`,
+        /// `specs/002-plugin-permissions/contracts/cli.md`,
+        /// `specs/003-plugin-connectors/contracts/cli.md`,
+        /// `specs/005-plugin-credentials/contracts/cli.md`).
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum ErrorKind {
+            $($(#[$doc])* $kind,)*
+        }
+
+        impl ErrorKind {
+            /// Every kind, in the order they are declared.
+            pub const ALL: &'static [ErrorKind] = &[$(ErrorKind::$kind,)*];
+
+            /// The kind's name, as the CLI prints it.
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(ErrorKind::$kind => $name,)*
+                }
+            }
+        }
+    };
 }
 
-impl ErrorKind {
-    /// The kind's name, as the CLI prints it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ErrorKind::InvalidPackage => "invalid-package",
-            ErrorKind::ContractMismatch => "contract-mismatch",
-            ErrorKind::CapabilityRefused => "capability-refused",
-            ErrorKind::NoManifest => "no-manifest",
-            ErrorKind::ManifestMismatch => "manifest-mismatch",
-            ErrorKind::InvalidManifest => "invalid-manifest",
-            ErrorKind::UnknownPermission => "unknown-permission",
-            ErrorKind::OptionalNeedsV1 => "optional-needs-v1",
-            ErrorKind::NotDeclared => "not-declared",
-            ErrorKind::NotGranted => "not-granted",
-            ErrorKind::NeedsNewApproval => "needs-new-approval",
-            ErrorKind::RequiredTogether => "required-together",
-            ErrorKind::CpuBudgetExceeded => "cpu-budget-exceeded",
-            ErrorKind::TimeLimitExceeded => "time-limit-exceeded",
-            ErrorKind::MemoryLimitExceeded => "memory-limit-exceeded",
-            ErrorKind::PluginCrashed => "plugin-crashed",
-            ErrorKind::PluginError => "plugin-error",
-            ErrorKind::InvalidOutput => "invalid-output",
-            ErrorKind::OutputTooLarge => "output-too-large",
-            ErrorKind::InvalidConnector => "invalid-connector",
-            ErrorKind::CredentialsNotSupported => "credentials-not-supported",
-            ErrorKind::DestinationNotVerified => "destination-not-verified",
-            ErrorKind::DestinationReserved => "destination-reserved",
-            ErrorKind::ConnectorUnavailable => "connector-unavailable",
-            ErrorKind::ContractTooOld => "contract-too-old",
-            ErrorKind::MissingUpdater => "missing-updater",
-            ErrorKind::ApprovalChanged => "approval-changed",
-            ErrorKind::StorageFailed => "storage-failed",
-            ErrorKind::CredentialNeedsHttps => "credential-needs-https",
-            ErrorKind::AccountUseNotDeclared => "account-use-not-declared",
-            ErrorKind::SignInFailed => "sign-in-failed",
-            ErrorKind::AnotherAccountConnected => "another-account-connected",
-            ErrorKind::KeyRefused => "key-refused",
-            ErrorKind::KeychainUnavailable => "keychain-unavailable",
-            ErrorKind::NoClientConfigured => "no-client-configured",
-            ErrorKind::AccountNotConnected => "account-not-connected",
-        }
-    }
+error_kinds! {
+    /// Not a WebAssembly component, corrupted, or larger than the package limit.
+    InvalidPackage => "invalid-package",
+    /// Implements no contract version the host runs, or imports from another version than the
+    /// one it implements, including a newer minor version.
+    ContractMismatch => "contract-mismatch",
+    /// Imports something the host does not offer.
+    CapabilityRefused => "capability-refused",
+    /// The package has no manifest section.
+    NoManifest => "no-manifest",
+    /// The package has more than one manifest section, or one inside a nested module or
+    /// component; or `pack` was given a component that already has one.
+    ManifestMismatch => "manifest-mismatch",
+    /// The manifest is too large, not JSON, or breaks the schema.
+    InvalidManifest => "invalid-manifest",
+    /// The manifest requests a permission this host does not know.
+    UnknownPermission => "unknown-permission",
+    /// A contract v0 plugin marks a permission optional, which only v1 can answer.
+    OptionalNeedsV1 => "optional-needs-v1",
+    /// The component imports a capability its manifest does not declare.
+    NotDeclared => "not-declared",
+    /// The plugin has no approval for this package, or the grant record cannot be read.
+    NotGranted => "not-granted",
+    /// An earlier version was approved, and this one requires permissions not granted.
+    NeedsNewApproval => "needs-new-approval",
+    /// A required permission was turned on or off alone: required permissions change only
+    /// together.
+    RequiredTogether => "required-together",
+    /// Ran out of fuel, the CPU budget.
+    CpuBudgetExceeded => "cpu-budget-exceeded",
+    /// Hit the wall-clock time limit.
+    TimeLimitExceeded => "time-limit-exceeded",
+    /// Tried to grow memory beyond the cap.
+    MemoryLimitExceeded => "memory-limit-exceeded",
+    /// Any other trap.
+    PluginCrashed => "plugin-crashed",
+    /// `render` returned an error.
+    PluginError => "plugin-error",
+    /// The widget content is not valid JSON.
+    InvalidOutput => "invalid-output",
+    /// The widget content exceeds the size cap.
+    OutputTooLarge => "output-too-large",
+    /// A connector file is too large, not JSON, or breaks the connector schema or a rule of the
+    /// host.
+    InvalidConnector => "invalid-connector",
+    /// A connector declares a credential under a field other than `credential` (`credentials`
+    /// or `auth`).
+    CredentialsNotSupported => "credentials-not-supported",
+    /// A connector's id names a repository, whose destinations nothing verifies yet, or is a
+    /// local id while the runtime is not in development mode.
+    DestinationNotVerified => "destination-not-verified",
+    /// A connector outside the catalog claims a catalog id or a host the catalog reserves.
+    DestinationReserved => "destination-reserved",
+    /// A declared connector is not found, has another major version, or lacks an operation the
+    /// widget declares.
+    ConnectorUnavailable => "connector-unavailable",
+    /// A widget declares a connector or storage but is built for a contract older than the one
+    /// that added it (1.1.0 and 1.2.0).
+    ContractTooOld => "contract-too-old",
+    /// A widget declares a connector or storage but exports no `updater`, or `update` was asked
+    /// of a widget without one.
+    MissingUpdater => "missing-updater",
+    /// An approval was given the digest of something other than what it would approve now.
+    ApprovalChanged => "approval-changed",
+    /// An update's storage could not be committed (busy, damaged, unavailable, the file cap, or
+    /// a run an earlier failure ended), or required storage is unavailable at load.
+    StorageFailed => "storage-failed",
+    /// A connector that declares a credential has a destination without HTTPS: only a connector
+    /// that sends no credential may go without it.
+    CredentialNeedsHttps => "credential-needs-https",
+    /// A widget declares a connector whose credential is required without `"account": true`.
+    AccountUseNotDeclared => "account-use-not-declared",
+    /// A sign-in ended without connecting an account: a wrong or missing state, a code already
+    /// used, the time limit, a token outside the bearer-token set, or the service's error.
+    SignInFailed => "sign-in-failed",
+    /// Another account, or another key, is connected to the connector: disconnect it first.
+    AnotherAccountConnected => "another-account-connected",
+    /// A key typed for a connector is empty, too long or holds a character a bearer token
+    /// cannot.
+    KeyRefused => "key-refused",
+    /// The system's keychain is locked, missing or did not answer in time.
+    KeychainUnavailable => "keychain-unavailable",
+    /// A connector's account needs a client registration the host has none of; `--client`
+    /// gives one in development.
+    NoClientConfigured => "no-client-configured",
+    /// No account is connected to the connector, or it must be connected again.
+    AccountNotConnected => "account-not-connected",
 }
 
 impl fmt::Display for ErrorKind {
@@ -278,6 +258,14 @@ mod tests {
         for (kind, name) in kinds {
             assert_eq!(kind.as_str(), name);
         }
+    }
+
+    #[test]
+    fn all_lists_every_kind_once() {
+        let names: std::collections::BTreeSet<&str> =
+            ErrorKind::ALL.iter().map(|kind| kind.as_str()).collect();
+        assert_eq!(ErrorKind::ALL.len(), 36);
+        assert_eq!(names.len(), ErrorKind::ALL.len());
     }
 
     #[test]

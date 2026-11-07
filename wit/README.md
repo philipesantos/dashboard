@@ -12,12 +12,14 @@ manifest schema. Everything here is security core (constitution, Principle IX).
   `stored-widget`, which writes its own store in `update` and reads it in `render`;
   `connected-stored-widget`, which does both; `account-widget`, which also calls connectors as
   the user's account; and `account-stored-widget`, which does all of it, the world the host
-  binds. New plugins build against it.
+  binds. It is 1.3.0 as frozen under `history/1.3.0`, byte for byte, and
+  `runtime/tests/contract_v1.rs` fails the build when they differ. New plugins bind their own
+  copy of `history/1.3.0` ([the walkthrough](../docs/authors/getting-started.md)).
 - [`v0/widget.wit`](v0/widget.wit): plugin contract v0 (`dashboard:widget@0.1.0`), from
   [feature 001](../specs/001-plugin-runtime/spec.md). The host keeps running v0 plugins, with
   `log` required.
-- [`history/`](history): published versions, one directory each (`1.0.0`, `1.1.0`, `1.2.0`), frozen and
-  never edited; `runtime/tests/contract_v1.rs` pins each by its SHA-256. Plugins that build
+- [`history/`](history): published versions, one directory each (`1.0.0`, `1.1.0`, `1.2.0`,
+  `1.3.0`), frozen and never edited; `runtime/tests/contract_v1.rs` pins each by its SHA-256. Plugins that build
   against an older minor version, and the test that a new minor version only adds, read them
   from here.
 - [`manifest.schema.json`](manifest.schema.json): the JSON Schema (draft 2020-12) of the plugin
@@ -28,10 +30,27 @@ manifest schema. Everything here is security core (constitution, Principle IX).
   declaration of a service's operations that the host runs for widgets, and of the credential
   they need, which the host adds itself. The host's connector
   parser and this schema are tested to agree too, with the rules only the host can check listed
-  apart; [`docs/connectors.md`](../docs/connectors.md) explains the format.
+  apart; [writing connectors](../docs/authors/guides/writing-connectors.md) explains the format.
 
 The host and every plugin build from these files; they are the only copies. A change to a
-published version is a new version.
+published version is a new version. What each interface, function, type and case means, and what
+a widget should do with each answer, is in [the reference for authors](../docs/authors/reference/contract.md).
+
+## How v1 changes from now on
+
+Contract 1.3.0 was reviewed against the host and the docs before it was frozen
+([feature 006](../specs/006-contract-v1-docs/review.md)). From here, v1 changes only by a new
+minor that only adds:
+
+1. Freeze the current version first: copy `v1/widget.wit` unchanged to
+   `history/<version>/widget.wit`, pin its SHA-256 in `frozen_contracts` in
+   `runtime/tests/contract_v1.rs`, and point the plugins that build against it to the frozen copy.
+2. Raise the minor in `v1/widget.wit` and add what the new minor brings, never changing what is
+   there; a doc comment is corrected only before its version is frozen.
+3. Extend the only-adds tests in `runtime/tests/contract_v1.rs` to the new minor, and add every
+   new item to the reference, which `runtime/tests/docs_reference.rs` checks.
+
+Anything else, a removed or changed definition, is a v2.
 
 ## Capabilities in v1
 
@@ -65,5 +84,5 @@ can say it uses an account.
 A plugin package is one component file. Its manifest is the JSON payload of exactly one
 top-level custom section named `dashboard-manifest`, at most 16 KiB
 ([package format](../specs/002-plugin-permissions/contracts/package.md)). `cargo xtask plugins`
-and `runtime pack` add it. [`docs/plugin-authors.md`](../docs/plugin-authors.md) explains how to
-write one.
+and `runtime pack` add it. [The manifest reference](../docs/authors/reference/manifest.md)
+lists every field.

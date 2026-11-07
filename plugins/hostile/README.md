@@ -23,7 +23,8 @@ normally. They are security test fixtures and are never shipped.
 
 The [data model](../../specs/001-plugin-runtime/data-model.md#hostile-plugin-case) is the
 source of these outcomes, and [`docs/threat-model.md`](../../docs/threat-model.md) maps them to
-threats.
+threats. What each error means for an author, and the limits behind them, are in
+[the reference for authors](../../docs/authors/reference/errors.md).
 
 Since feature 002 every crate here carries a manifest (`manifest.json`, id `local/<crate>`),
 declaring `log` as required when it logs, and each test approves it first, so the case still

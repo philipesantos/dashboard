@@ -17,6 +17,8 @@
 mod address;
 mod callback;
 mod resolver;
+#[cfg(feature = "test-network")]
+pub(crate) mod test_signin;
 
 pub(crate) use callback::Callback;
 

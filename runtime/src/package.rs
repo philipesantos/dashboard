@@ -84,6 +84,52 @@ pub fn digest(package: &[u8]) -> String {
     digest
 }
 
+/// The component of a package: `bytes` as they are when they are a component, or, when they are
+/// the core module cargo builds for `wasm32-unknown-unknown`, the component made from it with the
+/// world wit-bindgen embeds, as `cargo xtask plugins` makes it
+/// (`specs/006-contract-v1-docs/contracts/cli.md`). `name` is how the refusals call the input.
+///
+/// Refuses as `invalid-package`: a core module with no embedded world, one the encoder refuses
+/// (naming why), and a component larger than `max_bytes`. The host checks the result on load as
+/// any package.
+pub fn componentize(bytes: &[u8], name: &str, max_bytes: usize) -> Result<Vec<u8>, RuntimeError> {
+    if !Parser::is_core_wasm(bytes) {
+        return Ok(bytes.to_vec());
+    }
+    let has_world = Parser::new(0).parse_all(bytes).any(|payload| {
+        matches!(payload, Ok(Payload::CustomSection(section))
+            if section.name().starts_with("component-type"))
+    });
+    if !has_world {
+        return Err(RuntimeError::new(
+            ErrorKind::InvalidPackage,
+            format!(
+                "{name} is a core module without the contract's world (build it with wit-bindgen)"
+            ),
+        ));
+    }
+    // The encoder's cause with its context, on one line once the error is shown escaped
+    let invalid = |error: &dyn std::fmt::Display| {
+        RuntimeError::new(ErrorKind::InvalidPackage, format!("{error:#}"))
+    };
+    let component = wit_component::ComponentEncoder::default()
+        .module(bytes)
+        .map_err(|error| invalid(&error))?
+        .validate(true)
+        .encode()
+        .map_err(|error| invalid(&error))?;
+    if component.len() > max_bytes {
+        return Err(RuntimeError::new(
+            ErrorKind::InvalidPackage,
+            format!(
+                "the component made from {name} is {} bytes, over the package limit of {max_bytes}",
+                component.len()
+            ),
+        ));
+    }
+    Ok(component)
+}
+
 /// Checks `manifest` and appends it to `component` as its manifest section, at the end.
 ///
 /// Refuses an invalid manifest as `invalid-manifest` or `unknown-permission`, and a component

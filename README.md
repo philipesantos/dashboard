@@ -28,8 +28,8 @@ cargo check --workspace # check every Rust crate
 ```
 
 A plugin runs only with the permissions its manifest declares and you approve.
-[docs/plugin-authors.md](docs/plugin-authors.md) explains how to write, pack, approve and run
-one.
+[The docs for plugin authors](docs/authors/README.md) explain how to write, pack, approve and
+run one, starting from an empty folder.
 
 Recommended IDE setup: [VS Code](https://code.visualstudio.com/) with the [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) extension.
 

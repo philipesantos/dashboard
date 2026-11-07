@@ -58,6 +58,9 @@ open = { version = "5", features = ["shellexecute-on-windows"] }
 # Finds the manifest section without compiling the package. Pinned to the version Wasmtime 50
 # uses, so the build carries one copy.
 wasmparser = "=0.261.0"
+# Turns the core module cargo builds into a component in `runtime pack`: the release xtask uses
+# and wit-bindgen 0.63.0 encodes the component type with (specs/006-contract-v1-docs, R2)
+wit-component = "=0.262.0"
 # Only what the runtime needs: the Cranelift compiler, the Component Model and parallel
 # compilation, which loads a plugin about 5 times faster (hello-widget: ~100 ms → ~20 ms).
 # Default features such as GC, threads, async and stack switching are left out of the build.
@@ -79,6 +82,13 @@ apple-native-keyring-store = { version = "=1.0.2", features = ["keychain"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus-secret-service-keyring-store = { version = "=1.0.1", features = ["crypto-rust"] }
+
+# The development CLI on the test seam, for the docs runner (specs/006-contract-v1-docs/research.md,
+# R9): it builds only with test-network, which refuses release builds, so `cargo install` never
+# installs it
+[[bin]]
+name = "runtime-test-network"
+required-features = ["test-network"]
 
 [features]
 # The test seam of research R15: test routes and roots instead of DNS and Mozilla's roots.

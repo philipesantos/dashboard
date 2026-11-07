@@ -1094,6 +1094,55 @@ fn foreign_401() {
     signed.assert_well_behaved();
 }
 
+/// `foreign-401` on a key: a key has no identity operation to tell a refused key from a refused
+/// request, so a `401` answers that call only and marks nothing; another widget's call still
+/// carries the key (`specs/006-contract-v1-docs/review.md`, P1).
+#[test]
+fn foreign_401_on_a_key() {
+    let signed = Signed::new();
+    let mut keyed = notes();
+    keyed["id"] = json!("local/keyed");
+    keyed["credential"] = json!({
+        "kind": "key", "required": true, "destinations": ["api"],
+        "header": "Authorization", "scheme": "Bearer"
+    });
+    signed.world.write_connector("keyed", &keyed);
+    signed
+        .world
+        .runtime
+        .connect_key("local/keyed", "k3y-foreign-401")
+        .unwrap();
+    let declared = json!([{ "id": "local/keyed", "major": 1, "operations": ["list-notes"], "required": true, "account": true }]);
+    // The service knows no such key: it answers 401
+    let report = signed.update(
+        &probe("local/keyed-probe", declared.clone()),
+        &calls(&[("accounts", "local/keyed", "list-notes")]),
+    );
+    assert_eq!(
+        probe_answers(&report)[0]["error"],
+        json!("account-not-connected"),
+        "{report:?}"
+    );
+    assert!(the_account(&signed).needs_connecting.is_none());
+    let sent = |signed: &Signed| {
+        signed
+            .service
+            .server
+            .received()
+            .iter()
+            .filter(|request| request.header("authorization") == Some("Bearer k3y-foreign-401"))
+            .count()
+    };
+    let before = sent(&signed);
+    let second = signed.update(
+        &probe("local/other-probe", declared),
+        &calls(&[("accounts", "local/keyed", "list-notes")]),
+    );
+    assert_eq!(sent(&signed), before + 1, "{second:?}");
+    assert!(!format!("{report:?} {second:?}").contains("k3y-foreign-401"));
+    signed.assert_well_behaved();
+}
+
 /// `expired-refresh`: a token about to expire whose refresh is refused: `account-not-connected`,
 /// and the account marked `refresh-failed`.
 #[test]
@@ -1398,4 +1447,93 @@ fn connect_mid_run() {
             .is_some()
     );
     signed.scan(&[("the updates", format!("{report:?} {next:?}"))]);
+}
+
+/// `connect-after-load`: an account connected after the widget loaded stays unused by it, even
+/// once its link is rebuilt for another plugin's approval through the same grant record; the
+/// next load uses it (`specs/006-contract-v1-docs/review.md`, F1).
+#[test]
+fn connect_after_load_waits_for_the_next_load() {
+    let signed = Signed::new();
+    let plugin = signed.world.approve_and_load(&mid_run_probe());
+    let config = calls(&[("accounts", "local/notes", "list-notes")]).to_string();
+    let before = signed.service.requests_to("/notes").len();
+    let first = plugin.update(&config);
+    signed.connect();
+    let second = plugin.update(&config);
+    // Moves the grant record's generation, so the widget is linked again before its next call
+    signed
+        .world
+        .approve(&crate::common::fixture("hello-widget"));
+    let third = plugin.update(&config);
+    let sent = signed.service.requests_to("/notes")[before..].to_vec();
+    assert_eq!(sent.len(), 3, "{sent:?}");
+    assert!(
+        sent.iter()
+            .all(|request| request.header("authorization").is_none()),
+        "an account connected after load was used: {sent:?}"
+    );
+    let next = signed.update(
+        &mid_run_probe(),
+        &calls(&[("accounts", "local/notes", "list-notes")]),
+    );
+    assert!(probe_answers(&next)[0].get("ok").is_some(), "{next:?}");
+    assert!(
+        signed
+            .service
+            .requests_to("/notes")
+            .last()
+            .unwrap()
+            .header("authorization")
+            .is_some()
+    );
+    signed.scan(&[(
+        "the updates",
+        format!("{first:?} {second:?} {third:?} {next:?}"),
+    )]);
+    signed.assert_well_behaved();
+}
+
+/// `one-response-budget`: the response bodies of one update count against one budget, across
+/// `connectors` and `accounts` together (`specs/006-contract-v1-docs/review.md`, F2).
+#[test]
+fn one_response_budget_per_update() {
+    const BODY: usize = 4096;
+    let limits = runtime::Limits {
+        sign_in_time_limit: std::time::Duration::from_secs(5),
+        max_update_response_bytes: BODY,
+        ..runtime::Limits::default()
+    };
+    let signed = Signed::with(notes(), limits);
+    signed.connect();
+    let mut plain = notes();
+    plain["id"] = json!("local/plain");
+    plain["destinations"]["api"] = json!("https://other.test");
+    plain.as_object_mut().unwrap().remove("credential");
+    signed.world.write_connector("plain", &plain);
+    signed.other.route("/notes", Reply::json_of_size(BODY));
+    let package = probe(
+        "local/budget-probe",
+        json!([
+            { "id": "local/plain", "major": 1, "operations": ["list-notes"], "required": true },
+            { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true }
+        ]),
+    );
+    let report = signed.update(
+        &package,
+        &calls(&[
+            ("connectors", "local/plain", "list-notes"),
+            ("accounts", "local/notes", "list-notes"),
+        ]),
+    );
+    let answers = probe_answers(&report);
+    assert!(answers[0].get("ok").is_some(), "{}", answers[0]["error"]);
+    assert_eq!(
+        answers[1]["error"],
+        json!("failed:over-limit"),
+        "the accounts call had a budget of its own: {}",
+        answers[1]
+    );
+    signed.scan(&[("the update", format!("{report:?}"))]);
+    signed.assert_well_behaved();
 }

@@ -17,3 +17,6 @@ node_modules
 *.njsproj
 *.sln
 *.sw?
+
+# The crate kept beside the authors walkthrough, if a contributor builds it there
+/docs/authors/getting-started/target/

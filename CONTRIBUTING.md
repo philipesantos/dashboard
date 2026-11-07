@@ -54,11 +54,44 @@ cargo audit                                                    # known vulnerabi
 cargo audit --file plugins/Cargo.lock
 cargo deny check                                               # licenses, sources, advisories
 cargo deny --manifest-path plugins/Cargo.toml check
+cargo audit --file docs/authors/getting-started/Cargo.lock    # what the walkthrough builds
+cargo deny --manifest-path docs/authors/getting-started/Cargo.toml check
 ```
 
 Install `cargo audit` and `cargo deny` with `cargo install --locked cargo-audit cargo-deny`.
 `cargo test` fails, never skips, when a plugin it loads was not built: run
 `cargo xtask plugins` first.
+
+### The docs for authors
+
+The docs under [`docs/authors/`](docs/authors/) are checked like code, so a change to them, or
+to `wit/`, runs all of CI even when it touches only Markdown:
+
+- **The reference stays in step.** A change to the contract, the manifest or connector schema, a
+  limit, an error kind or a command or option of the CLI updates
+  [`docs/authors/reference/`](docs/authors/reference/) in the same pull request: every entry
+  carries a marker `<!-- ref: <kind> <id> -->`, and `cargo test -p runtime --test
+  docs_reference` names each item the reference lacks or names wrongly, and each limit whose
+  default differs from the host's. The format is in
+  [`contracts/docs-format.md`](specs/006-contract-v1-docs/contracts/docs-format.md).
+- **The commands run as written.** Every block marked `check` in the walkthrough, the guides and
+  the reference runs in the `docs` job on the three systems, its output compared whole. The
+  runner clears your development data directory and grant record before and after each page,
+  so outside CI it asks for an explicit opt-in. It clones the committed `HEAD`, so commit
+  first; on Linux it needs a Secret Service, as the tests do:
+
+  ```bash
+  DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 cargo test -p runtime --test docs_walk --locked -- --ignored
+  DASHBOARD_DOCS_WALK_PAGES=getting-started.md DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 \
+    cargo test -p runtime --test docs_walk --locked -- --ignored  # one page
+  ```
+
+- **The walkthrough's crate moves with its page.** `docs/authors/getting-started/` is the crate
+  the walkthrough builds: the runner checks that the page shows each of its files as they are,
+  and builds with its `Cargo.lock`, which `cargo audit` and `cargo deny` check. Change a
+  dependency there, its lock file and the page together; the docs job pins Rust 1.99.1, the
+  version the walkthrough names.
+- **How the contract changes** from now on is in [`wit/README.md`](wit/README.md#how-v1-changes-from-now-on).
 
 Performance is measured by hand, on the three systems: a maintainer adds the `bench` label to
 the pull request, which runs [`bench.yml`](.github/workflows/bench.yml). Compare its results

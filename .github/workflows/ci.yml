@@ -24,8 +24,10 @@ jobs:
   # skip them. The workflow still runs, because a skipped job counts as passing for the
   # required "CI result" check, while a workflow that never starts leaves it pending forever.
   # New advisories do not need a change here; audit.yml checks for them every week.
-  # The constitution (v1.1.1, Development Workflow) allows this skip; keep the documentation
-  # paths below in sync with the ones it lists.
+  # The constitution (v2.4.1, Development Workflow) allows this skip; keep the documentation
+  # paths below in sync with the ones it lists. Markdown the build uses as code is not
+  # documentation for that rule: the docs checks read docs/authors/ and wit/, so a change there
+  # runs everything (specs/006-contract-v1-docs/research.md, R11).
   changes:
     name: Detect code changes
     runs-on: ubuntu-24.04
@@ -56,8 +58,11 @@ jobs:
           else
             changed=$(git diff --name-only --no-renames "$range")
             printf '%s\n' "$changed"
-            # Documentation only: Markdown anywhere, specs/, docs/, .specify/ and LICENSE
-            if grep -qvE '\.md$|^(specs|docs|\.specify)/|^LICENSE$' <<< "$changed"; then
+            # Documentation only: Markdown anywhere, specs/, docs/, .specify/ and LICENSE, except
+            # docs/authors/ and wit/, which the docs checks read
+            if grep -qE '^(docs/authors|wit)/' <<< "$changed"; then
+              code=true
+            elif grep -qvE '\.md$|^(specs|docs|\.specify)/|^LICENSE$' <<< "$changed"; then
               code=true
             else
               code=false
@@ -136,6 +141,65 @@ jobs:
             exit 1
           }
 
+  # The docs for authors, run as written on each system: the walkthrough from a clone of this
+  # checkout to a running widget, the guides against the test services, and the reference's
+  # examples; and the drift test between the reference and the sources. On machines of their
+  # own, so the timed hostile cases of the build job keep theirs
+  # (specs/006-contract-v1-docs/research.md, R8 and R11).
+  docs:
+    name: Docs for authors (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The walkthrough clones this checkout
+          fetch-depth: 0
+          persist-credentials: false
+
+      # What the walkthrough tells authors to install on Linux, and the Secret Service the
+      # accounts guide signs in to
+      - name: Install the runtime's system dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: |
+          apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          sudo apt-get $apt_options update
+          sudo apt-get $apt_options install -y libdbus-1-dev pkg-config gnome-keyring
+
+      # The version the walkthrough was walked with (research R4); moving it is a reviewed
+      # change to the walkthrough and this job together
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.99.1
+          targets: wasm32-unknown-unknown, wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      # The guides start from the examples
+      - run: cargo xtask plugins --locked
+
+      - run: cargo test -p runtime --test docs_reference --locked
+
+      - name: The docs run as written
+        if: runner.os != 'Linux'
+        env:
+          DASHBOARD_DOCS_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo test -p runtime --test docs_walk --locked -- --ignored
+
+      - name: The docs run as written (in a session with GNOME Keyring)
+        if: runner.os == 'Linux'
+        env:
+          DASHBOARD_DOCS_TARGET_DIR: ${{ github.workspace }}/target
+        run: |
+          dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'ci' && cargo test -p runtime --test docs_walk --locked -- --ignored"
+
   audit:
     name: cargo audit
     needs: changes
@@ -158,6 +222,9 @@ jobs:
       - run: cargo audit
 
       - run: cargo audit --file plugins/Cargo.lock
+
+      # What the authors' walkthrough builds (specs/006-contract-v1-docs/research.md, R8)
+      - run: cargo audit --file docs/authors/getting-started/Cargo.lock
 
   deny:
     name: cargo deny
@@ -182,11 +249,13 @@ jobs:
 
       - run: cargo deny --manifest-path plugins/Cargo.toml check
 
+      - run: cargo deny --manifest-path docs/authors/getting-started/Cargo.toml check
+
   # The only check the master ruleset requires, so jobs can be added or renamed without
   # touching the ruleset. It fails when any job failed or was cancelled.
   result:
     name: CI result
-    needs: [changes, build, audit, deny]
+    needs: [changes, build, docs, audit, deny]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
