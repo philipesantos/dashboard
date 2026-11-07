@@ -1,8 +1,0 @@
-{
-  "name": "dashboard-workspace",
-  "private": true,
-  "packageManager": "pnpm@12.14.0",
-  "scripts": {
-    "tauri": "pnpm --filter ./app tauri"
-  }
-}
