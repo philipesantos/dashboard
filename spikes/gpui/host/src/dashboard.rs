@@ -124,6 +124,8 @@ pub struct Dashboard {
     theme: Theme,
     dialog: Option<Dialog>,
     dialog_focus: FocusHandle,
+    /// The control a dialog opens on: Cancel for an approval, the first color in Settings.
+    dialog_initial: FocusHandle,
     /// The window's own focus, given at start so the keyboard works before anything is clicked.
     root_focus: FocusHandle,
     drag: Option<Drag>,
@@ -170,6 +172,7 @@ impl Dashboard {
             theme,
             dialog: None,
             dialog_focus: cx.focus_handle(),
+            dialog_initial: cx.focus_handle(),
             root_focus: cx.focus_handle(),
             drag: None,
             grid_bounds: Rc::new(StdCell::new(Bounds::default())),
@@ -322,13 +325,9 @@ impl Dashboard {
 
     fn open_dialog(&mut self, dialog: Dialog, window: &mut Window, cx: &mut Context<Self>) {
         self.dialog = Some(dialog);
-        self.dialog_focus.focus(window, cx);
-        // Move focus into the dialog on the next frame, once its buttons exist
-        let focus = self.dialog_focus.clone();
-        window.on_next_frame(move |window, cx| {
-            focus.focus(window, cx);
-            window.focus_next(cx);
-        });
+        // Straight onto a control inside the dialog. Moving to "the next tab stop" instead left
+        // focus behind the dialog in a real window, outside the focus trap and its Escape key.
+        self.dialog_initial.focus(window, cx);
         cx.notify();
     }
 
@@ -1022,6 +1021,7 @@ impl Dashboard {
                     .gap(px(s.sm))
                     .child(
                         host_button(theme, "approval-cancel".into(), "Cancel".into(), false)
+                            .track_focus(&self.dialog_initial)
                             .on_click(cx.listener(|this, _, w, cx| this.close_dialog(w, cx))),
                     )
                     .child(
@@ -1059,34 +1059,37 @@ impl Dashboard {
                     .flex()
                     .flex_wrap()
                     .gap(px(s.sm))
-                    .children(theme::secret_choices().into_iter().map(|(name, color)| {
-                        let selected = current.as_deref() == Some(name.as_str());
-                        let chosen = name.clone();
-                        BaseButton::new(ElementId::Name(format!("secret-{name}").into()))
-                            .role(Role::RadioButton)
-                            .selected(selected)
-                            .accessibility_label(SharedString::from(name.clone()))
-                            .flex()
-                            .items_center()
-                            .gap(px(s.xs))
-                            .px(px(s.sm))
-                            .py(px(s.xs))
-                            .rounded(px(s.radius))
-                            .border_2()
-                            .border_color(if selected {
-                                h.dialog_text.hsla()
-                            } else {
-                                h.dialog_border.hsla().opacity(0.3)
-                            })
-                            .focus_visible(|style| style.border_color(h.frame_focus.hsla()))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.settings.secret = Some(chosen.clone());
-                                this.save();
-                                cx.notify();
-                            }))
-                            .child(div().size(px(14.0)).rounded_full().bg(color.hsla()))
-                            .child(SharedString::from(name))
-                    }));
+                    .children(theme::secret_choices().into_iter().enumerate().map(
+                        |(index, (name, color))| {
+                            let selected = current.as_deref() == Some(name.as_str());
+                            let chosen = name.clone();
+                            BaseButton::new(ElementId::Name(format!("secret-{name}").into()))
+                                .when(index == 0, |this| this.track_focus(&self.dialog_initial))
+                                .role(Role::RadioButton)
+                                .selected(selected)
+                                .accessibility_label(SharedString::from(name.clone()))
+                                .flex()
+                                .items_center()
+                                .gap(px(s.xs))
+                                .px(px(s.sm))
+                                .py(px(s.xs))
+                                .rounded(px(s.radius))
+                                .border_2()
+                                .border_color(if selected {
+                                    h.dialog_text.hsla()
+                                } else {
+                                    h.dialog_border.hsla().opacity(0.3)
+                                })
+                                .focus_visible(|style| style.border_color(h.frame_focus.hsla()))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.settings.secret = Some(chosen.clone());
+                                    this.save();
+                                    cx.notify();
+                                }))
+                                .child(div().size(px(14.0)).rounded_full().bg(color.hsla()))
+                                .child(SharedString::from(name))
+                        },
+                    ));
                 let modes = div().flex().gap(px(s.sm)).children(
                     [
                         (Mode::System, "System"),

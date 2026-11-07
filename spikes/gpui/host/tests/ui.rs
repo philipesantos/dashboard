@@ -160,6 +160,9 @@ fn the_approval_dialog_keeps_focus_and_escape_cancels(cx: &mut TestAppContext) {
             window.find_by_label("log (required)").role(),
             Some(Role::ListItem)
         );
+        // The dialog opens with focus on Cancel, before any key is pressed
+        assert_eq!(window.find("approval-cancel").focused(), Some(true));
+        assert_ne!(window.find("add-hello").focused(), Some(true));
 
         // Tab and Shift-Tab stay on the dialog's two buttons
         for key in ["tab", "tab", "tab", "shift-tab", "shift-tab", "tab"] {

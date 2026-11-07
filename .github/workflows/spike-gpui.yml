@@ -120,6 +120,7 @@ jobs:
           Copy-Item spikes/gpui/scripts/windows-check.ps1, spikes/gpui/scripts/measure-windows.ps1, spikes/gpui/scripts/run-check.cmd artifact/
           powershell -NoProfile -ExecutionPolicy Bypass -File artifact/windows-check.ps1
           Move-Item artifact/spike-report.txt artifact/spike-report-ci.txt
+          Get-ChildItem artifact/spike-*.png | ForEach-Object { Move-Item $_ ($_.FullName -replace '\.png$', '-ci.png') }
 
       - name: Run on macOS
         if: runner.os == 'macOS'

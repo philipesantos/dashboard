@@ -9,10 +9,11 @@ param([string]$Exe = (Join-Path $PSScriptRoot "dashboard-gpui-spike.exe"))
 $ErrorActionPreference = "Continue"
 $report = Join-Path $PSScriptRoot "spike-report.txt"
 "GPUI spike, Windows check, $(Get-Date -Format s)" | Set-Content -Encoding utf8 $report
-function Out-Report([string]$Text) { $Text | Tee-Object -Append -FilePath $report }
+# Add-Content, not Tee-Object: Windows PowerShell 5.1's Tee-Object writes UTF-16
+function Out-Report([string]$Text) { Write-Host $Text; Add-Content -Encoding utf8 -Path $report -Value $Text }
 function Section([string]$Title) { Out-Report ""; Out-Report "== $Title" }
 
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Windows.Forms
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Windows.Forms, System.Drawing
 $A = [System.Windows.Automation.AutomationElement]
 
 function New-DataDir([string]$Name) {
@@ -41,7 +42,20 @@ function Find-Window([System.Diagnostics.Process]$Process) {
   $null
 }
 
-function Write-Tree($Element, [int]$Depth = 0, [int]$MaxDepth = 14) {
+# Saves a picture of the window, next to the report, for whoever runs the check to look at
+function Save-Picture($Window, [string]$Name) {
+  try {
+    $r = $Window.Current.BoundingRectangle
+    $bitmap = New-Object System.Drawing.Bitmap ([int]$r.Width), ([int]$r.Height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.CopyFromScreen([int]$r.X, [int]$r.Y, 0, 0, $bitmap.Size)
+    $path = Join-Path $PSScriptRoot $Name
+    $bitmap.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+    Out-Report "picture: $Name"
+  } catch { Out-Report "picture failed: $($_.Exception.Message)" }
+}
+
+function Write-Tree($Element, [int]$Depth = 0, [int]$MaxDepth = 14, $Walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker) {
   if ($null -eq $Element -or $Depth -gt $MaxDepth) { return }
   try {
     $c = $Element.Current
@@ -62,11 +76,15 @@ function Write-Tree($Element, [int]$Depth = 0, [int]$MaxDepth = 14) {
     }
     Out-Report ("{0}[{1}] '{2}'{3} {4}" -f ("  " * $Depth), $type, $c.Name, $extra, ($flags -join ","))
   } catch { Out-Report ("{0}<error: {1}>" -f ("  " * $Depth), $_.Exception.Message); return }
-  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-  $child = $walker.GetFirstChild($Element)
+  $child = $Walker.GetFirstChild($Element)
+  if ($Depth -eq 0 -and $null -eq $child -and $Walker -ne [System.Windows.Automation.TreeWalker]::RawViewWalker) {
+    Out-Report "  (no children in the control view; the raw view follows)"
+    $Walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+    $child = $Walker.GetFirstChild($Element)
+  }
   while ($child) {
-    Write-Tree $child ($Depth + 1) $MaxDepth
-    $child = $walker.GetNextSibling($child)
+    Write-Tree $child ($Depth + 1) $MaxDepth $Walker
+    $child = $Walker.GetNextSibling($child)
   }
 }
 
@@ -106,7 +124,7 @@ Section "UI Automation tree: dashboard (what Narrator reads)"
 $p = Start-Spike $dir
 Start-Sleep -Seconds 4
 $window = Find-Window $p
-if ($window) { Write-Tree $window } else { Out-Report "window not found by UI Automation" }
+if ($window) { Save-Picture $window "spike-dashboard.png"; Write-Tree $window } else { Out-Report "window not found by UI Automation" }
 
 Section "Keyboard: where focus goes on Tab"
 if ($window) {
@@ -134,7 +152,10 @@ $p = Start-Spike $dir2 @{ SPIKE_REQUEST_ADD = "sampler" }
 Start-Sleep -Seconds 4
 $window = Find-Window $p
 if ($window) {
+  Save-Picture $window "spike-dialog.png"
   Write-Tree $window
+  $f = $A::FocusedElement
+  if ($f) { Out-Report "focus when the dialog opened: '$($f.Current.Name)'" }
   Out-Report "Tab and Shift+Tab inside the dialog:"
   try { $window.SetFocus() } catch {}
   Start-Sleep -Milliseconds 500

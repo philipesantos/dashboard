@@ -95,12 +95,18 @@ them with the keyboard:
 - Clipped content is not drawn.
 - The password field and the host color are refused.
 
-Three problems the spike found and fixed, which a migration would meet again:
+Four problems the spike found and fixed, which a migration would meet again:
 
 - **Tab did nothing until something was clicked.** With nothing focused, GPUI dispatches no key
   binding of a child context, so the window must focus its root at start.
 - **The dialog lost its role.** gpui-base's `focus_trap` replaces the id and the role of the
   element it wraps, so the dialog lost `Role::Dialog` until the trap was moved inside it.
+- **The dialog opened with focus behind it, in a real window only.** Moving focus with
+  `focus_next` on the next frame landed on the toolbar, outside the focus trap and its Escape
+  key: Tab walked the toolbar behind the dialog and Escape did nothing. Found by the Windows check
+  (§7) and confirmed on Linux through AT-SPI. The headless tests had missed it, because the test
+  platform never presents that next frame. The dialog now focuses its first control directly, and
+  the test checks focus before any key is pressed.
 - **Orca read nothing in body text, table cells or dialog texts.** AT-SPI reads a label's
   *value*, not its label. These texts stayed silent until they used GPUI's `Text` with an id, or
   `aria_value`.
@@ -227,6 +233,16 @@ Gaps:
   Orca and Accerciser enable it; that is normal on Linux.
 
 **Keyboard on 3 systems**: `host/tests/ui.rs` passes in CI on Windows, macOS and Linux.
+
+**Windows (UI Automation), measured on a real window** on the CI runner by
+`scripts/windows-check.ps1`, which sends real Tab keys (`evidence/windows-ci-check.txt`):
+- The tree matches Linux's: a toolbar of buttons, and each frame a focusable group with its full
+  name. Inside, `Remove <name>`, a group for the content, text, a list of list items, a table named
+  by its columns (rows and cells as `DataItem`, cell text as `Text`), and the widget's buttons.
+- Tab walks the seven toolbar buttons, then the Release status frame, its Press button, each
+  following frame, the spoof widget's Approve button, and back to the start. The Remove buttons
+  are skipped on purpose, since Delete removes a focused frame.
+- The approval dialog failed there: the bug above. The fixed build is checked again in CI ⏳.
 
 **Not verified: macOS (Accessibility Inspector, VoiceOver) and Windows (Accessibility Insights,
 Narrator).** [A11Y-MANUAL-TEST.md](A11Y-MANUAL-TEST.md) is a 16-step script for VoiceOver,

@@ -79,7 +79,7 @@ Unzip it and double-click `run-check.cmd`: for about two minutes it opens and cl
 itself (do not use the mouse or keyboard meanwhile), then leaves `spike-report.txt` in the same
 folder with the system and GPU, the adapter GPUI chose, startup, memory, idle CPU, the drag
 benchmark, the UI Automation tree Narrator reads (dashboard and approval dialog) and where Tab
-moves focus. Nothing is sent anywhere.
+moves focus, plus two pictures (`spike-dashboard.png`, `spike-dialog.png`). Nothing is sent anywhere.
 
 ### For measurement
 
