@@ -901,6 +901,7 @@ impl Dashboard {
                             .child(div().flex_1().min_w_0().overflow_hidden().opacity(0.8).child(plugin_id.clone()))
                             .child(
                                 host_button(theme, ElementId::NamedInteger("remove".into(), id), "Remove".into(), true)
+                                    .accessibility_label(SharedString::from(format!("Remove {name}")))
                                     .tab_stop(false)
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.layout.remove(id);
@@ -988,16 +989,16 @@ impl Dashboard {
                     .flex()
                     .flex_col()
                     .gap(px(s.sm))
-                    .child(div().id("approval-what").role(Role::Label).child(format!(
-                        "{} {} by {}, built for contract {}.",
-                        request.id, request.version, request.author, request.contract
-                    )))
+                    .child(label(
+                        "approval-what",
+                        format!(
+                            "{} {} by {}, built for contract {}.",
+                            request.id, request.version, request.author, request.contract
+                        ),
+                    ))
                     .child(
-                        div()
-                            .id("approval-from")
-                            .role(Role::Label)
-                            .opacity(0.85)
-                            .child(format!("From: {}", entry.package.origin)),
+                        label("approval-from", format!("From: {}", entry.package.origin))
+                            .opacity(0.85),
                     )
                     .child(
                         div()
@@ -1172,6 +1173,10 @@ impl Dashboard {
                                     .aria_label(SharedString::from(format!(
                                         "Your color, {name}: this dialog is from Dashboard"
                                     )))
+                                    // AT-SPI names a label by its value
+                                    .aria_value(SharedString::from(format!(
+                                        "Your color, {name}: this dialog is from Dashboard"
+                                    )))
                                     .flex()
                                     .items_center()
                                     .gap(px(s.sm))
@@ -1205,6 +1210,7 @@ impl Dashboard {
                                         div()
                                             .id("dialog-title")
                                             .role(Role::Heading)
+                                            .aria_label(title.clone())
                                             .text_size(px(theme.typography.size_heading))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .child(title),
@@ -1217,6 +1223,16 @@ impl Dashboard {
             )
             .into_any_element()
     }
+}
+
+/// Host text that screen readers read: AT-SPI names a label by its value, not its label.
+fn label(id: &'static str, text: String) -> gpui_kit::Stateful<gpui_kit::Div> {
+    let text = SharedString::from(text);
+    div()
+        .id(id)
+        .role(Role::Label)
+        .aria_value(text.clone())
+        .child(text)
 }
 
 /// A host button, drawn with host tokens on gpui-base's unstyled button.

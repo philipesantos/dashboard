@@ -10,7 +10,7 @@ use gpui_kit::base::{
     Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TestSupportExt as _,
 };
 use gpui_kit::prelude::*;
-use gpui_kit::{AnyElement, App, ElementId, FontWeight, Role, SharedString, Window, div, px};
+use gpui_kit::{AnyElement, App, ElementId, FontWeight, Role, SharedString, Text, Window, div, px};
 
 use crate::model::{Block, Content, TextStyle, Tone};
 use crate::tokens::WidgetTheme;
@@ -52,11 +52,15 @@ pub fn content(
                         Tone::Danger => palette.danger,
                     };
                     let heading = *style == TextStyle::Heading;
+                    let text = SharedString::from(text.clone());
+                    // A heading is named by its label; body text is a GPUI `Text` with an id,
+                    // which screen readers read through its value (AT-SPI ignores a label's name)
                     div()
                         .id(id("text", index))
-                        .role(if heading { Role::Heading } else { Role::Label })
+                        .when(heading, |this| {
+                            this.role(Role::Heading).aria_label(text.clone())
+                        })
                         .test_support()
-                        .aria_label(SharedString::from(text.clone()))
                         .w_full()
                         .min_w_0()
                         .text_color(color.hsla())
@@ -64,7 +68,11 @@ pub fn content(
                             this.text_size(px(typography.size_heading))
                                 .font_weight(FontWeight::SEMIBOLD)
                         })
-                        .child(SharedString::from(text.clone()))
+                        .child(if heading {
+                            Text::new_inaccessible(text)
+                        } else {
+                            Text::new(id("text-value", index), text)
+                        })
                         .into_any_element()
                 }
                 Block::List { items } => div()
@@ -88,15 +96,19 @@ pub fn content(
                     }))
                     .into_any_element(),
                 Block::Table { columns, rows } => {
-                    let cell = |text: &str| {
+                    let cell = |text: &str, text_id: ElementId| {
                         div()
                             .px(px(spacing.sm))
                             .py(px(spacing.xs))
                             .min_w_0()
                             .flex_1()
-                            .child(SharedString::from(text.to_owned()))
+                            .child(Text::new(text_id, SharedString::from(text.to_owned())))
                     };
                     Table::new(id("table", index))
+                        .accessibility_label(SharedString::from(format!(
+                            "Table: {}",
+                            columns.join(", ")
+                        )))
                         .row_count(rows.len() + 1)
                         .column_count(columns.len())
                         .flex()
@@ -116,7 +128,10 @@ pub fn content(
                                         TableHead::new(id(&format!("table{index}-h"), c), c)
                                             .flex_1()
                                             .min_w_0()
-                                            .child(cell(column))
+                                            .child(cell(
+                                                column,
+                                                id(&format!("table{index}-h{c}-text"), 0),
+                                            ))
                                     })),
                             ),
                         )
@@ -134,7 +149,12 @@ pub fn content(
                                             )
                                             .flex_1()
                                             .min_w_0()
-                                            .child(cell(text))
+                                            .child(
+                                                cell(
+                                                    text,
+                                                    id(&format!("table{index}-r{r}-c{c}-text"), 0),
+                                                ),
+                                            )
                                         }))
                                 }),
                             ),
