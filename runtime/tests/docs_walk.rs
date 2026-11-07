@@ -5,7 +5,7 @@
 //! because it builds and installs the CLI; the docs job runs it with `--ignored`. The other tests
 //! check the runner itself, on Markdown in memory.
 
-mod common;
+use crate::common;
 
 use std::ffi::OsString;
 use std::fs;

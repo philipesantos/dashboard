@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Plugin runtime: embeds Wasmtime and loads plugin components"
 edition = "2024"
 publish = false
+# The integration tests build as one executable, tests/it.rs, instead of one per file
+autotests = false
 
 [dependencies]
 # Default location of the development grant record: the system's data directory
@@ -89,6 +91,13 @@ dbus-secret-service-keyring-store = { version = "=1.0.1", features = ["crypto-ru
 [[bin]]
 name = "runtime-test-network"
 required-features = ["test-network"]
+
+# Every file in tests/ is a module of this one executable: each executable links the whole runtime
+# (about 100 MB in debug), so one per file filled the disk. tests/it.rs fails when a file there
+# is not listed.
+[[test]]
+name = "it"
+path = "tests/it.rs"
 
 [features]
 # The test seam of research R15: test routes and roots instead of DNS and Mozilla's roots.

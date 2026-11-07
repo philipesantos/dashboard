@@ -3,7 +3,7 @@
 //! added through the seam and reached over HTTPS through its routes, against test services
 //! that record every request. Nothing reaches the internet.
 
-mod common;
+use crate::common;
 
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};

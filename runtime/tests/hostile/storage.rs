@@ -1295,7 +1295,7 @@ fn killed_mid_update() {
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "storage::killed_mid_update_child_process",
+            "hostile::storage::killed_mid_update_child_process",
             "--ignored",
             "--nocapture",
         ])

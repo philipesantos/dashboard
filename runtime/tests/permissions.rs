@@ -1,7 +1,7 @@
 //! Plugin permissions at the API level: the acceptance scenarios of
 //! `specs/002-plugin-permissions/spec.md`, one section per user story.
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 
