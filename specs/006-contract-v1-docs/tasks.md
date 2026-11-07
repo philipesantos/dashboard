@@ -723,7 +723,7 @@ the older pages point to the new docs.
 - [ ] T051 Only once the maintainer has pushed and opened the pull request, as they ask: record in
   `walks.md` the docs job's time on each system from the first run. If any system goes over 25
   minutes, bring it to the maintainer before going on.
-- [ ] T052 The maintainer's walk (SC-001, research R17): the maintainer follows
+- [X] T052 The maintainer's walk (SC-001, research R17): the maintainer follows
   `docs/authors/getting-started.md` by hand on Linux, timed, without the tool downloads. The time
   and any stuck point go in `walks.md`, and the goal is under 30 minutes. Record the `cargo
   install` time apart. If the walk goes over 30 minutes because of it, bring it to the
