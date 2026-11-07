@@ -1,0 +1,81 @@
+== gpui-spike-Linux-gpui-fast/
+release-gpui-fast clean_s=595 incremental_s=255.6
+debug-gpui-fast clean_s=171 incremental_s=3.2
+binary-gpui-fast bytes=43961224
+gpui-gpui-fast window_ms=163 first_frame_ms=841 pss_mib=186.3 rss_mib=191.7 idle_cpu=0.5% processes=1
+[2026-11-07T15:36:48Z INFO  gpui_wgpu::wgpu_context] Selected GPU adapter: "llvmpipe (LLVM 20.1.2, 256 bits)" (Vulkan)
+spike: first frame presented 218 ms after start
+spike: drag bench 105 frames in 5.0s (20.8 fps); frame ms p50 48.0 p95 48.0 p99 48.0 max 48.0; over 33 ms: 105; CPU 183%
+== gpui-spike-Linux-gpui-pre/
+release-gpui-pre clean_s=728 incremental_s=304.9
+debug-gpui-pre clean_s=214 incremental_s=3.6
+binary-gpui-pre bytes=42476680
+gpui-gpui-pre window_ms=151 first_frame_ms=643 pss_mib=179.9 rss_mib=185.2 idle_cpu=0.6% processes=1
+[2026-11-07T15:41:42Z INFO  gpui_wgpu::wgpu_context] Selected GPU adapter: "llvmpipe (LLVM 20.1.2, 256 bits)" (Vulkan)
+spike: first frame presented 221 ms after start
+spike: drag bench 103 frames in 5.0s (20.5 fps); frame ms p50 48.0 p95 48.1 p99 64.0 max 64.0; over 33 ms: 103; CPU 245%
+== gpui-spike-macOS-gpui-fast/
+release-gpui-fast clean_s=337 incremental_s=171.9
+debug-gpui-fast clean_s=86 incremental_s=2.7
+binary-gpui-fast bytes= 21475760
+gpui-gpui-fast rss_mib=90.2 cpu=  0.6
+spike: first frame presented 1017 ms after start
+[2026-11-07T15:27:50Z WARN  gpui_apple::text_system] skipping duplicate font "System Font Regular Italic Bold Italic" with PostScript name ".SFNS-BoldItalic" in family ".AppleSystemUIFont"
+[2026-11-07T15:27:50Z WARN  gpui_apple::text_system] skipping duplicate font "System Font Bold" with PostScript name ".SFNS-Bold" in family ".AppleSystemUIFont"
+spike: first frame presented 222 ms after start
+spike: drag bench 3 frames in 8.0s (0.4 fps); frame ms p50 48.8 p95 48.8 p99 48.8 max 7902.0; over 33 ms: 3; CPU n/a
+drag-bench exit=0
+== gpui-spike-macOS-gpui-pre/
+release-gpui-pre clean_s=559 incremental_s=323.7
+debug-gpui-pre clean_s=342 incremental_s=9.5
+binary-gpui-pre bytes= 20417616
+gpui-gpui-pre rss_mib=86.3 cpu=  0.5
+spike: first frame presented 4387 ms after start
+[2026-11-07T15:42:38Z WARN  gpui_apple::text_system] skipping duplicate font "System Font Regular Italic Bold Italic" with PostScript name ".SFNS-BoldItalic" in family ".AppleSystemUIFont"
+[2026-11-07T15:42:38Z WARN  gpui_apple::text_system] skipping duplicate font "System Font Bold" with PostScript name ".SFNS-Bold" in family ".AppleSystemUIFont"
+spike: first frame presented 658 ms after start
+spike: drag bench 3 frames in 20.0s (0.2 fps); frame ms p50 50.0 p95 50.0 p99 50.0 max 19857.0; over 33 ms: 3; CPU n/a
+drag-bench exit=0
+== gpui-spike-Windows-gpui-fast/
+release-gpui-fast clean_s=1025 incremental_s=416.7
+debug-gpui-fast clean_s=270 incremental_s=7.6
+binary-gpui-fast bytes=26956288
+gpui-gpui-fast window_ms=367 working_set_mib=69.6 private_mib=48.9 idle_cpu=0.2% processes=2
+drag-bench exit=0
+[2026-11-07T15:51:18Z INFO  gpui_windows::direct_write] Use Segoe UI as UI font.
+[2026-11-07T15:51:18Z INFO  gpui_windows::directx_devices] Using GPU: Microsoft Basic Render Driver
+[2026-11-07T15:51:18Z INFO  gpui_windows::directx_devices] Created device with Direct3D 11.1 feature level.
+spike: first frame presented 262 ms after start
+spike: drag bench 96 frames in 5.0s (19.1 fps); frame ms p50 52.4 p95 67.0 p99 71.1 max 73.2; over 33 ms: 93; CPU n/a
+== gpui-spike-Windows-gpui-pre/
+release-gpui-pre clean_s=573 incremental_s=221.8
+debug-gpui-pre clean_s=147 incremental_s=4.5
+binary-gpui-pre bytes=25595904
+gpui-gpui-pre window_ms=233 working_set_mib=61.7 private_mib=42.1 idle_cpu=0.2% processes=2
+drag-bench exit=0
+[2026-11-07T15:35:42Z INFO  gpui_windows::direct_write] Use Segoe UI as UI font.
+[2026-11-07T15:35:42Z INFO  gpui_windows::directx_devices] Using GPU: Microsoft Basic Render Driver
+[2026-11-07T15:35:42Z INFO  gpui_windows::directx_devices] Created device with Direct3D 11.1 feature level.
+spike: first frame presented 157 ms after start
+spike: drag bench 176 frames in 5.0s (35.2 fps); frame ms p50 28.4 p95 39.2 p99 49.8 max 85.1; over 33 ms: 25; CPU n/a
+== tauri-baseline-Linux/
+frontend build_s=2.1
+release-tauri clean_s=188 incremental_s=65.5
+debug-tauri clean_s=69 incremental_s=3.6
+binary-tauri bytes=6185664
+binary-runtime-cli bytes=17989768
+tauri-webkitgtk window_ms=192 first_frame_ms=n/a pss_mib=58.5 rss_mib=86.0 idle_cpu=0.0% processes=1
+tauri-webkitgtk-nodmabuf window_ms=79 first_frame_ms=n/a pss_mib=58.7 rss_mib=86.2 idle_cpu=0.0% processes=1
+== tauri-baseline-macOS/
+frontend build_s=2.3
+release-tauri clean_s=214 incremental_s=117.9
+debug-tauri clean_s=78 incremental_s=5.6
+binary-tauri bytes= 4191392
+binary-runtime-cli bytes= 12057664
+== tauri-baseline-Windows/
+frontend build_s=2.8
+release-tauri clean_s=216 incremental_s=84.4
+debug-tauri clean_s=77 incremental_s=4.5
+binary-tauri bytes=4544000
+binary-runtime-cli bytes=15810048
+tauri-webview2 window_ms=89 working_set_mib=324.7 private_mib=113.1 idle_cpu=0.5% processes=7

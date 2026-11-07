@@ -2,7 +2,7 @@
 
 Branch `spike/gpui`, 2026-11-07. Code and how to run it: [README.md](README.md). Raw evidence:
 [`evidence/`](evidence/) and the **Spike GPUI** workflow runs (`.github/workflows/spike-gpui.yml`;
-run 42383088681 is in `evidence/ci-run-42383088681.txt`).
+runs 42383088681 and 42385479540 are in `evidence/ci-run-*.txt`).
 
 ## 1. Recommendation
 
@@ -62,7 +62,7 @@ plugins or the contract.
 
 | Criterion | Result | Evidence |
 | --- | --- | --- |
-| Items 1 to 5 work on the 3 systems | **Linux: pass. Windows, macOS: pass in CI; by-hand check pending** | In CI on Windows and macOS: builds, clippy, the headless UI tests, a start with 4 widgets that presents frames. A visual check by hand is pending: the `gpui-spike-Windows-gpui-pre` artifact. |
+| Items 1 to 5 work on the 3 systems | **Linux: pass. Windows, macOS: pass in CI; by-hand check pending** | In CI on Windows and macOS: builds, clippy, the headless UI tests, and a start with 4 widgets that presents frames. On Windows it also drags at 19–35 fps on Direct3D's software renderer. A visual check by hand is pending, with the `gpui-spike-Windows-gpui-pre` artifact. |
 | Dialog and grid usable with the keyboard only, accessibility tree correct | **Keyboard: pass on 3 systems. Tree: pass on Linux after fixes, one gap. macOS and Windows trees: not verified** | `host/tests/ui.rs` (5 tests) passes on all three in CI; `evidence/atspi-linux-*.txt`. Gap: GPUI cannot mark a dialog modal (§7). |
 | Linux: opens on every GPU tested; acceptable without Vulkan | **Opens: yes, but on the CPU, at 14–30 fps when dragging. Intel, AMD, NVIDIA: not tested. Without Vulkan: pass (opens on llvmpipe's OpenGL on X11; a clear message on Wayland)** | §8; `scripts/linux-gpu-check.sh` runs the matrix on any machine in one command |
 | A way to pin GPUI that does not need weekly updates to keep compiling | **Pass** | `=0.9.0` / `=0.3.11` exact pins plus `Cargo.lock`; crates.io versions are immutable. |
@@ -152,8 +152,9 @@ same tests.
 | Release binary: Linux / Windows / macOS | 42.5 / 25.6 / 20.4 MB | 44.0 / 27.0 / 21.5 MB |
 | Clean release build in CI: Linux / Windows / macOS | 684 / 729 / 737 s | 779 / 780 / 751 s |
 | Clean debug build in CI | 204 / 204 / 284 s | 227 / 215 / 224 s |
-| First frame: Linux CI (Xvfb, CPU) / Windows CI / macOS CI | 225 / 172 / 2748 ms | 277 / 178 / 2848 ms |
-| Memory, 4 widgets: Linux CI (PSS) / Windows CI (working set) / macOS CI (RSS) | 180 / 66 / 87 MiB | 189 / 70 / 87 MiB |
+| First frame: Linux CI (Xvfb, CPU) / Windows CI (WARP) / macOS CI | 221–225 / 157–172 / 658–4387 ms | 218–277 / 178–262 / 222–2848 ms |
+| Memory, 4 widgets: Linux CI (PSS) / Windows CI (working set) / macOS CI (RSS) | 180 / 62–66 / 86–87 MiB | 186–189 / 70 / 87–90 MiB |
+| Drag in CI: Linux (lavapipe) / Windows (WARP) | 20.5 / 35.2 fps | 20.8 / 19.1 fps |
 | This machine, X11 / Wayland: first frame (median of 5) | 276 / 517 ms | 332 / 535 ms |
 | This machine, X11 / Wayland: memory (PSS) | 187 / 171 MiB | 198 / 181 MiB |
 | This machine: drag (fps, CPU), X11 / Wayland | 16–30 / 14–26 fps, 130–360 % | 15–16 / 13–14 fps, 155–234 % (first session only) |
@@ -170,9 +171,10 @@ on `gpui-pre` and its support crates.
 | Incremental release build in CI (touch one host file) | 292 / 297 / 263 s | 80 / 130 / 108 s |
 | Clean debug build in CI | 204 / 204 / 284 s | 90 / 133 / 74 s |
 | Incremental debug build in CI | 3.4 / 6.0 / 5.6 s | 4.2 / 7.8 / 7.0 s |
-| Windows CI: first window / first frame | 281 / 172 ms | 94 ms (window) |
-| Windows CI: memory, whole process tree | 66 MiB working set, 44 MiB private, 2 processes | **319 MiB** working set, 113 MiB private, 7 processes (WebView2) |
-| Windows CI: idle CPU | 0.6 % | 0.3 % |
+| Windows CI: first window / first frame | 233–281 / 157–172 ms | 89–94 ms (window) |
+| Windows CI: memory, whole process tree | 62–66 MiB working set, 42–44 MiB private, 2 processes | **319–325 MiB** working set, 113 MiB private, 7 processes (WebView2) |
+| Windows CI: idle CPU | 0.2–0.6 % | 0.3–0.5 % |
+| Windows CI: drag (GPU: "Microsoft Basic Render Driver", Direct3D's software renderer) | 35 fps, p95 39 ms | not measured |
 | This machine (Linux), first frame X11 / Wayland | 276 / 517 ms | WebKitGTK harness*: 788 / 865 ms |
 | This machine, memory (PSS, whole tree) | 171–187 MiB | WebKitGTK harness*: 218–279 MiB (3–6 processes) |
 | This machine, idle CPU X11 / Wayland | 0.6 / 0.3 % | WebKitGTK harness*: 1.7 / 0.1 % |
@@ -194,8 +196,14 @@ Notes:
   process tree.
 - Release builds use fat LTO and one codegen unit (the root profile), which is why an
   incremental release build takes minutes.
-- macOS's first frame of about 2.7 s on the CI runner is likely gpui-kit's `runtime_shaders`
-  (Metal shaders compiled at start). Not verified.
+- macOS's first frame took 1–4.4 s on the first start on the CI runner and 0.2–0.7 s on the
+  next. That is likely gpui-kit's `runtime_shaders` (Metal shaders compiled at the first start,
+  then cached). Not verified.
+- The drag could not be measured on macOS CI: the runner has no display and the window is
+  occluded, so GPUI stops presenting frames (3 frames in 8–20 s). It needs a run by hand.
+- GitHub's standard runners have no GPU. Windows draws with Direct3D's software renderer (WARP),
+  Linux with lavapipe, and macOS with a paravirtual Metal device. Real GPUs need GitHub's paid
+  GPU runners (an organization on a Team or Enterprise plan) or a self-hosted runner.
 
 ## 7. Accessibility
 
