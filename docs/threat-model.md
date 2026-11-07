@@ -18,7 +18,7 @@ flowchart TB
             generated["AI-generated module"]
         end
         subgraph host["Host: trusted"]
-            ui["Host UI (React in the Tauri webview)"]
+            ui["Host UI (GPUI, the host's own components, no webview)"]
             dialogs["Host dialogs: install, permissions, accounts, AI actions"]
             perm["Permission engine"]
             vault["Secrets vault"]
@@ -148,6 +148,9 @@ suite grows with every phase and never shrinks.
 | Package reuses a renamed or deleted repository's name (repo-jacking) to inherit an installed plugin's grants | T4 | A1, A4 | B6 | Install only from repositories; keep the repository's permanent identifier at install, and accept updates only from it; signatures (Phase 6) | Phase 3 |
 | Password field or drawing over the frame (fake login) | T1 | A2 | B4 | V | Phase 3 |
 | Widget opens a window or dialog (phishing) | T1 | A2, A4 | B4 | V, VII | Phase 3 |
+| Widget content makes the host fetch a remote resource or a local file, or open a URL (an image address, a link) | T1, T2 | A1, A3 | B2, B4 | Widget content maps only to the host's components; images arrive only as bytes; no plugin string ever reaches GPUI's `img()` or `open_url`; GPUI's HTTP client stays null (III, V) | Phase 3 |
+| A dialog without the visual secret passes for the host's: the operating system's native prompt, or a widget drawing one | T1 | A2, A4 | B4 | Host dialogs are drawn only with the host's own components, each with the person's visual secret; native prompts are never used for trust decisions (V, VII) | Phase 3 |
+| Crafted image, SVG or font exploits a decoder, which now runs in the host process beside the vault | T1, T4 | A2, A3 | B1, B4 | Images only as bytes within size limits; decoding moved out of the host process if decision 0001 is revisited that way in Phase 3; pinned decoders, `cargo audit` | Phase 3 |
 | Asks for little at install, then presses the user to turn on optional permissions one at a time | T1 | A1, A4 | B4 | Only host controls turn a permission on (VII); the dangerous-combination warning runs on every grant change, judged on the permissions the plugin will hold afterwards | Phase 3 |
 | Hidden instruction in content read by AI (prompt injection) | T2, T3 | A1, A4 | B5 | VI, taint tracking | Phase 4 |
 | Remote image with data in its URL in AI output | T2, T3 | A1 | B5 | Safe rendering without remote resources | Phase 4 |
@@ -158,8 +161,10 @@ suite grows with every phase and never shrinks.
 ## Assumptions and out of scope
 
 - Trusted: the operating system, the OS keychain and its access control between the user's
-  processes, and the sandboxing of Wasmtime and the webview. Their vulnerabilities are handled by pinned versions, `cargo audit` and fast
-  updates, not by this design.
+  processes, and the sandboxing of Wasmtime. Their vulnerabilities are handled by pinned versions, `cargo audit` and fast
+  updates, not by this design. Since constitution v3.0.0 there is no webview: the host draws with
+  GPUI, whose image, SVG and font decoders run in the host process (a threat row above, and the
+  open question on process isolation).
 - Out of scope: malware already running on the machine, an attacker with administrator or
   physical access, and the AI provider reading the prompts the user chose to send it.
 
@@ -167,10 +172,12 @@ suite grows with every phase and never shrinks.
 
 - Does the plugin runtime run in a separate OS process? Not during Phase 1:
   [decision 0001](decisions/0001-plugin-process-isolation.md) explains why and when to revisit
-  it, in Phase 3's plan at the latest.
-- How is widget render data turned into UI in the webview, and which Content Security Policy
-  does the app ship? The template default (`"csp": null` in `app/src-tauri/tauri.conf.json`)
-  must become restrictive by Phase 3.
+  it, in Phase 3's plan at the latest. With GPUI, image, SVG and font decoding also runs in the
+  host process, so the same plan decides where that runs.
+- What replaces the webview's Content Security Policy? Decided on 2026-11-07 (constitution
+  v3.0.0): there is no webview. Widget content maps only to the host's components, images
+  arrive only as bytes, no plugin string reaches GPUI's `img()` or `open_url`, and GPUI's HTTP
+  client stays null; Phase 3 tests each rule (VIII).
 - How does taint propagate across plugin calls, storage and later executions? Phase 4.
 - Where are third-party plugins installed from, and how is the installed version pinned?
   Decided on 2026-10-22 (feature 002): only from their authors' repositories, never from a
