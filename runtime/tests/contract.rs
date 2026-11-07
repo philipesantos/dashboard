@@ -1,7 +1,7 @@
 //! Plugin contracts: loading packages and rendering the example plugin (feature 001, User
 //! Stories 1 and 3).
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 

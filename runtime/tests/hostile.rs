@@ -10,7 +10,7 @@
 //! then the credential cases of feature 005 in the `credentials` module
 //! (`specs/005-plugin-credentials/data-model.md`, Hostile cases).
 
-mod common;
+use crate::common;
 // Feature 003: the connector cases, in runtime/tests/hostile/
 #[path = "hostile/connectors.rs"]
 mod connectors;

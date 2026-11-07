@@ -2,7 +2,7 @@
 //! data across runs and versions (User Story 1), writes are all or nothing (User Story 4), and
 //! the tests the data model names beside the hostile cases.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -6,7 +6,7 @@
 //! `keychain_locked_call` runs on the mock store instead: a keychain that refuses access cannot
 //! be set up on every system.
 
-mod common;
+use crate::common;
 
 use std::sync::Mutex;
 use std::time::Duration;
