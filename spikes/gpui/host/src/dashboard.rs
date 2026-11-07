@@ -524,7 +524,16 @@ impl Dashboard {
             frames: Vec::new(),
             cpu_start: cpu_seconds(),
         });
-        window.request_animation_frame();
+        Self::next_bench_frame(cx.entity().downgrade(), window);
+        cx.notify();
+    }
+
+    /// One bench step after each presented frame, so the step rate is the frame rate.
+    fn next_bench_frame(this: gpui_kit::WeakEntity<Self>, window: &mut Window) {
+        window.on_next_frame(move |window, cx| {
+            this.update(cx, |this, cx| this.bench_frame(window, cx))
+                .ok();
+        });
     }
 
     fn bench_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -544,7 +553,8 @@ impl Dashboard {
                     drag.start_mouse.y + px(radius * 0.6 * (t * 2.0).sin()),
                 );
             }
-            window.request_animation_frame();
+            Self::next_bench_frame(cx.entity().downgrade(), window);
+            cx.notify();
             return;
         }
         let bench = self.bench.take().unwrap();
@@ -582,7 +592,6 @@ impl Render for Dashboard {
                 )
             });
         }
-        self.bench_frame(window, cx);
         let theme = self.theme.clone();
         let h = &theme.host;
         let s = &theme.spacing;

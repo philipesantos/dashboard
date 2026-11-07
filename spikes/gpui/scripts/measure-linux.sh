@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Measures one desktop app on Linux under X11: time until its window is mapped, then, after it
+# Measures one desktop app on Linux: time until its window is mapped (X11, or a log line it writes
+# when WAIT_FOR_LOG is set, for Wayland), then, after it
 # settles, memory (PSS summed over its whole process tree, so WebKitGTK's web and network
 # processes count) and CPU while idle. Needs xwininfo (x11-utils).
 #
@@ -7,6 +8,7 @@
 #
 # Prints one line: label, window_ms, pss_mib, rss_mib, idle_cpu_percent, processes.
 set -euo pipefail
+export LC_ALL=C # decimal points, whatever the locale
 label=$1 title=$2 settle=$3 idle=$4
 shift 4
 [ "$1" = "--" ] && shift
@@ -40,7 +42,9 @@ start=$(date +%s%N)
 pid=$!
 window_ms=timeout
 for _ in $(seq 1 3000); do # up to 60 s
-  if xwininfo -root -tree 2>/dev/null | grep -qF "\"$title\""; then
+  # On Wayland no tool can see other clients' windows: WAIT_FOR_LOG names a line the app logs
+  if { [ -n "${WAIT_FOR_LOG:-}" ] && grep -qF "$WAIT_FOR_LOG" /tmp/measure-"$label".log; } ||
+     { [ -z "${WAIT_FOR_LOG:-}" ] && xwininfo -root -tree 2>/dev/null | grep -qF "\"$title\""; }; then
     window_ms=$((($(date +%s%N) - start) / 1000000))
     break
   fi
@@ -57,5 +61,7 @@ read -r pss rss < <(memory "$pid")
 procs=$(tree "$pid" | wc -l)
 kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
-printf '%s window_ms=%s pss_mib=%.1f rss_mib=%.1f idle_cpu=%s%% processes=%s\n' \
-  "$label" "$window_ms" "$(echo "$pss / 1024" | bc -l)" "$(echo "$rss / 1024" | bc -l)" "$cpu" "$procs"
+# The GPUI spike also logs when its first frame was presented
+frame=$(grep -o 'first frame presented [0-9]* ms' /tmp/measure-"$label".log | grep -o '[0-9]*' || echo n/a)
+printf '%s window_ms=%s first_frame_ms=%s pss_mib=%.1f rss_mib=%.1f idle_cpu=%s%% processes=%s\n' \
+  "$label" "$window_ms" "$frame" "$(echo "$pss / 1024" | bc -l)" "$(echo "$rss / 1024" | bc -l)" "$cpu" "$procs"

@@ -1,0 +1,86 @@
+<!doctype html>
+<!-- The GPUI spike's dashboard as a web page: the same toolbar, four widgets and content, for
+     scripts/webkitgtk-bench.py to measure WebKitGTK, the engine Tauri 2 uses on Linux. -->
+<html><head><meta charset="utf-8"><title>Dashboard (WebKitGTK bench)</title>
+<style>
+  :root { font: 14px system-ui, sans-serif; color: #e6edf3; }
+  body { margin: 0; background: #1c1a17; height: 100vh; display: flex; flex-direction: column; }
+  .toolbar { display: flex; gap: 8px; padding: 8px 16px; background: #26231f; }
+  .toolbar button { background: #2e2a25; color: #f2ede4; border: 2px solid #b98bd1aa; border-radius: 6px; padding: 4px 12px; font-size: 12px; }
+  .grid { position: relative; flex: 1; overflow-y: auto; margin: 8px; }
+  .slot { position: absolute; padding: 4px; box-sizing: border-box; }
+  .frame { height: 100%; display: flex; flex-direction: column; background: #2e2a25; border: 2px solid #b98bd1; border-radius: 8px; overflow: hidden; }
+  .header { display: flex; gap: 8px; align-items: center; padding: 4px 8px; font-size: 12px; color: #f2ede4; }
+  .header .icon { width: 18px; height: 18px; border-radius: 4px; background: #d9a7f0; color: #1c1a17; font-weight: 700; display: grid; place-items: center; font-size: 11px; }
+  .header .id { flex: 1; opacity: .8; }
+  .header button { background: #d9a7f0; color: #1c1a17; border: 0; border-radius: 6px; padding: 2px 10px; font-size: 12px; }
+  .body { flex: 1; min-height: 0; margin: 0 2px 2px; border-radius: 6px; background: #0d1117; overflow: hidden auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+  h2 { font-size: 17px; margin: 0; font-weight: 600; }
+  ul { margin: 0; padding-left: 18px; }
+  table { border-collapse: collapse; width: 100%; border: 1px solid #3d444d; }
+  th { background: #151b23; text-align: left; }
+  th, td { padding: 4px 8px; border-top: 1px solid #3d444d; }
+  .muted { color: #9198a1; }
+  .press { align-self: flex-start; background: #4493f8; color: #0d1117; border: 0; border-radius: 6px; padding: 6px 12px; }
+</style></head>
+<body>
+<div class="toolbar"><b>Dashboard (WebKitGTK bench)</b>
+  <button>Add Hello</button><button>Add Release status</button><button>Add Overflow test</button>
+  <button>Add Spoof test</button><button>Add Password test</button><button>Add Host color test</button>
+  <span style="flex:1"></span><button>Settings</button></div>
+<div class="grid" id="grid"></div>
+<script>
+const ROW = 64;
+const sampler = `<h2>Release status</h2><div>Every block below is drawn by the host; the plugin only describes it.</div>
+  <ul><li>Runtime: 30 connector cases pass</li><li>Storage: quota enforced</li><li>Vault: tokens never reach plugins</li></ul>
+  <table><tr><th>Platform</th><th>Build</th><th>Tests</th></tr><tr><td>Linux</td><td>ok</td><td>312</td></tr>
+  <tr><td>macOS</td><td>ok</td><td>312</td></tr><tr><td>Windows</td><td>ok</td><td>311</td></tr></table>
+  <div class="muted">Button pressed 0 times</div><button class="press">Press</button>`;
+const items = Array.from({length: 80}, (_, i) => `<li>Item ${i + 1} of a list far taller than the frame</li>`).join("");
+const rows = Array.from({length: 40}, (_, i) => `<tr><td>row ${i + 1}</td><td>${"x".repeat(120)}</td><td>${i + 1}</td></tr>`).join("");
+const overflow = `<h2>${"W".repeat(300)}</h2><div>${"an-unbroken-word-".repeat(60)}</div><ul>${items}</ul>
+  <table><tr><th>a</th><th>b</th><th>c</th></tr>${rows}</table>`;
+const widgets = [
+  {name: "Release status", id: "local/ui-sampler", x: 0, y: 0, w: 5, h: 5, html: sampler},
+  {name: "Hello", id: "local/hello-widget", x: 5, y: 0, w: 3, h: 2, html: "<h2>Hello</h2><div>Hello, GPUI!</div>"},
+  {name: "Overflow test", id: "local/ui-sampler", x: 8, y: 0, w: 4, h: 3, html: overflow},
+  {name: "Spoof test", id: "local/ui-sampler", x: 5, y: 3, w: 4, h: 3,
+   html: '<h2>Dashboard — Approve permissions</h2><div>The host needs you to approve txt.exe to continue.</div><button class="press">Approve</button>'},
+];
+const grid = document.getElementById("grid");
+const slots = widgets.map(w => {
+  const slot = document.createElement("div");
+  slot.className = "slot";
+  Object.assign(slot.style, {left: `${w.x / 12 * 100}%`, top: `${w.y * ROW}px`, width: `${w.w / 12 * 100}%`, height: `${w.h * ROW}px`});
+  slot.innerHTML = `<div class="frame"><div class="header"><span class="icon">${w.name[0]}</span><b>${w.name}</b><span class="id">${w.id}</span><button>Remove</button></div><div class="body">${w.html}</div></div>`;
+  grid.appendChild(slot);
+  return slot;
+});
+function post(message) { window.webkit.messageHandlers.bench.postMessage(message); }
+function renderer() {
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    const info = gl && gl.getExtension("WEBGL_debug_renderer_info");
+    return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : (gl ? gl.getParameter(gl.RENDERER) : "no WebGL");
+  } catch (e) { return "error: " + e; }
+}
+requestAnimationFrame(() => requestAnimationFrame(() => post({kind: "first-frame", renderer: renderer()})));
+// Drag bench: the first widget follows the same circle as the GPUI spike's SPIKE_DRAG_BENCH,
+// one step per animation frame, moved by a transform as a React drag would.
+window.startDrag = function () {
+  const slot = slots[0], cw = grid.clientWidth / 12, radius = 2.5 * cw;
+  const start = performance.now(); let last = start; const frames = [];
+  function step(now) {
+    frames.push(now - last); last = now;
+    const t = (now - start) / 1000;
+    if (t < 5) {
+      slot.style.transform = `translate(${radius * Math.cos(t * 2)}px, ${radius * 0.6 * Math.sin(t * 2)}px)`;
+      requestAnimationFrame(step);
+    } else {
+      slot.style.transform = "";
+      post({kind: "drag", frames: frames.slice(1), seconds: t});
+    }
+  }
+  requestAnimationFrame(step);
+};
+</script></body></html>
