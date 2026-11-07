@@ -147,39 +147,14 @@ impl SignInService {
         let state = Arc::clone(&self.state);
         move |address: &url::Url| {
             let query: HashMap<String, String> = address.query_pairs().into_owned().collect();
-            let redirect = query.get("redirect_uri").cloned().unwrap_or_default();
-            let challenge = query.get("code_challenge").cloned().unwrap_or_default();
-            let client = query.get("client_id").cloned().unwrap_or_default();
-            let given_state = query.get("state").cloned().unwrap_or_default();
-            let (callback, code) = {
-                let mut state = state.lock().unwrap_or_else(PoisonError::into_inner);
-                let code = match (state.script.callback, &state.last_code) {
-                    (Callback::UsedCode, Some(used)) => used.clone(),
-                    _ => {
-                        let code = random("code");
-                        state
-                            .codes
-                            .insert(code.clone(), (challenge, redirect.clone(), client, false));
-                        state.secrets.push(code.clone());
-                        state.last_code = Some(code.clone());
-                        code
-                    }
-                };
-                (state.script.callback, code)
-            };
-            let query = match callback {
-                Callback::Right | Callback::UsedCode => format!("code={code}&state={given_state}"),
-                Callback::WrongState => format!("code={code}&state=forged"),
-                Callback::NoState => format!("code={code}"),
-                Callback::Error => "error=access_denied&state=".to_owned() + &given_state,
-            };
-            let redirect = url::Url::parse(&redirect).expect("a redirect address");
-            let port = redirect.port().expect("a loopback port");
+            let callback = approve(&state, &query);
+            let port = callback.port().expect("a loopback port");
             if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) {
                 let _ = write!(
                     stream,
-                    "GET {}?{query} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
-                    redirect.path()
+                    "GET {}?{} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                    callback.path(),
+                    callback.query().unwrap_or_default()
                 );
                 let mut answer = String::new();
                 let _ = stream.read_to_string(&mut answer);
@@ -192,6 +167,18 @@ impl SignInService {
     }
 
     fn routes(&self) {
+        // The sign-in page over HTTP, for a browser in another process, such as the test-only
+        // CLI's (specs/006-contract-v1-docs/research.md, R9): it signs in and accepts as
+        // `browser` does, and redirects to the loopback callback
+        let state = Arc::clone(&self.state);
+        self.server.route_with("/oauth/authorize", move |request| {
+            let query: HashMap<String, String> = url::form_urlencoded::parse(
+                request.query.as_deref().unwrap_or_default().as_bytes(),
+            )
+            .into_owned()
+            .collect();
+            Reply::redirect(302, approve(&state, &query).as_str())
+        });
         let state = Arc::clone(&self.state);
         self.server.route_with("/oauth/token", move |request| {
             let mut state = state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -465,4 +452,38 @@ fn memchr_find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
+}
+
+/// Signs in and accepts for the sign-in request `query`, as the script says, and returns the
+/// loopback callback the browser is sent to, with its code and state.
+fn approve(state: &Mutex<State>, query: &HashMap<String, String>) -> url::Url {
+    let redirect = query.get("redirect_uri").cloned().unwrap_or_default();
+    let challenge = query.get("code_challenge").cloned().unwrap_or_default();
+    let client = query.get("client_id").cloned().unwrap_or_default();
+    let given_state = query.get("state").cloned().unwrap_or_default();
+    let (callback, code) = {
+        let mut state = state.lock().unwrap_or_else(PoisonError::into_inner);
+        let code = match (state.script.callback, &state.last_code) {
+            (Callback::UsedCode, Some(used)) => used.clone(),
+            _ => {
+                let code = random("code");
+                state
+                    .codes
+                    .insert(code.clone(), (challenge, redirect.clone(), client, false));
+                state.secrets.push(code.clone());
+                state.last_code = Some(code.clone());
+                code
+            }
+        };
+        (state.script.callback, code)
+    };
+    let query = match callback {
+        Callback::Right | Callback::UsedCode => format!("code={code}&state={given_state}"),
+        Callback::WrongState => format!("code={code}&state=forged"),
+        Callback::NoState => format!("code={code}"),
+        Callback::Error => "error=access_denied&state=".to_owned() + &given_state,
+    };
+    let mut callback = url::Url::parse(&redirect).expect("a redirect address");
+    callback.set_query(Some(&query));
+    callback
 }

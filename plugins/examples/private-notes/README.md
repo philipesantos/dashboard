@@ -1,13 +1,15 @@
 # private-notes
 
-Example plugin for contract 1.3.0 (`account-widget`): shows the notes of a demonstration service,
-read as the user's account. Its development connector, [`connectors/notes.json`](connectors/notes.json)
-(`local/notes`), declares the account: the sign-in addresses, the access it asks for (`notes`,
-read), and how the host learns the account's name. The widget declares `"account": true` on that
-connector and calls it through `accounts`; the host adds the credential to each request itself,
-and the widget never sees it.
+The example widget for contract 1.3.0, in Rust: it shows the notes of a demonstration service,
+read as the person's account. It builds from [`wit/v1`](../../../wit/v1/widget.wit), the world
+`account-widget`, and calls its development connector,
+[`connectors/notes.json`](connectors/notes.json) (`local/notes`), through `accounts`: the host adds
+the account's credential to each request itself, and the widget never sees it.
 
-`notes.test` is not a real service: the runtime's tests run this example end to end against the
-test sign-in service (`runtime/tests/common/signin.rs`), through the test network that only the
-runtime's own tests can reach (`specs/005-plugin-credentials/research.md`, R15, R16). Without an
-account connected the connector still works and the service answers with its public notes.
+How a widget acts as an account, connecting and disconnecting one, every answer of a call, and how
+to build, pack, approve, update and run this example: [accounts](../../../docs/authors/guides/accounts.md).
+
+`notes.test` is not a real service. The runtime's tests, and the docs' checks, run this example
+against the test sign-in and notes service (`runtime/tests/common/signin.rs`), through the test
+network only they can reach. Without an account connected the service answers with its public
+notes.

@@ -3672,6 +3672,7 @@ dependencies = [
  "wasmtime",
  "wat",
  "windows-native-keyring-store",
+ "wit-component 0.262.0",
  "wit-parser 0.261.0",
  "zeroize",
 ]

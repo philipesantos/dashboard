@@ -4,6 +4,5 @@
   "id": "local/storage-file",
   "version": "0.1.0",
   "author": "Dashboard contributors",
-  "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }],
-  "login_providers": []
+  "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }]
 }

@@ -16,9 +16,11 @@ Example plugins, one folder each.
   credential to each request, and the widget never sees it.
 
 Each example has a `manifest.json` beside its `Cargo.toml`: who the plugin is and the
-permissions it needs. [`docs/plugin-authors.md`](../../docs/plugin-authors.md) explains the
-contract, the manifest, and how to pack, approve and run a plugin.
+permissions it needs. Each has a guide in [the docs for authors](../../docs/authors/README.md),
+which start with [a walkthrough](../../docs/authors/getting-started.md) that builds a widget of
+your own outside the repository.
 
 Rust plugins build with cargo and wit-bindgen for `wasm32-unknown-unknown` and become
-components with wit-component (constitution, Fixed Technical Decisions); `cargo xtask plugins`
-does both and adds the manifest. TypeScript examples arrive in feature 006.
+components with wit-component (constitution, Fixed Technical Decisions): `cargo xtask plugins`
+does both inside the repository and adds the manifest, and `runtime pack` does the same for a
+widget outside it. TypeScript plugins arrive in Phase 5.

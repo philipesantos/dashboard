@@ -418,18 +418,23 @@ fn foreign_store() {
                 std::fs::copy(&a_store, &b_store).unwrap();
             }
         }
-        // Only B's kept data may change: its failed update is recorded
+        // Only B's kept data may change: its update is recorded
         let kept = vault.own("local/store-b", &b_origin).remove(1);
         vault.contained(&[kept], || {
             let found = render(&b, &[get("mine"), list("")]);
             for answer in &found {
                 assert_eq!(answer["error"], "failed:damaged", "{kind:?}: {answer}");
             }
-            // An update that cannot use its store fails, naming why
-            let report = b.update(&steps(&[set("mine", "rewritten")], None));
-            let error = report.result.expect_err("the update fails");
-            assert_eq!(error.kind(), ErrorKind::StorageFailed, "{kind:?}: {error}");
-            assert!(error.to_string().contains("damaged"), "{kind:?}: {error}");
+            // An update that cannot open its store gets `damaged`, then `run-aborted`, and
+            // writes nothing; what it returns stands (`specs/006-contract-v1-docs/review.md`, F7)
+            let report = b.update(&steps(&[set("mine", "rewritten"), get("mine")], None));
+            let content = report.result.expect("the update's own result stands");
+            let found = answers(&content);
+            assert_eq!(found[0]["error"], "failed:damaged", "{kind:?}: {content}");
+            assert_eq!(
+                found[1]["error"], "failed:run-aborted",
+                "{kind:?}: {content}"
+            );
         });
         assert!(b_store.is_file(), "{kind:?}: the host deleted the file");
         assert_eq!(render(&a, &[get("secret")]), [hex("A's value")]);

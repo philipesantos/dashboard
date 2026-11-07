@@ -168,7 +168,12 @@ impl Entry {
                 changes.push(format!("connector newly declared: {}", state.id));
                 continue;
             };
-            if !request.required && !grant.granted {
+            if !grant.granted {
+                // Required connectors are approved together (FR-018): one that was optional and
+                // off and is now required was never approved
+                if request.required {
+                    changes.push(format!("connector now required: {}", state.id));
+                }
                 continue;
             }
             if grant.origin != state.origin {
@@ -1647,6 +1652,10 @@ mod tests {
     /// A manifest for `local/github-releases` declaring `catalog/github` (required) with
     /// `list-releases`, and `local/weather` (optional) with `forecast`.
     fn connected_manifest(weather_operations: &[&str]) -> Manifest {
+        connected_manifest_requiring(weather_operations, false)
+    }
+
+    fn connected_manifest_requiring(weather_operations: &[&str], weather: bool) -> Manifest {
         let manifest = json!({
             "manifest_version": 1,
             "id": "local/github-releases",
@@ -1656,7 +1665,7 @@ mod tests {
             "login_providers": [],
             "connectors": [
                 { "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true },
-                { "id": "local/weather", "major": 0, "operations": weather_operations, "required": false }
+                { "id": "local/weather", "major": 0, "operations": weather_operations, "required": weather }
             ]
         });
         Manifest::parse(&serde_json::to_vec(&manifest).expect("serializes")).expect("valid")
@@ -2023,6 +2032,14 @@ mod tests {
             entry
                 .connector_changes(&manifest, &[github_state(), weather])
                 .is_empty()
+        );
+        // Unless a new version requires it: required connectors are approved together
+        let required = connected_manifest_requiring(&["forecast"], true);
+        let mut weather = weather_state();
+        weather.required = true;
+        assert_eq!(
+            entry.connector_changes(&required, &[github_state(), weather]),
+            ["connector now required: local/weather"]
         );
     }
 
