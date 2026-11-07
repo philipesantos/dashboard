@@ -107,8 +107,11 @@ jobs:
           & $bin --dev-approve
           ./scripts/measure-windows.ps1 -Label "gpui-${{ matrix.base }}" -Title "Dashboard (GPUI spike)" -Exe $bin | Tee-Object -Append ../../results.txt
           $env:SPIKE_DRAG_BENCH = "1"
+          $env:RUST_LOG = "warn,gpui_windows=info"
           $out = & $bin 2>&1 | Out-String
-          ($out -split "`n" | Select-String "drag bench|first frame") | Tee-Object -Append ../../results.txt
+          "drag-bench exit=$LASTEXITCODE" | Tee-Object -Append ../../results.txt
+          $out | Tee-Object -Append ../../results.txt
+          $global:LASTEXITCODE = 0
 
       - name: Run on macOS
         if: runner.os == 'macOS'
@@ -123,7 +126,7 @@ jobs:
           echo "gpui-${{ matrix.base }} rss_mib=$(ps -o rss= -p $pid | awk '{printf "%.1f", $1/1024}') cpu=$(ps -o %cpu= -p $pid)" | tee -a ../../results.txt
           wait $pid || true
           grep -E 'first frame' run.log | tee -a ../../results.txt || true
-          SPIKE_DRAG_BENCH=1 $bin 2>&1 | grep -E 'drag bench' | tee -a ../../results.txt || true
+          { SPIKE_DRAG_BENCH=1 $bin 2>&1; echo "drag-bench exit=$?"; } | tee -a ../../results.txt || true
 
       - name: Summary
         if: always()

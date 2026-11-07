@@ -1,0 +1,6 @@
+wk-x11-1 window_ms=582 first_frame_ms=1247 pss_mib=272.2 rss_mib=458.8 idle_cpu=1.8% processes=3
+wk-wl-1 window_ms=1562 first_frame_ms=1498 pss_mib=277.9 rss_mib=470.1 idle_cpu=0.1% processes=6
+wk-x11-2 window_ms=386 first_frame_ms=792 pss_mib=274.9 rss_mib=456.5 idle_cpu=1.6% processes=3
+wk-wl-2 window_ms=891 first_frame_ms=849 pss_mib=278.9 rss_mib=466.8 idle_cpu=0.1% processes=6
+wk-x11-3 window_ms=375 first_frame_ms=788 pss_mib=218.5 rss_mib=456.6 idle_cpu=1.8% processes=3
+wk-wl-3 window_ms=897 first_frame_ms=865 pss_mib=268.2 rss_mib=467.5 idle_cpu=0.3% processes=6
