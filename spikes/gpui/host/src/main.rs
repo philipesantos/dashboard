@@ -5,7 +5,7 @@
 //! - `SPIKE_REQUEST_ADD=<entry>`: asks to add a catalog entry at startup, as its toolbar button
 //!   does, so the approval dialog opens when the package has no approval.
 //!
-//! `--dev-approve`: see [`dashboard_gpui_spike::dev_approve`].
+//! `--dev-approve`: see [`dashboard_gpui_spike::dev_approve`]; it exits once done.
 
 use std::time::{Duration, Instant};
 
@@ -19,10 +19,13 @@ fn main() {
 
     if std::env::args().any(|arg| arg == "--dev-approve") {
         match dashboard_gpui_spike::dev_approve(&data_dir) {
-            Ok(()) => eprintln!(
-                "spike: --dev-approve granted the embedded packages in {}",
-                data_dir.display()
-            ),
+            Ok(()) => {
+                eprintln!(
+                    "spike: --dev-approve granted the embedded packages in {}",
+                    data_dir.display()
+                );
+                return;
+            }
             Err(error) => {
                 eprintln!("spike: --dev-approve failed: {error:#}");
                 std::process::exit(1);

@@ -76,7 +76,7 @@ and start it from a terminal.
 
 | | |
 | --- | --- |
-| `--dev-approve` | Approves the two embedded packages and lays out four widgets without the dialog, as the development CLI grants to local packages (Principle VII), so measurements can run unattended. |
+| `--dev-approve` | Approves the two embedded packages, lays out four widgets and exits, without the dialog, as the development CLI grants to local packages (Principle VII), so measurements can run unattended. |
 | `SPIKE_DATA_DIR` | Where the spike keeps its records. |
 | `SPIKE_EXIT_AFTER_MS` | Quits after this many milliseconds. |
 | `SPIKE_DRAG_BENCH=1` | Drags the first widget along a path for 5 s through the mouse code path and prints frame times and CPU. |
