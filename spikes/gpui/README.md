@@ -72,6 +72,15 @@ both bases (`gpui-spike-<system>-<base>`). They embed both plugins, so they run 
 macOS binary is not signed: after unzipping, run `xattr -d com.apple.quarantine dashboard-gpui-spike`
 and start it from a terminal.
 
+### Windows check, one double-click
+
+The Windows artifact also carries `run-check.cmd`, `windows-check.ps1` and `measure-windows.ps1`.
+Unzip it and double-click `run-check.cmd`: for about two minutes it opens and closes the app by
+itself (do not use the mouse or keyboard meanwhile), then leaves `spike-report.txt` in the same
+folder with the system and GPU, the adapter GPUI chose, startup, memory, idle CPU, the drag
+benchmark, the UI Automation tree Narrator reads (dashboard and approval dialog) and where Tab
+moves focus. Nothing is sent anywhere.
+
 ### For measurement
 
 | | |

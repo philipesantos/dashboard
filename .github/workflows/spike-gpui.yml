@@ -113,6 +113,14 @@ jobs:
           $out | Tee-Object -Append ../../results.txt
           $global:LASTEXITCODE = 0
 
+      - name: Windows check script, as a person would run it from the artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item spikes/gpui/scripts/windows-check.ps1, spikes/gpui/scripts/measure-windows.ps1, spikes/gpui/scripts/run-check.cmd artifact/
+          powershell -NoProfile -ExecutionPolicy Bypass -File artifact/windows-check.ps1
+          Move-Item artifact/spike-report.txt artifact/spike-report-ci.txt
+
       - name: Run on macOS
         if: runner.os == 'macOS'
         working-directory: spikes/gpui
