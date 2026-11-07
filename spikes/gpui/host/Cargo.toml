@@ -1,0 +1,27 @@
+[package]
+name = "dashboard-gpui-spike"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui-kit = { workspace = true, features = ["component", "assets"] }
+widget-kit = { path = "../widget-kit" }
+serde.workspace = true
+serde_json.workspace = true
+# The plugin runtime, unchanged, from the repository
+runtime = { path = "../../../runtime" }
+anyhow = "=1.0.104"
+dirs = "=7.0.0"
+env_logger = { version = "=0.11.11", default-features = false, features = ["auto-color", "humantime"] }
+log = "=0.4.35"
+
+[features]
+gpui-fast = ["gpui-kit/gpui-fast"]
+
+[dev-dependencies]
+# GPUI's headless test platform and gpui-kit's UI test helpers: real windows, simulated input,
+# and queries on the accessibility properties of the last frame
+gpui-kit = { workspace = true, features = ["component", "assets", "test-support"] }
+tempfile = "=3.27.0"
