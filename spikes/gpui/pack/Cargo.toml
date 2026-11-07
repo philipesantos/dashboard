@@ -1,0 +1,12 @@
+[package]
+name = "pack"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Builds the spike's plugin and packs it as cargo xtask plugins does"
+
+[dependencies]
+# The same versions as xtask/ (root Cargo.lock), pinned
+wasm-encoder = "=0.262.0"
+wit-component = "=0.262.0"

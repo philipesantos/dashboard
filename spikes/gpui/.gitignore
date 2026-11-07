@@ -1,0 +1,3 @@
+# The spike builds in its own target directories
+/target/
+/plugin/target/
