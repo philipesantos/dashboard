@@ -1,0 +1,221 @@
+# Spike: GPUI as the host UI (spikes/gpui/REPORT.md). Builds, tests and measures the spike on the
+# three systems, on both GPUI bases gpui-kit offers, and measures the current Tauri app beside it.
+# Every build here is clean (no cache), so the times are comparable. The binaries are uploaded
+# for testing by hand.
+name: Spike GPUI
+
+on:
+  push:
+    branches: [spike/gpui]
+    paths: ["spikes/gpui/**", ".github/workflows/spike-gpui.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-gpui-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gpui:
+    name: GPUI ${{ matrix.base }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+        base: [gpui-pre, gpui-fast]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      FEATURES: ${{ matrix.base == 'gpui-fast' && '--features gpui-fast' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install GPUI and runtime system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          sudo apt-get $apt_options update
+          sudo apt-get $apt_options install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libvulkan-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev libdbus-1-dev \
+            mesa-vulkan-drivers xvfb x11-utils
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy
+          targets: wasm32-unknown-unknown, wasm32-wasip2
+
+      - name: Build the plugins the spike embeds
+        run: |
+          cargo xtask plugins --locked
+          cargo run --locked --manifest-path spikes/gpui/Cargo.toml -p pack -- --locked
+
+      - name: Release build, clean and incremental
+        working-directory: spikes/gpui
+        run: scripts/time-build.sh "release-${{ matrix.base }}" host/src/dashboard.rs -- --release --locked -p dashboard-gpui-spike $FEATURES | tee -a ../../results.txt
+
+      - name: Debug build, clean and incremental
+        working-directory: spikes/gpui
+        run: scripts/time-build.sh "debug-${{ matrix.base }}" host/src/dashboard.rs -- --locked -p dashboard-gpui-spike $FEATURES | tee -a ../../results.txt
+
+      - name: Clippy
+        working-directory: spikes/gpui
+        run: cargo clippy --locked --workspace --all-targets $FEATURES -- -D warnings
+
+      - name: Tests, headless
+        working-directory: spikes/gpui
+        run: cargo test --locked --workspace $FEATURES
+
+      - name: Binary size
+        working-directory: spikes/gpui
+        run: |
+          bin=target/release/dashboard-gpui-spike; [ -f "$bin.exe" ] && bin="$bin.exe"
+          echo "binary-${{ matrix.base }} bytes=$(wc -c < "$bin")" | tee -a ../../results.txt
+          mkdir -p ../../artifact && cp "$bin" ../../artifact/
+
+      - name: Run on Linux (Xvfb, software Vulkan)
+        if: runner.os == 'Linux'
+        working-directory: spikes/gpui
+        env:
+          SPIKE_DATA_DIR: ${{ runner.temp }}/spike-data
+        run: |
+          bin=target/release/dashboard-gpui-spike
+          $bin --dev-approve
+          xvfb-run -a -s "-screen 0 1600x1000x24" bash -c "
+            scripts/measure-linux.sh gpui-${{ matrix.base }} 'Dashboard (GPUI spike)' 5 10 -- $bin
+            RUST_LOG=warn,gpui_wgpu=info SPIKE_DRAG_BENCH=1 timeout 60 $bin 2>&1 | grep -E 'Selected GPU adapter|drag bench|first frame' || true
+          " | tee -a ../../results.txt
+
+      - name: Run on Windows
+        if: runner.os == 'Windows'
+        working-directory: spikes/gpui
+        shell: pwsh
+        env:
+          SPIKE_DATA_DIR: ${{ runner.temp }}\spike-data
+        run: |
+          $bin = "target\release\dashboard-gpui-spike.exe"
+          & $bin --dev-approve
+          ./scripts/measure-windows.ps1 -Label "gpui-${{ matrix.base }}" -Title "Dashboard (GPUI spike)" -Exe $bin | Tee-Object -Append ../../results.txt
+          $env:SPIKE_DRAG_BENCH = "1"
+          $out = & $bin 2>&1 | Out-String
+          ($out -split "`n" | Select-String "drag bench|first frame") | Tee-Object -Append ../../results.txt
+
+      - name: Run on macOS
+        if: runner.os == 'macOS'
+        working-directory: spikes/gpui
+        env:
+          SPIKE_DATA_DIR: ${{ runner.temp }}/spike-data
+        run: |
+          bin=target/release/dashboard-gpui-spike
+          $bin --dev-approve
+          SPIKE_EXIT_AFTER_MS=15000 $bin 2> run.log &
+          pid=$!; sleep 12
+          echo "gpui-${{ matrix.base }} rss_mib=$(ps -o rss= -p $pid | awk '{printf "%.1f", $1/1024}') cpu=$(ps -o %cpu= -p $pid)" | tee -a ../../results.txt
+          wait $pid || true
+          grep -E 'first frame' run.log | tee -a ../../results.txt || true
+          SPIKE_DRAG_BENCH=1 $bin 2>&1 | grep -E 'drag bench' | tee -a ../../results.txt || true
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo "### GPUI ${{ matrix.base }} on ${{ matrix.os }}"; echo '```'; cat results.txt 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cp results.txt artifact/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: gpui-spike-${{ runner.os }}-${{ matrix.base }}
+          path: artifact/
+          if-no-files-found: warn
+          retention-days: 30
+
+  tauri:
+    name: Tauri baseline (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          sudo apt-get $apt_options update
+          sudo apt-get $apt_options install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev xvfb x11-utils
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Frontend build
+        run: |
+          s=$(perl -MTime::HiRes=time -e 'printf "%.3f", time'); pnpm --filter ./app build; e=$(perl -MTime::HiRes=time -e 'printf "%.3f", time')
+          awk -v s="$s" -v e="$e" 'BEGIN { printf "frontend build_s=%.1f\n", e - s }' | tee -a results.txt
+
+      - name: Release build, clean and incremental
+        run: spikes/gpui/scripts/time-build.sh release-tauri app/src-tauri/src/lib.rs -- --release --locked -p dashboard --features tauri/custom-protocol | tee -a results.txt
+
+      - name: Debug build, clean and incremental
+        run: spikes/gpui/scripts/time-build.sh debug-tauri app/src-tauri/src/lib.rs -- --locked -p dashboard --features tauri/custom-protocol | tee -a results.txt
+
+      - name: Binary size
+        run: |
+          bin=target/release/dashboard; [ -f "$bin.exe" ] && bin="$bin.exe"
+          echo "binary-tauri bytes=$(wc -c < "$bin")" | tee -a results.txt
+          # The runtime the GPUI spike embeds, for comparison: its CLI is mostly Wasmtime
+          cargo build --release --locked -p runtime --bin runtime
+          rt=target/release/runtime; [ -f "$rt.exe" ] && rt="$rt.exe"
+          echo "binary-runtime-cli bytes=$(wc -c < "$rt")" | tee -a results.txt
+
+      - name: Run on Linux (Xvfb, WebKitGTK)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a -s "-screen 0 1600x1000x24" bash -c "
+            spikes/gpui/scripts/measure-linux.sh tauri-webkitgtk dashboard 5 10 -- target/release/dashboard
+            WEBKIT_DISABLE_DMABUF_RENDERER=1 spikes/gpui/scripts/measure-linux.sh tauri-webkitgtk-nodmabuf dashboard 5 10 -- target/release/dashboard
+          " | tee -a results.txt
+
+      - name: Run on Windows (WebView2)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./spikes/gpui/scripts/measure-windows.ps1 -Label tauri-webview2 -Title dashboard -Exe target\release\dashboard.exe | Tee-Object -Append results.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo "### Tauri on ${{ matrix.os }}"; echo '```'; cat results.txt 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: tauri-baseline-${{ runner.os }}
+          path: results.txt
+          retention-days: 30

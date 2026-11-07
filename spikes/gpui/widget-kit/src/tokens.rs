@@ -1,6 +1,6 @@
 //! Widget design tokens: the only colors, sizes and spacing widget content is drawn with.
 
-use gpui_kit::{Hsla, Rgba};
+use gpui_kit::Hsla;
 use serde::Deserialize;
 
 /// Typography shared by host and widgets (font sizes in pixels).
@@ -77,7 +77,7 @@ pub struct Color(pub u32);
 
 impl Color {
     pub fn hsla(self) -> Hsla {
-        Rgba::from(gpui_kit::rgb(self.0)).into()
+        gpui_kit::rgb(self.0).into()
     }
 
     pub fn channels(self) -> [f32; 3] {

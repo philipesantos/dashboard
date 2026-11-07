@@ -60,14 +60,15 @@ fn main() {
                 }
             };
 
-            if let Ok(entry) = std::env::var("SPIKE_REQUEST_ADD") {
-                if let Some(entry) = plugins::entry(&entry) {
-                    window
-                        .update(cx, |_, window, cx| {
-                            dashboard.update(cx, |d, cx| d.request_add(entry, window, cx))
-                        })
-                        .ok();
-                }
+            if let Some(entry) = std::env::var("SPIKE_REQUEST_ADD")
+                .ok()
+                .and_then(|key| plugins::entry(&key))
+            {
+                window
+                    .update(cx, |_, window, cx| {
+                        dashboard.update(cx, |d, cx| d.request_add(entry, window, cx))
+                    })
+                    .ok();
             }
             if let Some(ms) = std::env::var("SPIKE_EXIT_AFTER_MS")
                 .ok()
