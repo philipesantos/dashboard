@@ -38,14 +38,21 @@ fn digest(file: &str, bytes: Vec<u8>) -> String {
             .replace("\r\n", "\n")
             .into_bytes()
     };
-    Sha256::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+    Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[test]
 fn every_vendored_file_matches_its_recorded_hash() {
     let pins = recorded();
     // Radix (4), the format (2), Inter (3)
-    assert_eq!(pins.len(), 9, "design/README.md should record nine files: {pins:?}");
+    assert_eq!(
+        pins.len(),
+        9,
+        "design/README.md should record nine files: {pins:?}"
+    );
     for (file, pinned) in pins {
         let bytes = std::fs::read(design_dir().join(&file))
             .unwrap_or_else(|error| panic!("design/{file}: {error}"));
@@ -64,5 +71,8 @@ fn a_changed_byte_changes_the_hash() {
     let changed = digest("x.ts", b"export const grey = {\n};\n".to_vec());
     let crlf = digest("x.ts", b"export const gray = {\r\n};\r\n".to_vec());
     assert_ne!(original, changed);
-    assert_eq!(original, crlf, "line endings must not change a text file's hash");
+    assert_eq!(
+        original, crlf,
+        "line endings must not change a text file's hash"
+    );
 }

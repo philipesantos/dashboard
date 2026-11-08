@@ -54,8 +54,11 @@ never the per-scale alpha (`A`) or P3 (`P`) exports.
 
 The files are read by a strict line reader in `design-gen`, not a TypeScript parser: it accepts
 only `export const <name> = {`, `  <name><step>: "<#rrggbb or rgba(r, g, b, a)>",`, `};` and
-blank lines; refuses any other line, a scale without exactly 12 steps, a step out of order, and a
-set of scale names other than the expected 31 solid scales plus `blackA`.
+blank lines; refuses any other line, a block without exactly 12 steps, a step out of order, a
+missing solid scale and an export it does not recognise. The alpha and P3 exports (`grayA`,
+`grayP3`, `grayP3A`, their `Dark` forms and `blackP3A`) are recognised by name and skipped, so
+their `color(display-p3 …)` values are never read; a solid scale's value must be `#rrggbb` and
+`blackA`'s `rgba(r, g, b, a)`.
 
 **Rationale**: the constitution uses Radix as plain color data; the files are the upstream
 source, so a reviewer can diff an upgrade line by line. No npm, no Node.js.

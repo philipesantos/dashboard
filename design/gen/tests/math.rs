@@ -29,14 +29,39 @@ fn cut_off_never_rounds_up() {
 
 #[test]
 fn compositing_over_an_opaque_color() {
-    let half_black = Rgba { r: 0, g: 0, b: 0, a: 0.5 };
+    let half_black = Rgba {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0.5,
+    };
     let over_white = composite(half_black, hex("#ffffff"));
     for channel in [over_white.r, over_white.g, over_white.b] {
-        assert!(channel.abs_diff(0x80) <= 1, "{over_white:?} is not #808080 within one unit");
+        assert!(
+            channel.abs_diff(0x80) <= 1,
+            "{over_white:?} is not #808080 within one unit"
+        );
     }
-    let opaque = Rgba { r: 12, g: 34, b: 56, a: 1.0 };
-    assert_eq!(composite(opaque, hex("#ffffff")), Rgb { r: 12, g: 34, b: 56 });
-    let clear = Rgba { r: 12, g: 34, b: 56, a: 0.0 };
+    let opaque = Rgba {
+        r: 12,
+        g: 34,
+        b: 56,
+        a: 1.0,
+    };
+    assert_eq!(
+        composite(opaque, hex("#ffffff")),
+        Rgb {
+            r: 12,
+            g: 34,
+            b: 56
+        }
+    );
+    let clear = Rgba {
+        r: 12,
+        g: 34,
+        b: 56,
+        a: 0.0,
+    };
     assert_eq!(composite(clear, hex("#abcdef")), hex("#abcdef"));
 }
 
@@ -74,7 +99,14 @@ fn hue_distance_wraps_around() {
 
 #[test]
 fn hex_parsing_is_strict() {
-    assert_eq!(hex("#0090FF"), Rgb { r: 0, g: 0x90, b: 0xff });
+    assert_eq!(
+        hex("#0090FF"),
+        Rgb {
+            r: 0,
+            g: 0x90,
+            b: 0xff
+        }
+    );
     for bad in ["0090ff", "#09f", "#0090ff00", "#gg90ff", "", "#0090f"] {
         assert!(Rgb::parse_hex(bad).is_none(), "{bad:?} must be refused");
     }

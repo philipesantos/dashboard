@@ -121,7 +121,7 @@ workspace builds and every existing test passes at the end of this phase.
   refuses, naming the line: an unexpected line, a scale with 11 or 13 steps, a step out of
   order, a missing or extra scale name, and a value that is neither `#rrggbb` nor
   `rgba(r, g, b, a)`. Fixtures are small inline strings, not copies of the vendored files.
-- [ ] T009 Implement `design/gen/src/color.rs` (sRGB, relative luminance, contrast cut off to two
+- [X] T009 Implement `design/gen/src/color.rs` (sRGB, relative luminance, contrast cut off to two
   decimals, compositing over an opaque color, OKLab/OKLCH, hue distance) and
   `design/gen/src/radix.rs` (the strict line reader of research R2, the `Scale` entity of
   `data-model.md` with `kind` derived from the gray-family list and "chroma under 0.08 means

@@ -6,7 +6,9 @@ use design_gen::radix::{SCALES, Theme, parse_exports, read};
 use std::path::Path;
 
 fn vendored(file: &str) -> String {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../radix/3.0.0").join(file);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../radix/3.0.0")
+        .join(file);
     std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
@@ -21,8 +23,12 @@ fn block(name: &str, key: &str, steps: impl IntoIterator<Item = u8>) -> String {
 
 #[test]
 fn reads_every_scale_of_both_themes_and_black_a() {
-    let palette = read(&vendored("light.ts"), &vendored("dark.ts"), &vendored("blackA.ts"))
-        .expect("the vendored files read");
+    let palette = read(
+        &vendored("light.ts"),
+        &vendored("dark.ts"),
+        &vendored("blackA.ts"),
+    )
+    .expect("the vendored files read");
     assert_eq!(SCALES.len(), 31);
     assert_eq!(palette.scales.len(), 31);
     for name in SCALES {
@@ -30,8 +36,14 @@ fn reads_every_scale_of_both_themes_and_black_a() {
         assert_eq!(scale.step(Theme::Light, 1).to_hex().len(), 7, "{name}");
         assert_eq!(scale.step(Theme::Dark, 12).to_hex().len(), 7, "{name}");
     }
-    assert_eq!(palette.scales["blue"].step(Theme::Light, 9).to_hex(), "#0090ff");
-    assert_eq!(palette.scales["gray"].step(Theme::Dark, 12).to_hex(), "#eeeeee");
+    assert_eq!(
+        palette.scales["blue"].step(Theme::Light, 9).to_hex(),
+        "#0090ff"
+    );
+    assert_eq!(
+        palette.scales["gray"].step(Theme::Dark, 12).to_hex(),
+        "#eeeeee"
+    );
     assert_eq!(palette.black_a[6].a, 0.5, "blackA7");
     assert_eq!(palette.black_a[11].a, 0.95, "blackA12");
 }
@@ -55,7 +67,11 @@ fn refuses_malformed_files_with_their_line() {
             block("blue", "blue", [1, 2, 3, 5, 4, 6, 7, 8, 9, 10, 11, 12]),
             5,
         ),
-        ("an unterminated block", "export const blue = {\n  blue1: \"#0090ff\",\n".to_owned(), 1),
+        (
+            "an unterminated block",
+            "export const blue = {\n  blue1: \"#0090ff\",\n".to_owned(),
+            1,
+        ),
         (
             "a stray line inside a block",
             "export const blue = {\n  // a comment\n};\n".to_owned(),
@@ -63,11 +79,13 @@ fn refuses_malformed_files_with_their_line() {
         ),
     ];
     for (what, text, line) in cases {
-        let error = parse_exports("light.ts", &text)
-            .expect_err(&format!("{what} must be refused"));
+        let error = parse_exports("light.ts", &text).expect_err(&format!("{what} must be refused"));
         assert_eq!(error.file, "light.ts", "{what}");
         assert_eq!(error.line, line, "{what}: {error}");
-        assert!(error.to_string().starts_with(&format!("light.ts:{line}: ")), "{error}");
+        assert!(
+            error.to_string().starts_with(&format!("light.ts:{line}: ")),
+            "{error}"
+        );
     }
 }
 
