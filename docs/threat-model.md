@@ -152,7 +152,7 @@ suite grows with every phase and never shrinks.
 | Widget opens a window or dialog (phishing) | T1 | A2, A4 | B4 | V, VII | Phase 3 |
 | Widget content makes the host fetch a remote resource or a local file, or open a URL (an image address, a link) | T1, T2 | A1, A3 | B2, B4 | Widget content maps only to the host's components; images arrive only as bytes; no plugin string ever reaches GPUI's `img()` or `open_url`; GPUI's HTTP client stays null (III, V) | Phase 3 |
 | Something that is not a host dialog passes for one: the operating system's native prompt, or a widget drawing one | T1 | A2, A4 | B4 | A host dialog takes a form no widget content or declared control can produce: it covers the host's chrome, blocks every host window, keeps keyboard focus and is the only thing assistive technology sees; no plugin content takes a dialog's role; native prompts are never used for trust decisions (V, VII) | Phase 3 |
-| Widget content imitates a host dialog inside its frame, with placed declared actions as its buttons ("Allow access?") | T1 | A1, A4 | B4 | No frame covers the host's chrome, which only a host dialog covers; the buttons can only run that widget's own declared actions, within their declared effect (V, VII) | Phase 3 |
+| Widget content imitates a host dialog inside its frame, with placed declared actions as its buttons ("Allow access?") | T1 | A1, A4 | B4 | No frame covers the host's chrome, which only a host dialog covers; the buttons can only run that widget's own declared actions, within their declared effect (V, VII). Not enough on its own: see the open questions | Phase 3 |
 | A dialog appears under the user's pointer or keystroke, so input meant for something else answers it | T1, T3 | A4 | B4 | A new dialog's buttons ignore input for a short time after it appears, and no answer is preselected for a key that was already held | Phase 3 |
 | Crafted image, SVG or font exploits a decoder, which now runs in the host process beside the vault | T1, T4 | A2, A3 | B1, B4 | Images only as bytes within size limits; decoding moved out of the host process if decision 0001 is revisited that way in Phase 3; pinned decoders, `cargo audit` | Phase 3 |
 | Asks for little at install, then presses the user to turn on optional permissions one at a time | T1 | A1, A4 | B4 | Only host controls turn a permission on (VII); the dangerous-combination warning runs on every grant change, judged on the permissions the plugin will hold afterwards | Phase 3 |
@@ -194,6 +194,13 @@ suite grows with every phase and never shrinks.
   v3.0.0): there is no webview. Widget content maps only to the host's components, images
   arrive only as bytes, no plugin string reaches GPUI's `img()` or `open_url`, and GPUI's HTTP
   client stays null; Phase 3 tests each rule (VIII).
+- How does a widget's fake dialog stop passing for the host's? Inside its frame, a widget can draw
+  "Allow access?" and place one of its own declared actions as the button; the click is the
+  user's, so an operation that changes data runs. Not covering the host's chrome narrows it but is
+  again a sign someone must notice is missing. Whether the host writes, in its own words, the
+  effect and destination on every control of an action that changes data, and whether a
+  destructive action always asks for a host dialog, is decided in the Phase 3 spec for declared
+  actions and settings.
 - How does taint propagate across plugin calls, storage and later executions? Phase 4.
 - Where are third-party plugins installed from, and how is the installed version pinned?
   Decided on 2026-10-22 (feature 002): only from their authors' repositories, never from a
