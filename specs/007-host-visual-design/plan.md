@@ -28,9 +28,10 @@ No window, no hostile case: those arrive with the host features, which must pass
 **Language/Version**: Rust (edition 2024, stable; MSRV 1.97, as the workspace)
 
 **Primary Dependencies**: `yaml-rust2` `=0.13.0` in `design-gen` (R4); vendored data, not crates:
-Radix Colors 3.0.0 `light.ts`/`dark.ts` (MIT, R2), Inter (OFL 1.1, R9); the DESIGN.md format
-spec at tag 0.4.0 is a reference, not vendored code (R1); `actions/upload-artifact` pinned to a
-commit SHA (R12)
+Radix Colors 3.0.0 `light.ts`, `dark.ts` and `blackA.ts` (MIT, R2), Inter unmodified (OFL 1.1,
+R9), the DESIGN.md format spec at tag 0.4.0 (Apache-2.0, R1); `actions/upload-artifact` pinned
+to a commit SHA (R12). The future host must ship Radix's MIT notice, since its values are
+compiled in
 
 **Storage**: files only: `DESIGN.md`; generated `design/tokens/src/generated.rs`,
 `design/host-surfaces/src/generated.rs`, `design/tokens.dtcg.json` (committed, R7); the preview
@@ -38,9 +39,10 @@ in `target/` and as a CI artifact (R8)
 
 **Testing**: `cargo test` in `design-gen` (format and project-layer checks, drift, contrast lint
 over every allowed appearance, hue rule against an independent computation, Radix and spec
-pins, criteria coverage against the threat model), in `design-tokens` (appearance validation,
-tone resolution, the `compile_fail` doc test) and `cargo deny check bans` (the `host-surfaces`
-ban); the existing security suite unchanged (FR-022)
+pins, the host-surface split, no `include!` of host-surface files, criteria coverage against the
+threat model), in `design-tokens` (appearance validation, tone resolution), `cargo deny check
+bans` on the workspace and, expected to fail, on `design/ban-fixture/` (R6); every pin and drift
+comparison reads LF; the existing security suite unchanged (FR-022)
 
 **Target Platform**: the build and tests on Windows, macOS and Linux; the preview job on Linux
 
@@ -50,7 +52,8 @@ design documentation
 **Performance Goals**: `cargo xtask design --check` under 5 s on the reference machine (about
 2,800 contrast combinations × the declared pairings is arithmetic); no new CI job
 
-**Constraints**: no Node.js in CI (spec, R4); no HTML and no script in anything generated (R8);
+**Constraints**: no Node.js in CI (spec, R4); no HTML and no script in anything generated, and
+the preview's embedded style sheet never reaches the host UI (R8);
 no image block or plugin-supplied icon (FR-023); the format's tags are the only upstream change
 that can alter the checker, and moving them is its own reviewed change
 
@@ -75,16 +78,25 @@ Checked against constitution v4.0.0.
 | VI. Human confirmation for AI actions | Pass (N/A) | No AI; the criteria leave AI output's presentation to Phase 4 |
 | VII. Trust decisions only in host dialogs | Pass | The criteria define the host dialog's form (covers the chrome, blocks every host window, keeps focus, ignores outside input, sole node for assistive technology, never a native prompt) for the dialog features to test (R10, R11) |
 | VIII. Every security rule has a breaking test | Pass | This feature adds no security rule of its own: the kit-and-host split is defence in depth, tested as an ordinary test (spec, Clarifications); the rules of V and VII it designs get their hostile cases in the features that build the window, as the criteria's **Tested by** says; the suite runs unchanged (FR-022) |
-| IX. Human review of the security core | Pass | No change to `runtime/`, `wit/` or `connectors/`; `deny.toml` changes (a ban), and is reviewed with the rest |
-| Fixed decisions: host app, UI | **Open** | Colors only from Radix scales; typography, spacing, radius and shadow are the project's own, in `DESIGN.md` (R13); no GPUI dependency yet. But "each step used for its role" collides with WCAG 1.4.11: Radix's border steps (7, 8) reach only 1.86:1 on step 1, so a control boundary at 3:1 needs a step Radix assigns to another role (9, solid backgrounds, or 11, text). Brought to the maintainer (R5) |
+| IX. Human review of the security core | Pass | No change to `runtime/`, `wit/` or `connectors/`. The `deny.toml` hunk sits beside the network stack's bans, so it gets line-by-line review like them |
+| Fixed decisions: host app, UI | **Conflict, open** | Colors only from Radix scales; typography, spacing, radius and shadow are the project's own, in `DESIGN.md` (R13); no GPUI dependency yet. But "each step used for its role" collides with WCAG 2.2 AA in two places: no border or focus-ring step (6–8) reaches 1.4.11's 3:1 on step 1, so the control boundary and the host's focus ring need step 9, 11 or 12; and the row's reason, "text contrast holds for any Radix scale used by role", is false (amber 11 on sage 2 is 4.36, green 11 on green 3 is 4.21). The scrim and shadows now come from `blackA`, Radix's overlay scale, which is on-role. Needs an amendment, brought to the maintainer (R5) |
 | Fixed decision: licenses | Pass | Client code Apache-2.0; vendored Radix data MIT and Inter OFL 1.1 kept with their licenses; `yaml-rust2` MIT or Apache-2.0, inside `deny.toml`'s list |
 | Workflow: CI on three systems, clippy, audit, deny | Pass | The new crates are workspace members, so the build job's Clippy, `cargo test`, `cargo deny` and `cargo audit` cover them on three systems (R12) |
 | Workflow: documentation-only rule | Pass | `DESIGN.md`, `design/`, `docs/design/` and `docs/threat-model.md` are read by the checks, so the `changes` job counts them as code (FR-006, R12) |
 | Workflow: phase gates | Pass | Phases 1 and 2 passed; the Phase 3 gate (every Phase 3 row of the security table blocked) is not this feature's to pass, and the criteria map those rows to the features that will |
 | Workflow: Spec Kit, Constitution Check | Pass | This table, re-checked below, and an independent review before `/speckit-tasks` |
 
-**Post-design re-check**: Pass on the plan as written; the independent review before
-`/speckit-tasks` re-checks it.
+**Post-design re-check**: one conflict open, the rest Pass, after an independent review against
+v4.0.0. It found the Radix role conflict wider than first written (the focus ring and the
+reason sentence, not only control boundaries), that the dark scrim from gray 12 would have been
+near white, that the host-surface boundary missed `design-gen`, had no test that the ban bites
+and a `compile_fail` test that proved nothing, that the pins and drift test would fail on
+Windows' CRLF checkouts, that the format spec pin had nothing to hash, that the CI comment and
+SC-007 needed rewording, that the criteria contract quoted a threat row with an ellipsis, and
+gaps for FR-008, FR-009, FR-017, FR-020 and FR-023. Each was checked at the source
+(`constitution.md`, `ci.yml:27,63,65`, `contract_v1.rs:212`, the Radix files, the absence of
+`.gitattributes`) and fixed in research R1, R2, R5–R8, R12, R13 and the contracts. The
+conflict waits for the maintainer.
 
 ## Project Structure
 
@@ -110,7 +122,9 @@ specs/007-host-visual-design/
 DESIGN.md                        # the visual system (R1, R13)
 
 design/
-├── radix/3.0.0/                 # light.ts, dark.ts, LICENSE, pinned by SHA-256 (R2)
+├── format/0.4.0/                # DESIGN.md format spec.md and LICENSE, pinned by SHA-256 (R1)
+├── radix/3.0.0/                 # light.ts, dark.ts, blackA.ts, LICENSE, pinned by SHA-256 (R2)
+├── ban-fixture/                 # outside the workspace: depends on host-surfaces, must fail deny (R6)
 ├── fonts/inter/                 # Inter variable WOFF2 and TTF, OFL.txt (R9)
 ├── gen/                         # crate design-gen: checker, generator, lint, preview (R4)
 │   ├── src/
@@ -125,8 +139,9 @@ docs/design/host-surfaces.md     # the frame and dialog criteria (R10)
 
 xtask/src/main.rs                # `design`, `design --check`, `design --preview <dir>`
 Cargo.toml                       # workspace members: design/gen, design/tokens, design/host-surfaces
-deny.toml                        # ban host-surfaces, wrappers = ["host"]
-.github/workflows/ci.yml         # code paths; design --check; preview + upload on Linux (R12)
+deny.toml                        # ban host-surfaces (wrappers host) and design-gen (wrappers xtask)
+.gitattributes                   # LF for DESIGN.md, docs/design and design/ text; fonts binary
+.github/workflows/ci.yml         # code paths; design --check; the ban fixture; preview + upload on Linux (R12)
 CONTRIBUTING.md                  # how to change DESIGN.md and regenerate
 ```
 
@@ -140,6 +155,6 @@ reach them) is only enforceable between crates (R6).
 
 | Choice | Why needed | Simpler alternative rejected because |
 | --- | --- | --- |
-| Three crates instead of one | FR-015: the kit must fail to build against a host surface | One crate with modules or features cannot stop a dependent crate from reaching them (R6) |
+| Three crates instead of one | FR-015: a kit that reaches a host surface must fail the merge checks | One crate with modules or features cannot stop a dependent crate from reaching them (R6) |
 | A project layer inside `DESIGN.md` | The format has no themes, steps, shadows or per-token rationale (R1) | A second file would be a second source (FR-001); unknown front-matter keys risk the format's future versions |
 | Our own checker instead of the format's tool | No Node.js in CI; the tool's contrast check is one pass on declared pairs, as a warning (R4) | Bringing Node.js back for one check adds a runtime and its packages to the build |

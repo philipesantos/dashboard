@@ -15,8 +15,8 @@ file and `docs/threat-model.md`.
 - **Observe**: the bounds of the chrome and of every frame and panel, at every window size the
   grid allows.
 - **Expect**: no frame or panel intersects the chrome.
-- **Answers**: V; "Widget content imitates a host dialog inside its frame, with placed declared
-  actions as its buttons (\"Allow access?\")"
+- **Answers**: V; "Password field or drawing over the frame (fake login)"; "Something that is not
+  a host dialog passes for one: the operating system's native prompt, or a widget drawing one"
 - **Tested by**: host window
 
 ## Widget frame
@@ -26,9 +26,10 @@ file and `docs/threat-model.md`.
 ## Keyboard and screen readers
 
 ## Decided elsewhere
-- "Widget content imitates a host dialog inside its frame, …": the control of an action that
-  changes data, and whether a destructive action asks for a host dialog, are decided in the
-  Phase 3 spec for declared actions and settings (threat model, open questions).
+- "Widget content imitates a host dialog inside its frame, with placed declared actions as its
+  buttons (\"Allow access?\")": the control of an action that changes data, and whether a
+  destructive action asks for a host dialog, are decided in the Phase 3 spec for declared actions
+  and settings (threat model, open questions).
 ```
 
 ## Rules the coverage test enforces
@@ -57,5 +58,6 @@ technology, and no masked field; the 1000 ms input delay and held keys (R11); th
 (control and bidirectional characters removed, length cap, host font) and monogram (first letter
 or digit, upper-cased, fixed host glyph otherwise, neutral colors); native prompts never used;
 initial focus on the first control that is not the one that confirms; Escape as refusal; what a
-screen reader announces; tests with VoiceOver, Narrator and Orca and real key presses in a real
+screen reader announces; how the host makes up for GPUI's missing modal state in the
+accessibility tree; tests with VoiceOver, Narrator and Orca and real key presses in a real
 window.

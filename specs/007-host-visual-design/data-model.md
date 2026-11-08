@@ -5,7 +5,8 @@ Entities of [spec.md](spec.md) as the generator and the checks see them. File fo
 
 ## Scale
 
-A Radix scale read from `design/radix/3.0.0/` (R2).
+A Radix scale read from `design/radix/3.0.0/` (R2). `blackA`, Radix's overlay scale, is read
+beside them for the scrim and shadows; it has no hue and is never a pick.
 
 | Field | Type | Rule |
 | --- | --- | --- |
@@ -14,7 +15,7 @@ A Radix scale read from `design/radix/3.0.0/` (R2).
 | `hue` | degrees, OKLCH, of light step 9 | R3 |
 | `chroma` | OKLCH chroma of light step 9 | under 0.08 means neutral |
 | `kind` | `gray-family` \| `neutral` \| `chromatic` | derived from `name` and `chroma` |
-| `solid_text` | `white` \| `dark` \| `none` | the text color that reaches 4.5:1 on step 9, if any (R5) |
+| `solid_text` | `white` \| `dark` \| `none` | declared in `DESIGN.md` (FR-009); the checker verifies it reaches 4.5:1 on steps 9 and 10, or that neither does for `none` (R5) |
 
 ## Role
 
@@ -27,6 +28,7 @@ A color role of the project layer (`text`, `text-secondary`, `surface`, `border-
 | `light`, `dark` | step 1–12, or `solid-text` | per theme |
 | `why` | text | required (FR-001) |
 | `host_surface` | bool | true routes it to the `host-surfaces` crate (R6) |
+| `off_role` | WCAG criterion, optional | required when the step is outside its Radix role (R5) |
 
 ## Pairing
 
@@ -43,7 +45,8 @@ A foreground role over a background role that the contrast lint checks.
 `default`, `accent`, `ok`, `warning`, `error`: the only color a widget names. Each resolves to a
 set of roles (text, surface, border, icon) from `gray`, `widget`, or the fixed status scales
 green, amber and red (FR-024). `ok`, `warning` and `error` carry a status icon (FR-025). An
-unknown name resolves to `default` and is logged escaped (FR-017).
+unknown name is returned as `UnknownTone`; the kit draws `default` and logs the name escaped
+(FR-017).
 
 ## Appearance
 
@@ -61,8 +64,9 @@ The person's picks.
 (`TooClose { widget, other, degrees }`, `NotChromatic { scale }`). The host turns the refusal into
 its own words when the picking screen exists.
 
-**Allowed set**: every appearance that validates; 6 × 23 × 10 × 5 × 3, of which contrast
-depends only on gray, host, widget and the resolved theme (R5).
+**Allowed set**: every appearance that validates; at most 6 × 23 × 10 × 5 × 3, since a chromatic
+host removes the widget colors near it. Contrast depends only on gray, host, widget and the
+resolved theme: at most about 2,760 cases (R5).
 
 ## Token
 

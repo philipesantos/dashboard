@@ -26,6 +26,10 @@ block, in the section named below.
 scales:
   radix: "3.0.0"              # must match design/radix/<version>/
   status: { ok: green, warning: amber, error: red }
+  solid-text:                 # text on steps 9-10, declared per scale (FR-009)
+    blue: dark
+    red: none                 # neither white nor dark reaches 4.5:1: large text only
+    # ... one entry per chromatic scale
 picks:
   gray: [gray, mauve, slate, sage, olive, sand]
   hue-distance: 30            # degrees, OKLCH, light step 9
@@ -41,11 +45,13 @@ roles:
     source: gray
     light: 9
     dark: 9
+    off-role: wcag-1.4.11     # pending the maintainer's choice (research R5)
     why: "A control's boundary must reach 3:1 (WCAG 1.4.11); step 8 does not on step 1."
   focus:
     source: host              # monochrome host: gray
     light: 12
     dark: 12
+    off-role: wcag-1.4.11     # steps 7-8, Radix's focus-ring steps, fail 3:1 (R5)
     host-surface: true
     why: "The host's own focus style; widget colors such as lime fail 3:1 as a ring."
 pairings:
@@ -62,9 +68,9 @@ tones:
 # in ## Elevation & Depth
 elevation:
   flat:   { shadow: none, why: "..." }
-  frame:  { shadow: "0 1px 2px {scrim}/0.08", why: "..." }
+  frame:  { shadow: "0 1px 2px blackA-3", why: "..." }      # shadow colors from blackA (R2)
   panel:  { shadow: "...", host-surface: true, why: "..." }
-  dialog: { shadow: "...", scrim-opacity: { light: 0.45, dark: 0.6 }, host-surface: true, why: "..." }
+  dialog: { shadow: "...", scrim: { light: blackA-7, dark: blackA-9 }, host-surface: true, why: "..." }
 ```
 
 ```design-roles
@@ -97,12 +103,23 @@ during implementation (R13).
 The checker fails, naming the line or token, when:
 
 1. the front matter is missing, is not first, or a format key has the wrong type;
-2. a `{reference}` does not resolve, or points at a group outside `components`;
+2. a `{reference}` does not resolve to a primitive token; only inside `components` may it resolve
+   to a typography level;
 3. a section is out of order or appears twice;
 4. a `design-roles` key appears twice, is unknown, or a block's YAML does not parse;
-5. a role names a step outside 1–12, a `source` that does not exist, or has no `why`;
+5. a role names a step outside 1–12, a `source` that does not exist, or has no `why`; or uses a
+   step outside its Radix role without an `off-role` mark naming the WCAG criterion that needs it,
+   or with one the lint shows is not needed;
 6. a format-layer token has no rationale, in `rationale` or its own `why`;
 7. a pairing names a role that does not exist, or a `decorative` pairing has no `why`;
 8. a tone lacks `text`, or `ok`, `warning` or `error` lacks a `status-icon` (FR-025);
 9. the front matter's `colors` differ from the roles resolved at the default appearance;
-10. the default appearance fails the hue rule or the contrast lint.
+10. any allowed appearance, in either theme, fails a pairing (the contrast lint, FR-008), or the
+    default appearance fails the hue rule;
+11. a role or tone part used as a foreground has no pairing against every role it can sit on, or
+    `focus` is not paired against every background a control can have, accent step 9 included;
+12. a token that is not a host surface references one that is;
+13. `solid-text` is missing for a chromatic scale, declares a color that does not reach 4.5:1 on
+    steps 9 and 10, or declares `none` where one does;
+14. a component has a property that takes an image, an icon source or a URL; icons come only
+    from `icons` (FR-023).

@@ -50,12 +50,13 @@ monochrome host are exactly lime, sky, cyan, blue, indigo, iris, violet, purple,
 ## 5. The kit cannot reach a host surface (US3, FR-015)
 
 ```sh
-cargo test -p design-tokens --doc
-grep -n 'host-surfaces' deny.toml
+cargo test -p design-gen host_surfaces
+cargo deny --manifest-path design/ban-fixture/Cargo.toml check bans   # must fail
 ```
 
-Expected: the `compile_fail` doc test passes (naming a host surface does not build); `deny.toml`
-bans `host-surfaces` with `wrappers = ["host"]`.
+Expected: the test passes (every host-surface token is absent from `design-tokens` and present in
+`host-surfaces`, and no file `include!`s them); `cargo deny` on the fixture fails naming the
+`host-surfaces` ban.
 
 ## 6. The criteria cover the threat model (US5, SC-005)
 

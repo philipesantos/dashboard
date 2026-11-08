@@ -146,13 +146,13 @@ shared: a red "error" means the same in a widget and in the host.
 **Why this priority**: every later feature that adds kit components draws from these tokens; if
 the kit could reach a dialog's surface, a future component could build one by mistake.
 
-**Independent Test**: check that the kit's code cannot name a host-surface token, and that a use
-of one fails to build.
+**Independent Test**: check that no host-surface token is in the crate the kit depends on, and
+that a crate depending on the host-surface crate fails the merge checks.
 
 **Acceptance Scenarios**:
 
-1. **Given** the generated tokens, **When** the kit is built, **Then** the host-surface tokens are
-   not reachable from it: a use of one fails to build.
+1. **Given** the generated tokens, **When** a crate other than the host depends on the
+   host-surface tokens or includes their source, **Then** the merge checks fail.
 2. **Given** a widget asking for a tone the kit does not have, **When** the host draws it,
    **Then** the host uses the default tone and logs the unknown name, escaped.
 
@@ -329,8 +329,9 @@ screen readers and systems it is tested on.
   panel's attachment to its frame, and the host's focus style.
 - **FR-015**: The kit MUST resolve widget content only from tones (default from the gray family,
   accent from the widget color, ok, warning and error from the status scales) and its own
-  component tokens, and MUST NOT be able to reach a host-surface token: a use of one MUST fail to
-  build, and a test MUST show it.
+  component tokens, and MUST NOT be able to reach a host-surface token: a crate other than the
+  host that depends on them, or includes their source, MUST fail the checks that gate a merge,
+  and a test MUST show it.
 - **FR-016**: No rule compares color values between the kit and the host: the gray family and the
   status scales are shared, and the 30° rule (FR-011) keeps the widget color away from the host
   color.
@@ -404,8 +405,8 @@ screen readers and systems it is tested on.
   is edited by hand.
 - **SC-002**: The contrast lint covers 100% of the allowed appearance combinations in both
   themes, and every pairing passes WCAG AA.
-- **SC-003**: A use of any host-surface token from the kit fails to build, for 100% of those
-  tokens.
+- **SC-003**: 100% of host-surface tokens are absent from what the kit can depend on, and a crate
+  that reaches for them fails the merge checks.
 - **SC-004**: The hue rule's accepted and refused pairs match an independent computation of hue
   distances for every pair of allowed scales.
 - **SC-005**: Every Phase 3 threat-model row about host imitation, dialogs, panels and plugin
@@ -413,8 +414,8 @@ screen readers and systems it is tested on.
   pass/fail observation.
 - **SC-006**: A change to `DESIGN.md` alone runs every CI job on the three systems, and the
   existing security suite passes unchanged.
-- **SC-007**: Every CI run carries a preview the maintainer can open in a browser to approve the
-  look, with nothing to install.
+- **SC-007**: Every CI run that builds carries a preview the maintainer can open in a browser to
+  approve the look, with nothing to install.
 
 ## Assumptions
 

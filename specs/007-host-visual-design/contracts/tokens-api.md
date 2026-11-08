@@ -27,7 +27,8 @@ pub enum Refusal {
 }
 
 pub enum Tone { Default, Accent, Ok, Warning, Error }
-impl Tone { pub fn from_name(name: &str) -> Tone; }          // unknown -> Default (FR-017)
+impl Tone { pub fn parse(name: &str) -> Result<Tone, UnknownTone>; }
+pub struct UnknownTone(pub String);   // the kit draws Default and logs this name escaped (FR-017)
 pub struct ToneColors { pub text: Rgb, pub surface: Rgb, pub border: Rgb, pub icon: Option<Icon> }
 pub fn tone(tone: Tone, appearance: &Appearance, theme: Theme) -> ToneColors;
 
@@ -40,11 +41,13 @@ pub mod elevation { /* flat, frame */ }
 pub enum Icon { Check, Alert, Cross }
 ```
 
-A `compile_fail` doc test names `design_tokens::surfaces`, which does not exist (SC-003).
+No item of this crate is a host-surface token; a `design-gen` test checks every marked token
+against the generated files (R6, SC-003).
 
 ## `host-surfaces` (crate `design/host-surfaces`)
 
-For the host only; `deny.toml` bans it except for the crate `host` (R6).
+For the host only; `deny.toml` bans it except for the crate `host`, and bans `design-gen` except
+for `xtask` (R6).
 
 ```rust
 pub fn chrome(appearance: &Appearance, theme: Theme) -> ChromeColors;

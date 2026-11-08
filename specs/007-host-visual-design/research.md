@@ -7,7 +7,9 @@ the format specification pinned below, by a throwaway script outside the reposit
 
 **Decision**: pin the format specification at tag `0.4.0` of `google-labs-code/design.md`
 (commit `9bf8eae67128b6cc55ad9bf86665767deb4c11cd`, 2026-07-27, `docs/spec.md` SHA-256
-`8f297a7b…894e691a`, Apache-2.0). `DESIGN.md` has two layers:
+`8f297a7b…894e691a`, Apache-2.0), vendored unmodified with its license under
+`design/format/0.4.0/` and pinned by that hash, so the checker's reading can be reviewed against
+the text it follows. `DESIGN.md` has two layers:
 
 1. **The format layer**: the YAML front matter the format defines (`version`, `name`,
    `description`, `colors`, `typography`, `rounded`, `spacing`, `components`), and the eight `##`
@@ -40,11 +42,20 @@ tokens (unreadable, and they would be copied from data the project already pins,
 
 ## R2. Radix Colors as data
 
-**Decision**: vendor `src/light.ts` and `src/dark.ts` of `radix-ui/colors` at the commit of the
+**Decision**: vendor `src/light.ts`, `src/dark.ts` and `src/blackA.ts` of `radix-ui/colors` at the commit of the
 npm release 3.0.0 (`c4d0e50006c71ec51c4d6ff349062ab261b57e67`, 2023-10-02; identical to `main` on
-2026-11-08), with its MIT `LICENSE`, under `design/radix/3.0.0/`. A test pins both files by
-SHA-256 (`1a972548…8329acbd`, `d8599fe6…f03826c68`). The generator reads only the solid scales
-(`gray`, `grayDark`, …), never the alpha (`A`) or P3 (`P`) ones.
+2026-11-08), with its MIT `LICENSE`, under `design/radix/3.0.0/`. A test pins each file by
+SHA-256 (`light.ts` `1a972548…8329acbd`, `dark.ts` `d8599fe6…f03826c68`, `blackA.ts` recorded
+when vendored), after turning `\r\n` into `\n` as the contract pins do, and `.gitattributes` keeps
+`design/` text files LF on every checkout. The generator reads the solid scales (`gray`,
+`grayDark`, …) and `blackA`, Radix's overlay scale, which the scrim and every shadow use in both
+themes (gray step 12 is near white in the dark theme, `#eeeeee`, so it cannot darken anything);
+never the per-scale alpha (`A`) or P3 (`P`) exports.
+
+The files are read by a strict line reader in `design-gen`, not a TypeScript parser: it accepts
+only `export const <name> = {`, `  <name><step>: "<#rrggbb or rgba(r, g, b, a)>",`, `};` and
+blank lines; refuses any other line, a scale without exactly 12 steps, a step out of order, and a
+set of scale names other than the expected 31 solid scales plus `blackA`.
 
 **Rationale**: the constitution uses Radix as plain color data; the files are the upstream
 source, so a reviewer can diff an upgrade line by line. No npm, no Node.js.
@@ -124,15 +135,27 @@ the meaning). Measured worst cases on Radix 3.0.0, which `DESIGN.md` must design
 | step 11 on step 3 of the same scale | 4.21 (green) | 7.08 | soft badges set text in step 12 (9.82 worst) |
 | white or dark text on step 9 | neither reaches 4.5 on red, tomato, ruby, crimson, pink, gold | the same | solid fills never carry normal-size text; text on step 9 only as `large-text`, or the soft style |
 | gray step 8 border on step 1 | 1.86 | 3.00 | step 8 is `decorative` (dividers); a control's boundary needs another step: 9 reaches 3.22 light and 3.64 dark, but Radix assigns 9 to solid backgrounds (open, below) |
-| widget step 9 as a focus ring on gray step 1 | 1.31 (lime) | 3.48 | focus is the host's own style (host-surface, R6): gray step 12, or the host color's step 11 |
+| widget step 9 as a focus ring on gray step 1 | 1.31 (lime) | 3.48 | focus is the host's own style (host-surface, R6); Radix's focus-ring steps (7, 8) fail too (accent 8: 2.26; gray 8: 1.86), so it needs gray 12 or the host color's step 11 (open, below) |
 
-**Open: control boundaries.** The constitution's UI row says each Radix step is "used for its
-role". Radix assigns steps 6–8 to borders, 9–10 to solid backgrounds and 11–12 to text. No border
-step reaches WCAG 1.4.11's 3:1 on step 1 in the light theme, so a text field or a toggle whose
-boundary is what identifies it cannot be both AA and on-role. The choice goes to the maintainer:
-use step 9 or 11 for those boundaries with a PATCH amendment that lets WCAG win over a step's
-role; or identify controls by something other than their border, keeping borders on-role and
-decorative.
+**Open: steps off their Radix role.** The constitution's UI row says each Radix step is "used for
+its role", and its reason says "text contrast holds for any Radix scale used by role". Radix
+assigns steps 1–2 to backgrounds, 3–5 to component backgrounds, 6–8 to borders and focus rings,
+9–10 to solid backgrounds and 11–12 to text. The measurements contradict both:
+
+- no border or focus-ring step reaches WCAG 1.4.11's 3:1 on step 1 in the light theme, so a
+  control's boundary and the focus ring need step 9, 11 or 12;
+- two on-role text pairings fail 4.5:1 (amber 11 on sage 2, 4.36; green 11 on green 3, 4.21), so
+  "holds for any scale used by role" is false; the design avoids them (status text in gray 12,
+  soft badges in step 12), and the lint catches the rest.
+
+Keeping borders decorative would not avoid it, since the focus ring is off-role either way. The
+constitution needs an amendment, brought to the maintainer: Radix steps keep their roles, except
+where WCAG 2.2 AA needs another step, which `DESIGN.md` marks per role and the checker verifies;
+and the reason becomes "contrast is checked for every appearance the person can pick".
+
+`DESIGN.md` also declares, per scale, the text color used on its solid steps (`white`, `dark` or
+`none`, FR-009); the checker fails when the declared color does not reach 4.5:1 there, or when
+`none` is declared for a scale where one does.
 
 **Rationale**: the person picks the colors, so only the whole product of picks proves FR-008;
 the table shows the defaults Radix users usually reach for (white on step 9, step 8 borders,
@@ -148,10 +171,20 @@ spacing, radius, elevation levels up to the frame's, the kit's component tokens,
 type and its hue rule, and the contrast functions. `host-surfaces` holds the tokens `DESIGN.md`
 marks as host surfaces: the chrome, a dialog's surface, scrim and elevation, any elevation above
 the frame, the panel's attachment, and the host's focus style. `deny.toml` bans
-`host-surfaces` with `wrappers = ["host"]`, so only the future host crate may depend on it;
-`cargo deny` already runs on every change. `design-tokens` carries a `compile_fail` doc test that
-names a host-surface token, so `cargo test` shows the kit-facing crate cannot reach one (FR-015,
-SC-003).
+`host-surfaces` with `wrappers = ["host"]`, so only the future host crate may depend on it, and
+bans `design-gen`, which holds every value, with `wrappers = ["xtask"]`; `cargo deny` includes
+dev- and build-dependencies and already runs on every change. Three checks show the boundary:
+
+- a fixture crate outside the workspace, `design/ban-fixture/`, depends on `host-surfaces`, and a
+  CI step runs `cargo deny check bans` on it with the root `deny.toml`, expecting it to fail;
+- a `design-gen` test checks that every token marked `host-surface` is absent from
+  `design/tokens/src/generated.rs` and present in `design/host-surfaces/src/generated.rs`;
+- a `design-gen` test scans the workspace's `.rs` files and fails when one outside
+  `design/host-surfaces/` and the future `host` names `host-surfaces/src` in `include!`,
+  `include_str!` or `#[path]`.
+
+The boundary fails the checks that gate a merge (`cargo deny`, the tests), not `cargo build`
+itself; the spec's FR-015 says so.
 
 **Rationale**: a module boundary inside one crate can be crossed by any crate that depends on it;
 a crate boundary plus a dependency ban is enforced by tools that already gate merges. The future
@@ -165,7 +198,9 @@ turn it on); `pub(crate)` items (the host would need to live in the same crate).
 **Decision**: `cargo xtask design` writes `design/tokens/src/generated.rs`,
 `design/host-surfaces/src/generated.rs` and `design/tokens.dtcg.json`, each starting with a
 "generated from DESIGN.md, do not edit" line. A test in `design-gen` generates in memory and
-compares byte by byte with the committed files, naming the first token that differs (FR-004).
+compares with the committed files, after turning `\r\n` into `\n`, naming the first token that
+differs (FR-004); `.gitattributes` sets `DESIGN.md`, `docs/design/*.md` and the text files under
+`design/` to `eol=lf`, and the fonts to `binary`.
 `cargo xtask design --check` runs the same checks without writing.
 
 **Rationale**: committed output shows token changes in review and lets crates build without
@@ -182,7 +217,9 @@ color), `default-light.svg` and `default-dark.svg` (the chrome, a widget frame w
 and monogram, a panel, a host dialog over a scrim, and the status tones with their icons, drawn
 from the default appearance's tokens), and `index.svg` linking them. Text is drawn with the
 built-in font embedded as a WOFF2 `@font-face` in each file, so the preview looks the same on any
-machine; no script, no external reference. The CI build job on Linux runs it and publishes the
+machine; no script, and no reference outside the preview directory (`index.svg` links only to
+its siblings). The `<style>` inside each SVG is a style sheet, which is fine because the preview
+is a review artifact and never reaches the host UI. The CI build job on Linux runs it and publishes the
 directory with `actions/upload-artifact`, pinned to a commit SHA like the other actions, kept 14
 days. Nothing is committed (FR-026).
 
@@ -194,8 +231,9 @@ benefit); an HTML page (the constitution keeps HTML out of the host, and a stati
 
 ## R9. Fonts and icons
 
-**Decision**: one built-in family, Inter (SIL OFL 1.1), variable WOFF2 and TTF under
-`design/fonts/inter/` with its license, for the host's UI and the preview; its tabular figures
+**Decision**: one built-in family, Inter (SIL OFL 1.1), its upstream variable WOFF2 and TTF
+unmodified (no subsetting, so OFL's renaming clause never applies) under `design/fonts/inter/`
+with its license, for the host's UI and the preview; its tabular figures
 (`tnum`) for numbers in tables. A monospaced family is added when a feature first needs one.
 Status icons are three glyphs drawn by the project (a check in a circle, an exclamation in a
 triangle, a cross in a circle) as SVG paths in `DESIGN.md`'s project layer, so no icon set is a
@@ -245,8 +283,12 @@ trust dialogs are rare, so a second costs little. The spec asks for at least 500
 
 - The `changes` job counts as code: `DESIGN.md`, `design/`, `docs/design/` and
   `docs/threat-model.md`, the files the checks read, as it already does for `docs/authors/` and
-  `wit/` (constitution: Markdown the build uses as code is not documentation). The comment in
-  `ci.yml` names them.
+  `wit/` (constitution: Markdown the build uses as code is not documentation). Today `DESIGN.md`
+  matches `\.md$` and the two `docs/` paths match `^docs/`; the first test becomes
+  `'^(docs/authors|docs/design|wit|design)/|^DESIGN\.md$|^docs/threat-model\.md$'`. The comment in
+  `ci.yml` names them and cites constitution v4.0.0 instead of v2.4.1.
+- A step runs `cargo deny check bans` on `design/ban-fixture/` and passes only when it fails
+  (R6).
 - No new job: the checks are tests in `design-gen`, so the build job's `cargo test --workspace`
   runs them on three systems; Clippy, `cargo deny` and `cargo audit` cover the new crates.
 - The Linux build job adds two steps: `cargo xtask design --check` and `cargo xtask design
@@ -263,8 +305,8 @@ a runner start for checks that take seconds.
 4 px base; a type scale of at most nine levels from 12 px to 32 px, body at 14 px; the radius set
 a person picks is `none` (0), `small` (3 px), `medium` (6 px, the default), `large` (10 px) and
 `full` (pills); elevation levels `flat`, `frame`, `panel` and `dialog`, of which `panel` and
-`dialog` are host surfaces. A dialog's scrim is gray step 12 at a fixed opacity per theme, also a
-host surface.
+`dialog` are host surfaces. A dialog's scrim is a `blackA` step per theme, also a host surface;
+every shadow takes its color from `blackA` (R2).
 
 **Rationale**: these are the values a host with dense widgets needs; the rationale of each lives
 next to it in `DESIGN.md` (FR-001).
