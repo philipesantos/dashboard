@@ -1,0 +1,9 @@
+[package]
+name = "host-surfaces"
+version = "0.1.0"
+description = "Tokens of the host's own surfaces (chrome, dialogs, scrim, panel attachment, focus); only the host may depend on it"
+edition = "2024"
+publish = false
+
+[dependencies]
+design-tokens = { path = "../tokens" }

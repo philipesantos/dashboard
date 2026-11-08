@@ -70,7 +70,7 @@ workspace builds and every existing test passes at the end of this phase.
   and the text files under `design/` (`*.rs`, `*.ts`, `*.md`, `*.json`, `*.txt`, `*.toml`) as
   `text eol=lf`; `*.woff2` and `*.ttf` as `binary`. Run `git add --renormalize .` and confirm it
   changes no existing file.
-- [ ] T003 Create the three crates and add them to the root `Cargo.toml`'s workspace members
+- [X] T003 Create the three crates and add them to the root `Cargo.toml`'s workspace members
   (plan, Project Structure), each `edition = "2024"`, `publish = false`, Apache-2.0:
   - `design/gen` (package `design-gen`, lib) with `yaml-rust2 = "=0.13.0"` and a one-line
     comment saying why (research R4);

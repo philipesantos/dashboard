@@ -1,0 +1,15 @@
+[package]
+name = "design-gen"
+version = "0.1.0"
+description = "Checks DESIGN.md, generates the design tokens, the DTCG export and the preview, and runs the contrast lint"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Reads DESIGN.md's front matter and its design-roles blocks; the maintained successor of
+# yaml-rust, pure Rust (specs/007-host-visual-design/research.md, R4)
+yaml-rust2 = "=0.13.0"
+
+[dev-dependencies]
+# The pins test hashes the vendored files under design/
+sha2 = "0.10"
