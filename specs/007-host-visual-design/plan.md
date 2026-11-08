@@ -50,7 +50,8 @@ comparison reads LF; the existing security suite unchanged (FR-022)
 design documentation
 
 **Performance Goals**: `cargo xtask design --check` under 5 s on the reference machine (about
-2,800 contrast combinations × the declared pairings is arithmetic); no new CI job
+2,800 contrast combinations × the declared pairings is arithmetic), measured in T036 and
+recorded here; no new CI job
 
 **Constraints**: no Node.js in CI (spec, R4); no HTML and no script in anything generated, and
 the preview's embedded style sheet never reaches the host UI (R8);

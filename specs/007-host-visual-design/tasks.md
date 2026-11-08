@@ -18,7 +18,8 @@ implementation lands. No test reaches the network; every pin and drift compariso
 **Organization**: the shared pieces every check needs come first: the vendored data, the three
 crates and `design-gen`'s readers and color math. Then the stories in priority order: one source
 and its generation (US1), contrast over every appearance (US2), the host-surface split (US3), the
-appearance picks (US4), the frame and dialog criteria (US5) and their keyboard and screen-reader
+appearance picks (US4, before US2, whose lint
+enumerates what it accepts), the frame and dialog criteria (US5) and their keyboard and screen-reader
 part (US6).
 
 ## Format: `[ID] [P?] [Story] Description`
@@ -52,7 +53,8 @@ Long builds and test runs go under the memory cap:
 **Purpose**: the vendored data, the crates' skeletons, line endings and the dependency bans. The
 workspace builds and every existing test passes at the end of this phase.
 
-- [ ] T001 Vendor the upstream data under `design/` (research R1, R2, R9), each file unmodified,
+- [ ] T001 Vendor the upstream data under `design/` (FR-005, FR-007; research R1, R2, R9), each
+  file unmodified,
   with its license beside it:
   - `design/radix/3.0.0/{light.ts,dark.ts,blackA.ts,LICENSE}` from `radix-ui/colors` at commit
     `c4d0e50006c71ec51c4d6ff349062ab261b57e67`;
@@ -82,11 +84,17 @@ workspace builds and every existing test passes at the end of this phase.
 - [ ] T004 Update `deny.toml` (research R6): under `[bans] deny`, add
   `{ name = "host-surfaces", wrappers = ["host"] }` and `{ name = "design-gen", wrappers =
   ["xtask"] }`, each with a comment pointing to `specs/007-host-visual-design/research.md` R6.
-  This hunk sits beside the network stack's bans and gets line-by-line review.
+  This hunk sits beside the network stack's bans and gets line-by-line review. Then run
+  `cargo deny check bans` on the workspace and confirm it passes: `host-surfaces` has no
+  dependent and `design-gen` only `xtask` (after T020). If cargo-deny flags a banned crate just
+  for being a workspace member, stop: move `host-surfaces` out of the workspace (as the fixture
+  is), or pick another enforcement, bring the choice to the maintainer and record it in
+  research R6 before going on.
 - [ ] T005 [P] Create the ban fixture `design/ban-fixture/` (research R6): a crate named
   `ban-fixture`, outside the workspace (add it to the root `Cargo.toml`'s `exclude` with a
   comment), depending on `host-surfaces` by path, with its own committed `Cargo.lock`. Confirm
-  `cargo deny --manifest-path design/ban-fixture/Cargo.toml --config deny.toml check bans` fails
+  the flag placement against `cargo deny --help` first, then confirm
+  `cargo deny --manifest-path design/ban-fixture/Cargo.toml check --config deny.toml bans` fails
   and names the `host-surfaces` ban.
 
 **Checkpoint**: data vendored and hashed, crates build empty, bans in place and shown to bite.
@@ -161,10 +169,12 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Implement the checker rules 1–9, 12 and 14 in `design/gen/src/check.rs`, with
+- [ ] T016 [US1] Implement the checker rules 1–9, 12 and 14 in `design/gen/src/check.rs` (FR-005,
+  FR-023), with
   messages as `contracts/tokens-api.md` says (file and line or token path, text escaped). T012
   passes for those rules.
-- [ ] T017 [US1] Write `DESIGN.md` (research R1, R3, R5, R9, R13; contracts/design-md.md):
+- [ ] T017 [US1] Write `DESIGN.md` (FR-001, FR-002, FR-012, FR-024; research R1, R3, R5, R9,
+  R13; contracts/design-md.md):
   - the front matter and the eight sections in the format's order, each with prose saying what
     the section decides and why;
   - the `design-roles` blocks: `scales` (Radix 3.0.0, status green, amber and red, `solid-text`
@@ -180,24 +190,24 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
     step-12 text; control boundaries at a step that reaches 3:1; the host's focus style as a
     host surface.
   `cargo xtask design --check` (T020) may fail on contrast until US2.
-- [ ] T018 [US1] Implement generation in `design/gen/src/generate.rs`: the Rust tokens split by
+- [ ] T018 [US1] Implement generation in `design/gen/src/generate.rs` (FR-003, FR-004): the Rust tokens split by
   the `host-surface` marks into the two crates' `generated.rs` (contracts/tokens-api.md), the
   DTCG file, and the hue and chroma per scale for US4. Output is deterministic (sorted, LF, no
   timestamps). T013 and T014 pass.
-- [ ] T019 [US1] Implement the preview in `design/gen/src/preview.rs` (research R8): the five SVG
+- [ ] T019 [US1] Implement the preview in `design/gen/src/preview.rs` (FR-026, research R8): the five SVG
   files, drawn from the default appearance's tokens, Inter embedded as WOFF2 `@font-face`, no
   script, `index.svg` linking only its siblings. T015 passes.
-- [ ] T020 [US1] Add `design`, `design --check` and `design --preview <dir>` to
+- [ ] T020 [US1] (SC-001) Add `design`, `design --check` and `design --preview <dir>` to
   `xtask/src/main.rs` as `contracts/tokens-api.md` says, calling `design-gen` (add it as an
   `xtask` dependency; the T004 ban allows only `xtask`). Update `xtask/Cargo.toml`'s
   `description`. Run `cargo xtask design` and commit the generated files.
-- [ ] T021 [US1] Update `.github/workflows/ci.yml` (research R12):
+- [ ] T021 [US1] Update `.github/workflows/ci.yml` (FR-006, FR-026; research R12):
   - the `changes` job's first test becomes
     `'^(docs/authors|docs/design|wit|design)/|^DESIGN\.md$|^docs/threat-model\.md$'`; its
     comment names these paths as Markdown the build uses as code and cites constitution v5.0.0
     instead of v2.4.1;
   - in the Linux build job: `cargo xtask design --check`; the ban fixture step, which passes only
-    when `cargo deny --manifest-path design/ban-fixture/Cargo.toml --config deny.toml check
+    when `cargo deny --manifest-path design/ban-fixture/Cargo.toml check --config deny.toml
     bans` fails; `cargo xtask design --preview target/design-preview`; and
     `actions/upload-artifact` pinned to a commit SHA with its tag in a comment, artifact
     `design-preview`, kept 14 days.
@@ -206,73 +216,7 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
 
 ---
 
-## Phase 4: User Story 2 - Text stays readable in every appearance a person can pick (Priority: P1)
-
-**Goal**: every pairing passes WCAG's contrast minimums in every appearance the host accepts, in
-both themes, and an undeclared or failing pairing fails CI (constitution v5.0.0, FR-008, FR-009).
-
-**Independent Test**: quickstart §3.
-
-### Tests for User Story 2
-
-- [ ] T022 [P] [US2] Extend `design/gen/tests/checker.rs` first, failing, for rules 10, 11 and
-  13: a fixture whose control boundary uses gray step 8 fails on `slate`, light, near 1.86 (the
-  message names pairing, kind, theme, picks and ratio); a foreground role with no pairing on a
-  background it is drawn on fails; `focus` not paired on accent step 9 fails; `solid-text: white`
-  on `cyan` fails, and `none` on `blue` fails because dark text reaches 4.5:1.
-- [ ] T023 [P] [US2] Write `design/gen/tests/lint.rs` first, failing: the lint over the committed
-  `DESIGN.md` covers every appearance the host accepts in both themes (count them and assert the
-  count matches an independent enumeration from the picks, at most about 2,760), and passes;
-  translucent roles are measured after compositing over each background.
-
-### Implementation for User Story 2
-
-- [ ] T024 [US2] Implement the contrast lint and rules 10, 11 and 13 in `design/gen/src/lint.rs`
-  (research R5): enumerate the accepted appearances with US4's rule (or a local copy of it until
-  T030, replaced then), resolve every role per theme, composite translucent ones, apply the
-  thresholds by `kind`, skip `decorative` and `inactive` only with a `why`. T022 and T023's
-  failing parts pass except where `DESIGN.md` itself fails.
-- [ ] T025 [US2] Fix `DESIGN.md` until the lint passes, changing the step a role uses, never a
-  threshold. Record in the Colors section each pairing that needed a step other than Radix's
-  usual one for its role, with its measured worst case. Regenerate with `cargo xtask design`.
-  T022–T023 pass; quickstart §3 behaves as written.
-
-**Checkpoint**: `cargo xtask design --check` passes; every accepted appearance is AA.
-
----
-
-## Phase 5: User Story 3 - A widget cannot build the host's surfaces (Priority: P1)
-
-**Goal**: the host-surface tokens are only in `host-surfaces`, which only the future host may
-use; nothing includes their source (FR-014–FR-017).
-
-**Independent Test**: quickstart §5.
-
-### Tests for User Story 3
-
-- [ ] T026 [P] [US3] Write `design/gen/tests/host_surfaces.rs` first, failing (research R6):
-  every token `DESIGN.md` marks `host-surface` is absent from
-  `design/tokens/src/generated.rs` and present in `design/host-surfaces/src/generated.rs`; no
-  token outside the marks is in `host-surfaces`; and a scan of every `.rs` file of the workspace
-  outside `design/host-surfaces/` finds no `include!`, `include_str!` or `#[path]` naming
-  `host-surfaces/src`.
-- [ ] T027 [P] [US3] Write `design/tokens/tests/tone.rs` first, failing (FR-015, FR-017,
-  FR-024, FR-025): `Tone::parse` accepts the five names and returns `UnknownTone` with the name
-  for anything else; `tone()` resolves default from the gray family, accent from the widget
-  color, ok, warning and error from green, amber and red; each status tone has its icon.
-
-### Implementation for User Story 3
-
-- [ ] T028 [US3] Implement `design/tokens/src/lib.rs`'s hand-written part (`Tone`, `UnknownTone`,
-  `ToneColors`, `tone()`, `Rgb`, `contrast()`, `Icon`) over the generated tables, and
-  `design/host-surfaces/src/lib.rs` (`chrome`, `dialog`, `panel_attachment`, `focus`), as
-  `contracts/tokens-api.md` says. T026 and T027 pass.
-
-**Checkpoint**: quickstart §5 passes, the fixture step fails as it must.
-
----
-
-## Phase 6: User Story 4 - The person's appearance picks are checked (Priority: P2)
+## Phase 4: User Story 4 - The person's appearance picks are checked (Priority: P2)
 
 **Goal**: the 30° hue rule, the neutral-scale rule and the default (FR-010–FR-013).
 
@@ -280,7 +224,7 @@ use; nothing includes their source (FR-014–FR-017).
 
 ### Tests for User Story 4
 
-- [ ] T029 [P] [US4] Write `design/tokens/tests/appearance.rs` first, failing:
+- [ ] T022 [P] [US4] Write `design/tokens/tests/appearance.rs` first, failing:
   `Appearance::DEFAULT` validates; blue with an indigo host is `TooClose` at 15°; bronze, gold and
   brown as the widget color are `NotChromatic`; with a monochrome host the accepted widget colors
   are exactly lime, sky, cyan, blue, indigo, iris, violet, purple, plum and pink; and, for every
@@ -289,12 +233,79 @@ use; nothing includes their source (FR-014–FR-017).
 
 ### Implementation for User Story 4
 
-- [ ] T030 [US4] Implement `Appearance`, `HostColor`, `Radius`, `ThemePick`, `GrayFamily`,
+- [ ] T023 [US4] Implement `Appearance`, `HostColor`, `Radius`, `ThemePick`, `GrayFamily`,
   `Refusal` and `validate()` in `design/tokens/src/lib.rs` over the generated hue and chroma
   table (contracts/tokens-api.md, data-model.md: "hue ≥ 30° from `host` (if chromatic) and from
-  green, amber and red"). Replace T024's local copy of the rule with it. T029 passes.
+  green, amber and red"; FR-011, FR-013). T022 passes. It comes before US2 because the lint
+  enumerates the appearances this rule accepts.
 
 **Checkpoint**: quickstart §4 passes.
+
+---
+
+## Phase 5: User Story 2 - Text stays readable in every appearance a person can pick (Priority: P1)
+
+**Goal**: every pairing passes WCAG's contrast minimums in every appearance the host accepts, in
+both themes, and an undeclared or failing pairing fails CI (constitution v5.0.0, FR-008, FR-009).
+
+**Independent Test**: quickstart §3.
+
+### Tests for User Story 2
+
+- [ ] T024 [P] [US2] Extend `design/gen/tests/checker.rs` first, failing, for rules 10, 11 and
+  13: a fixture whose control boundary uses gray step 8 fails on `slate`, light, near 1.86 (the
+  message names pairing, kind, theme, picks and ratio); a foreground role with no pairing on a
+  background it is drawn on fails; `focus` not paired on accent step 9 fails; `solid-text: white`
+  on `cyan` fails, and `none` on `blue` fails because dark text reaches 4.5:1.
+- [ ] T025 [P] [US2] Write `design/gen/tests/lint.rs` first, failing: the lint over the committed
+  `DESIGN.md` covers every appearance the host accepts in both themes (count them and assert the
+  count matches an independent enumeration from the picks, at most about 2,760), and passes;
+  translucent roles are measured after compositing over each background.
+
+### Implementation for User Story 2
+
+- [ ] T026 [US2] Implement the contrast lint and rules 10, 11 and 13 in `design/gen/src/lint.rs`
+  (research R5): enumerate the appearances `Appearance::validate` (T023) accepts, resolve every
+  role per theme, composite translucent ones, apply the
+  thresholds by `kind`, skip `decorative` and `inactive` only with a `why`. T024 and T025's
+  failing parts pass except where `DESIGN.md` itself fails.
+- [ ] T027 [US2] Fix `DESIGN.md` until the lint passes, changing the step a role uses, never a
+  threshold. Record in the Colors section each pairing that needed a step other than Radix's
+  usual one for its role, with its measured worst case. Regenerate with `cargo xtask design`.
+  T024–T025 pass; quickstart §3 behaves as written.
+
+**Checkpoint**: `cargo xtask design --check` passes; every accepted appearance is AA.
+
+---
+
+## Phase 6: User Story 3 - A widget cannot build the host's surfaces (Priority: P1)
+
+**Goal**: the host-surface tokens are only in `host-surfaces`, which only the future host may
+use; nothing includes their source (FR-014–FR-017).
+
+**Independent Test**: quickstart §5.
+
+### Tests for User Story 3
+
+- [ ] T028 [P] [US3] Write `design/gen/tests/host_surfaces.rs` first, failing (research R6):
+  every token `DESIGN.md` marks `host-surface` is absent from
+  `design/tokens/src/generated.rs` and present in `design/host-surfaces/src/generated.rs`; no
+  token outside the marks is in `host-surfaces`; and a scan of every `.rs` file of the workspace
+  outside `design/host-surfaces/` finds no `include!`, `include_str!` or `#[path]` naming
+  `host-surfaces/src`.
+- [ ] T029 [P] [US3] Write `design/tokens/tests/tone.rs` first, failing (FR-015, FR-017,
+  FR-024, FR-025): `Tone::parse` accepts the five names and returns `UnknownTone` with the name
+  for anything else; `tone()` resolves default from the gray family, accent from the widget
+  color, ok, warning and error from green, amber and red; each status tone has its icon.
+
+### Implementation for User Story 3
+
+- [ ] T030 [US3] Implement `design/tokens/src/lib.rs`'s hand-written part (`Tone`, `UnknownTone`,
+  `ToneColors`, `tone()`, `Rgb`, `contrast()`, `Icon`) over the generated tables, and
+  `design/host-surfaces/src/lib.rs` (`chrome`, `dialog`, `panel_attachment`, `focus`), as
+  `contracts/tokens-api.md` says. T028 and T029 pass.
+
+**Checkpoint**: quickstart §5 passes, the fixture step fails as it must.
 
 ---
 
@@ -321,7 +332,8 @@ FR-019, FR-021).
 - [ ] T032 [US5] Write `docs/design/host-surfaces.md`, sections Chrome, Widget frame, Frame panel,
   Host dialogs and Fields the host draws for a plugin, with every criterion FR-019 lists
   (contracts/host-surfaces-criteria.md, "Criteria the file must hold"), the 1000 ms delay of
-  research R11, the frame's label and monogram rules of the spec's edge cases, and "Decided
+  research R11, the frame's label and monogram rules of the spec's edge cases (the label capped
+  at 40 visible characters, then an ellipsis), and "Decided
   elsewhere" with the rows other features own, the fake dialog from declared actions first
   (FR-021). Each criterion's **Observe** is a bound, a focus position, an accessibility-tree
   property or an input outcome, never a judgement. T031 passes for these sections.
@@ -365,7 +377,9 @@ position or the accessibility tree and names its screen readers and systems.
   - `cargo fmt --all --check`;
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`;
   - `cargo test --workspace --locked`, on Linux inside a `dbus-run-session` with gnome-keyring;
-  - `cargo xtask design --check` and `cargo xtask design --preview target/design-preview`;
+  - `cargo xtask design --check`, timed: record the time in plan.md's Performance Goals (the goal
+    is under 5 s on the reference machine; over it, bring it to the maintainer); and
+    `cargo xtask design --preview target/design-preview`;
   - `cargo deny check`, the ban fixture failing as it must, and `cargo audit`.
 - [ ] T037 Confirm FR-022: `git diff master -- runtime/ plugins/ wit/ connectors/` is empty, and
   the security suite passes unchanged.
@@ -381,7 +395,10 @@ position or the accessibility tree and names its screen readers and systems.
   criteria".
 - [ ] T040 Once the maintainer has pushed and the pull request's run is green, open its
   `design-preview` artifact and bring the five SVG files to the maintainer for approval of the
-  look (SC-007). Changes they ask for go into `DESIGN.md` as new commits.
+  look (SC-007). Changes they ask for go into `DESIGN.md` as new commits. On the same run,
+  confirm quickstart §8 (SC-006): when the pushed commits touch `DESIGN.md`, the `changes` job's
+  log shows `code=true` and every job ran on the three systems; if no pushed commit changed only
+  `DESIGN.md`, check the job's decision on that path with its regex locally and record both.
 - [ ] T041 Before the merge, and only when the maintainer asks: mark the development guide's
   Phase 3 items "Sistema visual em `DESIGN.md`" and "Spec de design da moldura e dos diálogos do
   host" as done.
@@ -404,9 +421,11 @@ position or the accessibility tree and names its screen readers and systems.
 - **Setup (Phase 1)**: no dependencies; T001 → T003 → T004 → T005; T002 with any.
 - **Foundational (Phase 2)**: after Setup; blocks every story.
 - **US1 (Phase 3)**: after Foundational. MVP.
-- **US2 (Phase 4)**: after T016–T018 (the checker and generation exist, `DESIGN.md` has roles).
-- **US3 (Phase 5)**: after T018 (the split crates are generated).
-- **US4 (Phase 6)**: after T018 (the hue table is generated); T030 replaces T024's local rule.
+- **US4 (Phase 4)**: after T018 (the hue table is generated). It runs before US2, out of priority
+  order, because the lint enumerates the appearances its rule accepts.
+- **US2 (Phase 5)**: after T023 and T016–T018 (the checker and generation exist, `DESIGN.md` has
+  roles).
+- **US3 (Phase 6)**: after T018 (the split crates are generated).
 - **US5 (Phase 7)**: after Foundational only; it reads Markdown, not the tokens.
 - **US6 (Phase 8)**: after T032 (same file).
 - **Polish (Phase 9)**: after every story; T040 needs the pushed branch; T041 only on request;
@@ -417,16 +436,17 @@ position or the accessibility tree and names its screen readers and systems.
 - Tests before their implementation; each fails first.
 - Foundational: T006–T008 in parallel → T009; T010 and T011 after T009.
 - US1: T012–T015 in parallel → T016 → T017 → T018 → T019 → T020 → T021.
-- US2: T022–T023 → T024 → T025.
-- Tasks that edit `DESIGN.md` (T017, T025) and `docs/design/host-surfaces.md` (T032, T033) run in
-  order; T025 regenerates, so US3 and US4 rebase their generated files on it.
+- US4: T022 → T023.
+- US2: T024–T025 → T026 → T027.
+- Tasks that edit `DESIGN.md` (T017, T027) and `docs/design/host-surfaces.md` (T032, T033) run in
+  order; T027 regenerates, so US3 and US4 rebase their generated files on it.
 
 ### Parallel Opportunities
 
 - Setup: T002 with T001; T005 after T004.
 - Foundational: T006, T007, T008.
 - US1: T012, T013, T014, T015.
-- US5 can run beside US2–US4 from the end of Foundational.
+- US5 can run beside US4, US2 and US3 from the end of Foundational.
 - Polish: T034 with T035.
 
 ---
@@ -454,8 +474,9 @@ Task: "design/gen/tests/preview.rs: five SVG files, no script, Inter embedded"
 
 ### Incremental Delivery
 
-1. US2 makes the lint pass over every appearance, adjusting `DESIGN.md`.
-2. US3 and US4 add the crates' hand-written APIs over the generated tables.
+1. US4 adds the appearance rule; US2 makes the lint pass over every appearance it accepts,
+   adjusting `DESIGN.md`.
+2. US3 adds the tones and the host surfaces' API over the generated tables.
 3. US5 and US6 write the criteria, which can proceed in parallel from Foundational.
 4. Polish: reviews, the maintainer's look at the preview, merge.
 

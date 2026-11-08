@@ -261,7 +261,7 @@ screen readers and systems it is tested on.
 - **A theme the person did not pick** (the system switches between light and dark): the tokens
   for both themes exist and pass the lint, so the switch never breaks contrast.
 - **The plugin's name in the frame**: control characters and bidirectional overrides removed,
-  length capped with an ellipsis, drawn in the host's font; the monogram is the first letter or
+  capped at 40 visible characters with an ellipsis, drawn in the host's font; the monogram is the first letter or
   digit of the name as displayed, upper-cased, and a fixed host glyph when there is none; its
   colors come from the neutral scale, never from a plugin.
 - **A name that imitates the host** ("Dashboard", "System", "Security check"): the label always
@@ -328,7 +328,7 @@ screen readers and systems it is tested on.
 - **FR-012**: The default appearance MUST be a pure gray family, a monochrome host, blue widgets,
   a medium radius and the system theme, and MUST pass FR-008 and FR-011.
 - **FR-013**: Low-chroma scales MUST count as neutral and MUST NOT be accepted as the widget
-  color.
+  color or the host color.
 
 **Split between host and widget**
 
