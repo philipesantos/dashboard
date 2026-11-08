@@ -1,7 +1,8 @@
 # Threat model v0
 
-Status: draft, 2026-10-21, revised 2026-10-23 for connectors (feature 003) and 2026-10-25 for
-credentials (feature 005). It describes the
+Status: draft, 2026-10-21, revised 2026-10-23 for connectors (feature 003), 2026-10-25 for
+credentials (feature 005) and 2026-11-08 for declared actions and settings (constitution v3.1.0).
+It describes the
 planned architecture; many components do not exist yet. Revisit it at every phase gate and whenever a new component crosses a trust boundary.
 
 The rules referenced as I–IX are the principles of the
@@ -78,11 +79,11 @@ code, which the host runs, with a fixed destination and typed parameters the hos
 
 | ID | Boundary | What crosses it | Controls |
 | --- | --- | --- | --- |
-| B1 | Plugin ↔ host (Wasm sandbox, WIT interface) | Host function calls, widget render data, named values the plugin stores | WebAssembly only (I); no capabilities until granted, only granted imports linked (II); CPU, memory and time limits; storage bound at link time to the plugin's id and origin, run by the host's own statements on a hardened SQLite connection, within a quota the user approved, read-only in render and all or nothing in update |
-| B2 | Host ↔ network | Connector calls a plugin makes | No generic network: only declared operations of connectors, run by the host (III); destinations from the catalog, whose domains are reserved, or local in development; HTTPS with Mozilla's roots, public addresses only at every connection, redirects only to the connector's origins, no system proxy, no cookies; size, time, call and rate limits; a request log no plugin can read or flood; calls only in `update`, never in render |
+| B1 | Plugin ↔ host (Wasm sandbox, WIT interface) | Host function calls, widget render data, named values the plugin stores | WebAssembly only (I); no capabilities until granted, only granted imports linked (II); CPU, memory and time limits; storage bound at link time to the plugin's id and origin, run by the host's own statements on a hardened SQLite connection, within a quota the user approved, read-only in render and all or nothing in update; in a declared action, only the writes its declaration states (V) |
+| B2 | Host ↔ network | Connector calls a plugin makes | No generic network: only declared operations of connectors, run by the host (III); destinations from the catalog, whose domains are reserved, or local in development; HTTPS with Mozilla's roots, public addresses only at every connection, redirects only to the connector's origins, no system proxy, no cookies; size, time, call and rate limits; a request log no plugin can read or flood; calls only in `update` or a declared action, never in render; operations that change data only in an action the user started or confirmed (V) |
 | B3 | Host ↔ secrets | Tokens and keys, the sign-in | Kept only in the OS keychain, through the host's vault; never handed to plugins: the host adds them to each hop of a request to the credential's own HTTPS origins, in its one header, and withholds any response that carries them back (IV); accounts connected only from the host's controls, with the authorization code and PKCE on a loopback redirect (VII) |
-| B4 | Plugin UI ↔ user | Widget content | Declarative UI inside the host frame, no password fields, no windows or dialogs (V); personal visual secret on every host dialog |
-| B5 | AI ↔ host | Prompts out, model output in | Output treated as untrusted: safe rendering, taint tracking, human confirmation of actions (VI); trust decisions only in host dialogs (VII) |
+| B4 | Plugin UI ↔ user | Widget content; the values the user gives a widget's declared actions and settings | Declarative UI inside the host frame, no password fields, no windows or dialogs; no input controls or input events in content: the host draws every control from the manifest's declarations, passes only checked values and refuses what an action's declared effect leaves out (V); personal visual secret on every host dialog and never on a plugin's controls (V, VII) |
+| B5 | AI ↔ host | Prompts out, model output in; widgets' declared actions and settings offered as tools | Output treated as untrusted: safe rendering, taint tracking, human confirmation of every action and setting change, described from the declaration (VI); AI reaches a plugin only through its declared actions and settings, whose names and descriptions are untrusted (VI); trust decisions only in host dialogs (VII) |
 | B6 | Distribution ↔ host | Plugin packages, app updates | ed25519 signatures, hash check on install, revocation list, signed updater |
 
 ## Threats and planned tests
@@ -111,7 +112,7 @@ suite grows with every phase and never shrinks.
 | System network proxy hides which address a request reaches | T2 | A1 | B2 | System proxies are never used; requests go straight to their checked destination (III) | Phase 2 |
 | Floods the request log to push earlier entries out, or forges entries | T1 | A4 | B2 | Past a run's call limit, one summary entry; names and values cut before writing and escaped when shown (III) | Phase 2 |
 | Approval covers something else than what was shown (the connector changed in between) | T1 | A4 | B2 | `approve` grants only the digest `permissions` printed; a connector change that widens what the widget reaches needs a new approval (II, VII) | Phase 2 |
-| Waits on the network in render to stall the dashboard | T1 | A3 | B1, B2 | Connectors are called only in `update`, with its own time limit; render shows the data the host kept (III) | Phase 2 |
+| Waits on the network in render to stall the dashboard | T1 | A3 | B1, B2 | Connectors are called only in `update` or a declared action, each with its own time limit; render shows the data the host kept (III) | Phase 2 |
 | Connector hides a credential in a fixed value | T1 | A2 | B3 | Fixed values are public, shown before approval; a credential is declared only in `credential` and kept by the host, and a connector that fixes its header is refused (IV) | Phase 2 (`fixed-auth-header`) |
 | Reads or changes another plugin's storage, by using its names or by claiming its id from another file | T1 | A1 | B1 | One database per plugin, chosen by the host at link time from the plugin's id and origin; no call names a store, file or place (II) | Phase 2 (`other-plugin`, `same-id-other-origin`, `store-binding`) |
 | Stored names that look like paths, SQL or `ATTACH` reach outside the plugin's store | T1 | A1, A3 | B1 | Names are opaque bytes bound as parameters to the host's own statements; no attached databases, no extensions, defensive mode, triggers and views off, and an authorizer that allows only the host's statements | Phase 2 (`name-injection`, `store-hardened`) |
@@ -152,8 +153,16 @@ suite grows with every phase and never shrinks.
 | A dialog without the visual secret passes for the host's: the operating system's native prompt, or a widget drawing one | T1 | A2, A4 | B4 | Host dialogs are drawn only with the host's own components, each with the person's visual secret; native prompts are never used for trust decisions (V, VII) | Phase 3 |
 | Crafted image, SVG or font exploits a decoder, which now runs in the host process beside the vault | T1, T4 | A2, A3 | B1, B4 | Images only as bytes within size limits; decoding moved out of the host process if decision 0001 is revisited that way in Phase 3; pinned decoders, `cargo audit` | Phase 3 |
 | Asks for little at install, then presses the user to turn on optional permissions one at a time | T1 | A1, A4 | B4 | Only host controls turn a permission on (VII); the dangerous-combination warning runs on every grant change, judged on the permissions the plugin will hold afterwards | Phase 3 |
+| Action declared as writing nothing, or calling only reads, writes the store or calls another operation | T1 | A1, A4 | B1, B2 | The host refuses every store write and connector operation the action's declaration does not state (V) | Phase 3 |
+| Calls an operation that changes data with no action the user started (in `update`, or from an action the AI ran unconfirmed) | T1, T3 | A1 | B2 | Outside a user-started or confirmed action, change operations are refused (V, VI) | Phase 2 (`update`), Phase 3 (actions) |
+| Value outside its declared type, or a parameter type the host cannot draw, reaches the plugin | T1 | A1, A3 | B4 | The host refuses the manifest, checks every value and passes only checked ones (V) | Phase 3 |
+| Content draws its own field or reads keystrokes and pointer positions (fake login, keylogging) | T1 | A2 | B4 | Content has no input controls or input events; only the host draws controls, from declarations (V) | Phase 3 |
+| A plugin's settings panel passes for the host's: a label like "GitHub password", a masked field, the visual secret | T1 | A2, A4 | B4 | The panel never shows the visual secret, shows the plugin's text under the widget's host label, and masks no field (V, VII) | Phase 3 |
+| A setting makes a connector reach an address the user did not choose in a host dialog | T1 | A1 | B2, B4 | A destination is never a plugin's setting: chosen only in a host dialog (III, VII) | Phase 3 |
 | Hidden instruction in content read by AI (prompt injection) | T2, T3 | A1, A4 | B5 | VI, taint tracking | Phase 4 |
 | Remote image with data in its URL in AI output | T2, T3 | A1 | B5 | Safe rendering without remote resources | Phase 4 |
+| Action name or description carries instructions for the AI, claims to be harmless, or passes for another widget's or the host's (tool poisoning) | T1 | A1, A4 | B5 | Names and descriptions treated as untrusted; each offered as its widget's own; the confirmation dialog describes the declared effect and values in the host's words (VI) | Phase 4 |
+| AI changes a setting, runs an action or picks a destination without the user | T2, T3 | A1, A4 | B5 | Confirmation in a host dialog for every action and setting change; destinations only in host dialogs, never by AI (VI, VII) | Phase 4 |
 | Generated module calls a connector the user did not mention | T3 | A1 | B1, B2 | Permissions derived from the user's request | Phase 5 |
 | Data read from one connected account or from the local network reaches another destination | T1 | A1 | B2 | `permissions` already says when data read from this machine can reach another destination; the cross-account warning arrives in the host dialogs (III) | Phase 3 |
 | Package with an invalid or revoked signature | T4 | A5 | B6 | Signature, hash and revocation checks | Phase 6 |
