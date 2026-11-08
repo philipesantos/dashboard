@@ -49,6 +49,21 @@ visual secret and the secret color were dropped by constitution v4.0.0.)
   model and decided in the Phase 3 spec for declared actions and settings: whether the host writes
   the effect and destination on every control of an action that changes data, and whether a
   destructive action always asks for a host dialog. 007 stays simple.
+- Q: How is the split between host and widget checked: by color value or by the token's role? →
+  A: By role only, and no rule on color values. Since v4.0.0 a host dialog is told apart by its
+  form, not its colors; the 30° rule already keeps the widget color away from the host color, and
+  shared grays and status tones let nothing pass for the host. What stays is a split in the code:
+  the kit cannot reach the tokens of the host's surfaces (chrome, dialog, scrim, elevation above
+  the frame, the host's focus style), so no widget can build one. It is an ordinary test; the
+  security rule is the dialog's form, tested with the host features.
+- Q: Are the colors of the status tones (ok, warning, error) fixed, or does the person pick them?
+  → A: Fixed: green for ok, amber for warning, red for error. And a status is never shown by color
+  alone: every use carries a host icon or host text naming it (WCAG 1.4.1), which serves people
+  with color vision deficiencies without making the scales a pick.
+- Q: With no window in 007, how is the visual system seen and reviewed? → A: The command that
+  generates the tokens also draws a static preview (SVG, no script): both themes in the default
+  appearance, a grid of the scales, sketches of the frame, a panel and a dialog, and the status
+  tones with their icons. CI publishes it as a build artifact on every run; it is not committed.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -56,8 +71,8 @@ The people in these stories are the **maintainer**, who owns the host and its lo
 **contributor**, who changes the visual system; the **person** who uses the dashboard and picks
 its appearance; and a **plugin author**, whose widget content the host draws. "The visual system"
 is `DESIGN.md` and everything generated from it. "The kit" is the closed set of components the
-host draws widget content with. "Host-reserved" means a token only the host's own surfaces may
-use: the chrome, dialogs, panels and the frame itself.
+host draws widget content with. "Host-surface tokens" are the tokens only the host's own surfaces
+use: the chrome, dialogs, their scrim, elevation above the frame and the host's focus style.
 
 ### User Story 1 - One source for the whole visual system (Priority: P1)
 
@@ -88,6 +103,8 @@ job run.
    **Then** it treats the change as code and runs every job.
 5. **Given** a token in `DESIGN.md`, **When** a reader looks it up, **Then** it has a stated
    role and a one-line rationale.
+6. **Given** a pull request that changes `DESIGN.md`, **When** CI runs, **Then** its run carries
+   the generated preview, so the change can be reviewed by eye.
 
 ---
 
@@ -117,27 +134,26 @@ known to fail (for example light text on a light solid step) and see the lint fa
 
 ---
 
-### User Story 3 - A widget cannot reach the host's look (Priority: P1)
+### User Story 3 - A widget cannot build the host's surfaces (Priority: P1)
 
 A plugin author can only ask the kit for tones (default, accent, ok, warning, error) and for
-the kit's own components. The kit resolves each tone to a color from the person's picks, but it
-never holds the host-reserved tokens, so no widget content can be drawn with the host color, the
-chrome's surface, a dialog's surface, scrim or elevation, or the host's focus style.
+the kit's own components. The kit resolves each tone from the person's picks: default from the
+gray family, accent from the widget color, ok, warning and error from the status scales. It never
+holds the tokens of the host's surfaces, so no widget can build the chrome, a dialog's surface,
+its scrim, an elevation above the frame or the host's focus style. Colors themselves may be
+shared: a red "error" means the same in a widget and in the host.
 
-**Why this priority**: Principle V keeps a widget from passing for the host; if widget content
-could use the host's tokens, the frame and dialog rules would be decided by color alone.
+**Why this priority**: every later feature that adds kit components draws from these tokens; if
+the kit could reach a dialog's surface, a future component could build one by mistake.
 
-**Independent Test**: for every tone, every kit component and every allowed appearance, resolve
-what the kit would draw and check that no resolved value is a host-reserved token; and check
-that the kit's code cannot name a host-reserved token at all.
+**Independent Test**: check that the kit's code cannot name a host-surface token, and that a use
+of one fails to build.
 
 **Acceptance Scenarios**:
 
-1. **Given** every tone in every allowed appearance and theme, **When** the kit resolves it,
-   **Then** the result is never a host-reserved token, nor a value equal to one.
-2. **Given** the generated tokens, **When** the kit is built, **Then** host-reserved tokens are
+1. **Given** the generated tokens, **When** the kit is built, **Then** the host-surface tokens are
    not reachable from it: a use of one fails to build.
-3. **Given** a widget asking for a tone the kit does not have, **When** the host draws it,
+2. **Given** a widget asking for a tone the kit does not have, **When** the host draws it,
    **Then** the host uses the default tone and logs the unknown name, escaped.
 
 ---
@@ -230,8 +246,7 @@ screen readers and systems it is tested on.
 ### Edge Cases
 
 - **Monochrome host**: the host color has no hue, so the 30° rule applies only against the status
-  tones; the reserved tokens still differ from the kit's by role (surface, elevation, scrim), not
-  by hue.
+  tones; the host's surfaces stay apart from widget content by their form, not by their colors.
 - **Low-chroma scales** (the gray families and scales whose hue is unstable at low chroma): they
   count as neutral and cannot be the widget color, since an accent with no hue reads as default.
 - **Scales that need dark text on their solid step** (Radix's light scales such as amber,
@@ -276,6 +291,11 @@ screen readers and systems it is tested on.
   and MAY be run by hand to compare readings.
 - **FR-006**: The CI filter that skips documentation-only changes MUST treat `DESIGN.md` as code,
   so a change to it alone runs every job.
+- **FR-026**: The command that generates the tokens MUST also draw a static preview, as SVG files
+  with no script: both themes in the default appearance, a grid of every scale with its roles,
+  sketches of the chrome, a widget frame, a panel and a host dialog drawn from the tokens, and the
+  status tones with their icons. CI MUST publish it as a build artifact of every run on Linux; it
+  MUST NOT be committed.
 - **FR-007**: The fonts the visual system names MUST be built into the host, under licenses
   compatible with Apache-2.0; no font MAY come from a plugin or the network.
 
@@ -304,17 +324,27 @@ screen readers and systems it is tested on.
 
 **Split between host and widget**
 
-- **FR-014**: `DESIGN.md` MUST mark which tokens are host-reserved: at least the host color
-  scale, the chrome's surface, a dialog's surface, its scrim and its elevation, the panel's
-  attachment to its frame, and the host's focus style.
-- **FR-015**: The kit MUST resolve widget content only from tones (default, accent, ok, warning,
-  error) and its own component tokens, and MUST NOT be able to reach a host-reserved token: a use
-  of one MUST fail to build.
-- **FR-016**: For every tone, every kit component and every allowed appearance and theme, no value
-  the kit resolves MAY equal a host-reserved token's value; an automated test MUST check this
-  over all combinations (Principle VIII).
+- **FR-014**: `DESIGN.md` MUST mark the tokens of the host's surfaces: at least the chrome's
+  surface, a dialog's surface, its scrim and its elevation, any elevation above the frame, the
+  panel's attachment to its frame, and the host's focus style.
+- **FR-015**: The kit MUST resolve widget content only from tones (default from the gray family,
+  accent from the widget color, ok, warning and error from the status scales) and its own
+  component tokens, and MUST NOT be able to reach a host-surface token: a use of one MUST fail to
+  build, and a test MUST show it.
+- **FR-016**: No rule compares color values between the kit and the host: the gray family and the
+  status scales are shared, and the 30° rule (FR-011) keeps the widget color away from the host
+  color.
 - **FR-017**: An unknown tone MUST resolve to the default tone, and the host MUST log the name,
   escaped.
+
+**Status tones**
+
+- **FR-024**: The status tones MUST use fixed Radix scales: green for ok, amber for warning and
+  red for error. The person does not pick them, and the hue rule (FR-011) and the contrast lint
+  (FR-008) measure against these three.
+- **FR-025**: The kit and the host MUST never convey a status by color alone: every use of ok,
+  warning or error MUST carry an icon built into the host, or host text, naming the status, and a
+  test MUST check that each status component has one.
 
 **Frame and dialog design (criteria for later features)**
 
@@ -344,8 +374,8 @@ screen readers and systems it is tested on.
 
 **Hostile cases and existing suite**
 
-- **FR-022**: The test of FR-016 and the build failure of FR-015 MUST be part of the security
-  suite, which MUST otherwise pass unchanged.
+- **FR-022**: The feature adds no hostile case: the security rule is the host dialog's form, whose
+  cases arrive with the host features (FR-019). The existing security suite MUST pass unchanged.
 - **FR-023**: No plugin string MAY reach an image or URL-opening call in anything this feature
   adds, and the visual system MUST NOT define an image block or a plugin-supplied icon (decision
   0001 stands).
@@ -353,13 +383,15 @@ screen readers and systems it is tested on.
 ### Key Entities
 
 - **Visual system**: `DESIGN.md`, the single source; holds tokens, roles, rationales, the
-  reserved marks and the kit's components.
+  host-surface marks and the kit's components.
 - **Token**: a named value (color, size, radius, shadow, font), with its role, its value per
-  theme, its rationale and whether it is host-reserved.
-- **Tone**: one of default, accent, ok, warning, error; the only color a widget can ask for.
+  theme, its rationale and whether it is a host-surface token.
+- **Tone**: one of default, accent, ok, warning, error; the only color a widget can ask for. Ok,
+  warning and error use fixed scales and always come with the host's icon or text.
 - **Appearance**: the person's picks (gray family, host color, widget color, radius, theme), valid
   only if it passes the hue rule.
-- **Host-reserved set**: the tokens only the host's own surfaces use; the kit never reaches it.
+- **Host-surface tokens**: the tokens of the chrome, dialogs, scrim, elevation above the frame and
+  the host's focus style; the kit never reaches them.
 - **Criterion**: a numbered, observable rule for the chrome, frame, panel, dialogs or field note,
   with its constitution rule, threat row and the feature that will test it.
 
@@ -372,8 +404,8 @@ screen readers and systems it is tested on.
   is edited by hand.
 - **SC-002**: The contrast lint covers 100% of the allowed appearance combinations in both
   themes, and every pairing passes WCAG AA.
-- **SC-003**: Across 100% of tones, kit components and allowed appearances, no kit-resolved value
-  equals a host-reserved value.
+- **SC-003**: A use of any host-surface token from the kit fails to build, for 100% of those
+  tokens.
 - **SC-004**: The hue rule's accepted and refused pairs match an independent computation of hue
   distances for every pair of allowed scales.
 - **SC-005**: Every Phase 3 threat-model row about host imitation, dialogs, panels and plugin
@@ -381,6 +413,8 @@ screen readers and systems it is tested on.
   pass/fail observation.
 - **SC-006**: A change to `DESIGN.md` alone runs every CI job on the three systems, and the
   existing security suite passes unchanged.
+- **SC-007**: Every CI run carries a preview the maintainer can open in a browser to approve the
+  look, with nothing to install.
 
 ## Assumptions
 
