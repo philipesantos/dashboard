@@ -20,3 +20,6 @@ node_modules
 
 # The crate kept beside the authors walkthrough, if a contributor builds it there
 /docs/authors/getting-started/target/
+
+# The fixture that must fail cargo deny (design/ban-fixture/Cargo.toml)
+/design/ban-fixture/target/

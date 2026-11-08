@@ -1,0 +1,14 @@
+# A crate that must never pass `cargo deny check bans`: it depends on host-surfaces, which only the
+# host may (deny.toml; specs/007-host-visual-design/research.md, R6). CI runs the check on it and
+# passes only when the check fails, which shows the ban bites before any kit crate exists.
+[package]
+name = "ban-fixture"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+host-surfaces = { path = "../host-surfaces" }
+
+# Not a member of the root workspace
+[workspace]

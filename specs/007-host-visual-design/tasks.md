@@ -90,11 +90,12 @@ workspace builds and every existing test passes at the end of this phase.
   for being a workspace member, stop: move `host-surfaces` out of the workspace (as the fixture
   is), or pick another enforcement, bring the choice to the maintainer and record it in
   research R6 before going on.
-- [ ] T005 [P] Create the ban fixture `design/ban-fixture/` (research R6): a crate named
+- [X] T005 [P] Create the ban fixture `design/ban-fixture/` (research R6): a crate named
   `ban-fixture`, outside the workspace (add it to the root `Cargo.toml`'s `exclude` with a
   comment), depending on `host-surfaces` by path, with its own committed `Cargo.lock`. Confirm
-  the flag placement against `cargo deny --help` first, then confirm
-  `cargo deny --manifest-path design/ban-fixture/Cargo.toml check --config deny.toml bans` fails
+  that, run from the repository root (cargo-deny reads `<cwd>/deny.toml`; its `--config` goes
+  before `check`, never after), the check fails, and confirm
+  `cargo deny --manifest-path design/ban-fixture/Cargo.toml check bans` fails
   and names the `host-surfaces` ban.
 
 **Checkpoint**: data vendored and hashed, crates build empty, bans in place and shown to bite.
@@ -207,8 +208,7 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
     comment names these paths as Markdown the build uses as code and cites constitution v5.0.0
     instead of v2.4.1;
   - in the Linux build job: `cargo xtask design --check`; the ban fixture step, which passes only
-    when `cargo deny --manifest-path design/ban-fixture/Cargo.toml check --config deny.toml
-    bans` fails; `cargo xtask design --preview target/design-preview`; and
+    when `cargo deny --manifest-path design/ban-fixture/Cargo.toml check bans` fails; `cargo xtask design --preview target/design-preview`; and
     `actions/upload-artifact` pinned to a commit SHA with its tag in a comment, artifact
     `design-preview`, kept 14 days.
 
