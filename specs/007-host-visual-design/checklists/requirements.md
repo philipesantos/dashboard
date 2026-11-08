@@ -40,5 +40,6 @@
 - The four questions that shaped scope (one feature, no window, no visual secret, the fake dialog
   from declared actions left to its own spec) were answered by the maintainer on 2026-11-08 and
   are in the spec's Clarifications.
-- Open for the plan: whether the format's tool needs Node.js in CI, the hue space and chroma
-  threshold, and the input delay.
+- Decided 2026-11-08: no Node.js in CI; the format is checked against its specification, pinned
+  to a commit, by the project's own checker.
+- Open for the plan: the hue space and chroma threshold, and the input delay.

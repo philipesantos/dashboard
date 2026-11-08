@@ -82,8 +82,8 @@ job run.
 2. **Given** a value changed in `DESIGN.md` only, **When** CI runs, **Then** the drift check
    fails and names the token that differs.
 3. **Given** a `DESIGN.md` that breaks the format (an unknown section, a token without a value,
-   a reference to a token that does not exist), **When** the format check runs with the pinned
-   tool version, **Then** it fails and names the line or token.
+   a reference to a token that does not exist), **When** the format check runs against the pinned
+   specification, **Then** it fails and names the line or token.
 4. **Given** a pull request that changes only `DESIGN.md`, **When** CI decides which jobs run,
    **Then** it treats the change as code and runs every job.
 5. **Given** a token in `DESIGN.md`, **When** a reader looks it up, **Then** it has a stated
@@ -251,8 +251,8 @@ screen readers and systems it is tested on.
 - **Several host windows**: a dialog blocks all of them, not only the one it opens in.
 - **A dialog that appears under the pointer or while a key is held**: its buttons ignore input
   for a short time after it appears, and no key that was already down answers it.
-- **`DESIGN.md` format changes upstream** (the format is alpha): the tool is pinned to an exact
-  version, and moving it is a change of its own, reviewed like a dependency upgrade.
+- **`DESIGN.md` format changes upstream** (the format is alpha): the specification is pinned to
+  one commit, and moving it is a change of its own, reviewed like a dependency upgrade.
 
 ## Requirements *(mandatory)*
 
@@ -271,8 +271,9 @@ screen readers and systems it is tested on.
   Tokens Community Group JSON export; neither MAY be edited by hand.
 - **FR-004**: CI MUST fail when the generated tokens or the export differ from what `DESIGN.md`
   produces, naming the first token that differs.
-- **FR-005**: CI MUST check `DESIGN.md` against the format with the format's tool, pinned to an
-  exact version.
+- **FR-005**: CI MUST check `DESIGN.md` against the format's specification, pinned to one commit
+  of Google's repository, with the project's own checker; the format's npm tool is not part of CI
+  and MAY be run by hand to compare readings.
 - **FR-006**: The CI filter that skips documentation-only changes MUST treat `DESIGN.md` as code,
   so a change to it alone runs every job.
 - **FR-007**: The fonts the visual system names MUST be built into the host, under licenses
@@ -383,9 +384,11 @@ screen readers and systems it is tested on.
 
 ## Assumptions
 
-- Google's DESIGN.md format has a tool that checks a file against the format and can run in CI on
-  the three systems; if it needs a runtime the CI no longer installs (Node.js left with Tauri),
-  the plan weighs adding it against checking the format another way, and says so.
+- Google's DESIGN.md format is Markdown with YAML front matter, specified in `docs/spec.md` of
+  `google-labs-code/design.md` (Apache-2.0). Its tool, `@google/design.md`, is an npm package;
+  CI does not install Node.js (it left with Tauri), and the tool's contrast check covers only
+  declared pairs, as a warning. So the project's checker, generator, DTCG export and contrast lint
+  are its own, in Rust, and the npm tool is only a manual cross-check (decided 2026-11-08).
 - The DTCG export follows the format's current draft; design tools that read an older draft are
   not a goal.
 - Radix Colors is used as plain color data (MIT), never through its React packages.
