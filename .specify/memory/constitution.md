@@ -87,24 +87,63 @@ another service, not even a device that answers at the same local address on ano
 Plugin UI MUST render only inside the host-drawn frame of its widget and MUST NOT contain
 password fields. Plugins MUST NOT open windows or dialogs.
 
-Rationale: prevents fake login screens and phishing that imitate the host.
+Plugin content MUST NOT contain input controls or receive input events, such as keystrokes
+or pointer positions. A plugin's manifest declares the actions it offers and the settings it
+takes, each with typed parameters, and states the effect of each action: whether it writes
+the plugin's store, and which declared connector operations it calls. The host MUST refuse a
+manifest that declares a parameter type the host cannot draw, and MUST draw every control
+from these declarations, in the widget's frame or in a panel the frame opens, which belongs to
+that frame. Content MAY place a declared action, with fixed values for its parameters, where
+the host then draws that action's control. The host MUST check every value against its
+declared type and MUST pass the plugin only the checked value, never the keystrokes.
+
+While an action runs, the host MUST refuse every store write and every connector operation
+its declaration does not state; data the action returns for the host to keep counts as a
+store write. Outside an action the user started, or one the AI proposed and the user
+confirmed (Principle VI), the host MUST refuse every connector operation that changes data.
+Every declared action and setting MUST be usable through the host's controls alone, with no
+AI configured.
+
+A panel that holds a plugin's controls is not a host dialog: it MUST NOT show the user's
+visual secret, it MUST show the plugin's names and descriptions as the widget's text, under
+the label the host shows for that widget, and the host MUST NOT mask any field it draws for a
+plugin. A connector's destination is never a plugin's setting: the user chooses it in a host
+dialog, as Principles III and VII require.
+
+Rationale: prevents fake login screens and phishing that imitate the host. A plugin that
+draws no controls has no field to fake and reads only what the user chose to give it. An
+effect stated in what the host observes, and checked while the action runs, cannot be
+understated, and a service's data changes only when the user asked for it. The same
+declarations are the AI's tools (Principle VI), so the user and the AI reach a plugin through
+one surface the host checks.
 
 ### VI. Human Confirmation for AI Actions
 
-AI output MUST NOT trigger any action without explicit human confirmation in a host dialog.
+AI output MUST NOT trigger any action or change any setting, of a plugin or of the host,
+without explicit human confirmation in a host dialog; even with confirmation, it MUST NOT
+trigger a decision of Principle VII. AI MUST NOT act on a plugin except through the actions and
+settings its manifest declares (Principle V). The host MUST offer each one to the AI as that
+widget's own, so that no name passes for another widget's or the host's, and MUST treat their
+names and descriptions as untrusted content, as it treats everything else the AI reads. The
+confirmation dialog MUST state, in the host's own words, the declared effect and the values to
+be passed, showing the plugin's names and descriptions only as the plugin's text.
 
 Rationale: model output can be steered by instructions hidden in the content the AI reads
-(prompt injection).
+(prompt injection). A plugin's author writes its names and descriptions, which reach the
+model as tool definitions, so they can carry such instructions too (tool poisoning), or claim
+to be harmless; the dialog therefore describes the action from its declaration, not from the
+plugin's words.
 
 ### VII. Trust Decisions Only in Host Dialogs
 
-Granting permissions, installing plugins and connectors, and connecting accounts MUST happen
-only in host dialogs. Until the host app has these dialogs (Phase 3), the host's development command-line
-tool MAY grant permissions to local packages, recording them only in a development grant
-record that installed plugins never use, and MAY connect accounts for the connectors of local
-packages, keeping their credentials only in a development vault, in the OS keychain, that
-installed plugins never use. Neither AI output nor a plugin MAY perform, trigger or
-pre-approve these actions.
+Granting permissions, installing plugins and connectors, connecting accounts and choosing a
+connector's destination MUST happen only in host dialogs, and every host dialog MUST show the
+visual secret the user chose, which nothing a plugin draws can show. Until the host app has
+these dialogs (Phase 3), the host's development command-line tool MAY grant permissions to
+local packages, recording them only in a development grant record that installed plugins never
+use, and MAY connect accounts for the connectors of local packages, keeping their credentials
+only in a development vault, in the OS keychain, that installed plugins never use. Neither AI
+output nor a plugin MAY perform, trigger or pre-approve these actions.
 
 Rationale: these decisions expand what code can do, so they stay out of reach of the
 parties the threat model distrusts: plugin authors, external content and manipulated AI.
@@ -172,4 +211,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 3.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-07
+**Version**: 3.1.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-08
