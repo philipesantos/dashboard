@@ -53,7 +53,7 @@ Long builds and test runs go under the memory cap:
 **Purpose**: the vendored data, the crates' skeletons, line endings and the dependency bans. The
 workspace builds and every existing test passes at the end of this phase.
 
-- [ ] T001 Vendor the upstream data under `design/` (FR-005, FR-007; research R1, R2, R9), each
+- [X] T001 Vendor the upstream data under `design/` (FR-005, FR-007; research R1, R2, R9), each
   file unmodified,
   with its license beside it:
   - `design/radix/3.0.0/{light.ts,dark.ts,blackA.ts,LICENSE}` from `radix-ui/colors` at commit
