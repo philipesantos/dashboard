@@ -38,6 +38,12 @@ deny = [
     { name = "rustls-platform-verifier" },
     { name = "rustls-native-certs" },
     { name = "native-tls" },
+    # The tokens of the host's own surfaces (chrome, dialogs, scrim, panel attachment, focus): only
+    # the host crate may depend on them, so the widget kit can never build one
+    # (specs/007-host-visual-design/research.md, R6).
+    { name = "host-surfaces", wrappers = ["host"] },
+    # The generator holds every value, host surfaces included: only xtask may depend on it (R6).
+    { name = "design-gen", wrappers = ["xtask"] },
 ]
 
 [sources]

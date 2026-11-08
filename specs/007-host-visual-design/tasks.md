@@ -81,7 +81,7 @@ workspace builds and every existing test passes at the end of this phase.
     shape.
   - Confirm `cargo deny check` passes with no new license and `cargo tree -d` shows no new
     duplicate.
-- [ ] T004 Update `deny.toml` (research R6): under `[bans] deny`, add
+- [X] T004 Update `deny.toml` (research R6): under `[bans] deny`, add
   `{ name = "host-surfaces", wrappers = ["host"] }` and `{ name = "design-gen", wrappers =
   ["xtask"] }`, each with a comment pointing to `specs/007-host-visual-design/research.md` R6.
   This hunk sits beside the network stack's bans and gets line-by-line review. Then run
