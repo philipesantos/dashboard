@@ -66,7 +66,7 @@ workspace builds and every existing test passes at the end of this phase.
     commit or release) and its license.
   - Record each file's SHA-256 (after turning `\r\n` into `\n` for text) in the README; T007
     pins them.
-- [ ] T002 [P] Add `.gitattributes` at the root (research R7): `DESIGN.md`, `docs/design/*.md`
+- [X] T002 [P] Add `.gitattributes` at the root (research R7): `DESIGN.md`, `docs/design/*.md`
   and the text files under `design/` (`*.rs`, `*.ts`, `*.md`, `*.json`, `*.txt`, `*.toml`) as
   `text eol=lf`; `*.woff2` and `*.ttf` as `binary`. Run `git add --renormalize .` and confirm it
   changes no existing file.

@@ -1,0 +1,13 @@
+# The design checks hash and compare these files byte for byte, so they keep LF on every
+# checkout, Windows included (specs/007-host-visual-design/research.md, R7).
+DESIGN.md text eol=lf
+docs/design/*.md text eol=lf
+design/**/*.rs text eol=lf
+design/**/*.ts text eol=lf
+design/**/*.md text eol=lf
+design/**/*.json text eol=lf
+design/**/*.txt text eol=lf
+design/**/*.toml text eol=lf
+design/**/LICENSE text eol=lf
+design/**/*.woff2 binary
+design/**/*.ttf binary
