@@ -7,8 +7,9 @@ publish = false
 
 [dependencies]
 # Reads DESIGN.md's front matter and its design-roles blocks; the maintained successor of
-# yaml-rust, pure Rust (specs/007-host-visual-design/research.md, R4)
-yaml-rust2 = "=0.13.0"
+# yaml-rust, pure Rust (specs/007-host-visual-design/research.md, R4). Without its default
+# "encoding" feature: DESIGN.md is UTF-8, and the feature pulls an old encoding_rs and cfg-if
+yaml-rust2 = { version = "=0.13.0", default-features = false }
 
 [dev-dependencies]
 # The pins test hashes the vendored files under design/
