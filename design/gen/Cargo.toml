@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Checks DESIGN.md, generates the design tokens, the DTCG export and the preview, and runs the contrast lint"
 edition = "2024"
 publish = false
+# The integration tests build as one executable, tests/it.rs, as the runtime's do
+autotests = false
 
 [dependencies]
 # Reads DESIGN.md's front matter and its design-roles blocks; the maintained successor of
@@ -14,3 +16,7 @@ yaml-rust2 = { version = "=0.13.0", default-features = false }
 [dev-dependencies]
 # The pins test hashes the vendored files under design/
 sha2 = "0.10"
+
+[[test]]
+name = "it"
+path = "tests/it.rs"

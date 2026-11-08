@@ -106,17 +106,17 @@ workspace builds and every existing test passes at the end of this phase.
 
 **Purpose**: what every check reads and computes with. No user story starts before T011.
 
-- [ ] T006 [P] Write `design/gen/tests/math.rs` first, failing:
+- [X] T006 [P] Write `design/gen/tests/math.rs` first, failing:
   - WCAG 2.2 contrast of known pairs: white on black is 21; `#767676` on white is 4.54 (cut off
     to two decimals, never rounded up); a pair equal to itself is 1;
   - compositing: `blackA` step 7 (`rgba(0, 0, 0, 0.5)`) over white is `#808080` within one unit;
   - OKLCH of Radix light step 9 for `blue`, `red`, `green`, `amber` and `gray` within 0.1° of
     hue and 0.001 of chroma of research R3's table (gray: chroma under 0.001);
   - hue distance wraps: 350° and 10° are 20° apart.
-- [ ] T007 [P] Write `design/gen/tests/pins.rs` first, failing: the SHA-256 of every vendored
+- [X] T007 [P] Write `design/gen/tests/pins.rs` first, failing: the SHA-256 of every vendored
   text file of T001 (after `\r\n` → `\n`) and of each font file equals the hash recorded in
   `design/README.md`; a changed byte fails naming the file.
-- [ ] T008 [P] Write `design/gen/tests/radix_reader.rs` first, failing (research R2): the reader
+- [X] T008 [P] Write `design/gen/tests/radix_reader.rs` first, failing (research R2): the reader
   of T009 returns 31 solid scales plus `blackA`, each with exactly 12 steps, light and dark; and
   refuses, naming the line: an unexpected line, a scale with 11 or 13 steps, a step out of
   order, a missing or extra scale name, and a value that is neither `#rrggbb` nor
