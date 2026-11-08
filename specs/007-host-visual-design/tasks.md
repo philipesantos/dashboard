@@ -126,7 +126,7 @@ workspace builds and every existing test passes at the end of this phase.
   `design/gen/src/radix.rs` (the strict line reader of research R2, the `Scale` entity of
   `data-model.md` with `kind` derived from the gray-family list and "chroma under 0.08 means
   neutral"). T006 and T008 pass.
-- [ ] T010 Implement `design/gen/src/source.rs`: read `DESIGN.md` into its two layers
+- [X] T010 Implement `design/gen/src/source.rs`: read `DESIGN.md` into its two layers
   (contracts/design-md.md): the front matter as the format's 0.4.0 schema, the `##` sections in
   order, and every fenced `design-roles` block as YAML, keeping line numbers for messages. Parse
   only; the rules come in US1. Unit tests with inline fixtures: front matter not first, a
