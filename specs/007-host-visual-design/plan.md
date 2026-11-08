@@ -66,7 +66,7 @@ criteria
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Checked against constitution v4.0.0.
+Checked against constitution v5.0.0.
 
 | Rule | Status | How the plan complies |
 | --- | --- | --- |
@@ -79,15 +79,15 @@ Checked against constitution v4.0.0.
 | VII. Trust decisions only in host dialogs | Pass | The criteria define the host dialog's form (covers the chrome, blocks every host window, keeps focus, ignores outside input, sole node for assistive technology, never a native prompt) for the dialog features to test (R10, R11) |
 | VIII. Every security rule has a breaking test | Pass | This feature adds no security rule of its own: the kit-and-host split is defence in depth, tested as an ordinary test (spec, Clarifications); the rules of V and VII it designs get their hostile cases in the features that build the window, as the criteria's **Tested by** says; the suite runs unchanged (FR-022) |
 | IX. Human review of the security core | Pass | No change to `runtime/`, `wit/` or `connectors/`. The `deny.toml` hunk sits beside the network stack's bans, so it gets line-by-line review like them |
-| Fixed decisions: host app, UI | **Conflict, open** | Colors only from Radix scales; typography, spacing, radius and shadow are the project's own, in `DESIGN.md` (R13); no GPUI dependency yet. But "each step used for its role" collides with WCAG 2.2 AA in two places: no border or focus-ring step (6–8) reaches 1.4.11's 3:1 on step 1, so the control boundary and the host's focus ring need step 9, 11 or 12; and the row's reason, "text contrast holds for any Radix scale used by role", is false (amber 11 on sage 2 is 4.36, green 11 on green 3 is 4.21). The scrim and shadows now come from `blackA`, Radix's overlay scale, which is on-role. Needs an amendment, brought to the maintainer (R5) |
+| Fixed decisions: host app, UI | Pass | Colors only from Radix scales plus white and black, with `DESIGN.md` choosing each role's step (v5.0.0); the scrim and shadows from `blackA` (R2); typography, spacing, radius and shadow the project's own (R13); no GPUI dependency yet |
 | Fixed decision: licenses | Pass | Client code Apache-2.0; vendored Radix data MIT and Inter OFL 1.1 kept with their licenses; `yaml-rust2` MIT or Apache-2.0, inside `deny.toml`'s list |
+| Workflow: contrast | Pass | Every foreground role is paired with every background it can be drawn on (checker rule 11), and the lint runs over every appearance the host accepts in both themes, against WCAG 1.4.3 and 1.4.11, `blackA` composited; `decorative` and `inactive` pairings need a written reason (R5, contracts/design-md.md) |
 | Workflow: CI on three systems, clippy, audit, deny | Pass | The new crates are workspace members, so the build job's Clippy, `cargo test`, `cargo deny` and `cargo audit` cover them on three systems (R12) |
 | Workflow: documentation-only rule | Pass | `DESIGN.md`, `design/`, `docs/design/` and `docs/threat-model.md` are read by the checks, so the `changes` job counts them as code (FR-006, R12) |
 | Workflow: phase gates | Pass | Phases 1 and 2 passed; the Phase 3 gate (every Phase 3 row of the security table blocked) is not this feature's to pass, and the criteria map those rows to the features that will |
 | Workflow: Spec Kit, Constitution Check | Pass | This table, re-checked below, and an independent review before `/speckit-tasks` |
 
-**Post-design re-check**: one conflict open, the rest Pass, after an independent review against
-v4.0.0. It found the Radix role conflict wider than first written (the focus ring and the
+**Post-design re-check**: Pass against v5.0.0. An independent review against v4.0.0 found the Radix role conflict wider than first written (the focus ring and the
 reason sentence, not only control boundaries), that the dark scrim from gray 12 would have been
 near white, that the host-surface boundary missed `design-gen`, had no test that the ban bites
 and a `compile_fail` test that proved nothing, that the pins and drift test would fail on
@@ -96,7 +96,9 @@ SC-007 needed rewording, that the criteria contract quoted a threat row with an 
 gaps for FR-008, FR-009, FR-017, FR-020 and FR-023. Each was checked at the source
 (`constitution.md`, `ci.yml:27,63,65`, `contract_v1.rs:212`, the Radix files, the absence of
 `.gitattributes`) and fixed in research R1, R2, R5–R8, R12, R13 and the contracts. The
-conflict waits for the maintainer.
+conflict was resolved by amending the constitution to v5.0.0 (steps chosen per role in
+`DESIGN.md`, contrast measured in CI), itself reviewed independently; the plan dropped its
+`off-role` marks as a result.
 
 ## Project Structure
 

@@ -64,6 +64,10 @@ visual secret and the secret color were dropped by constitution v4.0.0.)
   generates the tokens also draws a static preview (SVG, no script): both themes in the default
   appearance, a grid of the scales, sketches of the frame, a panel and a dialog, and the status
   tones with their icons. CI publishes it as a build artifact on every run; it is not committed.
+- Q: The plan measured that Radix's border and focus-ring steps miss WCAG 1.4.11's 3:1 and that
+  some on-role text pairings miss 4.5:1, against the constitution's "each step used for its
+  role". Replace Radix, or amend? → A: Keep Radix and amend: constitution v5.0.0 lets `DESIGN.md`
+  choose the step for each role and makes the CI contrast check the guarantee.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -279,7 +283,8 @@ screen readers and systems it is tested on.
   Google's open DESIGN.md format, defining color roles for light and dark themes, typography,
   spacing, radius, shadow and elevation, and the kit's components, each token with its role and a
   one-line rationale.
-- **FR-002**: Colors MUST come from Radix Colors scales, each step used for its documented role;
+- **FR-002**: Colors MUST come from Radix Colors scales, plus white and black, with the step for
+  each role chosen in `DESIGN.md` (constitution v5.0.0);
   typography, spacing, radius and shadow MUST be the project's own scales, defined in
   `DESIGN.md`.
 - **FR-003**: The host's Rust tokens MUST be generated from `DESIGN.md`, and so MUST a W3C Design
@@ -301,10 +306,13 @@ screen readers and systems it is tested on.
 
 **Contrast**
 
-- **FR-008**: CI MUST run a contrast lint over every combination of the allowed appearance picks
-  in both themes, and MUST fail when a text pairing is under 4.5:1 (3:1 for large text) or a
-  control boundary or focus indicator is under 3:1 against what it sits on, reporting the
-  pairing, theme, picks and ratio.
+- **FR-008**: `DESIGN.md` MUST pair every foreground role with every background it can be drawn
+  on, and CI MUST run a contrast lint over every appearance the host accepts, in both themes,
+  failing when a text pairing is under 4.5:1 (3:1 for large text as WCAG defines it, WCAG 1.4.3)
+  or a control boundary, focus indicator or meaningful icon is under 3:1 (WCAG 1.4.11), with
+  translucent colors measured after compositing, and reporting the pairing, theme, picks and
+  ratio. A pairing MAY go unchecked only under a WCAG exemption (inactive component, decoration,
+  incidental text, logotype), with its reason in `DESIGN.md`.
 - **FR-009**: For each scale, `DESIGN.md` MUST declare the text color used on its solid steps, and
   the lint MUST use it.
 
@@ -437,5 +445,6 @@ screen readers and systems it is tested on.
   the person picks the appearance, the kit's components beyond their tokens, the widget content
   format, the dashboard grid, the dialogs themselves, installation, and declared actions. Each
   arrives with its own Phase 3 feature and must pass this feature's criteria.
-- Dependencies: constitution v4.0.0 (Principles V, VII, VIII; Fixed Technical Decisions for UI);
+- Dependencies: constitution v5.0.0 (Principles V, VII, VIII; Fixed Technical Decisions for UI;
+  the contrast rule of the Development Workflow);
   the threat model's Phase 3 rows and open questions; decision 0001.

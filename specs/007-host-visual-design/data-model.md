@@ -28,7 +28,6 @@ A color role of the project layer (`text`, `text-secondary`, `surface`, `border-
 | `light`, `dark` | step 1–12, or `solid-text` | per theme |
 | `why` | text | required (FR-001) |
 | `host_surface` | bool | true routes it to the `host-surfaces` crate (R6) |
-| `off_role` | WCAG criterion, optional | required when the step is outside its Radix role (R5) |
 
 ## Pairing
 
@@ -37,8 +36,8 @@ A foreground role over a background role that the contrast lint checks.
 | Field | Type | Rule |
 | --- | --- | --- |
 | `fg`, `bg` | role names | must exist |
-| `kind` | `text` \| `large-text` \| `non-text` \| `decorative` | thresholds 4.5, 3, 3, none (R5) |
-| `why` | text | required for `decorative` |
+| `kind` | `text` \| `large-text` \| `non-text` \| `decorative` \| `inactive` | thresholds 4.5, 3, 3; none for the last two, which only WCAG's exemptions allow (R5) |
+| `why` | text | required for `decorative` and `inactive` |
 
 ## Tone
 

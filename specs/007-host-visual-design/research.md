@@ -124,7 +124,8 @@ appearance (6 gray families × the monochrome host and 22 chromatic host colors 
 colors left by R3 × 2 themes; the radius does not affect contrast), with WCAG 2.2 relative
 luminance on sRGB. A pairing declares its kind: `text` (4.5:1), `large-text` (3:1, at least 24 px,
 or 18.66 px bold), `non-text` (3:1, WCAG 1.4.11: control boundaries, focus indicators, icons
-that carry meaning) or `decorative` (not checked, and only allowed where something else carries
+that carry meaning), `decorative` or `inactive` (not checked, only under WCAG's exemptions for
+decoration and inactive components, with the reason written; a decorative line is allowed only where something else carries
 the meaning). Measured worst cases on Radix 3.0.0, which `DESIGN.md` must design around:
 
 | Pairing | Worst light | Worst dark | Consequence for `DESIGN.md` |
@@ -137,10 +138,11 @@ the meaning). Measured worst cases on Radix 3.0.0, which `DESIGN.md` must design
 | gray step 8 border on step 1 | 1.86 | 3.00 | step 8 is `decorative` (dividers); a control's boundary needs another step: 9 reaches 3.22 light and 3.64 dark, but Radix assigns 9 to solid backgrounds (open, below) |
 | widget step 9 as a focus ring on gray step 1 | 1.31 (lime) | 3.48 | focus is the host's own style (host-surface, R6); Radix's focus-ring steps (7, 8) fail too (accent 8: 2.26; gray 8: 1.86), so it needs gray 12 or the host color's step 11 (open, below) |
 
-**Open: steps off their Radix role.** The constitution's UI row says each Radix step is "used for
-its role", and its reason says "text contrast holds for any Radix scale used by role". Radix
-assigns steps 1–2 to backgrounds, 3–5 to component backgrounds, 6–8 to borders and focus rings,
-9–10 to solid backgrounds and 11–12 to text. The measurements contradict both:
+**Resolved by constitution v5.0.0: steps chosen per role.** Until v4.0.0 the UI row said each
+Radix step is "used for its role", and its reason said "text contrast holds for any Radix scale
+used by role". Radix assigns steps 1–2 to backgrounds, 3–5 to component backgrounds, 6–8 to
+borders and focus rings, 9–10 to solid backgrounds and 11–12 to text. The measurements
+contradicted both (ratios cut off, not rounded):
 
 - no border or focus-ring step reaches WCAG 1.4.11's 3:1 on step 1 in the light theme, so a
   control's boundary and the focus ring need step 9, 11 or 12;
@@ -148,10 +150,13 @@ assigns steps 1–2 to backgrounds, 3–5 to component backgrounds, 6–8 to bor
   "holds for any scale used by role" is false; the design avoids them (status text in gray 12,
   soft badges in step 12), and the lint catches the rest.
 
-Keeping borders decorative would not avoid it, since the focus ring is off-role either way. The
-constitution needs an amendment, brought to the maintainer: Radix steps keep their roles, except
-where WCAG 2.2 AA needs another step, which `DESIGN.md` marks per role and the checker verifies;
-and the reason becomes "contrast is checked for every appearance the person can pick".
+Keeping borders decorative would not have avoided it, since the focus ring needed another step
+either way. The maintainer kept Radix (replacing it would trade this for weaker dark themes or
+fewer hues) and amended the constitution: `DESIGN.md` chooses the step for each role, every
+foreground role is paired with every background it can be drawn on, and CI shows each pairing
+meets WCAG 2.2's contrast minimums (1.4.3, 1.4.11) in every appearance the host accepts, in both
+themes, translucent colors after compositing; a pairing goes unchecked only under a WCAG
+exemption with its reason. So no step needs a mark for leaving its Radix role.
 
 `DESIGN.md` also declares, per scale, the text color used on its solid steps (`white`, `dark` or
 `none`, FR-009); the checker fails when the declared color does not reach 4.5:1 there, or when
@@ -286,7 +291,7 @@ trust dialogs are rare, so a second costs little. The spec asks for at least 500
   `wit/` (constitution: Markdown the build uses as code is not documentation). Today `DESIGN.md`
   matches `\.md$` and the two `docs/` paths match `^docs/`; the first test becomes
   `'^(docs/authors|docs/design|wit|design)/|^DESIGN\.md$|^docs/threat-model\.md$'`. The comment in
-  `ci.yml` names them and cites constitution v4.0.0 instead of v2.4.1.
+  `ci.yml` names them and cites constitution v5.0.0 instead of v2.4.1.
 - A step runs `cargo deny check bans` on `design/ban-fixture/` and passes only when it fails
   (R6).
 - No new job: the checks are tests in `design-gen`, so the build job's `cargo test --workspace`
