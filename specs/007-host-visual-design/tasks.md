@@ -132,7 +132,7 @@ workspace builds and every existing test passes at the end of this phase.
   only; the rules come in US1. Unit tests with inline fixtures: front matter not first, a
   duplicate section, a `design-roles` key in two blocks, YAML that does not parse, each refused
   with its line.
-- [ ] T011 Implement `design/gen/src/model.rs`: the `Role`, `Pairing`, `Tone`, `Token` and
+- [X] T011 Implement `design/gen/src/model.rs`: the `Role`, `Pairing`, `Tone`, `Token` and
   `Criterion` entities of `data-model.md`, with their fields and rules verbatim (for example
   `kind` of a pairing is `text` \| `large-text` \| `non-text` \| `decorative` \| `inactive`, and
   `why` is required for `decorative` and `inactive`). No behaviour beyond construction. T007

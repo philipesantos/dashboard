@@ -2,5 +2,6 @@
 //! the contrast lint and the hue rule (specs/007-host-visual-design).
 
 pub mod color;
+pub mod model;
 pub mod radix;
 pub mod source;
