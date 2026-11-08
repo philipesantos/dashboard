@@ -1,8 +1,5 @@
 //! Helpers shared by the integration tests.
 
-// Each test file compiles this module on its own and uses only some of the helpers.
-#![allow(dead_code)]
-
 pub mod servers;
 pub mod signin;
 
