@@ -32,7 +32,9 @@ fn every_test_file_is_a_module() {
             continue;
         }
         let name = path.file_stem().expect("a file name").to_string_lossy();
-        if name != "it" && !listed.contains(&format!("\nmod {name};\n")) {
+        // By line, since a checkout on Windows may end them with \r\n
+        let module = format!("mod {name};");
+        if name != "it" && !listed.lines().any(|line| line == module) {
             missing.push(path.display().to_string());
         }
     }
