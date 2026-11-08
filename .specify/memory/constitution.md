@@ -85,7 +85,11 @@ another service, not even a device that answers at the same local address on ano
 ### V. Plugins Stay Inside the Host Frame
 
 Plugin UI MUST render only inside the host-drawn frame of its widget and MUST NOT contain
-password fields. Plugins MUST NOT open windows or dialogs.
+password fields. Plugins MUST NOT open windows or dialogs. The host MUST present everything a
+plugin supplies, to the eye and to assistive technology alike, as that widget's content, under
+the label the host shows for that widget, and no part of it MAY take the role of a dialog. No
+widget frame or panel MAY cover the host's chrome, the host's own bar that holds its window
+controls and menus; only a host dialog covers it.
 
 Plugin content MUST NOT contain input controls or receive input events, such as keystrokes
 or pointer positions. A plugin's manifest declares the actions it offers and the settings it
@@ -104,14 +108,18 @@ confirmed (Principle VI), the host MUST refuse every connector operation that ch
 Every declared action and setting MUST be usable through the host's controls alone, with no
 AI configured.
 
-A panel that holds a plugin's controls is not a host dialog: it MUST NOT show the user's
-visual secret, it MUST show the plugin's names and descriptions as the widget's text, under
-the label the host shows for that widget, and the host MUST NOT mask any field it draws for a
-plugin. A connector's destination is never a plugin's setting: the user chooses it in a host
-dialog, as Principles III and VII require.
+A panel that holds a plugin's controls is not a host dialog: it MUST stay attached to its
+widget's frame, MUST NOT dim anything or block input to the rest of the window, MUST show the
+plugin's names and descriptions as the widget's text, under the label the host shows for that
+widget, and the host MUST NOT mask any field it draws for a plugin. With every field it draws
+for a plugin that accepts typed text or digits, the host MUST state in its own words, bound to
+the field for assistive technology too, which widget receives what is typed and that the field
+is not for passwords, tokens or codes. A connector's destination is never a plugin's setting:
+the user chooses it in a host dialog, as Principles III and VII require.
 
 Rationale: prevents fake login screens and phishing that imitate the host. A plugin that
-draws no controls has no field to fake and reads only what the user chose to give it. An
+draws no controls has no field to fake and reads only what the user chose to give it, and a
+setting named like a password still sits under the widget's label and the host's own words. An
 effect stated in what the host observes, and checked while the action runs, cannot be
 understated, and a service's data changes only when the user asked for it. The same
 declarations are the AI's tools (Principle VI), so the user and the AI reach a plugin through
@@ -125,8 +133,10 @@ trigger a decision of Principle VII. AI MUST NOT act on a plugin except through 
 settings its manifest declares (Principle V). The host MUST offer each one to the AI as that
 widget's own, so that no name passes for another widget's or the host's, and MUST treat their
 names and descriptions as untrusted content, as it treats everything else the AI reads. The
+host MUST present AI output as the AI's content, never as the host's text or a host dialog. The
 confirmation dialog MUST state, in the host's own words, the declared effect and the values to
-be passed, showing the plugin's names and descriptions only as the plugin's text.
+be passed, showing the plugin's names and descriptions only as the plugin's text, set apart
+from the host's words and under the widget's label.
 
 Rationale: model output can be steered by instructions hidden in the content the AI reads
 (prompt injection). A plugin's author writes its names and descriptions, which reach the
@@ -137,8 +147,13 @@ plugin's words.
 ### VII. Trust Decisions Only in Host Dialogs
 
 Granting permissions, installing plugins and connectors, connecting accounts and choosing a
-connector's destination MUST happen only in host dialogs, and every host dialog MUST show the
-visual secret the user chose, which nothing a plugin draws can show. Until the host app has
+connector's destination MUST happen only in host dialogs. A host dialog MUST take a form that
+neither widget content nor a declared control can produce (Principle V): it covers the host's
+chrome and blocks every host window while it is open, keeping keyboard focus inside it,
+ignoring pointer input outside it and exposing only itself to assistive technology. The host
+MUST NOT ask for these decisions through the operating system's native prompts; the provider's
+sign-in page in the browser, which follows a decision taken in a host dialog, and the OS
+keychain's own prompts are not the host asking for one. Until the host app has
 these dialogs (Phase 3), the host's development command-line tool MAY grant permissions to
 local packages, recording them only in a development grant record that installed plugins never
 use, and MAY connect accounts for the connectors of local packages, keeping their credentials
@@ -146,7 +161,13 @@ only in a development vault, in the OS keychain, that installed plugins never us
 output nor a plugin MAY perform, trigger or pre-approve these actions.
 
 Rationale: these decisions expand what code can do, so they stay out of reach of the
-parties the threat model distrusts: plugin authors, external content and manipulated AI.
+parties the threat model distrusts: plugin authors, external content and manipulated AI. A
+host dialog is told apart by what no plugin can draw, not by a sign the user must remember to
+look for: a personal visual secret was dropped in v4.0.0, because people seldom notice when
+such a sign is missing. Principle V keeps every plugin surface inside its frame and under the
+host's chrome, which narrows a fake dialog to the inside of a widget, where its buttons can
+only be that widget's own declared actions. Windows of other applications imitating the
+dashboard are outside what the host controls.
 
 ### VIII. Every Security Rule Has a Breaking Test
 
@@ -211,4 +232,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 3.1.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-08
+**Version**: 4.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-08
