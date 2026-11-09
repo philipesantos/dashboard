@@ -1,0 +1,8 @@
+[package]
+name = "design-tokens"
+version = "0.1.0"
+description = "The host's design tokens for the kit and the host: scales, tones, type, spacing, radius and the appearance rules"
+edition = "2024"
+publish = false
+
+[dependencies]

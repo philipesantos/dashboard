@@ -100,6 +100,42 @@ to `wit/`, runs all of CI even when it touches only Markdown:
   version the walkthrough names.
 - **How the contract changes** from now on is in [`wit/README.md`](wit/README.md#how-v1-changes-from-now-on).
 
+### The visual system
+
+[`DESIGN.md`](DESIGN.md) is the only hand-edited source of the host's look; it, `design/`,
+[`docs/design/`](docs/design/) and the threat model are read by checks, so a change to any of them
+runs all of CI. To change the look:
+
+1. Edit `DESIGN.md`: a token in the front matter, or a role, tone, elevation level, pick or icon
+   in a `design-roles` block. Every token says why.
+2. Run `cargo xtask design`. It checks the file and rewrites `design/tokens/src/generated.rs`,
+   `design/host-surfaces/src/generated.rs` and `design/tokens.dtcg.json`; commit them with the
+   change. The front matter's `colors` are the roles resolved at the default appearance: when a
+   role changes, the check prints the value each color must take.
+3. `cargo xtask design --check` runs every check without writing; CI runs it, and
+   `cargo xtask design --preview <dir>` draws the SVG preview CI publishes as the `design-preview`
+   artifact.
+
+What a failure means:
+
+- **A contrast failure** names the pairing, its kind, the theme, the appearance where it is worst
+  and the ratio. Change the step the role uses, never a threshold (constitution v5.0.0,
+  Development Workflow).
+- **A drift failure** names the generated file and the token: run `cargo xtask design`.
+- **A pin failure** means a file under `design/radix/`, `design/format/` or `design/fonts/` changed.
+  Those are upstream files, unmodified; moving Radix, the format or a font to a new version is a
+  commit of its own, with the new hashes in [`design/README.md`](design/README.md), reviewed like a
+  dependency upgrade.
+- **A criteria failure** means a threat-model row on boundary B4 tested from Phase 3 is neither
+  answered by a criterion in [`docs/design/host-surfaces.md`](docs/design/host-surfaces.md) nor
+  listed under its "Decided elsewhere", or a criterion quotes a row that is not there.
+- **The `deny` job's ban fixture** must fail: only the `host` crate may depend on `host-surfaces`,
+  and only `xtask` on `design-gen`.
+
+The host compiles in Radix's colors and ships Barlow and IBM Plex Mono: when it is packaged,
+Radix's MIT notice (`design/radix/3.0.0/LICENSE`) and the fonts' licenses
+(`design/fonts/barlow/OFL.txt`, `design/fonts/plex-mono/LICENSE.txt`) go with it.
+
 Performance is measured by hand, on the three systems: a maintainer adds the `bench` label to
 the pull request, which runs [`bench.yml`](.github/workflows/bench.yml). Compare its results
 with the targets in

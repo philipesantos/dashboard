@@ -728,7 +728,7 @@ the older pages point to the new docs.
   and any stuck point go in `walks.md`, and the goal is under 30 minutes. Record the `cargo
   install` time apart. If the walk goes over 30 minutes because of it, bring it to the
   maintainer, since SC-001 counts build time.
-- [ ] T053 Human review (Principle IX):
+- [X] T053 Human review (Principle IX):
   - The maintainer reviews every commit under `runtime/`, `wit/` and `plugins/`, and the
     `Cargo.lock` change that adds `wit-component`, line by line. T006 is reviewed as moved lines
     with `git diff --color-moved`.
@@ -736,7 +736,7 @@ the older pages point to the new docs.
   - CI is green on the three systems.
   - Merge with `gh pr merge --merge --match-head-commit <sha> --author-email
     8193616+philipesantos@users.noreply.github.com`.
-- [ ] T054 After the merge, and only when the maintainer asks, mark the development guide's
+- [X] T054 After the merge, and only when the maintainer asks, mark the development guide's
   Phase 2 item "Contrato WIT v1 com essas interfaces … e primeira documentação para autores" as
   done, and Phase 2 as complete.
 

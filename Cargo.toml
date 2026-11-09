@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["bench", "runtime", "xtask"]
+members = ["bench", "design/gen", "design/host-surfaces", "design/tokens", "runtime", "xtask"]
 # Guest crates build for WebAssembly in their own workspace (cargo xtask plugins); the crate the
 # authors' walkthrough builds is kept beside its page for cargo audit and cargo deny
-exclude = ["plugins", "docs/authors/getting-started"]
+exclude = ["plugins", "docs/authors/getting-started", "design/ban-fixture"]
 
 # Profiles only take effect in the workspace root manifest.
 # Debug builds (and tests, which inherit them) keep only line tables for workspace crates, enough

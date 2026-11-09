@@ -1,11 +1,13 @@
 [package]
 name = "xtask"
 version = "0.1.0"
-description = "Repository tasks: `cargo xtask plugins` builds the plugin components; `cargo xtask clean-space` frees build disk"
+description = "Repository tasks: `cargo xtask plugins` builds the plugin components; `cargo xtask clean-space` frees build disk; `cargo xtask design` checks DESIGN.md and generates the design tokens"
 edition = "2024"
 publish = false
 
 [dependencies]
+# Checks DESIGN.md and generates the design tokens; deny.toml lets only xtask depend on it
+design-gen = { path = "../design/gen" }
 serde_json = "1"
 # Appends each plugin's manifest to its component as a custom section
 wasm-encoder = "0.262"

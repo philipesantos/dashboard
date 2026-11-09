@@ -11,7 +11,8 @@
 <!-- The security core today is runtime/ (the secrets vault in runtime/src/vault/, the CLI in
 runtime/src/cli/, the test-only CLI in runtime/src/bin/runtime-test-network.rs and its sign-in
 follower in runtime/src/network/test_signin.rs included), wit/ and connectors/ (the official
-catalog), and Cargo.lock when it moves a crate of the network stack (ureq, ureq-proto, rustls,
+catalog), deny.toml's bans (of the network stack's verifiers, and of host-surfaces and
+design-gen, which keep the host's own surfaces out of the widget kit), and Cargo.lock when it moves a crate of the network stack (ureq, ureq-proto, rustls,
 rustls-webpki, ring, webpki-roots, url or regex), of storage (rusqlite or libsqlite3-sys, which
 bundles SQLite), of the vault (keyring-core, windows-native-keyring-store,
 apple-native-keyring-store, dbus-secret-service-keyring-store or libdbus-sys, never with its
