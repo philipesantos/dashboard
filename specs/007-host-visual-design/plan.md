@@ -28,8 +28,8 @@ No window, no hostile case: those arrive with the host features, which must pass
 **Language/Version**: Rust (edition 2024, stable; MSRV 1.97, as the workspace)
 
 **Primary Dependencies**: `yaml-rust2` `=0.13.0` in `design-gen` (R4); vendored data, not crates:
-Radix Colors 3.0.0 `light.ts`, `dark.ts` and `blackA.ts` (MIT, R2), Inter unmodified (OFL 1.1,
-R9), the DESIGN.md format spec at tag 0.4.0 (Apache-2.0, R1); `actions/upload-artifact` pinned
+Radix Colors 3.0.0 `light.ts`, `dark.ts` and `blackA.ts` (MIT, R2), Barlow and IBM Plex Mono
+unmodified (OFL 1.1, R9), the DESIGN.md format spec at tag 0.4.0 (Apache-2.0, R1); `actions/upload-artifact` pinned
 to a commit SHA (R12). The future host must ship Radix's MIT notice, since its values are
 compiled in
 
@@ -49,9 +49,9 @@ comparison reads LF; the existing security suite unchanged (FR-022)
 **Project Type**: Rust libraries and a repository task inside the existing Cargo workspace, plus
 design documentation
 
-**Performance Goals**: `cargo xtask design --check` under 5 s on the reference machine; measured
-in T036 at 0.18 s in a debug build (1,176 appearances × 2 themes × the declared pairings); no new
-CI job
+**Performance Goals**: `cargo xtask design --check` under 5 s on the reference machine; measured in
+T036 at 0.18 s and in T047 at 0.22 s, in a debug build (1,176 appearances × 2 themes × the declared
+pairings); no new CI job
 
 **Constraints**: no Node.js in CI (spec, R4); no HTML and no script in anything generated, and
 the preview's embedded style sheet never reaches the host UI (R8);
@@ -81,7 +81,7 @@ Checked against constitution v5.0.0.
 | VIII. Every security rule has a breaking test | Pass | This feature adds no security rule of its own: the kit-and-host split is defence in depth, tested as an ordinary test (spec, Clarifications); the rules of V and VII it designs get their hostile cases in the features that build the window, as the criteria's **Tested by** says; the suite runs unchanged (FR-022) |
 | IX. Human review of the security core | Pass | No change to `runtime/`, `wit/` or `connectors/`. The `deny.toml` hunk sits beside the network stack's bans, so it gets line-by-line review like them |
 | Fixed decisions: host app, UI | Pass | Colors only from Radix scales plus white and black, with `DESIGN.md` choosing each role's step (v5.0.0); the scrim and shadows from `blackA` (R2); typography, spacing, radius and shadow the project's own (R13); no GPUI dependency yet |
-| Fixed decision: licenses | Pass | Client code Apache-2.0; vendored Radix data MIT and Inter OFL 1.1 kept with their licenses; `yaml-rust2` MIT or Apache-2.0, inside `deny.toml`'s list |
+| Fixed decision: licenses | Pass | Client code Apache-2.0; vendored Radix data MIT and Barlow and IBM Plex Mono OFL 1.1 kept with their licenses; `yaml-rust2` MIT or Apache-2.0, inside `deny.toml`'s list |
 | Workflow: contrast | Pass | Every foreground role is paired with every background it can be drawn on (checker rule 11), and the lint runs over every appearance the host accepts in both themes, against WCAG 1.4.3 and 1.4.11, `blackA` composited; `decorative` and `inactive` pairings need a written reason (R5, contracts/design-md.md) |
 | Workflow: CI on three systems, clippy, audit, deny | Pass | The new crates are workspace members, so the build job's Clippy, `cargo test`, `cargo deny` and `cargo audit` cover them on three systems (R12) |
 | Workflow: documentation-only rule | Pass | `DESIGN.md`, `design/`, `docs/design/` and `docs/threat-model.md` are read by the checks, so the `changes` job counts them as code (FR-006, R12) |
@@ -128,7 +128,8 @@ design/
 ├── format/0.4.0/                # DESIGN.md format spec.md and LICENSE, pinned by SHA-256 (R1)
 ├── radix/3.0.0/                 # light.ts, dark.ts, blackA.ts, LICENSE, pinned by SHA-256 (R2)
 ├── ban-fixture/                 # outside the workspace: depends on host-surfaces, must fail deny (R6)
-├── fonts/inter/                 # Inter variable WOFF2 and TTF, OFL.txt (R9)
+├── fonts/barlow/                # Barlow WOFF2 and TTF, OFL.txt (R9)
+├── fonts/plex-mono/             # IBM Plex Mono WOFF2 and TTF, LICENSE.txt (R9)
 ├── gen/                         # crate design-gen: checker, generator, lint, preview (R4)
 │   ├── src/
 │   └── tests/                   # drift, lint, hue, pins, criteria coverage

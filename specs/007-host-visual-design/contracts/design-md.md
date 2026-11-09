@@ -34,7 +34,7 @@ picks:
   gray: [gray, mauve, slate, sage, olive, sand]
   hue-distance: 30            # degrees, OKLCH, light step 9
   neutral-below-chroma: 0.08
-  default: { gray: gray, host: monochrome, widget: blue, radius: medium, theme: system }
+  default: { gray: sand, host: monochrome, widget: blue, radius: small, theme: system }
 roles:
   # A background: source and steps only
   surface: { source: gray, light: 1, dark: 2, why: "A widget's frame." }
@@ -61,9 +61,9 @@ declared text color). `kind` is `text`, `large-text`, `non-text`, `decorative` o
 # in ## Elevation & Depth
 elevation:
   flat: { shadow: none, why: "..." }
-  frame: { shadow: "0px 1px 2px blackA-2", why: "..." }      # `<x>px <y>px <blur>px blackA-<1-12>`
-  panel: { shadow: "0px 4px 12px blackA-4", host-surface: true, why: "..." }
-  dialog: { shadow: "0px 12px 32px blackA-6", host-surface: true, why: "..." }
+  frame: { shadow: none, why: "..." }                        # or `<x>px <y>px <blur>px blackA-<1-12>`
+  panel: { shadow: none, host-surface: true, why: "..." }
+  dialog: { shadow: none, host-surface: true, why: "..." }
 ```
 
 ```design-roles

@@ -284,7 +284,7 @@ VoiceOver on macOS, Narrator on Windows and Orca on Linux are an extra check bef
   GPUI's HTTP client null.
 - Crafted image, SVG or font exploits a decoder, which now runs in the host process beside the vault
   Owner: the host window's plan, which revisits decision 0001; until then no image block or
-  plugin icon exists, and fonts are the host's own and, for glyphs Inter lacks, the system's.
+  plugin icon exists, and fonts are the host's own and, for glyphs Barlow and IBM Plex Mono lack, the system's.
 - Asks for little at install, then presses the user to turn on optional permissions one at a time
   Owner: installation, whose dialogs warn on every grant change.
 - Value outside its declared type, or a parameter type the host cannot draw, reaches the plugin

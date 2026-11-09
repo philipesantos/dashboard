@@ -58,7 +58,7 @@ The person's picks.
 | `gray` | gray family | `gray` | any of the six |
 | `host` | `monochrome` \| chromatic scale | `monochrome` | not neutral |
 | `widget` | chromatic scale | `blue` | hue ≥ 30° from `host` (if chromatic) and from green, amber and red (FR-011) |
-| `radius` | `none` \| `small` \| `medium` \| `large` \| `full` | `medium` | |
+| `radius` | `none` \| `small` \| `medium` \| `large` \| `full` | `small` | |
 | `theme` | `light` \| `dark` \| `system` | `system` | |
 
 **Validation** returns either the appearance or a refusal naming the rule and the colors involved

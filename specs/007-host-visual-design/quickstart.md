@@ -76,7 +76,7 @@ cargo xtask design --preview target/design-preview
 ```
 
 Expected: `index.svg`, `palette-light.svg`, `palette-dark.svg`, `default-light.svg` and
-`default-dark.svg` in `target/design-preview/`, opening in a browser with the Inter font and no
+`default-dark.svg` in `target/design-preview/`, opening in a browser with the host's fonts (Barlow, IBM Plex Mono) and no
 network request. On a pull request, the Linux build job's run has a `design-preview` artifact
 with the same files.
 

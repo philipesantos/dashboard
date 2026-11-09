@@ -123,7 +123,7 @@ What a failure means:
   Development Workflow).
 - **A drift failure** names the generated file and the token: run `cargo xtask design`.
 - **A pin failure** means a file under `design/radix/`, `design/format/` or `design/fonts/` changed.
-  Those are upstream files, unmodified; moving Radix, the format or Inter to a new version is a
+  Those are upstream files, unmodified; moving Radix, the format or a font to a new version is a
   commit of its own, with the new hashes in [`design/README.md`](design/README.md), reviewed like a
   dependency upgrade.
 - **A criteria failure** means a threat-model row on boundary B4 tested from Phase 3 is neither
@@ -132,8 +132,9 @@ What a failure means:
 - **The `deny` job's ban fixture** must fail: only the `host` crate may depend on `host-surfaces`,
   and only `xtask` on `design-gen`.
 
-The host compiles in Radix's colors and ships Inter: when it is packaged, Radix's MIT notice
-(`design/radix/3.0.0/LICENSE`) and Inter's license (`design/fonts/inter/LICENSE.txt`) go with it.
+The host compiles in Radix's colors and ships Barlow and IBM Plex Mono: when it is packaged,
+Radix's MIT notice (`design/radix/3.0.0/LICENSE`) and the fonts' licenses
+(`design/fonts/barlow/OFL.txt`, `design/fonts/plex-mono/LICENSE.txt`) go with it.
 
 Performance is measured by hand, on the three systems: a maintainer adds the `bench` label to
 the pull request, which runs [`bench.yml`](.github/workflows/bench.yml). Compare its results

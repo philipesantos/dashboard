@@ -402,6 +402,27 @@ position or the accessibility tree and names its screen readers and systems.
   confirm quickstart §8 (SC-006): when the pushed commits touch `DESIGN.md`, the `changes` job's
   log shows `code=true` and every job ran on the three systems; if no pushed commit changed only
   `DESIGN.md`, check the job's decision on that path with its regex locally and record both.
+- [X] T043 From the maintainer's review (T040, research R14): replace Inter with Barlow 1.422
+  (Regular, Medium, SemiBold) and IBM Plex Mono 2.5.0 (Regular, Medium), TTF and WOFF2 as
+  released, with their licenses, under `design/fonts/barlow/` and `design/fonts/plex-mono/`;
+  record their sources and SHA-256 in `design/README.md`; the `pins` test counts eighteen files.
+- [X] T044 Write direction F into `DESIGN.md`: sand by default, radius `small` at 2 px (scale 0,
+  2, 4, 8, full), every elevation flat, the divider at step 7, the canvas at step 3 in the light
+  theme, the chrome at host step 4/2, the focus ring and the new `host-strong`/`on-host-strong`
+  roles at host step 12, `label-mono` in IBM Plex Mono, `monogram` and the new `frame-action` as
+  host-surface components, badges on a neutral fill; prose, measured worst case of the focus
+  ring and rationale to match. Regenerate; `host-surfaces` gains `ink()`; tests follow (default
+  appearance, radius, flat dialog and panel, the DTCG count of flat levels).
+- [X] T045 The preview draws direction F: both fonts embedded, `label-mono` in capitals, the
+  monogram as a circle in the host's ink, a header action, lines on half pixels, no shadows.
+- [X] T046 Carry R14 through the documents: spec.md (clarification of 2026-11-09, FR-012, the
+  host-surface tokens), research.md (R9, R13, R14), plan.md, data-model.md, the `design-md` and
+  `tokens-api` contracts, quickstart.md, `docs/design/host-surfaces.md` and CONTRIBUTING.md.
+- [X] T047 Rerun T036's local checks on the result: fmt, clippy and `design --check` (0.22 s)
+  pass; 702 workspace tests pass. The seven that write to the real keychain (six in `runtime`,
+  the credential benchmark) could not run on the maintainer's machine, whose keychain asks for a
+  password; CI runs them on a fresh keychain. `runtime/`, `plugins/`, `wit/`, `connectors/` and
+  `bench/` are unchanged from master.
 - [ ] T041 Before the merge, and only when the maintainer asks: mark the development guide's
   Phase 3 items "Sistema visual em `DESIGN.md`" and "Spec de design da moldura e dos diálogos do
   host" as done.
@@ -431,8 +452,9 @@ position or the accessibility tree and names its screen readers and systems.
 - **US3 (Phase 6)**: after T018 (the split crates are generated).
 - **US5 (Phase 7)**: after Foundational only; it reads Markdown, not the tokens.
 - **US6 (Phase 8)**: after T032 (same file).
-- **Polish (Phase 9)**: after every story; T040 needs the pushed branch; T041 only on request;
-  T042 last.
+- **Polish (Phase 9)**: after every story; T040 needs the pushed branch; T043–T047 come from
+  T040's review, and T040 closes when the maintainer approves the preview they produce; T041
+  only on request; T042 last.
 
 ### Within Each Phase
 

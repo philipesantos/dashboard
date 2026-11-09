@@ -63,6 +63,7 @@ pub const COMPONENTS: [&str; 3];                             // chrome, panel, d
 pub struct ChromeColors { pub surface: Rgb, pub text: Rgb }
 pub struct DialogStyle { pub surface: Rgb, pub scrim: Rgb, pub scrim_opacity: f64, pub shadow: Option<Shadow> }
 pub struct PanelStyle { pub surface: Rgb, pub shadow: Option<Shadow> }
+pub struct InkStyle { pub fill: Rgb, pub text: Rgb }  // the monogram and a frame's header actions
 pub struct FocusStyle { pub ring: Rgb, pub width: f32 }    // 2 px
 pub fn chrome(appearance: &Appearance, theme: Theme) -> ChromeColors;
 pub fn dialog(appearance: &Appearance, theme: Theme) -> DialogStyle;

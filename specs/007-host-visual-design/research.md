@@ -239,10 +239,12 @@ benefit); an HTML page (the constitution keeps HTML out of the host, and a stati
 
 ## R9. Fonts and icons
 
-**Decision**: one built-in family, Inter (SIL OFL 1.1), its upstream variable WOFF2 and TTF
-unmodified (no subsetting, so OFL's renaming clause never applies) under `design/fonts/inter/`
-with its license, for the host's UI and the preview; its tabular figures
-(`tnum`) for numbers in tables. A monospaced family is added when a feature first needs one.
+**Decision** (revised 2026-11-09, R14): two built-in families, both SIL OFL 1.1, their upstream
+TTF and WOFF2 unmodified (no subsetting, so OFL's renaming clause never applies) with their
+licenses: Barlow 1.422 (Regular, Medium, SemiBold) under `design/fonts/barlow/` for text, and IBM
+Plex Mono 2.5.0 (Regular, Medium) under `design/fonts/plex-mono/` for labels and controls in
+capitals. Tabular figures (`tnum`) for numbers in tables. The first decision was Inter alone; the
+maintainer's review of the preview replaced it (R14).
 Status icons are three glyphs drawn by the project (a check in a circle, an exclamation in a
 triangle, a cross in a circle) as SVG paths in `DESIGN.md`'s project layer, so no icon set is a
 dependency.
@@ -253,8 +255,10 @@ data the host embeds; no font comes from a plugin or the network (FR-007). Its d
 the host process, which decision 0001's revisit in a later Phase 3 plan already covers for
 built-in fonts.
 
-**Alternatives considered**: IBM Plex Sans (also OFL; wider, less suited to dense UI); the system
-font (differs per system, so the contrast and layout checks would not hold).
+**Alternatives considered**: Inter alone (the first decision: neutral, but with the rest of the
+first system it read soft); IBM Plex Sans (also OFL; wider, less suited to dense UI); Geist; the
+system font (differs per system, so the contrast and layout checks would not hold). IBM Plex
+Mono's license reserves the name "Plex", which rules out subsetting it; it is copied as released.
 
 ## R10. Where the frame and dialog criteria live, and how their coverage is checked
 
@@ -311,13 +315,48 @@ a runner start for checks that take seconds.
 
 **Decision**: written in `DESIGN.md` during implementation, within these limits: spacing on a
 4 px base; a type scale of at most nine levels from 12 px to 32 px, body at 14 px; the radius set
-a person picks is `none` (0), `small` (3 px), `medium` (6 px, the default), `large` (10 px) and
+a person picks is `none` (0), `small` (2 px, the default), `medium` (4 px), `large` (8 px) and
 `full` (pills); elevation levels `flat`, `frame`, `panel` and `dialog`, of which `panel` and
-`dialog` are host surfaces. A dialog's scrim is a `blackA` step per theme, also a host surface;
-every shadow takes its color from `blackA` (R2).
+`dialog` are host surfaces, all flat since R14. A dialog's scrim is a `blackA` step per theme,
+also a host surface; a shadow, if one returns, takes its color from `blackA` (R2).
 
 **Rationale**: these are the values a host with dense widgets needs; the rationale of each lives
 next to it in `DESIGN.md` (FR-001).
+
+## R14. The visual direction, from the maintainer's review of the preview
+
+**Decision** (2026-11-09): the maintainer reviewed the CI preview (T040) and found the edges soft;
+they wanted something sharper and cleaner. Nine directions were mocked in HTML with the same
+screen (chrome, a frame with its monogram and label, the three statuses, two actions, a field with
+the host's note, the panel and a host dialog), in both themes. They chose the one called "painel
+de instrumento", now in `DESIGN.md`:
+
+- the sand gray family by default (FR-012 changed with it), canvas a step darker than a frame in
+  the light theme;
+- flat: no shadow anywhere; a frame reads by its tone and a 1 px line in gray step 7 (the divider,
+  which moved from 6), a panel by its line and attachment, a dialog by its form;
+- corners of 2 px by default, the radius scale tightened to 0, 2, 4, 8 and full; the monogram is
+  always a circle;
+- Barlow for text and IBM Plex Mono in capitals (`label-mono`) for frame labels, badges, buttons
+  and header actions (R9);
+- the host's own marks in its ink, step 12 of the host color: the monogram, the actions the host
+  draws in a frame's header (`frame-action`, new) and the focus ring (from step 11, now 9.11:1 at
+  worst). `host-strong` and `on-host-strong` are new host-surface roles, and `monogram` and
+  `frame-action` are now host-surface components, so widget content cannot draw the host's ink;
+- badges on a neutral fill, the status icon in its color and the words in text color.
+
+**Rationale**: firm lines, no blur and small corners are what read as sharp; the monospaced
+capitals mark what is the host's or a control without color. Ink keeps the host quiet when many
+widgets sit together.
+
+**Alternatives considered**: the first system with smaller corners and no shadows; directions
+after Zed, IBM Carbon, Vercel Geist, each operating system's own look, light brutalism, paper and
+a tiled grid; within this one, an orange host color (rejected: on a full dashboard it dominates,
+and orange is under 30° from the error red). Also mocked and set aside: widget content as display
+only, with every action in the frame's header. The maintainer sees the product's value in personal
+tools people build (records, management of their own things), which need forms, tables and
+actions in the content; the constitution already lets content place declared actions, and how far
+the kit goes is the kit feature's to decide.
 
 ## Review of DESIGN.md and the criteria
 

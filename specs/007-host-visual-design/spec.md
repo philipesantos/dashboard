@@ -69,6 +69,16 @@ visual secret and the secret color were dropped by constitution v4.0.0.)
   role". Replace Radix, or amend? → A: Keep Radix and amend: constitution v5.0.0 lets `DESIGN.md`
   choose the step for each role and makes the CI contrast check the guarantee.
 
+### Session 2026-11-09
+
+- Q: Reviewing the preview, the maintainer found the edges soft and asked for something sharper and
+  cleaner. Which visual direction? → A: "Painel de instrumento", chosen over eight others mocked
+  in HTML: the sand gray family by default, flat (no shadows; a frame reads by its tone and a firm
+  line), 2 px corners, Barlow for text and IBM Plex Mono in capitals for labels and controls, and
+  the host's own marks (the monogram, the actions in a frame's header, the focus ring) in step 12
+  of the host color, its ink. A bright host color was tried and rejected: on a dashboard of many
+  widgets it would dominate.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The people in these stories are the **maintainer**, who owns the host and its look; a
@@ -76,7 +86,8 @@ The people in these stories are the **maintainer**, who owns the host and its lo
 its appearance; and a **plugin author**, whose widget content the host draws. "The visual system"
 is `DESIGN.md` and everything generated from it. "The kit" is the closed set of components the
 host draws widget content with. "Host-surface tokens" are the tokens only the host's own surfaces
-use: the chrome, dialogs, their scrim, elevation above the frame and the host's focus style.
+use: the chrome, dialogs, their scrim, elevation above the frame, the host's ink (the monogram and
+the actions in a frame's header) and the host's focus style.
 
 ### User Story 1 - One source for the whole visual system (Priority: P1)
 
@@ -167,7 +178,7 @@ that a crate depending on the host-surface crate fails the merge checks.
 The person can pick a gray family, a host color (or the monochrome default), a widget color and
 a corner radius, and a light, dark or system theme. The host refuses a widget color whose hue is
 less than 30° from the host color or from any status tone, and explains why in its own words.
-The default is neutral: a pure gray family, a monochrome host and blue widgets. 007 provides the
+The default is neutral: the warm sand gray family, a monochrome host and blue widgets. 007 provides the
 rule and its check; the screen where the person picks arrives with the host window.
 
 **Why this priority**: a widget color close to the host color lets widget content look like the
@@ -325,8 +336,8 @@ screen readers and systems it is tested on.
 - **FR-011**: The host MUST refuse a widget color whose hue is less than 30° from the host
   color's or any status tone's, measured on the scales' solid step in one perceptual color space,
   and the refusal MUST name the colors in the host's own words.
-- **FR-012**: The default appearance MUST be a pure gray family, a monochrome host, blue widgets,
-  a medium radius and the system theme, and MUST pass FR-008 and FR-011.
+- **FR-012**: The default appearance MUST be the sand gray family, a monochrome host, blue widgets,
+  the small radius and the system theme, and MUST pass FR-008 and FR-011.
 - **FR-013**: Low-chroma scales MUST count as neutral and MUST NOT be accepted as the widget
   color or the host color.
 
@@ -399,8 +410,8 @@ screen readers and systems it is tested on.
   warning and error use fixed scales and always come with the host's icon or text.
 - **Appearance**: the person's picks (gray family, host color, widget color, radius, theme), valid
   only if it passes the hue rule.
-- **Host-surface tokens**: the tokens of the chrome, dialogs, scrim, elevation above the frame and
-  the host's focus style; the kit never reaches them.
+- **Host-surface tokens**: the tokens of the chrome, dialogs, scrim, elevation above the frame, the
+  host's ink and the host's focus style; the kit never reaches them.
 - **Criterion**: a numbered, observable rule for the chrome, frame, panel, dialogs or field note,
   with its constitution rule, threat row and the feature that will test it.
 
