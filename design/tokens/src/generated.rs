@@ -134,10 +134,10 @@ pub(crate) const NEUTRAL_BELOW_CHROMA: f64 = 0.08;
 /// scales.status: ok, warning, error.
 pub(crate) const STATUS: [Scale; 3] = [Scale::Green, Scale::Amber, Scale::Red];
 /// picks.default.
-pub(crate) const DEFAULT_GRAY: GrayFamily = GrayFamily::Gray;
+pub(crate) const DEFAULT_GRAY: GrayFamily = GrayFamily::Sand;
 pub(crate) const DEFAULT_HOST: Option<Scale> = None;
 pub(crate) const DEFAULT_WIDGET: Scale = Scale::Blue;
-pub(crate) const DEFAULT_RADIUS: crate::Radius = crate::Radius::Medium;
+pub(crate) const DEFAULT_RADIUS: crate::Radius = crate::Radius::Small;
 pub(crate) const DEFAULT_THEME: crate::ThemePick = crate::ThemePick::System;
 
 /// The text color a scale's solid steps take; a variant no scale declares goes unused.
@@ -300,17 +300,17 @@ pub const ROLES: &[RoleDef] = &[
     RoleDef { name: "accent-strong", source: Source::Widget, light: StepRef::Radix(12), dark: StepRef::Radix(12) },
     // roles.border-control: A control's boundary identifies it and needs 3:1 (WCAG 1.4.11); Radix's border steps 6-8 fall short.
     RoleDef { name: "border-control", source: Source::Gray, light: StepRef::Radix(9), dark: StepRef::Radix(9) },
-    // roles.divider: Radix's subtle border step, for lines between rows and around the chrome.
-    RoleDef { name: "divider", source: Source::Gray, light: StepRef::Radix(6), dark: StepRef::Radix(6) },
+    // roles.divider: Radix's border step for UI elements: it outlines every frame, panel and dialog, divides rows and closes the chrome. A firm line instead of a shadow keeps the edges sharp.
+    RoleDef { name: "divider", source: Source::Gray, light: StepRef::Radix(7), dark: StepRef::Radix(7) },
     // roles.ok-icon: The status icon carries the status beside gray text, so it needs 3:1 (WCAG 1.4.11).
     RoleDef { name: "ok-icon", source: Source::Ok, light: StepRef::Radix(11), dark: StepRef::Radix(11) },
     // roles.warning-icon: As ok-icon; amber 9 is too light to carry meaning on a light surface.
     RoleDef { name: "warning-icon", source: Source::Warning, light: StepRef::Radix(11), dark: StepRef::Radix(11) },
     // roles.error-icon: As ok-icon.
     RoleDef { name: "error-icon", source: Source::Error, light: StepRef::Radix(11), dark: StepRef::Radix(11) },
-    // roles.canvas: The window behind the frames; Radix's app background steps.
-    RoleDef { name: "canvas", source: Source::Gray, light: StepRef::Radix(2), dark: StepRef::Radix(1) },
-    // roles.surface: A widget's frame and the fields drawn in it. One step off the canvas is only 1.03:1, so the frame is outlined by the divider too.
+    // roles.canvas: The window behind the frames: a step darker than a frame in the light theme, so a frame reads as one sheet by its tone and its line, with no shadow.
+    RoleDef { name: "canvas", source: Source::Gray, light: StepRef::Radix(3), dark: StepRef::Radix(1) },
+    // roles.surface: A widget's frame and the fields drawn in it. Its tone alone is close to the canvas, so the frame is outlined by the divider too.
     RoleDef { name: "surface", source: Source::Gray, light: StepRef::Radix(1), dark: StepRef::Radix(2) },
     // roles.neutral-soft: Buttons, the monogram and badges: Radix's component background step.
     RoleDef { name: "neutral-soft", source: Source::Gray, light: StepRef::Radix(3), dark: StepRef::Radix(3) },
@@ -380,23 +380,25 @@ pub mod typography {
     }
 
     /// typography.caption: Timestamps and the field note: the smallest text, regular weight.
-    pub const CAPTION: Level = Level { family: "Inter", size: 12.0, weight: 400, line_height: 16.0, letter_spacing_em: 0.0 };
-    /// typography.label-sm: Frame labels, badges and the monogram: small but medium weight so it holds.
-    pub const LABEL_SM: Level = Level { family: "Inter", size: 12.0, weight: 500, line_height: 16.0, letter_spacing_em: 0.0 };
+    pub const CAPTION: Level = Level { family: "Barlow", size: 12.0, weight: 400, line_height: 16.0, letter_spacing_em: 0.0 };
+    /// typography.label-sm: The monogram's letter: small, semibold so it holds on the host's ink.
+    pub const LABEL_SM: Level = Level { family: "Barlow", size: 12.0, weight: 600, line_height: 16.0, letter_spacing_em: 0.0 };
     /// typography.body-sm: Dense secondary content inside widgets.
-    pub const BODY_SM: Level = Level { family: "Inter", size: 13.0, weight: 400, line_height: 18.0, letter_spacing_em: 0.0 };
+    pub const BODY_SM: Level = Level { family: "Barlow", size: 13.0, weight: 400, line_height: 18.0, letter_spacing_em: 0.0 };
     /// typography.body-md: Body text and fields: 14 px reads well at desktop distance and fits dense widgets.
-    pub const BODY_MD: Level = Level { family: "Inter", size: 14.0, weight: 400, line_height: 20.0, letter_spacing_em: 0.0 };
-    /// typography.label-md: Buttons and the chrome: body size, medium weight.
-    pub const LABEL_MD: Level = Level { family: "Inter", size: 14.0, weight: 500, line_height: 20.0, letter_spacing_em: 0.0 };
+    pub const BODY_MD: Level = Level { family: "Barlow", size: 14.0, weight: 400, line_height: 20.0, letter_spacing_em: 0.0 };
+    /// typography.label-md: The chrome's title: body size, semibold.
+    pub const LABEL_MD: Level = Level { family: "Barlow", size: 14.0, weight: 600, line_height: 20.0, letter_spacing_em: 0.0 };
+    /// typography.label-mono: Labels and controls: frame labels, badges, buttons and header actions, in monospaced capitals, like the markings on an instrument.
+    pub const LABEL_MONO: Level = Level { family: "IBM Plex Mono", size: 11.0, weight: 500, line_height: 16.0, letter_spacing_em: 0.06 };
     /// typography.title-sm: A widget's own heading.
-    pub const TITLE_SM: Level = Level { family: "Inter", size: 16.0, weight: 600, line_height: 24.0, letter_spacing_em: 0.0 };
+    pub const TITLE_SM: Level = Level { family: "Barlow", size: 16.0, weight: 600, line_height: 24.0, letter_spacing_em: 0.0 };
     /// typography.title-md: Panel and dialog titles.
-    pub const TITLE_MD: Level = Level { family: "Inter", size: 20.0, weight: 600, line_height: 28.0, letter_spacing_em: -0.01 };
+    pub const TITLE_MD: Level = Level { family: "Barlow", size: 20.0, weight: 600, line_height: 28.0, letter_spacing_em: 0.0 };
     /// typography.title-lg: Large numbers and page titles.
-    pub const TITLE_LG: Level = Level { family: "Inter", size: 24.0, weight: 600, line_height: 32.0, letter_spacing_em: -0.015 };
+    pub const TITLE_LG: Level = Level { family: "Barlow", size: 24.0, weight: 600, line_height: 32.0, letter_spacing_em: 0.0 };
     /// typography.display: The largest figure a widget shows, such as a timer.
-    pub const DISPLAY: Level = Level { family: "Inter", size: 32.0, weight: 600, line_height: 40.0, letter_spacing_em: -0.02 };
+    pub const DISPLAY: Level = Level { family: "Barlow", size: 32.0, weight: 600, line_height: 40.0, letter_spacing_em: -0.01 };
 }
 
 /// The spacing scale, in pixels.
@@ -425,13 +427,13 @@ pub mod spacing {
 pub mod radius {
     /// rounded.none: A pick for square corners.
     pub const NONE: f32 = 0.0;
-    /// rounded.small: The monogram, and corners when the person picks small.
-    pub const SMALL: f32 = 3.0;
-    /// rounded.medium: The default: frames, buttons and fields.
-    pub const MEDIUM: f32 = 6.0;
-    /// rounded.large: Dialogs, a step rounder than what they float over.
-    pub const LARGE: f32 = 10.0;
-    /// rounded.full: Pills: badges, and every corner when the person picks full.
+    /// rounded.small: The default: a 2 px corner on frames, panels, dialogs, buttons, fields and badges, sharp but not cutting.
+    pub const SMALL: f32 = 2.0;
+    /// rounded.medium: A pick for softer corners.
+    pub const MEDIUM: f32 = 4.0;
+    /// rounded.large: A pick for round corners.
+    pub const LARGE: f32 = 8.0;
+    /// rounded.full: The monogram, always a circle, and every corner when the person picks full.
     pub const FULL: f32 = 9999.0;
 }
 
@@ -452,6 +454,6 @@ pub mod elevation {
 
     /// elevation.flat: Most content sits flat on its frame.
     pub const FLAT: Option<Shadow> = None;
-    /// elevation.frame: A hint of lift so a frame reads as one object on the canvas.
-    pub const FRAME: Option<Shadow> = Some(Shadow { x: 0.0, y: 1.0, blur: 2.0, black_a: 2 });
+    /// elevation.frame: A frame reads as one sheet by its tone and its line; a blurred edge would soften it.
+    pub const FRAME: Option<Shadow> = None;
 }

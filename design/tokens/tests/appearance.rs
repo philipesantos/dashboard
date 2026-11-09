@@ -14,10 +14,10 @@ fn with(widget: Scale, host: HostColor) -> Appearance {
 #[test]
 fn the_default_is_neutral_and_valid() {
     let default = Appearance::DEFAULT;
-    assert_eq!(default.gray, GrayFamily::Gray);
+    assert_eq!(default.gray, GrayFamily::Sand);
     assert_eq!(default.host, HostColor::Monochrome);
     assert_eq!(default.widget, Scale::Blue);
-    assert_eq!(default.radius, Radius::Medium);
+    assert_eq!(default.radius, Radius::Small);
     assert_eq!(default.theme, ThemePick::System);
     assert_eq!(default.validate(), Ok(()));
 }
@@ -119,6 +119,7 @@ fn the_widget_colors_a_monochrome_host_accepts() {
 fn radius_picks_match_design_md() {
     let names: Vec<&str> = Radius::ALL.iter().map(|radius| radius.name()).collect();
     assert_eq!(names, ["none", "small", "medium", "large", "full"]);
-    assert_eq!(Radius::Medium.px(), 6.0);
+    assert_eq!(Radius::Small.px(), 2.0);
+    assert_eq!(Radius::Medium.px(), 4.0);
     assert!(Radius::Full.px() > 1000.0);
 }

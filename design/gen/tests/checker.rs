@@ -29,7 +29,7 @@ fn rule_1_front_matter() {
 fn rule_2_references() {
     let text = design_md();
     refused_naming(
-        &mutate(&text, "{rounded.medium}", "{rounded.huge}"),
+        &mutate(&text, "{rounded.full}", "{rounded.huge}"),
         "rounded.huge",
     );
     refused_naming(
@@ -170,8 +170,8 @@ fn rule_10_contrast_in_every_appearance() {
     // The front matter follows, so only the contrast rule can refuse it
     let changed = mutate(
         &changed,
-        "  border-control: \"#8d8d8d\"",
-        "  border-control: \"#bbbbbb\"",
+        "  border-control: \"#8d8d86\"",
+        "  border-control: \"#bcbbb5\"",
     );
     let problems = crate::common::refusals(&changed);
     assert!(

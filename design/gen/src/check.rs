@@ -260,7 +260,8 @@ impl Design {
     }
 
     /// How many tokens the DTCG export marks as host surfaces: each host-surface role in both
-    /// themes, and each host-surface elevation level.
+    /// themes, and each host-surface elevation level that has a shadow (a flat level exports no
+    /// token).
     pub fn host_surface_count(&self) -> usize {
         2 * self
             .roles
@@ -270,7 +271,7 @@ impl Design {
             + self
                 .elevation
                 .iter()
-                .filter(|level| level.host_surface)
+                .filter(|level| level.host_surface && level.shadow.is_some())
                 .count()
     }
 }

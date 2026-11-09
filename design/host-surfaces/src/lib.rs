@@ -1,5 +1,6 @@
 //! Tokens of the host's own surfaces, generated from `DESIGN.md`: the chrome, a dialog's surface,
-//! scrim and elevation, the panel's attachment to its frame and the host's focus style.
+//! scrim and elevation, the panel's attachment to its frame, the host's ink (the monogram and the
+//! actions in a frame's header) and the host's focus style.
 //! `deny.toml` lets only the `host` crate depend on this one
 //! (specs/007-host-visual-design/research.md, R6).
 
@@ -55,6 +56,14 @@ pub struct FocusStyle {
     pub width: f32,
 }
 
+/// The host's ink: the fill of the monogram and of the actions the host draws in a frame's
+/// header, and the text on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InkStyle {
+    pub fill: Rgb,
+    pub text: Rgb,
+}
+
 pub fn chrome(appearance: &Appearance, theme: Theme) -> ChromeColors {
     let text = design_tokens::tone(design_tokens::Tone::Default, appearance, theme).text;
     ChromeColors {
@@ -80,6 +89,13 @@ pub fn panel_attachment(appearance: &Appearance, theme: Theme) -> PanelStyle {
     }
 }
 
+pub fn ink(appearance: &Appearance, theme: Theme) -> InkStyle {
+    InkStyle {
+        fill: color("host-strong", appearance, theme),
+        text: color("on-host-strong", appearance, theme),
+    }
+}
+
 pub fn focus(appearance: &Appearance, theme: Theme) -> FocusStyle {
     FocusStyle {
         ring: color("focus", appearance, theme),
@@ -97,9 +113,12 @@ mod tests {
             let appearance = Appearance::DEFAULT;
             let dialog = dialog(&appearance, theme);
             assert!(dialog.scrim_opacity > 0.0 && dialog.scrim_opacity < 1.0);
-            assert!(dialog.shadow.is_some());
-            assert!(panel_attachment(&appearance, theme).shadow.is_some());
+            // Flat: a dialog stands out by its form and a panel by its line, not by a shadow
+            assert!(dialog.shadow.is_none());
+            assert!(panel_attachment(&appearance, theme).shadow.is_none());
             assert_eq!(focus(&appearance, theme).width, 2.0);
+            let ink = ink(&appearance, theme);
+            assert!(design_tokens::contrast(ink.text, ink.fill) >= 4.5);
             let chrome = chrome(&appearance, theme);
             assert!(design_tokens::contrast(chrome.text, chrome.surface) >= 4.5);
         }
