@@ -271,22 +271,25 @@ status, focus ready for the first Tab.
 
 ### Tests first
 
-- [ ] T038 [P] [US5] `host/tests/hostile.rs` (`network`): the app's HTTP client refuses a request; an
-  image element from a URI string, drawn in a test harness with a recording client, sends nothing;
-  an SVG from an external path reads no file (FR-028 to FR-030).
-- [ ] T039 [P] [US5] `host/tests/hostile.rs` (`prompts`): GPUI's prompt builder is the host's and
+- [X] T038 [P] [US5] `host/tests/hostile.rs` (`network`): the app's HTTP client refuses a request,
+  remote, loopback or `file://` (FR-030). An image element from a URI string and an SVG from an
+  external path cannot be drawn without a call `clippy.toml` bans (`gpui::img`, `gpui::svg`,
+  `Svg::external_path`, `Window::use_asset`, `App::fetch_asset`), so T039's fixture covers them
+  (FR-028, FR-029).
+- [X] T039 [P] [US5] `host/tests/hostile.rs` (`prompts`): GPUI's prompt builder is the host's and
   refuses at once (FR-019). `host/ban-fixture/`, a crate outside the workspace (root `Cargo.toml`
   `exclude`, like `design/ban-fixture`), with the workspace's `clippy.toml` and the same GPUI pins,
   holds one function per banned method of `contracts/bans-and-checks.md`; CI runs
   `cargo clippy --manifest-path host/ban-fixture/Cargo.toml -- -D warnings` and requires it to fail
   with one `disallowed_methods` error per function, each named (FR-019, FR-029).
-- [ ] T040 [P] [US5] `host/tests/hostile.rs` (`content`) addition: `window-local-connector` does not load
+- [X] T040 [P] [US5] `host/tests/hostile.rs` (`content`) addition: `window-local-connector` does not load
   and its frame says why in host words (FR-041).
 
 ### Implementation
 
-- [ ] T041 [US5] Close whatever T038–T040 find open in `app.rs`, `media.rs` and `plugins.rs`; no new
-  path from a plugin string to GPUI's loaders.
+- [X] T041 [US5] Close whatever T038–T040 find open in `app.rs`, `media.rs` and `plugins.rs`; no new
+  path from a plugin string to GPUI's loaders. (They found nothing open: the tests passed against
+  the code of US1–US4.)
 
 ---
 

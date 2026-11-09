@@ -180,3 +180,103 @@ mod gate {
         assert_eq!(answer_now(&mut second), Some(Answer::Refused));
     }
 }
+
+/// FR-041: a plugin that declares a local connector never loads in the window, which runs the
+/// runtime without development mode; its frame says so in the host's words.
+mod local_connector {
+    use crate::common::{World, fixture};
+    use gpui::TestAppContext;
+    use host::plugins::FrameStatus;
+    use host::text::Msg;
+    use runtime::manifest::Manifest;
+    use serde_json::json;
+
+    #[gpui::test]
+    fn a_local_connector_never_loads_in_the_window(cx: &mut TestAppContext) {
+        let world = World::new();
+        let manifest = json!({
+            "manifest_version": 1, "id": "local/window-local-connector", "version": "0.1.0",
+            "author": "Dashboard contributors", "permissions": [],
+            "connectors": [
+                { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true }
+            ]
+        })
+        .to_string();
+        let component = std::fs::read(fixture("net-probe")).expect("the bare component");
+        let package =
+            runtime::package::pack(&component, manifest.as_bytes()).expect("a valid package");
+        let path = world.dir.path().join("window-local-connector.wasm");
+        std::fs::write(&path, &package).expect("written");
+        let origin = path.to_string_lossy().into_owned();
+        // Approved as the record would hold it; the window must still refuse the local connector
+        let parsed = Manifest::parse(manifest.as_bytes()).expect("a valid manifest");
+        world
+            .grants
+            .approve(
+                &parsed,
+                &origin,
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .expect("recorded");
+        let (view, cx) = world.open(cx);
+        let status = view.read_with(cx, |view, _| view.widgets()[0].status);
+        assert!(
+            matches!(
+                status,
+                FrameStatus::Failed(Msg::ReasonConnector | Msg::ReasonApproval)
+            ),
+            "{status:?}"
+        );
+    }
+}
+
+/// FR-030: the window's HTTP client refuses every request, remote or `file://`.
+mod network {
+    use gpui::TestAppContext;
+
+    #[gpui::test]
+    async fn the_http_client_refuses_every_address(cx: &mut TestAppContext) {
+        cx.update(|cx| host::app::install(cx).expect("installs"));
+        let client = cx.update(|cx| cx.http_client());
+        for address in [
+            "https://attacker.example/pixel.png",
+            "http://127.0.0.1:9/",
+            "file:///etc/passwd",
+        ] {
+            let answer = client.get(address, Default::default(), false).await;
+            assert!(answer.is_err(), "{address} was not refused");
+        }
+    }
+}
+
+/// HS-12, FR-019: a prompt GPUI is asked for never shows; the host's builder refuses it at once.
+mod prompts {
+    use gpui::{PromptLevel, TestAppContext};
+    use host::app::REFUSED_PROMPT;
+
+    struct Empty;
+    impl gpui::Render for Empty {
+        fn render(
+            &mut self,
+            _: &mut gpui::Window,
+            _: &mut gpui::Context<Self>,
+        ) -> impl gpui::IntoElement {
+            gpui::div()
+        }
+    }
+
+    #[gpui::test]
+    async fn a_native_prompt_is_refused(cx: &mut TestAppContext) {
+        cx.update(|cx| host::app::install(cx).expect("installs"));
+        let window = cx.add_window(|_, _| Empty);
+        // The call clippy bans everywhere in the host: here to prove the builder refuses it
+        #[allow(clippy::disallowed_methods)]
+        let answer = window
+            .update(cx, |_, window, cx| {
+                window.prompt(PromptLevel::Critical, "Allow access?", None, &["Allow"], cx)
+            })
+            .expect("the window");
+        cx.run_until_parked();
+        assert_eq!(answer.await.ok(), Some(REFUSED_PROMPT));
+    }
+}

@@ -1,0 +1,15 @@
+# A crate that must never pass clippy: it calls every GPUI method the workspace's clippy.toml bans
+# (contracts/bans-and-checks.md; specs/008-host-window-dialogs, T039). Clippy reads that
+# clippy.toml from the repository's root, as it does for the host. CI runs clippy on it and passes
+# only when each call is refused.
+[package]
+name = "host-ban-fixture"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui = { package = "gpui-unofficial", version = "=1.25.3" }
+
+# Not a member of the root workspace
+[workspace]

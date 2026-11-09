@@ -288,8 +288,6 @@ jobs:
             exit 1
           }
 
-  # The only check the master ruleset requires, so jobs can be added or renamed without
-  # touching the ruleset. It fails when any job failed or was cancelled.
   # The host in a real window: real input from the operating system and the accessibility tree
   # read through the platform, then the pixels GPUI's headless renderer draws
   # (specs/008-host-window-dialogs, research R13). Its own job: GPUI's build and the window take
@@ -357,6 +355,30 @@ jobs:
         if: runner.os != 'Linux'
         run: cargo test -p host --test window --locked
 
+      # Each GPUI method clippy.toml bans, called once in a crate outside the workspace; it passes
+      # only when clippy refuses all 17 (contracts/bans-and-checks.md). The bans are the same on
+      # every system, so Linux runs it.
+      - name: Clippy refuses every banned GPUI method
+        if: runner.os == 'Linux'
+        env:
+          CARGO_TARGET_DIR: target/ban-fixture
+        run: |
+          cp Cargo.lock host/ban-fixture/Cargo.lock
+          if cargo clippy --manifest-path host/ban-fixture/Cargo.toml -- -D warnings 2> bans.txt; then
+            echo "host/ban-fixture passed clippy, but it calls every banned GPUI method" >&2
+            exit 1
+          fi
+          refused=$(grep -c 'error: use of a disallowed method' bans.txt || true)
+          others=$(grep -E '^(error|warning)' bans.txt | grep -v 'disallowed method' \
+            | grep -vc '^error: could not compile' || true)
+          if [ "$refused" != 17 ] || [ "$others" != 0 ]; then
+            cat bans.txt >&2
+            echo "expected 17 disallowed-method errors and nothing else; got $refused and $others" >&2
+            exit 1
+          fi
+
+  # The only check the master ruleset requires, so jobs can be added or renamed without
+  # touching the ruleset. It fails when any job failed or was cancelled.
   result:
     name: CI result
     needs: [changes, build, host-window, docs, audit, deny]

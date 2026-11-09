@@ -23,3 +23,7 @@ node_modules
 
 # The fixture that must fail cargo deny (design/ban-fixture/Cargo.toml)
 /design/ban-fixture/target/
+# The fixture that must fail clippy (host/ban-fixture/Cargo.toml)
+/host/ban-fixture/target/
+# CI copies the root Cargo.lock in, so the fixture builds the GPUI the host pins
+/host/ban-fixture/Cargo.lock
