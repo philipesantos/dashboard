@@ -99,6 +99,7 @@ specs/008-host-window-dialogs/
 ### Source Code (repository root)
 
 ```text
+host/ban-fixture/                  # outside the workspace: calls every banned GPUI method, must fail clippy
 host/                              # new workspace member: library `host`, binary `dashboard`
 ├── Cargo.toml                     # nineteen gpui-unofficial crates at =1.25.3 (R1)
 ├── README.md                      # the GPUI pin, its Zed tag and the patch list commit reviewed

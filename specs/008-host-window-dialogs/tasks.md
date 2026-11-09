@@ -61,17 +61,21 @@ done and the maintainer has seen its result.
   published, the MSRV that builds (if 1.97 fails, the oldest stable that builds, brought to the
   maintainer before the workspace's MSRV moves), and each license `cargo deny check licenses`
   refuses.
-- [ ] T003 Spike in CI on a throwaway branch (never merged): a job on `ubuntu-24.04`,
+- [ ] T003 Spike in CI on a throwaway branch `008-spike` (never merged; pushed only once the
+  maintainer agrees, and deleted after T004): a job on `ubuntu-24.04`,
   `macos-latest` and `windows-latest` that builds `host`, opens its window (Linux: inside
   `dbus-run-session`, with `xvfb`, `mesa-vulkan-drivers`, `libegl1`, `libgl1-mesa-dri`,
   `at-spi2-core` and GPUI's build libraries; the AT-SPI bus started and `IsEnabled` set as research
   R13 says), sends one Tab with `enigo` 0.6.1, reads one node of the window's accessibility tree
   through the platform (AT-SPI, UI Automation, AX), and runs clippy on a file that calls every
-  entry of `contracts/bans-and-checks.md`'s clippy list, expecting each to be refused.
+  entry of `contracts/bans-and-checks.md`'s clippy list, expecting each to be refused. Also,
+  headless on each system: open a window of GPUI's test platform at 800 × 600 with scale factors
+  1, 1.5 and 2, and read an element's bounds at each.
 - [ ] T004 Record T003's outcome in research R15, per system: the window drew or not, the key
   arrived or not, the tree was read or not, each clippy path caught or corrected. If macOS cannot
   draw or take keys, bring it to the maintainer with the options before going on (research R15,
-  item 2).
+  item 2). Record whether the test platform honours the scale factor; if it does not, T017 and T024
+  run their scale-factor cases in `host/tests/window.rs` instead, and research R13 says so.
 
 ---
 
@@ -266,8 +270,11 @@ status, focus ready for the first Tab.
   image element from a URI string, drawn in a test harness with a recording client, sends nothing;
   an SVG from an external path reads no file (FR-028 to FR-030).
 - [ ] T039 [P] [US5] `host/tests/hostile/prompts.rs`: GPUI's prompt builder is the host's and
-  refuses at once; a file in `host/tests/fixtures/` calling each banned method fails clippy (run by
-  the checks job with `cargo clippy` on it) (FR-019, FR-029).
+  refuses at once (FR-019). `host/ban-fixture/`, a crate outside the workspace (root `Cargo.toml`
+  `exclude`, like `design/ban-fixture`), with the workspace's `clippy.toml` and the same GPUI pins,
+  holds one function per banned method of `contracts/bans-and-checks.md`; CI runs
+  `cargo clippy --manifest-path host/ban-fixture/Cargo.toml -- -D warnings` and requires it to fail
+  with one `disallowed_methods` error per function, each named (FR-019, FR-029).
 - [ ] T040 [P] [US5] `host/tests/hostile/content.rs` addition: `window-local-connector` does not load
   and its frame says why in host words (FR-041).
 
@@ -312,7 +319,9 @@ status, focus ready for the first Tab.
 - [ ] T046 `.github/workflows/ci.yml`: the "Host window" job on the three systems (Linux packages,
   `dbus-run-session`, the AT-SPI bus, Xvfb, `WAYLAND_DISPLAY` unset), running
   `cargo test -p host --test window` with its own timeout; the build job's apt list gains GPUI's
-  build libraries; `host/` already counts as code for the changes filter.
+  build libraries; `host/` already counts as code for the changes filter. The "Host window" job also
+  runs the `host/ban-fixture` clippy step of T039, expecting the failure, as the deny job does for
+  `design/ban-fixture`.
 - [ ] T047 [P] `docs/decisions/0001-plugin-process-isolation.md`: the revisit section of research R2
   (four triggers kept, the compile-out option weighed, the stale line about local files corrected,
   next owners named).
@@ -322,7 +331,9 @@ status, focus ready for the first Tab.
 - [ ] T049 [P] `specs/008-host-window-dialogs/performance.md`: the start, dialog, compile and memory
   numbers T033 and T020 measured on the three systems and the reference machine (SC-001, SC-006).
 - [ ] T050 Every local check: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
-  --locked -- -D warnings`, `cargo test --workspace --locked` (keychain tests as CI runs them),
+  --locked -- -D warnings`, `cargo test --workspace --locked` (on the maintainer's machine the
+  tests that write to the real keychain wait on its password prompt; they are skipped there and
+  checked in CI, as in feature 007's T047),
   `cargo test -p host --test window` under Xvfb as quickstart §6, `cargo xtask design --check`,
   `cargo deny check`, `cargo audit`; `git diff master -- runtime/` shows only `approvals()` and its
   tests, and the runtime's security suite passes unchanged.
@@ -333,7 +344,9 @@ status, focus ready for the first Tab.
   outcomes at the end of `research.md` under "Review of the implementation".
 - [ ] T053 Once the maintainer has pushed and the pull request's run is green on the three systems,
   including "Host window", bring them the screenshots of the window and the dialog for approval of
-  the look; changes go in as new commits.
+  the look; changes go in as new commits. The maintainer also runs
+  `docs/accessibility/screen-reader-walk.md` once with Orca on Linux; record the result in that
+  file's log (SC-007), and fix what it finds as new commits.
 - [ ] T054 Before the merge, and only when the maintainer asks: mark the development guide's Phase 3
   items "Host em GPUI", "Acessibilidade dos diálogos", "Regras que substituem a CSP da webview" and
   "Diálogos do host desenhados só com os componentes do próprio host" as done.
