@@ -25,7 +25,7 @@ its origin.
 
 | File | Content | Who else reads it |
 | --- | --- | --- |
-| `<data dir>/dev.philsantos.dashboard/host/appearance.json` | the appearance choice (data-model) | nobody; no plugin can reach it |
+| `<data dir>/dev.philsantos.dashboard/host/appearance.json`, in the system's data directory whatever `--data` says | the appearance choice (data-model) | nobody; no plugin can reach it |
 | the development grant record | only through `GrantStore::remove`, from "Remove from dashboard" | the development tool |
 
 ## Runtime calls the host makes

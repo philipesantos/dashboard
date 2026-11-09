@@ -247,9 +247,9 @@ STATE_MODAL), what UI Automation reports as `WindowIsModal`, and what macOS repo
 
 ## R11. Appearance settings and their file
 
-**Decision**: a host screen opened from the chrome, laid over the content area like a panel of the
-host (not a dialog: it decides nothing about trust), with one group per pick and the current one
-marked; a widget color the rule refuses stays selectable but shows the host's refusal naming the
+**Decision**: a host screen opened from the chrome, drawn in the content area in place of the
+frames like a panel of the host (no floating layer, R6; not a dialog: it decides nothing about
+trust), with one group per pick and the current one marked; a widget color the rule refuses stays selectable but shows the host's refusal naming the
 colors (feature 007's `Refusal`) and is not applied. The choice is saved as JSON
 (`{"version": 1, "gray", "host", "widget", "radius", "theme"}`) in
 `<data dir>/dev.philsantos.dashboard/host/appearance.json`, outside every plugin's store; a file that

@@ -10,8 +10,8 @@ in the log at the end of this file.
 1. Build the host: `cargo build -p host --release`.
 2. Approve two plugins with the development tool, one that renders and one that fails, so the
    dashboard has frames to cover: `cargo xtask plugins`, then
-   `runtime approve target/plugins/hello-widget.wasm` and
-   `runtime approve target/plugins/out-of-bounds.wasm`.
+   `cargo run -p runtime --bin runtime -- approve target/plugins/hello-widget.wasm` and the same
+   with `target/plugins/out-of-bounds.wasm`.
 3. Start the screen reader, then `target/release/dashboard`.
 
 | System | Screen reader | Start it |

@@ -7,12 +7,13 @@ Run from the repository root. Heavy builds on the maintainer's machine go under
 
 ```sh
 cargo xtask plugins                         # builds the example plugins
-cargo run -p runtime -- approve target/plugins/hello-widget.wasm
+cargo run -p runtime --bin runtime -- approve target/plugins/hello-widget.wasm
 cargo run -p host --bin dashboard
 ```
 
-Expect: one window, the chrome on top, a frame for hello-widget with its monogram and name and
-"Rendered" in the ok tone. One Tab puts the focus ring on the first control.
+Expect: one window, the chrome on top with "Appearance" and "Reload", a frame for hello-widget
+with its monogram and name and "Rendered" in the ok tone. One Tab puts the focus ring on the first
+control, "Appearance".
 
 ## 2. A failing plugin
 
@@ -67,9 +68,10 @@ SC-006).
 ## 7. The bans
 
 Add a call to `window.prompt(...)`, `cx.open_url(...)` or `img("https://…")` anywhere in `host/src/`
-outside `media.rs`: `cargo clippy -p host` fails naming the rule. Add a string literal to a
-`child(...)` in a screen: `cargo test -p host --test checks` fails. Change a GPUI pin to `^1.25.3`:
-the pin check fails.
+outside `media.rs`: `cargo clippy -p host` fails naming the rule;
+`cargo clippy --manifest-path host/ban-fixture/Cargo.toml` fails once for each of the 17 banned
+methods. Add a string literal to a `child(...)` in a screen: `cargo test -p host --test checks`
+fails. Change a GPUI pin to `^1.25.3`: the pin check fails.
 
 ## 8. Before a release
 
