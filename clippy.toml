@@ -12,6 +12,13 @@
 # (specs/005-plugin-credentials/research.md, R19). The sign-in's loopback listener is the only
 # socket a peer connects to, in runtime/src/network/ with the rest of the network code. The
 # store types of other systems do not resolve on every system, hence `allow-invalid`.
+#
+# The host window (host/) never shows a native prompt or dialog: trust decisions are asked only
+# in host dialogs (constitution, Principle VII; docs/design/host-surfaces.md, HS-12). No plugin
+# string reaches GPUI's image loader, its SVG file reader, its asset loader or its URL opener, and
+# GPUI never touches the keychain (specs/008-host-window-dialogs, research R9 and R12). Only
+# host/src/media.rs may call img and svg, with bytes the host holds; it allows them with an inner
+# #![allow(clippy::disallowed_methods)], which host/tests/checks.rs refuses anywhere else.
 
 disallowed-types = [
     { path = "ureq::Agent", reason = "only runtime/src/network/ opens connections (Principle III, research R20)" },
@@ -61,4 +68,22 @@ disallowed-methods = [
     { path = "rusqlite::Connection::open_in_memory_with_flags_and_vfs", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
     { path = "rusqlite::Connection::from_handle", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
     { path = "rusqlite::Connection::from_handle_owned", reason = "only runtime/src/storage/ opens a store (Principle IX, research R15)" },
+    # GPUI 1.25.3, the host window (008 research R9, R12; confirmed by T003)
+    { path = "gpui::Window::prompt", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
+    { path = "gpui::AsyncWindowContext::prompt", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
+    { path = "gpui::PlatformWindow::prompt", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
+    { path = "gpui::App::prompt_for_paths", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
+    { path = "gpui::App::prompt_for_new_path", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
+    { path = "gpui::App::open_url", reason = "the host never opens a URL or a file with the system (FR-029; 008 research R12)" },
+    { path = "gpui::Platform::open_url", reason = "the host never opens a URL or a file with the system (FR-029; 008 research R12)" },
+    { path = "gpui::App::open_with_system", reason = "the host never opens a URL or a file with the system (FR-029; 008 research R12)" },
+    { path = "gpui::App::reveal_path", reason = "the host never opens a URL or a file with the system (FR-029; 008 research R12)" },
+    { path = "gpui::App::write_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
+    { path = "gpui::App::read_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
+    { path = "gpui::App::delete_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
+    { path = "gpui::img", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::svg", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::Svg::external_path", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::Window::use_asset", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::App::fetch_asset", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
 ]

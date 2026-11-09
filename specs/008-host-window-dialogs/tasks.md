@@ -104,7 +104,7 @@ done and the maintainer has seen its result.
 - [X] T008 `runtime/src/grants.rs`: `GrantStore::approvals()`, read-only, under the record's lock as
   `entry` reads (research R5). Security core: the PR marks it for line-by-line review (Principle
   IX).
-- [ ] T009 [P] `clippy.toml`: the entries of `contracts/bans-and-checks.md` with the paths T004
+- [X] T009 [P] `clippy.toml`: the entries of `contracts/bans-and-checks.md` with the paths T004
   confirmed, each with its reason; `deny.toml`: each license T002 found, with a comment naming the
   crates that bring it (both security core).
 - [X] T010 [P] `host/src/text.rs`: `Msg`, `HostText`, the English catalog (data-model "Host text").
