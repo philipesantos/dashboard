@@ -49,7 +49,7 @@ Long builds and test runs go under the memory cap:
 **Purpose**: settle R15 before anything is built on it. Nothing in later phases starts until T004 is
 done and the maintainer has seen its result.
 
-- [ ] T001 Create `host/` as a workspace member (root `Cargo.toml` `members`), library `host` and
+- [X] T001 Create `host/` as a workspace member (root `Cargo.toml` `members`), library `host` and
   binary `dashboard`, with the nineteen gpui-unofficial crates at `=1.25.3` exactly as research R1
   lists them (platform crates under `[target.'cfg(...)'.dependencies]`), `runtime`,
   `design-tokens`, `host-surfaces` and `serde_json`; `host/src/main.rs` opens one empty window and
