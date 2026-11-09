@@ -1,0 +1,85 @@
+{
+  "$description": "Generated from DESIGN.md by `cargo xtask design`. Do not edit. Colors are the default appearance.",
+  "color": {
+    "light": {
+      "text": { "$type": "color", "$value": "#202020", "$description": "Body text; step 12 is Radix's high-contrast text." },
+      "text-secondary": { "$type": "color", "$value": "#646464", "$description": "Labels, captions and the field note; step 11 is Radix's low-contrast text, still AA on steps 1-3." },
+      "accent-text": { "$type": "color", "$value": "#0d74ce", "$description": "Accented text on a plain surface, such as a link in widget content." },
+      "accent-strong": { "$type": "color", "$value": "#113264", "$description": "Text on a soft accent; step 11 on step 3 of the same scale is under 4.5:1 for some scales." },
+      "border-control": { "$type": "color", "$value": "#8d8d8d", "$description": "A control's boundary identifies it and needs 3:1 (WCAG 1.4.11); Radix's border steps 6-8 fall short." },
+      "divider": { "$type": "color", "$value": "#d9d9d9", "$description": "Radix's subtle border step, for lines between rows and around the chrome." },
+      "ok-icon": { "$type": "color", "$value": "#218358", "$description": "The status icon carries the status beside gray text, so it needs 3:1 (WCAG 1.4.11)." },
+      "warning-icon": { "$type": "color", "$value": "#ab6400", "$description": "As ok-icon; amber 9 is too light to carry meaning on a light surface." },
+      "error-icon": { "$type": "color", "$value": "#ce2c31", "$description": "As ok-icon." },
+      "focus": { "$type": "color", "$value": "#646464", "$description": "The host's own focus ring; Radix's focus-ring steps 7-8 fail 3:1, and a widget-colored ring would vanish on lime or sky.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+      "canvas": { "$type": "color", "$value": "#f9f9f9", "$description": "The window behind the frames; Radix's app background steps." },
+      "surface": { "$type": "color", "$value": "#fcfcfc", "$description": "A widget's frame and the fields drawn in it, one step off the canvas so frames stand out." },
+      "neutral-soft": { "$type": "color", "$value": "#f0f0f0", "$description": "Buttons, the monogram and badges: Radix's component background step." },
+      "accent-soft": { "$type": "color", "$value": "#e6f4fe", "$description": "An accented button or badge: the widget color's component background step." },
+      "ok-soft": { "$type": "color", "$value": "#e6f6eb", "$description": "The background of an ok badge." },
+      "warning-soft": { "$type": "color", "$value": "#fff7c2", "$description": "The background of a warning badge." },
+      "error-soft": { "$type": "color", "$value": "#feebec", "$description": "The background of an error badge." },
+      "chrome-surface": { "$type": "color", "$value": "#f0f0f0", "$description": "The host's own bar, in the host color when there is one; no frame or panel covers it.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+      "dialog-surface": { "$type": "color", "$value": "#fcfcfc", "$description": "A host dialog's surface; what tells a dialog apart is its form, not this color.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+      "panel-surface": { "$type": "color", "$value": "#fcfcfc", "$description": "The panel a frame opens for a plugin's controls, attached to that frame.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+      "scrim": { "$type": "color", "$value": "#00000080", "$description": "Dims the window behind a host dialog; blackA because gray 12 is near white in the dark theme.", "$extensions": { "dev.dashboard": { "hostSurface": true } } }
+    },
+    "dark": {
+      "text": { "$type": "color", "$value": "#eeeeee", "$description": "Body text; step 12 is Radix's high-contrast text." },
+      "text-secondary": { "$type": "color", "$value": "#b4b4b4", "$description": "Labels, captions and the field note; step 11 is Radix's low-contrast text, still AA on steps 1-3." },
+      "accent-text": { "$type": "color", "$value": "#70b8ff", "$description": "Accented text on a plain surface, such as a link in widget content." },
+      "accent-strong": { "$type": "color", "$value": "#c2e6ff", "$description": "Text on a soft accent; step 11 on step 3 of the same scale is under 4.5:1 for some scales." },
+      "border-control": { "$type": "color", "$value": "#6e6e6e", "$description": "A control's boundary identifies it and needs 3:1 (WCAG 1.4.11); Radix's border steps 6-8 fall short." },
+      "divider": { "$type": "color", "$value": "#3a3a3a", "$description": "Radix's subtle border step, for lines between rows and around the chrome." },
+      "ok-icon": { "$type": "color", "$value": "#3dd68c", "$description": "The status icon carries the status beside gray text, so it needs 3:1 (WCAG 1.4.11)." },
+      "warning-icon": { "$type": "color", "$value": "#ffca16", "$description": "As ok-icon; amber 9 is too light to carry meaning on a light surface." },
+      "error-icon": { "$type": "color", "$value": "#ff9592", "$description": "As ok-icon." },
+      "focus": { "$type": "color", "$value": "#b4b4b4", "$description": "The host's own focus ring; Radix's focus-ring steps 7-8 fail 3:1, and a widget-colored ring would vanish on lime or sky.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+      "canvas": { "$type": "color", "$value": "#111111", "$description": "The window behind the frames; Radix's app background steps." },
+      "surface": { "$type": "color", "$value": "#191919", "$description": "A widget's frame and the fields drawn in it, one step off the canvas so frames stand out." },
+      "neutral-soft": { "$type": "color", "$value": "#222222", "$description": "Buttons, the monogram and badges: Radix's component background step." },
+      "accent-soft": { "$type": "color", "$value": "#0d2847", "$description": "An accented button or badge: the widget color's component background step." },
+      "ok-soft": { "$type": "color", "$value": "#132d21", "$description": "The background of an ok badge." },
+      "warning-soft": { "$type": "color", "$value": "#302008", "$description": "The background of a warning badge." },
+      "error-soft": { "$type": "color", "$value": "#3b1219", "$description": "The background of an error badge." },
+      "chrome-surface": { "$type": "color", "$value": "#222222", "$description": "The host's own bar, in the host color when there is one; no frame or panel covers it.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+      "dialog-surface": { "$type": "color", "$value": "#191919", "$description": "A host dialog's surface; what tells a dialog apart is its form, not this color.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+      "panel-surface": { "$type": "color", "$value": "#191919", "$description": "The panel a frame opens for a plugin's controls, attached to that frame.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+      "scrim": { "$type": "color", "$value": "#000000b3", "$description": "Dims the window behind a host dialog; blackA because gray 12 is near white in the dark theme.", "$extensions": { "dev.dashboard": { "hostSurface": true } } }
+    }
+  },
+  "typography": {
+    "caption": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "12px", "fontWeight": 400, "lineHeight": "16px" }, "$description": "Timestamps and the field note: the smallest text, regular weight." },
+    "label-sm": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "12px", "fontWeight": 500, "lineHeight": "16px" }, "$description": "Frame labels, badges and the monogram: small but medium weight so it holds." },
+    "body-sm": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "13px", "fontWeight": 400, "lineHeight": "18px" }, "$description": "Dense secondary content inside widgets." },
+    "body-md": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "14px", "fontWeight": 400, "lineHeight": "20px" }, "$description": "Body text and fields: 14 px reads well at desktop distance and fits dense widgets." },
+    "label-md": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "14px", "fontWeight": 500, "lineHeight": "20px" }, "$description": "Buttons and the chrome: body size, medium weight." },
+    "title-sm": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "16px", "fontWeight": 600, "lineHeight": "24px" }, "$description": "A widget's own heading." },
+    "title-md": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "20px", "fontWeight": 600, "lineHeight": "28px", "letterSpacing": "-0.01em" }, "$description": "Panel and dialog titles." },
+    "title-lg": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "24px", "fontWeight": 600, "lineHeight": "32px", "letterSpacing": "-0.015em" }, "$description": "Large numbers and page titles." },
+    "display": { "$type": "typography", "$value": { "fontFamily": "Inter", "fontSize": "32px", "fontWeight": 600, "lineHeight": "40px", "letterSpacing": "-0.02em" }, "$description": "The largest figure a widget shows, such as a timer." }
+  },
+  "spacing": {
+    "none": { "$type": "dimension", "$value": "0px", "$description": "Flush." },
+    "xxs": { "$type": "dimension", "$value": "2px", "$description": "Between an icon and its label." },
+    "xs": { "$type": "dimension", "$value": "4px", "$description": "Inside compact controls." },
+    "sm": { "$type": "dimension", "$value": "8px", "$description": "Between related items, and a field's padding." },
+    "md": { "$type": "dimension", "$value": "12px", "$description": "A frame's padding and the grid's gutter." },
+    "lg": { "$type": "dimension", "$value": "16px", "$description": "A panel's padding." },
+    "xl": { "$type": "dimension", "$value": "24px", "$description": "A dialog's padding." },
+    "2xl": { "$type": "dimension", "$value": "32px", "$description": "Between groups in a dialog." },
+    "3xl": { "$type": "dimension", "$value": "48px", "$description": "Around empty states." }
+  },
+  "radius": {
+    "none": { "$type": "dimension", "$value": "0px", "$description": "A pick for square corners." },
+    "small": { "$type": "dimension", "$value": "3px", "$description": "The monogram, and corners when the person picks small." },
+    "medium": { "$type": "dimension", "$value": "6px", "$description": "The default: frames, buttons and fields." },
+    "large": { "$type": "dimension", "$value": "10px", "$description": "Dialogs, a step rounder than what they float over." },
+    "full": { "$type": "dimension", "$value": "9999px", "$description": "Pills: badges, and every corner when the person picks full." }
+  },
+  "shadow": {
+    "frame": { "$type": "shadow", "$value": { "color": "#0000001a", "offsetX": "0px", "offsetY": "1px", "blur": "2px", "spread": "0px" }, "$description": "A hint of lift so a frame reads as one object on the canvas." },
+    "panel": { "$type": "shadow", "$value": { "color": "#00000033", "offsetX": "0px", "offsetY": "4px", "blur": "12px", "spread": "0px" }, "$description": "A panel floats beside its frame, never over the chrome.", "$extensions": { "dev.dashboard": { "hostSurface": true } } },
+    "dialog": { "$type": "shadow", "$value": { "color": "#00000066", "offsetX": "0px", "offsetY": "12px", "blur": "32px", "spread": "0px" }, "$description": "A host dialog floats above everything, over the scrim.", "$extensions": { "dev.dashboard": { "hostSurface": true } } }
+  }
+}
