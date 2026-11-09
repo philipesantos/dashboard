@@ -44,6 +44,10 @@ deny = [
     { name = "host-surfaces", wrappers = ["host"] },
     # The generator holds every value, host surfaces included: only xtask may depend on it (R6).
     { name = "design-gen", wrappers = ["xtask"] },
+    # Native dialogs: trust decisions are asked only in host dialogs, never the operating
+    # system's prompts (constitution, Principle VII; docs/design/host-surfaces.md, HS-12).
+    { name = "rfd" },
+    { name = "native-dialog" },
 ]
 
 [sources]
