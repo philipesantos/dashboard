@@ -119,7 +119,7 @@ done and the maintainer has seen its result.
   (research R9, R12); `host/src/main.rs` parses `--grants` and `--data` (no `--connectors`), and exits
   with the codes of `contracts/host-binary.md`, code 3 with a message when no GPU driver is usable
   (FR-013).
-- [ ] T015 `host/src/vendor/gpui_base/`: the focus trap adapted from gpui-base 0.9.0's
+- [X] T015 `host/src/vendor/gpui_base/`: the focus trap adapted from gpui-base 0.9.0's
   `src/focus_trap.rs` and the Tab handling of its `src/root.rs`, with the Apache-2.0 notice and a
   `PROVENANCE.md` (crate, version, files, SHA-256, what changed); its test ported to `host`'s test
   setup (research R9).

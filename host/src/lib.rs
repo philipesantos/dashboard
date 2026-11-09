@@ -7,3 +7,4 @@ pub mod label;
 pub mod media;
 pub mod text;
 pub mod theme;
+pub mod vendor;

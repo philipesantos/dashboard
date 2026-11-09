@@ -168,3 +168,107 @@ mod app {
         assert!(answer.is_err(), "the request was refused");
     }
 }
+
+mod focus_trap {
+    use gpui::{
+        Context, Element as _, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
+        Role, StatefulInteractiveElement, TestAppContext, Window, accesskit, div,
+    };
+    use host::vendor::gpui_base::tab::{CONTEXT, Tab, TabPrev, advance_focus};
+    use host::vendor::gpui_base::{self, FocusTrapElement};
+
+    /// Ported from gpui-base: the trap passes its inner element's role, label and description
+    /// to the node GPUI writes.
+    #[gpui::test]
+    fn the_trap_keeps_its_inner_semantics(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            for (role, name) in [
+                (Role::Dialog, "Remove a widget"),
+                (Role::AlertDialog, "Quit?"),
+            ] {
+                let trap = div()
+                    .id("inner")
+                    .role(role)
+                    .aria_label(name)
+                    .aria_description("The question")
+                    .focus_trap("outer-trap", &cx.focus_handle());
+                assert_eq!(gpui::Element::id(&trap), Some("outer-trap".into()));
+                assert_eq!(trap.a11y_role(), Some(role));
+                let mut node = accesskit::Node::new(role);
+                trap.write_a11y_info(&mut node);
+                assert_eq!(node.label(), Some(name));
+                assert_eq!(node.description(), Some("The question"));
+            }
+        });
+    }
+
+    struct Trapped {
+        outside: FocusHandle,
+        trap: FocusHandle,
+        first: FocusHandle,
+        second: FocusHandle,
+    }
+
+    impl Render for Trapped {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .key_context(CONTEXT)
+                .on_action(cx.listener(|_, _: &Tab, window, cx| {
+                    advance_focus(window, cx, Window::focus_next)
+                }))
+                .on_action(cx.listener(|_, _: &TabPrev, window, cx| {
+                    advance_focus(window, cx, Window::focus_prev)
+                }))
+                .child(
+                    div()
+                        .id("outside")
+                        .track_focus(&self.outside.clone().tab_stop(true)),
+                )
+                .child(
+                    div()
+                        .id("dialog")
+                        .child(
+                            div()
+                                .id("first")
+                                .track_focus(&self.first.clone().tab_stop(true)),
+                        )
+                        .child(
+                            div()
+                                .id("second")
+                                .track_focus(&self.second.clone().tab_stop(true)),
+                        )
+                        .focus_trap("trap", &self.trap),
+                )
+        }
+    }
+
+    /// HS-17's mechanism: Tab and Shift+Tab, pressed more times than there are controls, never
+    /// leave the trap.
+    #[gpui::test]
+    fn tab_and_shift_tab_stay_inside(cx: &mut TestAppContext) {
+        cx.update(gpui_base::init);
+        let (view, cx) = cx.add_window_view(|_, cx| Trapped {
+            outside: cx.focus_handle(),
+            trap: cx.focus_handle(),
+            first: cx.focus_handle(),
+            second: cx.focus_handle(),
+        });
+        cx.update(|window, cx| {
+            let first = view.read(cx).first.clone();
+            window.focus(&first, cx);
+        });
+        for keys in ["tab", "shift-tab"] {
+            for _ in 0..5 {
+                cx.simulate_keystrokes(keys);
+                cx.update(|window, cx| {
+                    let view = view.read(cx);
+                    assert!(
+                        view.first.is_focused(window) || view.second.is_focused(window),
+                        "{keys} left the trap"
+                    );
+                    assert!(!view.outside.is_focused(window));
+                });
+            }
+        }
+    }
+}
