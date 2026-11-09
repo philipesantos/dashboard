@@ -28,6 +28,9 @@ host decision is asked (FR-014).
 | --- | --- |
 | The scrim covers every host window entirely, chrome included; the dialog sits above it | HS-02 |
 | No pointer or key input outside the dialog reaches anything, in any host window | HS-10 |
+| Windows other than the dialog's drop every key: Enter there after 1000 ms answers nothing | HS-10, HS-11 |
+| Other windows' focus is cleared while it is open and restored after | HS-18 |
+| The system's close control answers `Refused` first; minimize and maximize change nothing | HS-10 |
 | A click outside neither closes nor answers it | HS-10 |
 | A window's close request or the app's quit answers `Refused` first | HS-10 |
 | Input answers nothing before 1000 ms; at 1000 ms it does; held keys and buttons wait for release | HS-11 |
@@ -52,7 +55,8 @@ children.
 
 ## The first use: "Remove from dashboard"
 
-`name` = "Remove a widget"; `question` = "Remove this widget from the dashboard? Its permissions are
+Opened from the frame's menu button; on any answer focus returns to that button. `name` =
+"Remove a widget"; `question` = "Remove this widget from the dashboard? Its permissions are
 withdrawn and the data the host kept for it is deleted. Its own storage stays."; `subject` = the
 plugin's label; `refuse` = "Cancel"; `confirm` = "Remove". Confirmed: `GrantStore::remove` and
 `Runtime::discard_kept_data`, as `runtime remove`; the frame leaves. Refused: nothing changes.

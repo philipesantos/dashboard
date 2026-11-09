@@ -41,13 +41,22 @@ CI run the real-window and security tests on the three systems (US6).
 
 ## R2. Decision 0001, revisited for this feature
 
-**Decision**: plugins keep running in the host process during this feature, and no byte a plugin
-supplies reaches a decoder: frames show no content (FR-008), no image or icon from a plugin
-exists (FR-028), and the only fonts are the host's own, loaded from its binary, with the system's
-for glyphs they lack. The plugin's name is shaped as text by those fonts; no font, image or SVG
-comes from a plugin. Recorded as a revisit section in `docs/decisions/0001-plugin-process-isolation.md`,
-whose next trigger stays as written: before the app installs a plugin it did not build (the
-installation feature), and on any Wasmtime escape advisory.
+**Decision**: plugins keep running, and compiling, in the host process during this feature, and
+no image, SVG or font bytes a plugin supplies reach a decoder: frames show no content (FR-008), no
+image or icon from a plugin exists (FR-028), and the only fonts are the host's own, loaded from its
+binary, with the system's for glyphs they lack. A plugin's name does reach text shaping, as text
+in the host's fonts. Recorded as a revisit section in
+`docs/decisions/0001-plugin-process-isolation.md` that keeps all four of its triggers (before the
+app installs a plugin it did not build; a Wasmtime or Cranelift escape advisory; loading a package
+near the cap taking more than 2 s or 1 GiB on any CI system; before AI-generated modules are
+compiled on the user's machine), corrects its stale line about installing from a local file
+(installation is only from repositories, threat model), and names the next owners: installation
+for the runtime and compilation, the widget kit before any image block or plugin icon.
+
+The window now compiles packages, at start and on reload, which 0001's accepted risk described as
+the maintainer loading from the command-line tool. It is still only packages the maintainer
+approved with that tool; the window measures the compile cost of each load (R14) so the third
+trigger can be seen from the window too.
 
 **Rationale**: 0001 asks for its revisit in Phase 3's plan "at the latest" before the app can
 install a plugin it did not build. This feature installs nothing: it loads only packages the
@@ -57,7 +66,10 @@ them out.
 
 **Alternatives considered**: moving the runtime out of process now (an inter-process protocol to
 design and secure before any plugin can be installed; the cost lands where the risk arrives, at
-installation); a separate decoding process now (nothing to decode yet).
+installation); compiling in a separate process and running in the host, the option 0001 names as a
+Phase 3 candidate (deferred to installation, the first time a package the maintainer did not build
+is compiled; until then the window compiles only what the maintainer already compiles with the
+tool); a separate decoding process now (nothing to decode yet).
 
 ## R3. The `host` crate
 
@@ -88,8 +100,23 @@ look the same on every system and leaves no font path a plugin could name.
 
 **Decision**: the window lists the approvals of the development grant record and loads each from
 the origin it was approved from (the package path), with `Runtime::load` and the record's
-`GrantStore`, as `runtime run` does; it renders each once after load and again on reload (FR-040),
-on GPUI's background executor, never on the UI thread. The runtime gains one **read-only** call,
+`GrantStore`; it renders each once after load and again on reload (FR-040). Reading the record
+(which takes its file lock), reading each package (capped at the package size limit, as the
+tool's `read_capped`), loading and rendering all run on GPUI's background executor, never on the
+UI thread.
+
+**Development mode stays off.** The runtime documents that only the development tool turns it on
+and that "the host app of Phase 3 never does", and feature 003 (FR-018) lets local connectors load
+only in that mode. The window starts the runtime with `RuntimeOptions::new(data_dir)` and no
+`development(true)`: it takes no `--connectors` option, and a plugin that declares a `local/`
+connector fails to load with the runtime's refusal, which its frame shows as "Did not render" with
+the host's reason. Reading the development grant record is not granting: the constitution keeps
+granting to the tool (Principle VII), and the window only reads approvals and, through "Remove
+from dashboard", withdraws one.
+
+**A failure's reason** is the host's words for the runtime's `ErrorKind` (a `Msg` per kind),
+never the error's detail or names, which can quote the plugin (the threat-model row "Log or error
+text imitates the host's own output"). The runtime gains one **read-only** call,
 `GrantStore::approvals()`, listing every approval's plugin id and origin; nothing else in the
 runtime changes. "Remove from dashboard" calls `GrantStore::remove` and `Runtime::discard_kept_data`,
 exactly the calls of `runtime remove`, and keeps the plugin's store, as the tool does.
@@ -105,13 +132,26 @@ window could disagree); parsing the record in the host (two parsers of one secur
 ## R6. Layout before the grid, and the chrome kept uncovered
 
 **Decision**: the window is a column: the chrome, a fixed band, then the content area below it,
-which clips everything it holds, frames and panels included. Frames flow in a wrap of fixed-width
-columns in approval order. A panel is drawn inside the content area, attached to its frame's side,
-flipping to the other side or below when there is no room, never in a layer above the chrome.
-GPUI's floating layers (`deferred`, `anchored`) are not used for panels.
+which scrolls vertically and clips everything it holds: frames, panels, a frame's menu and the
+appearance settings. Frames flow in a wrap of fixed-width columns in approval order. A panel or a
+frame's menu is drawn inside the content area, attached to its frame, flipping to the other side
+or below when there is no room. GPUI's floating layers (`deferred`, `anchored`) are not used
+anywhere in the host. Every clipping edge keeps at least 4 px of padding inside it, so a control's
+2 px focus ring, 2 px outside the control, is never cut (HS-24).
+
+**Window decorations**: the operating system's own title bar and window controls stay, on every
+system; the chrome is the first band of the window's content, right under them. The constitution's
+"chrome ... that holds its window controls and menus" is met by the chrome holding the host's
+menus; the window controls belong to the system, outside what a widget or the host draws. While a
+dialog is open the scrim covers the whole content area, chrome included (HS-02); the system's
+close control answers the dialog `Refused` before the window closes (HS-10), and minimize and
+maximize change nothing about it.
 
 **Rationale**: HS-01 then holds by construction (nothing in the content area can draw over a
-sibling above it), and the test still measures it at the three sizes and scale factors.
+sibling above it, scrolled or not), and the test still measures it at the three sizes and scale
+factors and with the content scrolled so frames sit past the top, bottom and sides. Client-side
+decorations would mean drawing window controls three ways for no gain in what the criteria
+observe.
 
 ## R7. The host's words: one catalog, enforced by type
 
@@ -125,10 +165,12 @@ passed to `child`, `aria_label`, `aria_description` or a text element outside `t
 
 ## R8. A plugin's name in the frame
 
-**Decision**: the label follows feature 007's rules for the label and monogram (HS-06, HS-07):
-the manifest's name in Unicode NFC, control, format and bidirectional characters removed, capped
-at 40 visible characters with an ellipsis, the plugin id when nothing is left; the monogram is its
-first grapheme cluster, uppercased, from the host's own font. It reaches the screen only as
+**Decision**: the label follows HS-06 and HS-07 exactly: every Cc, Cf, Zl and Zp character
+removed (bidirectional overrides and zero-width characters included); capped at 40 grapheme
+clusters (UAX #29) followed by an ellipsis; an empty result shown as the host's "Unnamed widget"
+(a `Msg`); a name imitating the host drawn like any other. The monogram is the first letter or
+digit of the cleaned name, upper-cased where the script has case, or a fixed host glyph when there
+is none, in the monogram component's roles. It reaches the screen only as
 `PluginText`, drawn as plain text, and for assistive technology in a child node of its own after
 the host's words (HS-19).
 
@@ -149,6 +191,11 @@ under `host/src/vendor/gpui_base/` with its notice and a provenance file: crate,
 SHA-256 and what changed), and Escape answers `Refused` and gives focus back to the handle that
 held it before (HS-16, HS-17).
 
+**Other windows**: while a dialog is open, every host window other than the dialog's drops every
+key and pointer event (they never reach the dialog, so a key typed elsewhere cannot answer it),
+and its focused element is cleared and remembered, then restored when the dialog is answered, so
+no focused node in another window stays exposed (R10).
+
 **The input gate** (HS-11, FR-017): a `Clock` trait, the system clock in the app and a manual one
 in tests; the gate counts 1000 ms from the first frame that shows the dialog, restarts on window
 activation and on a change of the dialog's content or a new dialog, and remembers the keys and
@@ -157,7 +204,8 @@ pointer buttons down when it started, which answer nothing until released.
 **Native prompts** (HS-12, FR-019): `clippy.toml` disallows `gpui::Window::prompt`,
 `gpui::AsyncWindowContext::prompt`, `gpui::PlatformWindow::prompt`, `gpui::App::open_url`,
 `gpui::Platform::open_url`, `gpui::App::prompt_for_paths`, `gpui::App::prompt_for_new_path`,
-`gpui::App::open_with_system`, `gpui::App::reveal_path` and GPUI's credential calls; the host also
+`gpui::App::open_with_system`, `gpui::App::reveal_path` and GPUI's credential calls (and the asset
+and image paths of R12); the host also
 replaces GPUI's prompt builder with one that refuses at once, so a prompt reached through a path
 clippy misses still never shows. `deny.toml` keeps banning `rfd` and `native-dialog`.
 
@@ -177,8 +225,9 @@ or `aria_hidden`, but a custom element can write the raw AccessKit node
 holds the chrome and the content area, given the role `Pane` so it becomes a node) is marked
 `set_hidden()`, which AccessKit's shared filter excludes with its subtree on every platform; the
 dialog's node has role `Dialog`, `set_modal()`, the host's name for the decision as its label, the
-question as its description, and any plugin name in a child node after them (HS-18, HS-19). Focus
-inside the dialog keeps the focused node exposed, as the filter requires. An issue proposing
+question as its description, and any plugin name in a child node after them (HS-18, HS-19). AccessKit's filter always keeps a focused node, even inside a
+hidden subtree, so focus must be inside the dialog in its window and cleared in every other host
+window while it is open (R9). An issue proposing
 `aria_modal` and `aria_hidden` builders goes upstream, for information.
 
 **Rationale**: no AccessKit adapter hides nodes outside a modal dialog; hiding is the app's job.
@@ -207,9 +256,13 @@ one the development tool already uses.
   returns; the frame's body is a host status built from `Msg` and the render's outcome. The hostile
   case renders output full of markup, addresses and paths and checks the frame's elements hold
   only host text and the safe label.
-- **Images only as bytes, none from plugins yet** (FR-028): `media::image_from_bytes(Arc<gpui::Image>)`
-  is the only caller of `gpui::img`, which `clippy.toml` otherwise disallows; nothing calls it in
-  this feature.
+- **Images only as bytes, none from plugins yet** (FR-028): `media` is the only module that may
+  call `gpui::img` and `gpui::svg`, which `clippy.toml` otherwise disallows, together with
+  `Svg::external_path` (reads a file), `Window::use_asset` and `App::fetch_asset`. `media` takes
+  only bytes the host holds: `image_from_bytes(Arc<gpui::Image>)`, unused in this feature, and the
+  three status icons of feature 007, drawn from their SVG paths in `DESIGN.md` embedded in the
+  binary (host bytes, decoded in the host process). No `ImageSource` is ever built from a string or
+  a path.
 - **No plugin string to the image loader or the URL opener** (FR-029): `gpui::img` is reachable only
   through `media` with bytes, and `open_url` is disallowed everywhere; a test reads `clippy.toml`
   and fails if those entries go.
@@ -218,11 +271,17 @@ one the development tool already uses.
   so a GPUI upgrade cannot change it. A test asks the app's client for a URL and expects the
   refusal; another draws an image element from a URI string in a test harness and counts no
   request reaching a recording client.
-- Each rule has a hostile case under `host/tests/hostile/` (FR-031), alongside the runtime's suite.
+- **Nothing slips the bans**: a check fails on any `allow(clippy::disallowed_methods)` or
+  `allow(clippy::disallowed_types)` in `host/src/` outside `media.rs`.
+- Each rule has a hostile case (FR-031): the headless ones under `host/tests/hostile/`, the ones
+  that need a real window (the accessibility tree, the scrim's cover in pixels) in the `window`
+  target, all counted in the security suite.
 
 **Rationale**: GPUI's `img("…")` turns a string into a URI fetched through the app's HTTP client, a
-path read from disk, or an embedded asset; `file://` URIs also go to the client. With the client
-blocked and `img` reachable only with bytes, no string can become a fetch or a read.
+path read from disk, or an embedded asset; `file://` URIs also go to the client; `svg()` can read a
+file by path, and assets can be loaded by name. With the client blocked and every one of those
+reachable only from `media` with host bytes, no plugin string can become a fetch, a read or a
+decode.
 
 ## R13. Tests: four layers
 
@@ -233,15 +292,20 @@ blocked and `img` reachable only with bytes, no string can become a fetch or a r
    at 800 × 600, 1280 × 800 and 2560 × 1440 and scale factors 1, 1.5 and 2, reload, the appearance
    file, the label rules.
 2. **Real window, real keys, three systems**: a test target `window` with `harness = false` (GPUI
-   needs the main thread) opens the real window and sends OS key events with `enigo` 0.6.1 (XTEST
-   under Xvfb on Linux, `CGEventPost` on macOS, `SendInput` on Windows): first Tab, the dialog's
-   initial focus, Tab and Shift+Tab cycling, Escape refusing, the gate at real time.
+   needs the main thread, and `test = false` so `cargo test --workspace` never runs it) opens the
+   real window and sends OS key and pointer events with `enigo` 0.6.1 (XTEST under Xvfb on Linux,
+   `CGEventPost` on macOS, `SendInput` on Windows): first Tab; the panel closing on Escape and on a
+   click outside, with focus back on its control and the outside click reaching its target; the
+   dialog opened from the keyboard and from the pointer, its initial focus, Tab and Shift+Tab
+   cycling, Escape refusing; Enter in a second window after 1000 ms not answering; the gate at real
+   time; every focusable host control showing the ring unclipped (HS-24).
 3. **Accessibility tree, three systems**: in the same target, with the adapter activated, the tree
    is read through the platform (AT-SPI with the `atspi` crate on Linux, UI Automation with the
    `windows` crate on Windows from an MTA thread, AX on macOS from another thread) and also from
    GPUI's `debug_a11y_tree_json` through `accesskit_consumer`'s `common_filter`, the filter every
-   adapter uses: only the dialog and its contents reachable while it is open (HS-18), and the
-   dialog's role, label, description and child node (HS-19).
+   adapter uses: only the dialog and its contents reachable while it is open, in the dialog's
+   window and in a second host window (HS-18); the dialog's role, label, description and child
+   node (HS-19); each frame's label and status exposed under the frame (FR-024).
 4. **Screen-reader walk, before each release**: a written script in `docs/accessibility/` for
    VoiceOver, Narrator and Orca over every host dialog, its results recorded with the release
    (FR-026).
@@ -251,7 +315,9 @@ blocked and `img` reachable only with bytes, no string can become a fetch or a r
 its first `GetAddress` and switched on with `busctl --user set-property org.a11y.Bus /org/a11y/bus
 org.a11y.Status IsEnabled b true`, which also activates GPUI's adapter; X11 under Xvfb with an
 explicit focus of the window, `WAYLAND_DISPLAY` unset. Windows and macOS in their desktop
-sessions. The real-window target runs after the other tests, in the existing build job.
+sessions. The real-window target runs in a job of its own, "Host window", on the three systems,
+with its own time budget, so the build job's 30 minutes are not shared with a cold GPUI build and
+window tests.
 
 **Rationale**: GPUI's tests never send OS events and its fake window has no accessibility tree, so
 layers 2 and 3 need a real window; AccessKit's own CI proves UI Automation on `windows-latest`, and
@@ -261,7 +327,9 @@ enigo's proves XTEST under Xvfb.
 
 **Decision**: the real-window target measures, on the three systems, the time from start to the
 first frame with every frame drawn (5 approved fixtures; SC-001, under 2 s on the reference
-machine) and from a dialog request to the first frame that shows it (SC-006, under 100 ms). The
+machine), from a dialog request to the first frame that shows it (SC-006, under 100 ms), and the
+compile time and peak memory of each package the window loads (decision 0001's third trigger,
+R2). The
 bench numbers are recorded in this feature's `performance.md`, as earlier features did.
 
 ## R15. What the reviews could not confirm, and how the tasks settle it
@@ -274,8 +342,9 @@ bench numbers are recorded in this feature's `performance.md`, as earlier featur
    what they can (the accessibility tree needs no rendering) and the gap is brought to the
    maintainer before the plan changes, not silently skipped.
 3. **Xvfb with lavapipe**: the same spike on Linux.
-4. **The exact `disallowed-methods` paths** for GPUI's re-exported types: the spike runs clippy with
-   the entries and a file that calls each, and confirms each is caught.
+4. **The exact `disallowed-methods` paths** for GPUI's re-exported types (prompts, URL and system
+   openers, credentials, `img`, `svg`, `Svg::external_path`, `use_asset`, `fetch_asset`): the spike
+   runs clippy with the entries and a file that calls each, and confirms each is caught.
 5. **The MSRV**: the workspace's is 1.97 and Zed builds 1.25.3 with 1.98.1; the spike builds with
    1.97 and, if it fails, the plan's MSRV moves to the oldest stable that builds, as a reviewed
    change.
@@ -285,3 +354,37 @@ bench numbers are recorded in this feature's `performance.md`, as earlier featur
 7. **The licenses the GPUI graph adds to `deny.toml`'s list** (for example BSD-2-Clause, BSL-1.0,
    CC0-1.0 or 0BSD, depending on features): the spike runs `cargo deny check licenses`, and each
    addition is reviewed as part of `deny.toml`, which is security core.
+
+## R16. The documents this feature updates
+
+**Decision**: besides 0001 (R2), the threat model's decoder row keeps its first cell (the criteria
+test quotes it) and has its mitigation say that decoding stays in the host process with no plugin
+image, SVG or font decoded until the widget kit brings images; its open question on the process
+gets the outcome of R2. `docs/design/host-surfaces.md` moves the decoder entry of "Decided
+elsewhere" to its next owners (installation for the runtime, the widget kit for images and icons).
+Editing the threat model runs the full CI, as feature 007 set up.
+
+## Review of the plan
+
+An independent review on 2026-11-09 read the spec, this research, the plan, the data model, the
+contracts and the quickstart against constitution v5.0.1, `docs/design/host-surfaces.md`, the
+threat model and decision 0001. Each finding was checked at the source before anything changed.
+
+| Finding | Held? | Outcome |
+| --- | --- | --- |
+| The window would run the runtime in development mode, which only the tool may (runtime docs, 003 FR-018) | Yes | Development mode off, no `--connectors`, FR-041, a hostile case (R5) |
+| `svg().external_path`, assets and paths are other ways from a string to a read or a decode | Yes | Banned outside `media`, which takes host bytes only; status icons from embedded paths (R12) |
+| An `allow(clippy::disallowed_methods)` anywhere would slip the bans | Yes | A check fails on it outside `media.rs` (R12) |
+| A focused node in a second window stays exposed under `set_hidden` | Yes | Focus cleared in other windows and restored (R9, R10) |
+| A key in another window could answer the dialog | Yes | Other windows drop every key; a test (R9) |
+| Window decorations unspecified | Yes | The system's title bar stays; close refuses the dialog (R6) |
+| Menus and the appearance screen could float over the chrome; scrolling and moved frames untested | Yes | No floating layers anywhere, a check; the content area scrolls; HS-01 tested scrolled past every edge (R6) |
+| HS-24 untested beyond the dialog; clipping could cut the ring | Yes | Every focusable host control walked in the window target; 4 px inside clipping edges (R6, R13) |
+| Label and monogram rules differed from HS-06 and HS-07 | Yes | Copied exactly (R8) |
+| Hostile cases missed FR-015 and FR-028; the tree case cannot run headless | Yes | Added; real-window cases in the `window` target, counted in the suite |
+| Real-window layers missed the panel, the pointer-opened dialog and FR-024 | Yes | Added (R13) |
+| The window target would run inside `cargo test --workspace`; CI time | Yes | `test = false`; a "Host window" job of its own (R13) |
+| Threat model and "Decided elsewhere" not updated with R2 | Yes | R16 |
+| The 0001 revisit dropped two triggers, the compile-out option and a stale line | Yes | R2 rewritten |
+| A failure's detail could show a plugin's text as host text | Yes | Host words per error kind only; a hostile case (R5) |
+| `clippy.toml` not named for review; panel click-through; focus after the menu closes; "no byte"; UI-thread reads; window title and tooltips | Yes | Each corrected in the plan, spec and contracts |

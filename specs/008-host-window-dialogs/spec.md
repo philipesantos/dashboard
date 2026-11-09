@@ -354,7 +354,8 @@ restart and check the choice is kept.
   is open MUST wait until the dialog is answered.
 - **FR-010**: A frame MUST be able to open its panel, attached to it, drawn with the host's panel
   tokens; the panel MUST NOT dim anything or block input to the rest of the window, and MUST
-  close on Escape and on a click outside it, returning focus to the control that opened it.
+  close on Escape and on a click outside it, returning focus to the control that opened it; a
+  click outside also reaches what it was aimed at.
 - **FR-011**: No frame or panel MAY intersect the chrome, at window sizes 800 × 600, 1280 × 800
   and 2560 × 1440, at scale factors 1, 1.5 and 2, and while frames move toward or past the
   window's edges (HS-01).
@@ -396,7 +397,8 @@ restart and check the choice is kept.
   dashboard", which asks in a host dialog named with the host's words for the decision (the
   plugin's name in a child node of its own). Confirmed, it MUST remove the plugin's approval and
   every grant with it, exactly as the command-line tool's `remove` does, and the frame leaves the
-  window; refused (including by closing or quitting), nothing changes.
+  window; refused (including by closing or quitting), nothing changes. On any answer, focus returns
+  to the frame's menu button.
 - **FR-019**: The host MUST NOT ask for any trust decision (granting a permission, installing a
   plugin or connector, connecting an account, choosing a destination) through GPUI's native
   prompt or any operating-system dialog; the native dialog crates MUST stay banned, and a check
@@ -460,6 +462,9 @@ restart and check the choice is kept.
   engine, the connector engine, the vault or the WIT contract; it uses them as they are, except for
   one read-only addition: a way to list the approvals in the grant record, which the window needs
   to know which plugins to load (research R5), reviewed line by line as security core.
+- **FR-041**: The window MUST run the runtime without development mode, which only the development
+  tool turns on: local connectors never load in it, and a plugin that declares one shows "Did not
+  render" with the host's reason.
 
 ### Key Entities
 
@@ -519,3 +524,6 @@ restart and check the choice is kept.
 - CI runners can open real windows: macOS and Windows in their desktop sessions, Linux under a
   virtual display with a software renderer; the plan confirms how.
 - "Reference machine" is the one feature 001 measured on (8 cores).
+- The operating system's title bar and window controls stay; the chrome is the first band of the
+  window's content, below them. The scrim covers the whole content area; the system's close
+  control answers an open dialog as a refusal (research R6).

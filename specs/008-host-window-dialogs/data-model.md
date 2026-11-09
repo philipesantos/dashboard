@@ -8,8 +8,8 @@ What the window loads (R5).
 | --- | --- | --- |
 | `id` | `PluginId` | from the grant record's approval |
 | `origin` | path | the package the approval came from; the window loads it from there |
-| `label` | `PluginText` | the manifest's name made safe (R8); the id when nothing is left |
-| `monogram` | one grapheme | the label's first grapheme cluster, uppercased |
+| `label` | `PluginText` | the manifest's name made safe as HS-06 says (R8); "Unnamed widget" when nothing is left |
+| `monogram` | one character | the cleaned name's first letter or digit, upper-cased where the script has case, or a fixed host glyph (HS-07) |
 | `status` | `FrameStatus` | below |
 
 Source: `GrantStore::approvals()` (new, read-only) on the development grant record. Reread when the
@@ -21,7 +21,7 @@ window regains focus and on "Reload" (FR-040); a change while a dialog is open w
 | --- | --- |
 | `Loading` | "Loading", default tone |
 | `Rendered` | "Rendered", ok tone with its icon |
-| `Failed { reason: HostText }` | "Did not render" and the runtime's reason in host words, error tone with its icon |
+| `Failed { reason: Msg }` | "Did not render" and the host's words for the runtime's error kind (never its detail or names), error tone with its icon |
 
 What `render` returned is never stored for display (FR-008).
 

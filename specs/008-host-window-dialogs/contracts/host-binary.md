@@ -3,12 +3,14 @@
 ## Start
 
 ```text
-dashboard [--grants <path>] [--data <dir>] [--connectors <dir>]
+dashboard [--grants <path>] [--data <dir>]
 ```
 
-The options mean what they mean for the development tool (`runtime`): the grant record, the data
-directory and the local connectors directory, with the same defaults. The window lists the record's
-approvals and loads each from its origin (research R5).
+The options mean what they mean for the development tool (`runtime`): the grant record and the
+data directory, with the same defaults. There is no `--connectors`: the window runs the runtime
+without development mode, so local connectors never load in it, and a plugin that declares one
+shows "Did not render" (research R5). The window lists the record's approvals and loads each from
+its origin.
 
 ## Exit codes
 
@@ -31,4 +33,6 @@ approvals and loads each from its origin (research R5).
 - `GrantStore::open` / `GrantStore::approvals()` (new, read-only) / `GrantStore::remove`
 - `Runtime::new`, `Runtime::load`, `Plugin::render`, `Runtime::discard_kept_data`
 
-No other runtime call; none of them on the UI thread except reading the approvals.
+No other runtime call, and none of them on the UI thread: reading the record (which takes its file
+lock), reading a package (capped at the package size limit), loading, rendering and removing all
+run on the background executor. `RuntimeOptions::development` is never called.

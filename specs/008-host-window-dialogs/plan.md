@@ -65,13 +65,13 @@ will use.
 | --- | --- | --- |
 | I. WebAssembly-only plugins | Pass | Plugins load through the existing runtime only; the window adds no other way to run plugin code. |
 | II. Zero capabilities by default | Pass | The window grants nothing; it reads approvals (R5) and its one dialog only removes an approval, through the same calls as `runtime remove`. |
-| III. External data only through host-run connectors | Pass | GPUI's HTTP client is blocked (R12); the window opens no connection; `open_url` is banned. |
+| III. External data only through host-run connectors | Pass | GPUI's HTTP client is blocked (R12); the window opens no connection; `open_url` is banned. The runtime runs without development mode, so local connectors stay the development tool's only (R5; 003 FR-018). |
 | IV. Plugins never see secrets | Pass | The window touches no credential; GPUI's keychain calls are disallowed (R9). |
 | V. Plugins stay inside the host frame | Pass | The chrome is above a clipping content area, so no frame or panel can cover it (R6, HS-01); a plugin's strings appear only as the safe label (R8), under the host's words; no content drawn yet. |
 | VI. Human confirmation for AI actions | N/A | No AI in this feature. |
-| VII. Trust decisions only in host dialogs | Pass | The dialog's form (cover, block, focus, AT) is built and tested (R9, R10, HS-02, HS-10 to HS-12, HS-16 to HS-19); native prompts are banned by clippy and replaced by a refusing builder; the development tool keeps its role until installation brings the grant dialogs. |
+| VII. Trust decisions only in host dialogs | Pass | The dialog's form (cover, block, focus, AT) is built and tested (R9, R10, HS-02, HS-10 to HS-12, HS-16 to HS-19); native prompts are banned by clippy and replaced by a refusing builder; the development tool keeps its role until installation brings the grant dialogs: the window reads its record and can only withdraw an approval, never grant one (R5). |
 | VIII. Every security rule has a breaking test | Pass | Each CSP rule and each form rule has a hostile case (FR-031, R12); bans are checked by tests that read `clippy.toml`, `Cargo.toml` and `Cargo.lock`. |
-| IX. Human review of the security core | Pass, with review | `GrantStore::approvals()` is in the permission engine and `deny.toml` changes (licenses for GPUI's graph) are security core: both reviewed line by line. The dialog and CSP modules of `host` are not listed as core by the constitution; the PR asks for the same review of them. |
+| IX. Human review of the security core | Pass, with review | `GrantStore::approvals()` is in the permission engine, and `deny.toml` (licenses for GPUI's graph) and `clippy.toml` (which keeps the network, vault and storage code in their modules, and now GPUI's bans) are reviewed line by line. The dialog and CSP modules of `host` are not listed as core by the constitution; the PR asks for the same review of them. |
 | Fixed: host app | Pass | gpui-unofficial, every crate direct and `=`, from stable tag v1.25.3, Apache-2.0 only, patch list recorded and checked (R1). |
 | Fixed: UI | Pass | Drawn only from 007's generated tokens; the host's fonts embedded (R4). |
 | Fixed: licenses | Pass, with review | Client Apache-2.0; copied gpui-base code keeps its Apache-2.0 notice (R9); new licenses in GPUI's graph are added to `deny.toml` one by one (R15). |
@@ -122,15 +122,17 @@ host/                              # new workspace member: library `host`, binar
     ├── logic.rs                   # GPUI test platform: gate, queue, focus, HS-01 bounds, files
     ├── checks.rs                  # pins, clippy bans, catalog scan, deny wrappers
     ├── hostile/                   # one case per CSP and form rule (FR-031)
-    └── window.rs                  # harness = false: real keys and the accessibility tree (R13)
+    └── window.rs                  # harness = false, test = false: real input and the tree (R13)
 
 runtime/src/grants.rs              # + GrantStore::approvals(), read-only (R5)
 plugins/hostile/                   # + fixtures whose output and names carry addresses, markup, bidi
 docs/decisions/0001-plugin-process-isolation.md   # + the revisit of R2
+docs/threat-model.md               # decoder row's mitigation and the process question (R16)
+docs/design/host-surfaces.md       # "Decided elsewhere": the decoder entry's next owners (R16)
 docs/accessibility/screen-reader-walk.md          # the release walk script (FR-026)
 clippy.toml                        # + GPUI bans (R9, R12)
 deny.toml                          # + licenses of GPUI's graph, each reviewed (R15)
-.github/workflows/ci.yml           # + Linux packages, AT-SPI bus, the window target (R13)
+.github/workflows/ci.yml           # + a "Host window" job on three systems: Linux packages, AT-SPI bus, Xvfb (R13)
 Cargo.toml                         # + host in members
 ```
 

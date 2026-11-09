@@ -20,6 +20,9 @@ Approve a hostile fixture whose render traps, reload with the chrome's "Reload" 
 window again. Expect its frame to say "Did not render" with the reason, in the error tone, and the
 rest of the window to keep working.
 
+A plugin that declares a `local/` connector does not load in the window (the runtime runs without
+development mode): its frame says so in the host's words. It still runs with `runtime run`.
+
 ## 3. The panel and the chrome
 
 Open a frame's panel; resize the window down to 800 × 600 and move toward the top. Expect the
@@ -30,7 +33,8 @@ frame's control.
 
 From a frame's menu, choose "Remove from dashboard". Expect the scrim over the whole window, chrome
 included; clicks and keys outside the dialog do nothing; the buttons ignore input for one second;
-focus on "Cancel"; Tab cycles inside; Escape refuses and focus goes back to the menu. Confirm with
+focus on "Cancel"; Tab cycles inside; Escape refuses and focus goes back to the frame's menu
+button. Confirm with
 "Remove": the frame leaves, and `runtime permissions` on that package shows it unapproved.
 
 ## 5. Appearance
@@ -42,8 +46,8 @@ host refuses it and names the colors. Restart: the choice is kept.
 ## 6. The automated layers
 
 ```sh
-cargo test -p host                          # logic, checks, hostile cases
-cargo test -p host --test window            # real window: keys and accessibility tree
+cargo test -p host                          # logic, checks, headless hostile cases
+cargo test -p host --test window            # real window: input, pixels and accessibility tree
 ```
 
 On Linux, the window target runs as CI runs it:
