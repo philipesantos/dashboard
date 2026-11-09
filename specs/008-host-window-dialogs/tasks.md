@@ -56,7 +56,7 @@ done and the maintainer has seen its result.
   quits on close. `host/README.md` records the pin: version 1.25.3, Zed tag `v1.25.3` (commit
   `8dd255c3eafb5231056fe4e6f601cedd011f1c93`), patch list `docs/upstream-patches.md` at commit
   `58b5a3814e`, and the upgrade rule of research R1.
-- [ ] T002 Build `host` on Linux under the memory cap with the workspace's MSRV and with stable;
+- [X] T002 Build `host` on Linux under the memory cap with the workspace's MSRV and with stable;
   run `cargo deny check` and `cargo audit`. Record in research R15: whether 1.25.3 builds as
   published, the MSRV that builds (if 1.97 fails, the oldest stable that builds, brought to the
   maintainer before the workspace's MSRV moves), and each license `cargo deny check licenses`

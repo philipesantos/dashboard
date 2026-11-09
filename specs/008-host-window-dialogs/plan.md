@@ -21,8 +21,8 @@ plugin byte reaches a decoder (R2).
 
 ## Technical Context
 
-**Language/Version**: Rust (edition 2024, stable; the workspace's MSRV 1.97, confirmed or moved by
-the first task, R15)
+**Language/Version**: Rust (edition 2024, stable as CI builds it; the workspace declares no MSRV,
+research R15)
 
 **Primary Dependencies**: the nineteen gpui-unofficial crates at `=1.25.3` (Apache-2.0, R1);
 `runtime`, `design-tokens`, `host-surfaces` (workspace); `serde_json` for the settings file;

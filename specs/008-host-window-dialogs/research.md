@@ -345,15 +345,33 @@ bench numbers are recorded in this feature's `performance.md`, as earlier featur
 4. **The exact `disallowed-methods` paths** for GPUI's re-exported types (prompts, URL and system
    openers, credentials, `img`, `svg`, `Svg::external_path`, `use_asset`, `fetch_asset`): the spike
    runs clippy with the entries and a file that calls each, and confirms each is caught.
-5. **The MSRV**: the workspace's is 1.97 and Zed builds 1.25.3 with 1.98.1; the spike builds with
-   1.97 and, if it fails, the plan's MSRV moves to the oldest stable that builds, as a reviewed
-   change.
+5. **The MSRV**: settled by T002 below: the workspace declares none and CI builds with stable.
 6. **Narrator and VoiceOver confining their cursor to a modal AccessKit dialog**: the release walk
    (FR-026) records it; `set_hidden` on the background makes it hold even if a reader ignores
    `set_modal`.
 7. **The licenses the GPUI graph adds to `deny.toml`'s list** (for example BSD-2-Clause, BSL-1.0,
    CC0-1.0 or 0BSD, depending on features): the spike runs `cargo deny check licenses`, and each
    addition is reviewed as part of `deny.toml`, which is security core.
+
+### What T002 found (2026-11-09, Linux, rustc 1.99.1)
+
+- **It compiles as published**: every gpui-unofficial 1.25.3 crate, the wgpu 30.0.1 mapping and
+  the forks built in 4 minutes in a cold debug build under the 8 GiB cap. Linking the binary needs
+  the development symlinks of `libxkbcommon` and `libxkbcommon-x11` (Debian and Ubuntu packages
+  `libxkbcommon-dev` and `libxkbcommon-x11-dev`); CI installs them with GPUI's other build
+  libraries (T046). With those libraries linked, the binary opened its empty window on the
+  maintainer's Wayland session and ran until stopped, with nothing on standard error.
+- **The MSRV**: the workspace declares none (`rust-version` appears in no manifest, and CI builds
+  with stable); the "1.97" in this plan came from feature 007's plan, not from a declared value.
+  The host builds with the stable toolchain CI uses, so nothing moves; declaring an MSRV stays out
+  of this feature.
+- **Licenses**: `cargo deny check licenses` refuses two, both permissive and compatible with the
+  client's Apache-2.0: BSD-2-Clause (`arrayref`, through `tiny-skia` and `resvg`) and CC0-1.0
+  (`tiny-keccak`, through `const-random` and `ahash`). The bans pass: nothing in GPUI's graph hits
+  the TLS or native-dialog bans.
+- **Advisories**: `cargo audit` passes; GPUI adds six "unmaintained" warnings (`paste`,
+  `rustybuzz`, `ttf-parser`, `zbus_names`, `zvariant`, `zvariant_derive`), which the audit allows
+  by default and none of which is a vulnerability.
 
 ## R16. The documents this feature updates
 
