@@ -2,6 +2,7 @@
 //! widget, the panel a frame opens and the host's dialogs, drawn with GPUI from the tokens
 //! `DESIGN.md` generates.
 
+pub mod app;
 pub mod label;
 pub mod media;
 pub mod text;

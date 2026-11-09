@@ -137,3 +137,34 @@ mod media {
         assert!(!svg.contains("href"), "no reference to anything outside");
     }
 }
+
+mod app {
+    use gpui::TestAppContext;
+    use host::app::{install, parse_options};
+    use std::path::PathBuf;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|arg| (*arg).to_owned()).collect()
+    }
+
+    /// contracts/host-binary.md: `--grants` and `--data`, nothing else; no `--connectors`.
+    #[test]
+    fn options_are_grants_and_data_only() {
+        let options = parse_options(args(&["--grants", "/g.json", "--data", "/d"])).expect("valid");
+        assert_eq!(options.grants, PathBuf::from("/g.json"));
+        assert_eq!(options.data, PathBuf::from("/d"));
+        assert!(parse_options(args(&["--connectors", "/c"])).is_err());
+        assert!(parse_options(args(&["--grants"])).is_err());
+    }
+
+    /// FR-030: the app's HTTP client refuses every request (research R12).
+    #[gpui::test]
+    async fn the_http_client_refuses(cx: &mut TestAppContext) {
+        cx.update(|cx| install(cx).expect("installs"));
+        let client = cx.update(|cx| cx.http_client());
+        let answer = client
+            .get("https://example.com/", Default::default(), false)
+            .await;
+        assert!(answer.is_err(), "the request was refused");
+    }
+}

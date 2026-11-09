@@ -114,7 +114,7 @@ done and the maintainer has seen its result.
 - [X] T013 [P] `host/src/media.rs`: the only module allowed to call `gpui::img` and `gpui::svg`, with
   an inner `#[allow]` and its reason; `image_from_bytes(Arc<gpui::Image>)` and the three status icons
   from `DESIGN.md`'s embedded paths (research R12).
-- [ ] T014 `host/src/app.rs`: fonts from `design/fonts/` with `include_bytes!` (research R4), the app
+- [X] T014 `host/src/app.rs`: fonts from `design/fonts/` with `include_bytes!` (research R4), the app
   built with GPUI's `BlockedHttpClient`, GPUI's prompt builder replaced by one that refuses at once
   (research R9, R12); `host/src/main.rs` parses `--grants` and `--data` (no `--connectors`), and exits
   with the codes of `contracts/host-binary.md`, code 3 with a message when no GPU driver is usable
