@@ -191,7 +191,7 @@ destinations every user trusts; a bug there breaks them all.
 | Layer | Decision | Why |
 | --- | --- | --- |
 | Host app | Rust + GPUI, from the gpui-unofficial crates, a third party's automated republish of Zed's GPUI: each one a direct dependency pinned with `=` to a version published from a Zed stable release tag, never a `-pre` one, with the republisher's patch list reviewed on every upgrade; only Zed's Apache-2.0 crates, never its GPL-3.0-or-later ones | Native drawing with no webview, so no HTML, script or style sheet reaches the host UI; AccessKit support on Windows, macOS and Linux |
-| UI | The host's own Rust components on GPUI; colors from the Radix Colors scales, plus white and black, with `DESIGN.md` deciding which step each role uses; typography, spacing, radius and shadow defined by the project in `DESIGN.md`; contrast measured in CI (see Development Workflow) | The host decides exactly what widget content can show; contrast is measured, not assumed from a step's name, since some of Radix's own role pairings fall short of WCAG's minimums (green 11 on green 3 is 4.21:1; gray 8 as a border on gray 1, 1.86:1, both cut off, not rounded); no UI framework is part of the design |
+| UI | The host's own Rust components on GPUI; colors from the Radix Colors scales, plus white and black, with `DESIGN.md` deciding which step each role uses; typography, spacing, radius and shadow defined by the project in `DESIGN.md`; contrast measured in CI (see Development Workflow) | The host decides exactly what widget content can show; contrast is measured, not assumed from a step's name, since some of Radix's own role pairings fall short of WCAG's minimums (green 11 on green 3 is 4.21:1; slate 8 as a border on slate 1, 1.86:1, both cut off, not rounded); no UI framework is part of the design |
 | Plugin runtime | Wasmtime + Component Model (WIT), WASI 0.3 | Mature sandbox, typed multi-language contract |
 | JS/TS plugins | jco / componentize-js | Most accessible language for authors and for AI generation |
 | Rust plugins | cargo + wit-bindgen on `wasm32-unknown-unknown`, componentized with wit-component | Actively maintained; components import only what their WIT world declares |
@@ -239,4 +239,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 5.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-08
+**Version**: 5.0.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-08
