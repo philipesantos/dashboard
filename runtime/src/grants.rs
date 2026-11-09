@@ -45,7 +45,7 @@ const RECORD_VERSION_3: u64 = 3;
 
 /// The app's directory inside the system's data directory. Provisional: it moves with the
 /// project's final name, before the first release.
-pub(crate) const APP_DIR: &str = "dev.philsantos.dashboard";
+pub const APP_DIR: &str = "dev.philsantos.dashboard";
 /// The development record's file name.
 const RECORD_FILE: &str = "development-grants.json";
 /// The permission whose approval carries a quota.

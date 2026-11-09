@@ -3,7 +3,6 @@
 //! platform.
 #![allow(dead_code)]
 
-use design_tokens::Appearance;
 use gpui::{Entity, TestAppContext, VisualTestContext};
 use host::dashboard::Dashboard;
 use host::plugins::start_runtime;
@@ -68,9 +67,8 @@ impl World {
         });
         let runtime = Arc::new(start_runtime(self.dir.path()).expect("a runtime"));
         let grants = Arc::clone(&self.grants);
-        let (view, cx) = cx.add_window_view(move |window, cx| {
-            Dashboard::new(Some(runtime), grants, Appearance::DEFAULT, window, cx)
-        });
+        let (view, cx) =
+            cx.add_window_view(move |window, cx| Dashboard::new(Some(runtime), grants, window, cx));
         cx.run_until_parked();
         (view, cx)
     }
@@ -99,9 +97,7 @@ impl World {
             .map(|_| {
                 let runtime = Arc::clone(&runtime);
                 let grants = Arc::clone(&self.grants);
-                cx.add_window(move |window, cx| {
-                    Dashboard::new(Some(runtime), grants, Appearance::DEFAULT, window, cx)
-                })
+                cx.add_window(move |window, cx| Dashboard::new(Some(runtime), grants, window, cx))
             })
             .collect();
         cx.run_until_parked();

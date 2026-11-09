@@ -1,6 +1,5 @@
 //! `dashboard`: opens the host window (contracts/host-binary.md).
 
-use design_tokens::Appearance;
 use gpui::{
     App, AppContext, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowOptions, px, size,
 };
@@ -34,6 +33,12 @@ fn main() -> ExitCode {
             std::process::exit(i32::from(exit::NO_RUNTIME));
         }
         host::vendor::gpui_base::init(cx);
+        // The choice saved last time, or the default with a notice when it cannot be used
+        let settings = host::appearance::default_path().map_or_else(
+            host::appearance::Settings::default,
+            host::appearance::Settings::from_file,
+        );
+        host::appearance::init(cx, settings);
         let window_options = WindowOptions {
             titlebar: Some(TitlebarOptions {
                 title: Some(SharedString::from(Msg::AppName.text())),
@@ -47,7 +52,7 @@ fn main() -> ExitCode {
             ..Default::default()
         };
         let opened = cx.open_window(window_options, |window, cx| {
-            cx.new(|cx| Dashboard::new(Some(runtime), grants, Appearance::DEFAULT, window, cx))
+            cx.new(|cx| Dashboard::new(Some(runtime), grants, window, cx))
         });
         if let Err(error) = opened {
             eprintln!(

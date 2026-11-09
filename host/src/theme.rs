@@ -33,7 +33,7 @@ pub struct Theme {
     pub radius: Pixels,
 }
 
-fn color(rgb: Rgb) -> Hsla {
+pub(crate) fn color(rgb: Rgb) -> Hsla {
     Rgba {
         r: f32::from(rgb.r) / 255.0,
         g: f32::from(rgb.g) / 255.0,

@@ -299,15 +299,17 @@ status, focus ready for the first Tab.
 
 ### Tests first
 
-- [ ] T042 [P] [US7] `host/tests/logic.rs` part 8: the settings list every gray family, host color,
+- [X] T042 [P] [US7] `host/tests/logic.rs` part 8: the settings list every gray family, host color,
   widget color, radius and theme with the current one marked; a valid pick redraws every surface;
   a widget color within 30° is refused naming the colors and leaves the previous choice; the
   choice is saved and read back; an unreadable or invalid file falls back to the default with a
-  notice; with the system theme, a theme switch redraws without restart.
+  notice; with the system theme, a theme switch redraws without restart. (GPUI's test window has
+  no public way to switch the system's theme: the test checks the window resolves the pick against
+  the system's appearance on every frame, and quickstart step 5 checks the switch by hand.)
 
 ### Implementation
 
-- [ ] T043 [US7] `host/src/appearance.rs`: the settings screen inside the content area, opened from
+- [X] T043 [US7] `host/src/appearance.rs`: the settings screen inside the content area, opened from
   the chrome; `appearance.json` in `<data dir>/dev.philsantos.dashboard/host/` (research R11).
 
 ---

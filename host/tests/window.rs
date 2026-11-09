@@ -9,7 +9,6 @@
 
 mod common;
 
-use design_tokens::Appearance;
 use gpui::{
     AppContext as _, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowHandle,
     WindowOptions, point, px, size,
@@ -251,13 +250,17 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
     let _ = os.dump(TITLE_B);
     std::thread::sleep(Duration::from_millis(500));
 
-    // FR-005: the first Tab reaches the first control
+    // FR-005: the first Tab reaches the first control, the chrome's "Appearance"
     os.activate(TITLE_A);
     os.key(Key::Tab);
-    wait(shared, "the first Tab focuses Reload", |s| {
+    wait(shared, "the first Tab focuses Appearance", |s| {
+        s.a.focused.as_deref() == Some("appearance")
+    })?;
+    os.key(Key::Tab);
+    wait(shared, "the next Tab focuses Reload", |s| {
         s.a.focused.as_deref() == Some("reload")
     })?;
-    report.push("FR-005: the first Tab reaches Reload".to_owned());
+    report.push("FR-005: the first Tab reaches the chrome's first control".to_owned());
 
     // FR-010: the menu, the panel, Escape and focus back on the menu button
     os.key(Key::Tab);
@@ -354,7 +357,13 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
             ));
         }
     }
-    for hidden in ["reload", "widget menu", "hello-widget", "out-of-bounds"] {
+    for hidden in [
+        "appearance",
+        "reload",
+        "widget menu",
+        "hello-widget",
+        "out-of-bounds",
+    ] {
         if seen_a.contains(hidden) || seen_b.contains(hidden) {
             return Err(format!(
                 "HS-18: {hidden:?} is exposed while the dialog is open:\nA:\n{seen_a}\nB:\n{seen_b}"
@@ -475,7 +484,7 @@ fn open(
         ..Default::default()
     };
     cx.open_window(options, |window, cx| {
-        cx.new(|cx| Dashboard::new(Some(runtime), grants, Appearance::DEFAULT, window, cx))
+        cx.new(|cx| Dashboard::new(Some(runtime), grants, window, cx))
     })
     .expect("the window opens")
 }

@@ -3,6 +3,7 @@
 //! make, or a [`crate::label::PluginText`] for a plugin's name. `host/tests/checks.rs` fails on a
 //! string literal handed to an element anywhere else.
 
+use design_tokens::{GrayFamily, HUE_DISTANCE, Other, Refusal, Scale};
 use runtime::ErrorKind;
 
 /// One thing the host says.
@@ -43,6 +44,27 @@ pub enum Msg {
     RemoveDialogQuestion,
     Cancel,
     Remove,
+    // The appearance settings
+    AppearanceHint,
+    AppearanceDefaulted,
+    AppearanceNotSaved,
+    GroupGray,
+    GroupHost,
+    GroupWidget,
+    GroupCorners,
+    GroupTheme,
+    Monochrome,
+    ThemeLight,
+    ThemeDark,
+    ThemeSystem,
+    RadiusNone,
+    RadiusSmall,
+    RadiusMedium,
+    RadiusLarge,
+    RadiusFull,
+    StatusOk,
+    StatusWarning,
+    StatusError,
 }
 
 impl Msg {
@@ -85,6 +107,32 @@ impl Msg {
             }
             Msg::Cancel => "Cancel",
             Msg::Remove => "Remove",
+            Msg::AppearanceHint => {
+                "The host color marks what only the host draws. Widgets draw in the widget color, which stays apart from the host color and the status colors."
+            }
+            Msg::AppearanceDefaulted => {
+                "The saved appearance could not be used, so the default is shown. Pick it again in Appearance."
+            }
+            Msg::AppearanceNotSaved => {
+                "This appearance applies now, but it could not be saved for the next time."
+            }
+            Msg::GroupGray => "Gray",
+            Msg::GroupHost => "Host color",
+            Msg::GroupWidget => "Widget color",
+            Msg::GroupCorners => "Corners",
+            Msg::GroupTheme => "Theme",
+            Msg::Monochrome => "Monochrome",
+            Msg::ThemeLight => "Light",
+            Msg::ThemeDark => "Dark",
+            Msg::ThemeSystem => "Match the system",
+            Msg::RadiusNone => "Square",
+            Msg::RadiusSmall => "Small",
+            Msg::RadiusMedium => "Medium",
+            Msg::RadiusLarge => "Large",
+            Msg::RadiusFull => "Round",
+            Msg::StatusOk => "ok",
+            Msg::StatusWarning => "warning",
+            Msg::StatusError => "error",
         })
     }
 
@@ -127,6 +175,104 @@ impl Msg {
             | ErrorKind::NoClientConfigured
             | ErrorKind::AccountNotConnected => Msg::ReasonAccount,
         }
+    }
+}
+
+/// The host's name for a color scale of `DESIGN.md`.
+pub fn scale_name(scale: Scale) -> HostText {
+    HostText(match scale {
+        Scale::Tomato => "Tomato",
+        Scale::Red => "Red",
+        Scale::Ruby => "Ruby",
+        Scale::Crimson => "Crimson",
+        Scale::Pink => "Pink",
+        Scale::Plum => "Plum",
+        Scale::Purple => "Purple",
+        Scale::Violet => "Violet",
+        Scale::Iris => "Iris",
+        Scale::Indigo => "Indigo",
+        Scale::Blue => "Blue",
+        Scale::Cyan => "Cyan",
+        Scale::Teal => "Teal",
+        Scale::Jade => "Jade",
+        Scale::Green => "Green",
+        Scale::Grass => "Grass",
+        Scale::Brown => "Brown",
+        Scale::Bronze => "Bronze",
+        Scale::Gold => "Gold",
+        Scale::Sky => "Sky",
+        Scale::Mint => "Mint",
+        Scale::Lime => "Lime",
+        Scale::Yellow => "Yellow",
+        Scale::Amber => "Amber",
+        Scale::Orange => "Orange",
+    })
+}
+
+/// The host's name for a gray family of `DESIGN.md`.
+pub fn gray_name(gray: GrayFamily) -> HostText {
+    HostText(match gray {
+        GrayFamily::Gray => "Gray",
+        GrayFamily::Mauve => "Mauve",
+        GrayFamily::Slate => "Slate",
+        GrayFamily::Sage => "Sage",
+        GrayFamily::Olive => "Olive",
+        GrayFamily::Sand => "Sand",
+    })
+}
+
+/// Why the host refused a widget color, naming the colors involved (FR-035). The previous
+/// choice stays.
+pub fn refusal(refusal: Refusal) -> HostLine {
+    let line = match refusal {
+        Refusal::TooClose {
+            widget,
+            other,
+            degrees,
+        } => {
+            let what = match other {
+                Other::Host(_) => "the host color".to_owned(),
+                Other::Ok => format!("the color of the {} status", Msg::StatusOk.text().0),
+                Other::Warning => {
+                    format!("the color of the {} status", Msg::StatusWarning.text().0)
+                }
+                Other::Error => format!("the color of the {} status", Msg::StatusError.text().0),
+            };
+            let close = if widget == other.scale() {
+                format!("{} is {what}.", scale_name(widget).0)
+            } else {
+                format!(
+                    "{} is {degrees}° of hue from {}, {what}.",
+                    scale_name(widget).0,
+                    scale_name(other.scale()).0
+                )
+            };
+            format!(
+                "{close} A widget color stays at least {HUE_DISTANCE}° from the host color and the status colors, so the appearance was not changed."
+            )
+        }
+        Refusal::NotChromatic { scale } => format!(
+            "{} has too little color to be told apart by its hue, so the appearance was not changed.",
+            scale_name(scale).0
+        ),
+    };
+    HostLine(line.into())
+}
+
+/// A sentence in the host's words put together from parts of the catalog; only this module
+/// makes one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostLine(gpui::SharedString);
+
+impl HostLine {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<HostLine> for gpui::SharedString {
+    fn from(line: HostLine) -> gpui::SharedString {
+        line.0
     }
 }
 

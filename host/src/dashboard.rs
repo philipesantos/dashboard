@@ -1,11 +1,13 @@
 //! The dashboard window's root view (US1): the chrome above a content area that scrolls and
 //! clips everything it holds, so no frame or panel can cover the chrome (HS-01, research R6), one
-//! frame per approved plugin, and the empty state. It reloads the approvals when the window
+//! frame per approved plugin, the empty state, and the appearance screen in place of the frames
+//! while it is open (US7). It reloads the approvals when the window
 //! regains focus and from the chrome's "Reload" (FR-040), and draws a host dialog's scrim over
 //! everything while one is open (HS-02).
 
 use crate::a11y::Modality;
-use crate::chrome::chrome;
+use crate::appearance::{self, Pick};
+use crate::chrome::{Controls, chrome};
 use crate::dialog::view::{Shown, overlay};
 use crate::dialog::{self, Answer, DialogHost, Request};
 use crate::frame::frame;
@@ -15,7 +17,7 @@ use crate::text::Msg;
 use crate::theme::{Theme, body_md, resolve_theme, title_sm};
 use crate::ui::text;
 use crate::vendor::gpui_base::tab::{CONTEXT, Tab, TabPrev, advance_focus};
-use design_tokens::Appearance;
+use design_tokens::Refusal;
 use gpui::{
     AnyWindowHandle, Context, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
     KeyUpEvent, ParentElement, Render, Role, ScrollHandle, SharedString,
@@ -32,12 +34,16 @@ pub const CONTENT_PADDING: f32 = 16.0;
 pub struct Dashboard {
     runtime: Option<Arc<Runtime>>,
     grants: Arc<GrantStore>,
-    appearance: Appearance,
     widgets: Vec<Widget>,
     /// One menu focus handle per frame, kept across renders.
     menus: Vec<FocusHandle>,
     root: FocusHandle,
     reload: FocusHandle,
+    appearance_button: FocusHandle,
+    /// The appearance screen's controls, and whether it is open with the choice it last refused.
+    appearance_focus: appearance::Focus,
+    appearance_open: bool,
+    refused: Option<Refusal>,
     /// The frame whose menu is open, and the frame whose panel is open.
     open_menu: Option<usize>,
     open_panel: Option<usize>,
@@ -52,17 +58,22 @@ pub struct Dashboard {
     handle: AnyWindowHandle,
     _activation: Subscription,
     _dialogs: Subscription,
+    _appearance: Subscription,
+    _system_theme: Subscription,
 }
 
 impl Dashboard {
-    /// The window's root. With no runtime (it did not start), every frame says why.
+    /// The window's root, drawn in the app's appearance (`appearance::init`, or the default).
+    /// With no runtime (it did not start), every frame says why.
     pub fn new(
         runtime: Option<Arc<Runtime>>,
         grants: Arc<GrantStore>,
-        appearance: Appearance,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Dashboard {
+        if !cx.has_global::<appearance::Settings>() {
+            appearance::init(cx, appearance::Settings::default());
+        }
         let root = cx.focus_handle();
         // The window focuses its root, so the first Tab reaches the first control (FR-005)
         window.focus(&root, cx);
@@ -83,6 +94,10 @@ impl Dashboard {
             }
             cx.notify();
         });
+        // A choice made in any window redraws this one (FR-036)
+        let appearance_changed = cx.observe_global::<appearance::Settings>(|_, cx| cx.notify());
+        // With the system's theme picked, a switch of the system's redraws it (FR-037)
+        let system_theme = cx.observe_window_appearance(window, |_, _, cx| cx.notify());
         // Closing the window answers an open dialog as a refusal first (HS-10)
         window.on_window_should_close(cx, |_, cx| {
             dialog::refuse_if_open(cx);
@@ -91,11 +106,14 @@ impl Dashboard {
         let mut dashboard = Dashboard {
             runtime,
             grants,
-            appearance,
             widgets: Vec::new(),
             menus: Vec::new(),
             root,
             reload: cx.focus_handle().tab_stop(true),
+            appearance_button: cx.focus_handle().tab_stop(true),
+            appearance_focus: appearance::Focus::new(cx),
+            appearance_open: false,
+            refused: None,
             open_menu: None,
             open_panel: None,
             item_settings: cx.focus_handle().tab_stop(true),
@@ -107,6 +125,8 @@ impl Dashboard {
             handle: window.window_handle(),
             _activation: activation,
             _dialogs: dialogs,
+            _appearance: appearance_changed,
+            _system_theme: system_theme,
         };
         dashboard.reload(cx);
         dashboard
@@ -153,9 +173,70 @@ impl Dashboard {
         &self.item_settings
     }
 
+    pub fn appearance_button_focus(&self) -> &FocusHandle {
+        &self.appearance_button
+    }
+
+    /// The appearance screen's controls: its "Close" and one per choice, in `appearance::groups`'
+    /// order.
+    pub fn appearance_focus(&self) -> &appearance::Focus {
+        &self.appearance_focus
+    }
+
+    pub fn appearance_open(&self) -> bool {
+        self.appearance_open
+    }
+
+    /// The choice the appearance screen last refused, while it shows the refusal.
+    pub fn refused(&self) -> Option<Refusal> {
+        self.refused
+    }
+
+    /// The colors, type and radius this window draws with now.
+    pub fn theme(&self, window: &Window, cx: &gpui::App) -> Theme {
+        let appearance = appearance::current(cx);
+        Theme::new(
+            &appearance,
+            resolve_theme(appearance.theme, window.appearance()),
+        )
+    }
+
+    /// Opens the appearance screen in place of the frames, focus on the first current choice; or
+    /// closes it if it is open.
+    pub fn toggle_appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.appearance_open {
+            self.close_appearance(window, cx);
+            return;
+        }
+        self.open_menu = None;
+        self.open_panel = None;
+        self.appearance_open = true;
+        self.refused = None;
+        let current = appearance::current(cx);
+        window.focus(self.appearance_focus.first_current(&current), cx);
+        cx.notify();
+    }
+
+    /// Closes the appearance screen; focus goes back to the chrome's "Appearance".
+    pub fn close_appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.appearance_open {
+            self.appearance_open = false;
+            self.refused = None;
+            window.focus(&self.appearance_button, cx);
+            cx.notify();
+        }
+    }
+
+    /// Makes a choice of the appearance screen; a refused one stays shown with the host's reason
+    /// and changes nothing (FR-035).
+    pub fn pick(&mut self, pick: Pick, cx: &mut Context<Self>) {
+        self.refused = appearance::choose(cx, pick).err();
+        cx.notify();
+    }
+
     /// The name of the host control focused in `window`, for tests that drive a real window:
-    /// `root`, `reload`, `menu-<frame>`, `settings`, `remove`, `panel-close`, `dialog-refuse` or
-    /// `dialog-confirm`.
+    /// `root`, `reload`, `appearance`, `appearance-close`, `appearance-<choice>`, `menu-<frame>`,
+    /// `settings`, `remove`, `panel-close`, `dialog-refuse` or `dialog-confirm`.
     pub fn focused_name(&self, window: &Window, cx: &gpui::App) -> Option<String> {
         if let Some(open) = dialog::open(cx) {
             if open.refuse.is_focused(window) {
@@ -165,9 +246,21 @@ impl Dashboard {
                 return Some("dialog-confirm".to_owned());
             }
         }
+        if self.appearance_focus.close.is_focused(window) {
+            return Some("appearance-close".to_owned());
+        }
+        if let Some(index) = self
+            .appearance_focus
+            .picks
+            .iter()
+            .position(|handle| handle.is_focused(window))
+        {
+            return Some(format!("appearance-{index}"));
+        }
         let named = [
             (&self.root, "root"),
             (&self.reload, "reload"),
+            (&self.appearance_button, "appearance"),
             (&self.item_settings, "settings"),
             (&self.item_remove, "remove"),
             (&self.panel_close, "panel-close"),
@@ -352,13 +445,14 @@ impl Dashboard {
 
 impl Render for Dashboard {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::new(
-            &self.appearance,
-            resolve_theme(self.appearance.theme, window.appearance()),
-        );
+        let theme = self.theme(window, cx);
         let this = cx.weak_entity();
         let on_reload = move |_: &mut Window, cx: &mut gpui::App| {
             let _ = this.update(cx, |this, cx| this.reload(cx));
+        };
+        let this = cx.weak_entity();
+        let on_appearance = move |window: &mut Window, cx: &mut gpui::App| {
+            let _ = this.update(cx, |this, cx| this.toggle_appearance(window, cx));
         };
         let mut frames = Vec::with_capacity(self.widgets.len());
         for (index, (widget, button)) in self.widgets.iter().zip(&self.menus).enumerate() {
@@ -433,11 +527,28 @@ impl Render for Dashboard {
             window.focus(&refuse, cx);
         }
         let here = self.handle;
-        let body = if frames.is_empty() {
+        let body = if self.appearance_open {
+            let picker = cx.weak_entity();
+            let closer = cx.weak_entity();
+            div().child(appearance::screen(
+                &theme,
+                window,
+                &appearance::current(cx),
+                &self.appearance_focus,
+                self.refused,
+                std::rc::Rc::new(move |pick, _, cx| {
+                    let _ = picker.update(cx, |this, cx| this.pick(pick, cx));
+                }),
+                std::rc::Rc::new(move |window, cx| {
+                    let _ = closer.update(cx, |this, cx| this.close_appearance(window, cx));
+                }),
+            ))
+        } else if frames.is_empty() {
             div().child(Self::empty_state(&theme))
         } else {
             div().flex().flex_wrap().gap(px(12.0)).children(frames)
         };
+        let notice = appearance::notice(cx).map(|notice| appearance::notice_line(&theme, notice));
         div()
             .id("dashboard")
             .key_context(CONTEXT)
@@ -475,7 +586,16 @@ impl Render for Dashboard {
                     .size_full()
                     .flex()
                     .flex_col()
-                    .child(chrome(&theme, window, &self.reload, on_reload))
+                    .child(chrome(
+                        &theme,
+                        window,
+                        Controls {
+                            appearance: self.appearance_button.clone(),
+                            on_appearance,
+                            reload: self.reload.clone(),
+                            on_reload,
+                        },
+                    ))
                     .child(
                         div()
                             .id("content")
@@ -485,6 +605,7 @@ impl Render for Dashboard {
                             .overflow_y_scroll()
                             .track_scroll(&self.scroll)
                             .p(px(CONTENT_PADDING))
+                            .children(notice)
                             .child(body),
                     ),
             )

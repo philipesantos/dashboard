@@ -46,7 +46,7 @@ fn draw(
     let grants: Arc<GrantStore> = Arc::clone(&world.grants);
     let window = cx
         .open_window(size(px(WIDTH), px(HEIGHT)), |window, cx| {
-            cx.new(|cx| Dashboard::new(Some(runtime), grants, Appearance::DEFAULT, window, cx))
+            cx.new(|cx| Dashboard::new(Some(runtime), grants, window, cx))
         })
         .expect("a window");
     cx.run_until_parked();

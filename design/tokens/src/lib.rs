@@ -117,6 +117,23 @@ pub enum Other {
     Error,
 }
 
+impl Other {
+    /// The scale the widget color came too close to: the host color, or the status's scale.
+    pub fn scale(self) -> Scale {
+        let [ok, warning, error] = generated::STATUS;
+        match self {
+            Other::Host(scale) => scale,
+            Other::Ok => ok,
+            Other::Warning => warning,
+            Other::Error => error,
+        }
+    }
+}
+
+/// The least hue distance, in degrees, between the widget color and the host and status colors
+/// (FR-011).
+pub const HUE_DISTANCE: f64 = generated::HUE_DISTANCE;
+
 /// Why an appearance is refused; the host words it when the picking screen exists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Refusal {
@@ -434,5 +451,14 @@ mod tests {
     fn radius_names_are_design_mds_picks() {
         let names: Vec<&str> = Radius::ALL.iter().map(|radius| radius.name()).collect();
         assert_eq!(names, generated::RADIUS_PICKS);
+    }
+
+    #[test]
+    fn a_refusal_names_the_scale_it_came_close_to() {
+        assert_eq!(Other::Host(Scale::Indigo).scale(), Scale::Indigo);
+        assert_eq!(
+            [Other::Ok, Other::Warning, Other::Error].map(Other::scale),
+            generated::STATUS
+        );
     }
 }

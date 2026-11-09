@@ -2,9 +2,11 @@
 //! reviewing the look without a display (specs/008-host-window-dialogs, T053).
 //!
 //! `cargo run -p host --example screenshot -- --grants <path> --data <dir> --out <file.png>
-//! [--dark] [--size <w>x<h>] [--dialog]`
+//! [--dark] [--size <w>x<h>] [--dialog] [--appearance] [--refuse <widget color>]`
 //!
-//! `--dialog` asks "Remove from dashboard" for the first frame before the screenshot.
+//! `--dialog` asks "Remove from dashboard" for the first frame before the screenshot;
+//! `--appearance` opens the appearance screen, and `--refuse` then picks a widget color, which
+//! shows the host's refusal when the rule refuses it.
 
 use design_tokens::{Appearance, ThemePick};
 use gpui::{AppContext as _, HeadlessAppContext, px, size};
@@ -21,6 +23,8 @@ fn main() -> Result<(), String> {
     let mut out = PathBuf::from("dashboard.png");
     let mut dark = false;
     let mut with_dialog = false;
+    let mut with_appearance = false;
+    let mut refuse = None;
     let (mut width, mut height) = (1280.0, 800.0);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -30,6 +34,16 @@ fn main() -> Result<(), String> {
             "--out" => out = PathBuf::from(args.next().ok_or("--out needs a file")?),
             "--dark" => dark = true,
             "--dialog" => with_dialog = true,
+            "--appearance" => with_appearance = true,
+            "--refuse" => {
+                let name = args.next().ok_or("--refuse needs a color")?;
+                refuse = Some(
+                    design_tokens::Scale::ALL
+                        .into_iter()
+                        .find(|scale| scale.name() == name)
+                        .ok_or("--refuse needs a color of DESIGN.md")?,
+                );
+            }
             "--size" => {
                 let value = args.next().ok_or("--size needs <w>x<h>")?;
                 let (w, h) = value.split_once('x').ok_or("--size needs <w>x<h>")?;
@@ -58,15 +72,28 @@ fn main() -> Result<(), String> {
     );
     cx.update(|cx| {
         install(cx)?;
+        host::appearance::init(cx, host::appearance::Settings::fixed(appearance));
         host::vendor::gpui_base::init(cx);
         Ok::<(), String>(())
     })?;
     let window = cx
         .open_window(size(px(width), px(height)), |window, cx| {
-            cx.new(|cx| Dashboard::new(Some(runtime), grants, appearance, window, cx))
+            cx.new(|cx| Dashboard::new(Some(runtime), grants, window, cx))
         })
         .map_err(|error| format!("the window did not open: {error:#}"))?;
     cx.run_until_parked();
+    if with_appearance {
+        cx.update(|cx| {
+            window.update(cx, |view, window, cx| {
+                view.toggle_appearance(window, cx);
+                if let Some(scale) = refuse {
+                    view.pick(host::appearance::Pick::Widget(scale), cx);
+                }
+            })
+        })
+        .map_err(|error| format!("the window is gone: {error:#}"))?;
+        cx.run_until_parked();
+    }
     if with_dialog {
         cx.update(|cx| window.update(cx, |view, window, cx| view.ask_remove(0, window, cx)))
             .map_err(|error| format!("the window is gone: {error:#}"))?;

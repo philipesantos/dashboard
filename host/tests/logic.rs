@@ -329,6 +329,8 @@ mod window {
         let (view, cx) = world.open(cx);
         cx.update(|window, cx| assert!(view.read(cx).root_focus().is_focused(window)));
         cx.simulate_keystrokes("tab");
+        cx.update(|window, cx| assert!(view.read(cx).appearance_button_focus().is_focused(window)));
+        cx.simulate_keystrokes("tab");
         cx.update(|window, cx| assert!(view.read(cx).reload_focus().is_focused(window)));
     }
 
@@ -754,5 +756,334 @@ mod dialog_keys {
         assert_eq!(answer.try_recv().ok().flatten(), Some(Answer::Refused));
         cx.run_until_parked();
         cx.update(|window, _| assert!(before.is_focused(window), "focus back where it was"));
+    }
+}
+
+/// US7: the appearance settings (FR-034 to FR-037, research R11).
+mod appearance {
+    use crate::common::World;
+    use design_tokens::{
+        Appearance, GrayFamily, HostColor, Other, Radius, Refusal, Scale, ThemePick,
+    };
+    use gpui::{Modifiers, TestAppContext, WindowAppearance, px};
+    use host::appearance::{self, Pick, Settings, from_json, groups, load, to_json};
+    use host::text::{Msg, refusal};
+    use host::theme::resolve_theme;
+
+    /// A widget color the default appearance accepts, other than the default's.
+    fn another_widget() -> Scale {
+        Scale::ALL
+            .into_iter()
+            .find(|scale| {
+                *scale != Appearance::DEFAULT.widget
+                    && Pick::Widget(*scale)
+                        .apply(Appearance::DEFAULT)
+                        .validate()
+                        .is_ok()
+            })
+            .expect("a widget color")
+    }
+
+    /// FR-034: every gray family, host color, widget color, radius and theme of feature 007 is
+    /// listed, with exactly one current choice in each group.
+    #[test]
+    fn every_choice_is_listed_with_the_current_one_marked() {
+        let groups = groups();
+        let names: Vec<Msg> = groups.iter().map(|group| group.name).collect();
+        assert_eq!(
+            names,
+            [
+                Msg::GroupGray,
+                Msg::GroupHost,
+                Msg::GroupWidget,
+                Msg::GroupCorners,
+                Msg::GroupTheme
+            ]
+        );
+        let chromatic: Vec<Scale> = Scale::ALL
+            .into_iter()
+            .filter(|scale| scale.is_chromatic())
+            .collect();
+        assert_eq!(
+            groups[0].picks,
+            GrayFamily::ALL.map(Pick::Gray).to_vec(),
+            "every gray family"
+        );
+        assert_eq!(groups[1].picks[0], Pick::Host(HostColor::Monochrome));
+        assert_eq!(
+            groups[1].picks[1..],
+            chromatic
+                .iter()
+                .map(|scale| Pick::Host(HostColor::Scale(*scale)))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            groups[2].picks,
+            chromatic
+                .iter()
+                .map(|scale| Pick::Widget(*scale))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(groups[3].picks, Radius::ALL.map(Pick::Radius).to_vec());
+        assert_eq!(
+            groups[4].picks,
+            [ThemePick::Light, ThemePick::Dark, ThemePick::System].map(Pick::Theme)
+        );
+        for group in &groups {
+            let current = group
+                .picks
+                .iter()
+                .filter(|pick| pick.is_current(&Appearance::DEFAULT))
+                .count();
+            assert_eq!(current, 1, "{:?} marks one current choice", group.name);
+        }
+    }
+
+    /// FR-034: the chrome's "Appearance" opens the screen in the content area, under the chrome,
+    /// focus on the first current choice; Escape closes it and gives focus back.
+    #[gpui::test]
+    fn the_chrome_opens_the_screen_and_escape_closes_it(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (view, cx) = world.open(cx);
+        let button = cx.debug_bounds("appearance-button").expect("Appearance");
+        cx.simulate_click(button.center(), Modifiers::none());
+        cx.run_until_parked();
+        let screen = cx.debug_bounds("appearance").expect("the screen");
+        let chrome = cx.debug_bounds("chrome").expect("the chrome");
+        assert!(screen.top() >= chrome.bottom(), "under the chrome");
+        assert!(
+            cx.debug_bounds("frame-0").is_none(),
+            "in place of the frames"
+        );
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            let sand = GrayFamily::ALL
+                .iter()
+                .position(|gray| *gray == Appearance::DEFAULT.gray)
+                .expect("the default gray");
+            assert_eq!(
+                view.focused_name(window, cx),
+                Some(format!("appearance-{sand}"))
+            );
+        });
+        cx.simulate_keystrokes("escape");
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            assert!(!view.appearance_open());
+            assert_eq!(view.focused_name(window, cx).as_deref(), Some("appearance"));
+        });
+        assert!(cx.debug_bounds("frame-0").is_some(), "the frames are back");
+    }
+
+    /// FR-036: a valid choice applies at once to every host window.
+    #[gpui::test]
+    fn a_valid_choice_redraws_every_window(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (windows, _) = world.open_windows(cx, 2);
+        let themes = |cx: &mut TestAppContext| {
+            windows
+                .iter()
+                .map(|window| {
+                    window
+                        .update(cx, |view, window, cx| view.theme(window, cx))
+                        .expect("open")
+                })
+                .collect::<Vec<_>>()
+        };
+        let before = themes(cx);
+        let widget = another_widget();
+        windows[0]
+            .update(cx, |view, window, cx| {
+                view.toggle_appearance(window, cx);
+                view.pick(Pick::Widget(widget), cx);
+                view.pick(Pick::Radius(Radius::Large), cx);
+                assert_eq!(view.refused(), None);
+            })
+            .expect("open");
+        cx.run_until_parked();
+        for (theme, before) in themes(cx).iter().zip(&before) {
+            assert_ne!(theme.accent_soft, before.accent_soft, "the widget color");
+            assert_eq!(theme.radius, px(Radius::Large.px()), "the radius");
+        }
+    }
+
+    /// FR-035: a widget color under 30° from a status color is refused, the host names both
+    /// colors, and the previous choice stays.
+    #[gpui::test]
+    fn a_close_widget_color_is_refused_and_named(cx: &mut TestAppContext) {
+        let world = World::new();
+        let (view, cx) = world.open(cx);
+        cx.update(|window, cx| view.update(cx, |view, cx| view.toggle_appearance(window, cx)));
+        cx.run_until_parked();
+        view.update(cx, |view, cx| view.pick(Pick::Widget(Scale::Green), cx));
+        cx.run_until_parked();
+        let refused = view.read_with(cx, |view, _| view.refused());
+        let Some(Refusal::TooClose { widget, other, .. }) = refused else {
+            panic!("refused: {refused:?}");
+        };
+        assert_eq!((widget, other), (Scale::Green, Other::Ok));
+        let words = refusal(refused.expect("a refusal"));
+        assert!(
+            words.as_str().starts_with(
+                "Green is the color of the ok status. A widget color stays at least 30°"
+            ),
+            "{}",
+            words.as_str()
+        );
+        assert!(cx.debug_bounds("appearance-refusal").is_some(), "shown");
+        cx.update(|_, cx| assert_eq!(appearance::current(cx), Appearance::DEFAULT));
+
+        // A different scale under 30° from a status color: the host gives the distance
+        let (near, refused) = Scale::ALL
+            .into_iter()
+            .filter(|scale| scale.is_chromatic())
+            .find_map(
+                |scale| match Pick::Widget(scale).apply(Appearance::DEFAULT).validate() {
+                    Err(refused @ Refusal::TooClose { other, .. }) if other.scale() != scale => {
+                        Some((scale, refused))
+                    }
+                    _ => None,
+                },
+            )
+            .expect("a scale near a status color");
+        view.update(cx, |view, cx| view.pick(Pick::Widget(near), cx));
+        assert_eq!(view.read_with(cx, |view, _| view.refused()), Some(refused));
+        let Refusal::TooClose { other, degrees, .. } = refused else {
+            unreachable!()
+        };
+        let named = format!(
+            "{} is {degrees}° of hue from {}, the color of the",
+            host::text::scale_name(near).as_str(),
+            host::text::scale_name(other.scale()).as_str()
+        );
+        assert!(refusal(refused).as_str().starts_with(&named), "{named}");
+        cx.update(|_, cx| assert_eq!(appearance::current(cx), Appearance::DEFAULT));
+
+        // The host color: one too close to the widget color is refused the same way
+        view.update(cx, |view, cx| {
+            view.pick(Pick::Host(HostColor::Scale(Appearance::DEFAULT.widget)), cx)
+        });
+        let refused = view.read_with(cx, |view, _| view.refused());
+        assert!(
+            matches!(
+                refused,
+                Some(Refusal::TooClose {
+                    other: Other::Host(_),
+                    ..
+                })
+            ),
+            "{refused:?}"
+        );
+        assert!(
+            refusal(refused.expect("a refusal"))
+                .as_str()
+                .contains("the host color"),
+        );
+        cx.update(|_, cx| assert_eq!(appearance::current(cx), Appearance::DEFAULT));
+    }
+
+    /// FR-036: the choice is kept in the host's file and read back on the next run.
+    #[gpui::test]
+    fn the_choice_is_saved_and_read_back(cx: &mut TestAppContext) {
+        let world = World::new();
+        let file = world.dir.path().join("host").join("appearance.json");
+        cx.update(|cx| appearance::init(cx, Settings::from_file(file.clone())));
+        let (view, cx) = world.open(cx);
+        let widget = another_widget();
+        view.update(cx, |view, cx| {
+            view.pick(Pick::Gray(GrayFamily::Slate), cx);
+            view.pick(Pick::Widget(widget), cx);
+            view.pick(Pick::Theme(ThemePick::Dark), cx);
+        });
+        let expected = Appearance {
+            gray: GrayFamily::Slate,
+            widget,
+            theme: ThemePick::Dark,
+            ..Appearance::DEFAULT
+        };
+        assert_eq!(load(&file), (expected, None));
+        assert_eq!(from_json(&to_json(&expected)), Some(expected));
+    }
+
+    /// FR-036: a file the host cannot read or use gives the default and the host's notice, until
+    /// a valid choice replaces it; no file yet gives the default quietly.
+    #[gpui::test]
+    fn an_unusable_file_falls_back_with_a_notice(cx: &mut TestAppContext) {
+        let world = World::new();
+        let file = world.dir.path().join("appearance.json");
+        assert_eq!(load(&file), (Appearance::DEFAULT, None), "none saved yet");
+        let valid = to_json(&Appearance::DEFAULT);
+        for unusable in [
+            "not json".to_owned(),
+            valid.replace("\"version\": 1", "\"version\": 2"),
+            valid.replace("\"blue\"", "\"green\""),
+            valid.replace("\"sand\"", "\"beige\""),
+            valid.replace("\"system\"", "\"system\", \"extra\": 1"),
+            format!("{valid}{}", " ".repeat(5000)),
+        ] {
+            std::fs::write(&file, &unusable).expect("written");
+            assert_eq!(
+                load(&file),
+                (Appearance::DEFAULT, Some(Msg::AppearanceDefaulted)),
+                "{unusable:.80}"
+            );
+        }
+        cx.update(|cx| appearance::init(cx, Settings::from_file(file.clone())));
+        let (view, cx) = world.open(cx);
+        assert!(cx.debug_bounds("appearance-notice").is_some(), "the notice");
+        view.update(cx, |view, cx| view.pick(Pick::Radius(Radius::None), cx));
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("appearance-notice").is_none(), "replaced");
+        assert_eq!(load(&file).0.radius, Radius::None);
+    }
+
+    /// FR-036: a choice the host cannot save still applies, and the host says it was not kept.
+    #[gpui::test]
+    fn a_choice_that_cannot_be_saved_says_so(cx: &mut TestAppContext) {
+        let world = World::new();
+        let blocker = world.dir.path().join("not-a-directory");
+        std::fs::write(&blocker, "").expect("written");
+        let file = blocker.join("appearance.json");
+        cx.update(|cx| appearance::init(cx, Settings::from_file(file)));
+        let (view, cx) = world.open(cx);
+        // Its place cannot even be read: the default, with the notice that says so
+        cx.update(|_, cx| assert_eq!(appearance::notice(cx), Some(Msg::AppearanceDefaulted)));
+        view.update(cx, |view, cx| view.pick(Pick::Radius(Radius::Large), cx));
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert_eq!(appearance::current(cx).radius, Radius::Large);
+            assert_eq!(appearance::notice(cx), Some(Msg::AppearanceNotSaved));
+        });
+        assert!(cx.debug_bounds("appearance-notice").is_some(), "the notice");
+    }
+
+    /// FR-037: with the system's theme picked, the window draws in the system's theme, which it
+    /// reads on every frame. GPUI's test window has no public way to switch the system's theme, so
+    /// the switch itself is in the quickstart's walk.
+    #[gpui::test]
+    fn the_theme_follows_the_pick_and_the_system(cx: &mut TestAppContext) {
+        use design_tokens::Theme;
+        for (window, theme) in [
+            (WindowAppearance::Light, Theme::Light),
+            (WindowAppearance::VibrantLight, Theme::Light),
+            (WindowAppearance::Dark, Theme::Dark),
+            (WindowAppearance::VibrantDark, Theme::Dark),
+        ] {
+            assert_eq!(resolve_theme(ThemePick::System, window), theme);
+            assert_eq!(resolve_theme(ThemePick::Dark, window), Theme::Dark);
+            assert_eq!(resolve_theme(ThemePick::Light, window), Theme::Light);
+        }
+        let world = World::new();
+        let (view, cx) = world.open(cx);
+        let dark = |cx: &mut gpui::VisualTestContext| {
+            cx.update(|window, cx| view.read(cx).theme(window, cx).dark)
+        };
+        assert!(!dark(cx), "the test window is light");
+        view.update(cx, |view, cx| view.pick(Pick::Theme(ThemePick::Dark), cx));
+        assert!(dark(cx));
+        view.update(cx, |view, cx| view.pick(Pick::Theme(ThemePick::System), cx));
+        assert!(!dark(cx));
     }
 }

@@ -41,7 +41,9 @@ button. Confirm with
 
 Open the appearance settings from the chrome; pick sand, a host color, a widget color, the radius
 and the theme; the window redraws at once. Pick a widget color within 30° of the host color: the
-host refuses it and names the colors. Restart: the choice is kept.
+host refuses it and names the colors. Restart: the choice is kept. Pick "Match the system", then
+switch the system between light and dark: the window follows without a restart (FR-037; GPUI's
+test window cannot switch the system's theme, so this step is checked here, by hand).
 
 ## 6. The automated layers
 

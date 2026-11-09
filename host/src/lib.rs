@@ -4,6 +4,7 @@
 
 pub mod a11y;
 pub mod app;
+pub mod appearance;
 pub mod chrome;
 pub mod dashboard;
 pub mod dialog;
