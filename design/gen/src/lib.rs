@@ -3,6 +3,7 @@
 
 pub mod check;
 pub mod color;
+pub mod criteria;
 pub mod generate;
 pub mod lint;
 pub mod model;

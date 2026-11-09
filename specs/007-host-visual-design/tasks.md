@@ -322,7 +322,7 @@ FR-019, FR-021).
 
 ### Tests for User Story 5
 
-- [ ] T031 [P] [US5] Write `design/gen/tests/criteria.rs` first, failing
+- [X] T031 [P] [US5] Write `design/gen/tests/criteria.rs` first, failing
   (contracts/host-surfaces-criteria.md, rules 1–4): reading `docs/design/host-surfaces.md` and
   `docs/threat-model.md`, every `HS-NN` is unique with four non-empty fields; every quoted row
   matches a threat row's first cell exactly; every Phase 3 row on boundary B4 is quoted by a

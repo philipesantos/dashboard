@@ -5,6 +5,7 @@
 mod common;
 
 mod checker;
+mod criteria;
 mod drift;
 mod dtcg;
 mod host_surfaces;
