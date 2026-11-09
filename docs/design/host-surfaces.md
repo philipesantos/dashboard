@@ -162,6 +162,51 @@ Phase 3 row on boundary B4 is answered here or decided elsewhere.
   - A plugin's settings panel passes for the host's or collects a secret: a label like "GitHub password", a masked field, a number field for a code, a panel that dims or blocks the window
 - **Tested by**: declared actions
 
+## Keyboard and screen readers
+
+GPUI does not mark a dialog as modal in its accessibility tree (there is no `aria_modal`), so a
+screen reader's virtual cursor could leave a dialog even while keyboard focus is held. The host
+makes up for it by what it exposes: while a host dialog is open, it is the only part of any host
+window in the tree (HS-18). How (removing the other nodes, or hiding them) is the host-dialog
+feature's choice; both pass HS-18. Each criterion here is tested with real key presses in a real
+window, not only headless, and with VoiceOver on macOS, Narrator on Windows and Orca on Linux.
+
+### HS-16 Focus starts inside a dialog, never on the confirming button
+- **Observe**: the focused element right after each host dialog opens, from the keyboard and from
+  the pointer, in a real window.
+- **Expect**: focus is inside the dialog, on its first control that is not the one that confirms
+  (Cancel, or the first field); Enter alone never confirms a dialog that just opened.
+- **Answers**: VII
+  - A dialog appears under the user's pointer or keystroke, so input meant for something else answers it
+- **Tested by**: host dialogs
+
+### HS-17 Focus never leaves an open dialog, and Escape refuses
+- **Observe**: the focused element after pressing Tab and Shift+Tab repeatedly, more times than
+  the dialog has controls, and the dialog's answer after Escape, in a real window.
+- **Expect**: focus cycles through the dialog's controls only; Escape closes the dialog as a
+  refusal and returns focus to where it was before the dialog opened.
+- **Answers**: VII
+  - Something that is not a host dialog passes for one: the operating system's native prompt, or a widget drawing one
+- **Tested by**: host dialogs
+
+### HS-18 While a dialog is open, it is all that assistive technology sees
+- **Observe**: the accessibility tree of every host window while a host dialog is open, read with
+  AccessKit's tree and walked with VoiceOver, Narrator and Orca, including their virtual cursors.
+- **Expect**: only the dialog and its contents are exposed; no frame, panel, chrome or widget node
+  can be reached until the dialog closes.
+- **Answers**: VII
+  - Something that is not a host dialog passes for one: the operating system's native prompt, or a widget drawing one
+- **Tested by**: host dialogs
+
+### HS-19 A dialog announces itself as the host's
+- **Observe**: what VoiceOver, Narrator and Orca read when a host dialog opens.
+- **Expect**: the dialog role, the host's name for the dialog (such as "Install a plugin"), then
+  its question in the host's words; a plugin's names, if shown, are read after the host's words as
+  the plugin's text.
+- **Answers**: VII
+  - Something that is not a host dialog passes for one: the operating system's native prompt, or a widget drawing one
+- **Tested by**: host dialogs
+
 ## Decided elsewhere
 
 - Widget content imitates a host dialog inside its frame, with placed declared actions as its buttons ("Allow access?")

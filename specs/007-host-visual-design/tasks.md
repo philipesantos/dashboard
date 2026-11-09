@@ -352,7 +352,7 @@ FR-019, FR-021).
 **Independent Test**: each criterion in the section states an observable result on the focus
 position or the accessibility tree and names its screen readers and systems.
 
-- [ ] T033 [US6] Add the section Keyboard and screen readers to `docs/design/host-surfaces.md`:
+- [X] T033 [US6] Add the section Keyboard and screen readers to `docs/design/host-surfaces.md`:
   initial focus on the first control that is not the one that confirms; Tab and Shift+Tab never
   leave the dialog; Escape refuses; what is announced (the host's name for the dialog, then its
   question); only the dialog exposed while open; no plugin-supplied node with a dialog role; how

@@ -74,6 +74,19 @@ fn an_uncovered_row_fails_with_its_title() {
 }
 
 #[test]
+fn a_criterion_without_a_tester_fails() {
+    let text =
+        file(&format!("  - {ROW}\n"), "host window").replace("- **Tested by**: host window\n", "");
+    let problems = parse(&text).expect_err("no Tested by line");
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("HS-01 has no Tested by")),
+        "{problems:?}"
+    );
+}
+
+#[test]
 fn an_unknown_tester_fails() {
     let problems = parse(&file(&format!("  - {ROW}\n"), "someone")).expect_err("unknown tester");
     assert!(
