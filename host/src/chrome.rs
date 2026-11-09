@@ -30,20 +30,23 @@ pub fn chrome(
         .border_color(theme.divider)
         .child(text(label_md(), theme.chrome_text, Msg::AppName.text()))
         .child(div().flex_1())
-        .child(control(
-            "chrome-reload",
-            reload,
-            theme,
-            window,
-            Msg::Reload.text(),
-            div()
-                .px(px(8.0))
-                .py(px(2.0))
-                .rounded(theme.radius)
-                .bg(theme.neutral_soft)
-                .border(px(1.0))
-                .border_color(theme.border_control)
-                .child(text(label_mono(), theme.text, Msg::Reload.text())),
-            on_reload,
-        ))
+        .child(
+            control(
+                "chrome-reload",
+                reload,
+                theme,
+                window,
+                Msg::Reload.text(),
+                div()
+                    .px(px(8.0))
+                    .py(px(2.0))
+                    .rounded(theme.radius)
+                    .bg(theme.neutral_soft)
+                    .border(px(1.0))
+                    .border_color(theme.border_control)
+                    .child(text(label_mono(), theme.text, Msg::Reload.text())),
+                on_reload,
+            )
+            .debug_selector(|| "reload".to_owned()),
+        )
 }

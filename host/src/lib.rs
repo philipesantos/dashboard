@@ -8,6 +8,7 @@ pub mod dashboard;
 pub mod frame;
 pub mod label;
 pub mod media;
+pub mod panel;
 pub mod plugins;
 pub mod text;
 pub mod theme;

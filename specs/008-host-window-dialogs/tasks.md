@@ -185,14 +185,14 @@ status, focus ready for the first Tab.
 
 ### Tests first
 
-- [ ] T024 [P] [US2] `host/tests/logic.rs` part 4: the panel opens attached to its frame, flips when
+- [X] T024 [P] [US2] `host/tests/logic.rs` part 4: the panel opens attached to its frame, flips when
   there is no room, never intersects the chrome at the sizes, scales and scroll positions of T017;
   the rest of the window takes input while it is open; Escape and a click outside close it, the
   click still reaches its target, and focus returns to the frame's control (FR-010, FR-011).
 
 ### Implementation
 
-- [ ] T025 [US2] `host/src/panel.rs`: the panel inside the content area, host panel tokens, no
+- [X] T025 [US2] `host/src/panel.rs`: the panel inside the content area, host panel tokens, no
   floating layer; the frame's menu button opens a menu drawn the same way (research R6).
 
 ---

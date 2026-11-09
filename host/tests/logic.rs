@@ -412,3 +412,106 @@ mod window {
         }
     }
 }
+
+/// US2: a frame's menu and its panel, attached, never over the chrome, closing on Escape and on a
+/// click outside that still reaches its target.
+mod panel {
+    use crate::common::World;
+    use gpui::{Modifiers, TestAppContext, point, px, size};
+
+    /// FR-010, FR-011: the panel is attached to its frame and never intersects the chrome.
+    #[gpui::test]
+    fn the_panel_is_attached_and_under_the_chrome(cx: &mut TestAppContext) {
+        let world = World::new();
+        for name in ["hello-widget", "state-leak", "log-flood", "log-spoof"] {
+            world.approve(name);
+        }
+        let (view, cx) = world.open(cx);
+        cx.update(|window, cx| view.update(cx, |view, cx| view.open_panel_of(1, window, cx)));
+        cx.run_until_parked();
+        for (width, height) in [(800.0, 600.0), (1280.0, 800.0), (2560.0, 1440.0)] {
+            for scale in [1.0, 1.5, 2.0] {
+                cx.simulate_scale_factor_change(scale);
+                cx.simulate_resize(size(px(width), px(height)));
+                for offset in [0.0, -200.0, -1000.0] {
+                    view.update(cx, |view, _| {
+                        view.scroll_handle().set_offset(point(px(0.0), px(offset)))
+                    });
+                    cx.run_until_parked();
+                    let chrome = cx.debug_bounds("chrome").expect("the chrome");
+                    let content = cx.debug_bounds("content").expect("the content area");
+                    let frame = cx.debug_bounds("frame-1").expect("the frame");
+                    let panel = cx.debug_bounds("panel-1").expect("the panel");
+                    // Attached: beside the frame, or under it when the row has no room
+                    let beside = (panel.left() - frame.right()).abs() < px(0.5)
+                        && (panel.top() - frame.top()).abs() < px(0.5);
+                    let under = (panel.top() - frame.bottom()).abs() < px(0.5)
+                        && (panel.left() - frame.left()).abs() < px(0.5);
+                    assert!(
+                        beside || under,
+                        "attached at {width}x{height} scale {scale}"
+                    );
+                    let visible = panel.intersect(&content);
+                    if visible.size.width > px(0.0) && visible.size.height > px(0.0) {
+                        assert!(
+                            !visible.intersects(&chrome),
+                            "panel over the chrome at {width}x{height} scale {scale} offset {offset}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// FR-010: Escape closes the panel, and focus goes back to the frame's menu button.
+    #[gpui::test]
+    fn escape_closes_the_panel(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (view, cx) = world.open(cx);
+        cx.update(|window, cx| view.update(cx, |view, cx| view.toggle_menu(0, window, cx)));
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            assert!(view.read(cx).settings_item_focus().is_focused(window));
+        });
+        cx.simulate_keystrokes("enter");
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            assert_eq!(
+                view.open_panel(),
+                Some(0),
+                "Enter on Settings opened the panel"
+            );
+            assert!(view.panel_close_focus().is_focused(window));
+        });
+        cx.simulate_keystrokes("escape");
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            assert_eq!(view.open_panel(), None);
+            assert!(
+                view.menu_focus(0)
+                    .expect("a menu button")
+                    .is_focused(window)
+            );
+        });
+    }
+
+    /// FR-010: a click outside closes the panel and still reaches what it was aimed at: the rest
+    /// of the window takes input while the panel is open.
+    #[gpui::test]
+    fn a_click_outside_closes_the_panel_and_reaches_its_target(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (view, cx) = world.open(cx);
+        cx.update(|window, cx| view.update(cx, |view, cx| view.open_panel_of(0, window, cx)));
+        cx.run_until_parked();
+        let reloads = view.read_with(cx, |view, _| view.reloads());
+        let reload = cx.debug_bounds("reload").expect("the Reload control");
+        cx.simulate_click(reload.center(), Modifiers::none());
+        cx.run_until_parked();
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.open_panel(), None, "the panel closed");
+            assert_eq!(view.reloads(), reloads + 1, "the click reached Reload");
+        });
+    }
+}

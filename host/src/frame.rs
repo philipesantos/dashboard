@@ -10,8 +10,8 @@ use crate::theme::{Theme, caption, label_mono, label_sm};
 use crate::ui::{control, text};
 use design_tokens::Icon;
 use gpui::{
-    App, Div, FocusHandle, InteractiveElement, ParentElement, Role, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    AnyElement, App, Div, FocusHandle, InteractiveElement, ParentElement, Role, SharedString,
+    Stateful, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 /// A frame's width while frames are laid out in fixed columns, before the dashboard grid.
@@ -41,7 +41,8 @@ fn status(theme: &Theme, widget: &Widget) -> Div {
     }
 }
 
-/// One widget's frame. `menu` is the focus handle of its menu control.
+/// One widget's frame. `menu` is the focus handle of its menu control; `open_menu`, when the
+/// menu is open, is drawn inside the frame under the header (research R6).
 pub fn frame(
     theme: &Theme,
     window: &Window,
@@ -49,6 +50,7 @@ pub fn frame(
     widget: &Widget,
     menu: &FocusHandle,
     on_menu: impl Fn(&mut Window, &mut App) + 'static,
+    open_menu: Option<AnyElement>,
 ) -> Stateful<Div> {
     let label = match &widget.label {
         Label::Plugin(text) => SharedString::from(text.as_str().to_owned()),
@@ -101,5 +103,6 @@ pub fn frame(
         .border_color(theme.divider)
         .rounded(theme.radius)
         .child(header)
+        .children(open_menu)
         .child(div().p(px(12.0)).child(status(theme, widget)))
 }

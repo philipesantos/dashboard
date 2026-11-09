@@ -5,6 +5,7 @@
 
 use crate::chrome::chrome;
 use crate::frame::frame;
+use crate::panel::{MenuItem, attached, menu, panel};
 use crate::plugins::{FrameStatus, Outcome, Widget, approvals, load_and_render};
 use crate::text::Msg;
 use crate::theme::{Theme, body_md, resolve_theme, title_sm};
@@ -32,6 +33,12 @@ pub struct Dashboard {
     menus: Vec<FocusHandle>,
     root: FocusHandle,
     reload: FocusHandle,
+    /// The frame whose menu is open, and the frame whose panel is open.
+    open_menu: Option<usize>,
+    open_panel: Option<usize>,
+    item_settings: FocusHandle,
+    item_remove: FocusHandle,
+    panel_close: FocusHandle,
     scroll: ScrollHandle,
     /// Bumped on every reload, so a slow load from an earlier one cannot overwrite a newer frame.
     epoch: u64,
@@ -63,12 +70,22 @@ impl Dashboard {
             menus: Vec::new(),
             root,
             reload: cx.focus_handle().tab_stop(true),
+            open_menu: None,
+            open_panel: None,
+            item_settings: cx.focus_handle().tab_stop(true),
+            item_remove: cx.focus_handle().tab_stop(true),
+            panel_close: cx.focus_handle().tab_stop(true),
             scroll: ScrollHandle::new(),
             epoch: 0,
             _activation: activation,
         };
         dashboard.reload(cx);
         dashboard
+    }
+
+    /// How many reloads have started: for tests that check a click reached "Reload".
+    pub fn reloads(&self) -> u64 {
+        self.epoch
     }
 
     pub fn widgets(&self) -> &[Widget] {
@@ -85,6 +102,65 @@ impl Dashboard {
 
     pub fn reload_focus(&self) -> &FocusHandle {
         &self.reload
+    }
+
+    pub fn menu_focus(&self, index: usize) -> Option<&FocusHandle> {
+        self.menus.get(index)
+    }
+
+    pub fn open_menu(&self) -> Option<usize> {
+        self.open_menu
+    }
+
+    pub fn open_panel(&self) -> Option<usize> {
+        self.open_panel
+    }
+
+    pub fn panel_close_focus(&self) -> &FocusHandle {
+        &self.panel_close
+    }
+
+    pub fn settings_item_focus(&self) -> &FocusHandle {
+        &self.item_settings
+    }
+
+    /// Opens frame `index`'s menu, focus on its first entry; or closes it if it is open.
+    pub fn toggle_menu(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.open_menu == Some(index) {
+            self.close_menu(window, cx);
+        } else {
+            self.open_menu = Some(index);
+            window.focus(&self.item_settings, cx);
+            cx.notify();
+        }
+    }
+
+    /// Closes the open menu; focus goes back to its frame's menu button.
+    pub fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(index) = self.open_menu.take() {
+            if let Some(button) = self.menus.get(index) {
+                window.focus(button, cx);
+            }
+            cx.notify();
+        }
+    }
+
+    /// Opens frame `index`'s panel, attached to it, focus on its close control.
+    pub fn open_panel_of(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_menu = None;
+        self.open_panel = Some(index);
+        window.focus(&self.panel_close, cx);
+        cx.notify();
+    }
+
+    /// Closes the open panel; focus goes back to its frame's menu button.
+    pub fn close_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(index) = self.open_panel.take() {
+            if let Some(button) = self.menus.get(index) {
+                window.focus(button, cx);
+            }
+            cx.notify();
+        }
     }
 
     /// Reads the approvals again, keeps the frames of plugins still approved from the same
@@ -110,6 +186,9 @@ impl Dashboard {
                         this.menus.push(cx.focus_handle().tab_stop(true));
                     }
                     this.menus.truncate(this.widgets.len());
+                    // A menu or panel of a frame that may have moved closes
+                    this.open_menu = None;
+                    this.open_panel = None;
                     cx.notify();
                     this.widgets
                         .iter()
@@ -176,15 +255,65 @@ impl Render for Dashboard {
         let on_reload = move |_: &mut Window, cx: &mut gpui::App| {
             let _ = this.update(cx, |this, cx| this.reload(cx));
         };
-        let frames: Vec<_> = self
-            .widgets
-            .iter()
-            .zip(&self.menus)
-            .enumerate()
-            .map(|(index, (widget, menu))| {
-                frame(&theme, window, index, widget, menu, |_, _| {}).into_any_element()
-            })
-            .collect();
+        let mut frames = Vec::with_capacity(self.widgets.len());
+        for (index, (widget, button)) in self.widgets.iter().zip(&self.menus).enumerate() {
+            let entity = cx.weak_entity();
+            let on_menu = move |window: &mut Window, cx: &mut gpui::App| {
+                let _ = entity.update(cx, |this, cx| this.toggle_menu(index, window, cx));
+            };
+            let open_menu = (self.open_menu == Some(index)).then(|| {
+                let settings = cx.weak_entity();
+                let remove = cx.weak_entity();
+                let close = cx.weak_entity();
+                menu(
+                    &theme,
+                    window,
+                    index,
+                    vec![
+                        MenuItem {
+                            name: Msg::WidgetSettings.text(),
+                            focus: self.item_settings.clone(),
+                            on_press: Box::new(move |window, cx| {
+                                let _ = settings
+                                    .update(cx, |this, cx| this.open_panel_of(index, window, cx));
+                            }),
+                        },
+                        MenuItem {
+                            name: Msg::RemoveFromDashboard.text(),
+                            focus: self.item_remove.clone(),
+                            on_press: Box::new(move |window, cx| {
+                                let _ = remove.update(cx, |this, cx| this.close_menu(window, cx));
+                            }),
+                        },
+                    ],
+                    move |window, cx| {
+                        let _ = close.update(cx, |this, cx| this.close_menu(window, cx));
+                    },
+                )
+                .into_any_element()
+            });
+            let drawn = frame(&theme, window, index, widget, button, on_menu, open_menu);
+            if self.open_panel == Some(index) {
+                let close = cx.weak_entity();
+                frames.push(
+                    attached(
+                        drawn,
+                        panel(
+                            &theme,
+                            window,
+                            index,
+                            &self.panel_close,
+                            move |window, cx| {
+                                let _ = close.update(cx, |this, cx| this.close_panel(window, cx));
+                            },
+                        ),
+                    )
+                    .into_any_element(),
+                );
+            } else {
+                frames.push(drawn.into_any_element());
+            }
+        }
         let body = if frames.is_empty() {
             div().child(Self::empty_state(&theme))
         } else {
