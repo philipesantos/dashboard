@@ -95,13 +95,13 @@ done and the maintainer has seen its result.
   Cc, Cf, Zl, Zp removed; 40 grapheme clusters and an ellipsis; "Unnamed widget"; host-imitating
   names unchanged; the monogram's first letter or digit, upper-cased, or the host glyph, for names
   starting with an emoji, a digit, a symbol and a non-Latin letter.
-- [ ] T007 [P] `runtime/src/grants.rs` tests: `GrantStore::approvals()` lists every approval's id and
+- [X] T007 [P] `runtime/src/grants.rs` tests: `GrantStore::approvals()` lists every approval's id and
   origin, reads nothing else into the result, changes no file, and grants nothing to a package from
   another origin.
 
 ### Implementation
 
-- [ ] T008 `runtime/src/grants.rs`: `GrantStore::approvals()`, read-only, under the record's lock as
+- [X] T008 `runtime/src/grants.rs`: `GrantStore::approvals()`, read-only, under the record's lock as
   `entry` reads (research R5). Security core: the PR marks it for line-by-line review (Principle
   IX).
 - [ ] T009 [P] `clippy.toml`: the entries of `contracts/bans-and-checks.md` with the paths T004

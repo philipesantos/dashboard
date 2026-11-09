@@ -535,6 +535,21 @@ impl GrantStore {
         Ok(self.read()?.plugins.remove(id.as_str()))
     }
 
+    /// Every approval in the record, sorted by plugin id: the id and the origin it was approved
+    /// from, nothing else. Reads only, under the record's lock as `entry` does, and grants
+    /// nothing: an approval still applies only to a package from its origin. An id the record
+    /// holds that is not a valid plugin id is left out, since no package can claim it. Refused as
+    /// `not-granted` when the record cannot be used. The host window lists the plugins to load
+    /// with it (specs/008-host-window-dialogs, research R5).
+    pub fn approvals(&self) -> Result<Vec<(PluginId, String)>, RuntimeError> {
+        Ok(self
+            .read()?
+            .plugins
+            .into_iter()
+            .filter_map(|(id, entry)| PluginId::parse(&id).ok().map(|id| (id, entry.origin)))
+            .collect())
+    }
+
     /// The plugins approved to use the account of the connector `id` from `origin`, sorted by
     /// id. Refused as `not-granted` when the record cannot be used.
     pub fn using_account(&self, id: &str, origin: &str) -> Result<Vec<String>, RuntimeError> {
@@ -1137,6 +1152,56 @@ mod tests {
         let path = dir.path().join("grants.json");
         fs::write(&path, text).expect("the record is written");
         (dir, GrantStore::open(&path), path)
+    }
+
+    /// `approvals` lists every approval's id and origin, sorted, reads nothing else, changes no
+    /// file and grants nothing (specs/008-host-window-dialogs, research R5).
+    #[test]
+    fn approvals_list_ids_and_origins_and_change_nothing() {
+        for_each_store(|store| {
+            assert_eq!(store.approvals().expect("readable"), Vec::new());
+            store
+                .approve(&manifest("local/zeta", "1.0.0", Some(true)), ORIGIN, DIGEST)
+                .expect("approved");
+            store
+                .approve(
+                    &manifest("local/alpha", "1.0.0", None),
+                    OTHER_ORIGIN,
+                    DIGEST,
+                )
+                .expect("approved");
+            let before = store.path().map(|path| fs::read(path).expect("the record"));
+            let generation = store.generation();
+            let listed = store.approvals().expect("readable");
+            assert_eq!(
+                listed,
+                vec![
+                    (id("local/alpha"), OTHER_ORIGIN.to_owned()),
+                    (id("local/zeta"), ORIGIN.to_owned()),
+                ]
+            );
+            assert_eq!(store.generation(), generation, "listing changes nothing");
+            if let (Some(path), Some(before)) = (store.path(), before) {
+                assert_eq!(
+                    fs::read(path).expect("the record"),
+                    before,
+                    "the file is unchanged"
+                );
+            }
+            // Listing an approval grants nothing to a package from another origin
+            assert!(
+                !store
+                    .permission_granted(&id("local/zeta"), OTHER_ORIGIN, "log")
+                    .expect("readable")
+            );
+        });
+    }
+
+    /// A record that cannot be used lists nothing: the call is refused, as `entry` is.
+    #[test]
+    fn approvals_of_a_damaged_record_are_refused() {
+        let (_dir, store, _path) = store_with_text("{ not json");
+        assert!(store.approvals().is_err());
     }
 
     #[test]
