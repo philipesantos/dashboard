@@ -152,18 +152,18 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
 
 ### Tests for User Story 1
 
-- [ ] T012 [P] [US1] Write `design/gen/tests/checker.rs` first, failing: one inline fixture per
+- [X] T012 [P] [US1] Write `design/gen/tests/checker.rs` first, failing: one inline fixture per
   checker rule 1–9, 12 and 14 of `contracts/design-md.md` that breaks it, each refused naming its
   line or token path; and one valid minimal fixture that passes. Rules 10, 11 and 13 are US2's.
-- [ ] T013 [P] [US1] Write `design/gen/tests/drift.rs` first, failing: generating from the
+- [X] T013 [P] [US1] Write `design/gen/tests/drift.rs` first, failing: generating from the
   committed `DESIGN.md` reproduces `design/tokens/src/generated.rs`,
   `design/host-surfaces/src/generated.rs` and `design/tokens.dtcg.json` exactly (LF); with one
   value changed in memory, the comparison fails naming the token and the file (FR-004).
-- [ ] T014 [P] [US1] Write `design/gen/tests/dtcg.rs` first, failing: the export has `$type` and
+- [X] T014 [P] [US1] Write `design/gen/tests/dtcg.rs` first, failing: the export has `$type` and
   `$value` for every token, the groups of `contracts/tokens-api.md`, the rationale in
   `$description`, and `$extensions."dev.dashboard".hostSurface: true` exactly on the host-surface
   tokens.
-- [ ] T015 [P] [US1] Write `design/gen/tests/preview.rs` first, failing (research R8): the
+- [X] T015 [P] [US1] Write `design/gen/tests/preview.rs` first, failing (research R8): the
   preview writes the five files of quickstart §7; each parses as XML, has no `<script>`, no
   `on*` attribute, no `href` or `url(` outside the directory except the embedded `data:` font,
   and embeds the Inter WOFF2 from `design/fonts/inter/`.

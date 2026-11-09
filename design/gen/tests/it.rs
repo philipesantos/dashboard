@@ -2,8 +2,14 @@
 //! the runtime's are. Each file in this directory is a module here, under its own name, so a test
 //! is selected as `cargo test -p design-gen --test it <file>::`.
 
+mod common;
+
+mod checker;
+mod drift;
+mod dtcg;
 mod math;
 mod pins;
+mod preview;
 mod radix_reader;
 
 /// Cargo builds only this file, so a test file added beside it and not listed above would never
