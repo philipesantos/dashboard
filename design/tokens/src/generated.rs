@@ -296,7 +296,7 @@ pub const ROLES: &[RoleDef] = &[
     RoleDef { name: "text-secondary", source: Source::Gray, light: StepRef::Radix(11), dark: StepRef::Radix(11) },
     // roles.accent-text: Accented text on a plain surface, such as a link in widget content.
     RoleDef { name: "accent-text", source: Source::Widget, light: StepRef::Radix(11), dark: StepRef::Radix(11) },
-    // roles.accent-strong: Text on a soft accent; step 11 on step 3 of the same scale is under 4.5:1 for some scales.
+    // roles.accent-strong: Text on a soft accent; step 11 on step 3 of the same scale is 4.25:1 for blue, under 4.5:1.
     RoleDef { name: "accent-strong", source: Source::Widget, light: StepRef::Radix(12), dark: StepRef::Radix(12) },
     // roles.border-control: A control's boundary identifies it and needs 3:1 (WCAG 1.4.11); Radix's border steps 6-8 fall short.
     RoleDef { name: "border-control", source: Source::Gray, light: StepRef::Radix(9), dark: StepRef::Radix(9) },
@@ -310,7 +310,7 @@ pub const ROLES: &[RoleDef] = &[
     RoleDef { name: "error-icon", source: Source::Error, light: StepRef::Radix(11), dark: StepRef::Radix(11) },
     // roles.canvas: The window behind the frames; Radix's app background steps.
     RoleDef { name: "canvas", source: Source::Gray, light: StepRef::Radix(2), dark: StepRef::Radix(1) },
-    // roles.surface: A widget's frame and the fields drawn in it, one step off the canvas so frames stand out.
+    // roles.surface: A widget's frame and the fields drawn in it. One step off the canvas is only 1.03:1, so the frame is outlined by the divider too.
     RoleDef { name: "surface", source: Source::Gray, light: StepRef::Radix(1), dark: StepRef::Radix(2) },
     // roles.neutral-soft: Buttons, the monogram and badges: Radix's component background step.
     RoleDef { name: "neutral-soft", source: Source::Gray, light: StepRef::Radix(3), dark: StepRef::Radix(3) },

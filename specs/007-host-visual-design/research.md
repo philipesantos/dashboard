@@ -137,8 +137,8 @@ the meaning). Measured worst cases on Radix 3.0.0, which `DESIGN.md` must design
 | step 11 on step 1–3 (gray) | 5.17 | 7.58 | secondary text: passes |
 | step 11 of a status scale on gray step 2 | 4.36 (amber on sage) | 8.29 | status text is gray step 12 beside a status icon in step 11 (non-text, 3:1) |
 | step 11 on step 3 of the same scale | 4.21 (green) | 7.08 | soft badges set text in step 12 (9.82 worst) |
-| white or dark text on step 9 | neither reaches 4.5 on red, tomato, ruby, crimson, pink, gold | the same | solid fills never carry normal-size text; text on step 9 only as `large-text`, or the soft style |
-| gray step 8 border on step 1 | 1.86 | 3.00 | step 8 is `decorative` (dividers); a control's boundary needs another step: 9 reaches 3.22 light and 3.64 dark, but Radix assigns 9 to solid backgrounds (open, below) |
+| white or dark text on steps 9 and 10 | neither reaches 4.5 on 14 of the 25 scales (the reds, pinks and purples, blue, brown, bronze, gold) | the same | solid fills never carry normal-size text; `solid-text` declares the scales where one does |
+| gray step 8 border on step 1 | 1.86 (slate; gray is 1.87) | 3.00 | step 8 is not used; dividers take step 6, `decorative`; a control's boundary takes step 9, 3.21 light and 3.64 dark |
 | widget step 9 as a focus ring on gray step 1 | 1.31 (lime) | 3.48 | focus is the host's own style (host-surface, R6); Radix's focus-ring steps (7, 8) fail too (accent 8: 2.26; gray 8: 1.86), so it needs gray 12 or the host color's step 11 (open, below) |
 
 **Resolved by constitution v5.0.0: steps chosen per role.** Until v4.0.0 the UI row said each

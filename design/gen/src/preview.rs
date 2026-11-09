@@ -264,11 +264,17 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
 
     // A widget frame with its label and monogram
     let (fx, fy, fw, fh) = (x0 + 16.0, 96.0, 400.0, 300.0);
+    // The frame is outlined by the divider: one step off the canvas is too faint alone
+    let frame_edge = format!(
+        "stroke=\"{}\" stroke-width=\"1\" {}",
+        paint.color("divider"),
+        paint.shadow("frame")
+    );
     canvas.rect(
         (fx, fy, fw, fh),
         radius,
         &paint.color("surface"),
-        &paint.shadow("frame"),
+        &frame_edge,
     );
     canvas.rect(
         (fx + 12.0, fy + 12.0, 20.0, 20.0),

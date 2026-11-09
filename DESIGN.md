@@ -194,8 +194,9 @@ a rationale for every token.
 ## Overview
 
 Calm, dense and legible. The dashboard shows many small widgets at once, so the host stays quiet:
-a neutral gray frame, one accent color for widgets, and the status colors only where something
-is ok, needs attention or failed. Nothing about the host's look is a secret; a host dialog is told
+a neutral gray frame, one accent color for widgets, and the status colors where something is ok,
+needs attention or failed, always with an icon and words. The host color the person picks may
+share a status hue; that is harmless, since no status ever rests on color alone. Nothing about the host's look is a secret; a host dialog is told
 apart by its form (it covers the chrome and blocks every host window), which nothing a widget
 supplies can produce (constitution, Principles V and VII).
 
@@ -228,10 +229,12 @@ accepts in both themes, is what the lint measured on 2026-11-08:
 - **Status text** is gray step 12 beside an icon in the status color's step 11: amber 11 on sage 2
   is 4.36:1, under 4.5:1 for text. The icons reach 4.21:1 at worst (ok, on its soft badge).
 - **Text on a soft accent** is the widget color's step 12: step 11 on step 3 of the same scale
-  reaches only 4.21:1 for green. Step 12: 9.82:1 at worst (lime).
+  reaches only 4.25:1 for blue, the default (4.26 for cyan, 4.29 for lime). Step 12: 9.82:1 at
+  worst (lime).
 - **No normal-size text sits on a solid step** (9–10): on 14 of the 25 scales, blue, the purples
   and the reds among them, neither white nor dark text reaches 4.5:1 on both step 9 and its hover
-  step 10. `solid-text` declares, per scale, the text color that does, or `none`.
+  step 10. `solid-text` declares, per scale, the text color that does, or `none`; `dark` is the
+  gray family's step 12 of the light theme, in both themes.
 
 ```design-roles
 scales:
@@ -272,7 +275,7 @@ roles:
   text: { source: gray, light: 12, dark: 12, kind: text, on: [canvas, surface, neutral-soft, chrome-surface, dialog-surface, panel-surface, ok-soft, warning-soft, error-soft], why: "Body text; step 12 is Radix's high-contrast text." }
   text-secondary: { source: gray, light: 11, dark: 11, kind: text, on: [canvas, surface, neutral-soft, chrome-surface, dialog-surface, panel-surface], why: "Labels, captions and the field note; step 11 is Radix's low-contrast text, still AA on steps 1-3." }
   accent-text: { source: widget, light: 11, dark: 11, kind: text, on: [surface, panel-surface], why: "Accented text on a plain surface, such as a link in widget content." }
-  accent-strong: { source: widget, light: 12, dark: 12, kind: text, on: [accent-soft], why: "Text on a soft accent; step 11 on step 3 of the same scale is under 4.5:1 for some scales." }
+  accent-strong: { source: widget, light: 12, dark: 12, kind: text, on: [accent-soft], why: "Text on a soft accent; step 11 on step 3 of the same scale is 4.25:1 for blue, under 4.5:1." }
   border-control: { source: gray, light: 9, dark: 9, kind: non-text, on: [surface, panel-surface, dialog-surface], why: "A control's boundary identifies it and needs 3:1 (WCAG 1.4.11); Radix's border steps 6-8 fall short." }
   divider: { source: gray, light: 6, dark: 6, kind: decorative, on: [canvas, surface, chrome-surface, dialog-surface, panel-surface], exempt: "WCAG 1.4.11 exempts decoration: spacing and alignment separate what the line divides; the line only reinforces it.", why: "Radix's subtle border step, for lines between rows and around the chrome." }
   ok-icon: { source: ok, light: 11, dark: 11, kind: non-text, on: [surface, panel-surface, dialog-surface, ok-soft], why: "The status icon carries the status beside gray text, so it needs 3:1 (WCAG 1.4.11)." }
@@ -280,7 +283,7 @@ roles:
   error-icon: { source: error, light: 11, dark: 11, kind: non-text, on: [surface, panel-surface, dialog-surface, error-soft], why: "As ok-icon." }
   focus: { source: host, light: 11, dark: 11, kind: non-text, on: [canvas, surface, neutral-soft, accent-soft, chrome-surface, dialog-surface, panel-surface], host-surface: true, why: "The host's own focus ring; Radix's focus-ring steps 7-8 fail 3:1, and a widget-colored ring would vanish on lime or sky." }
   canvas: { source: gray, light: 2, dark: 1, why: "The window behind the frames; Radix's app background steps." }
-  surface: { source: gray, light: 1, dark: 2, why: "A widget's frame and the fields drawn in it, one step off the canvas so frames stand out." }
+  surface: { source: gray, light: 1, dark: 2, why: "A widget's frame and the fields drawn in it. One step off the canvas is only 1.03:1, so the frame is outlined by the divider too." }
   neutral-soft: { source: gray, light: 3, dark: 3, why: "Buttons, the monogram and badges: Radix's component background step." }
   accent-soft: { source: widget, light: 3, dark: 3, why: "An accented button or badge: the widget color's component background step." }
   ok-soft: { source: ok, light: 3, dark: 3, why: "The background of an ok badge." }
@@ -326,8 +329,10 @@ elevation:
 
 ## Shapes
 
-Corners are a pick: none, small, medium (the default), large or full. The radius applies to the
-host and the kit alike; it never tells a dialog apart.
+Corners are a pick: none, small, medium (the default), large or full. The pick sets the radius of
+frames, panels, buttons and fields, host and kit alike; a dialog takes one step rounder, at most
+`large`; a badge is always `full`; the monogram is `small`, or `none` when the pick is none. The
+radius never tells a dialog apart.
 
 ```design-roles
 radius-picks: [none, small, medium, large, full]
@@ -336,8 +341,10 @@ radius-picks: [none, small, medium, large, full]
 ## Components
 
 The front matter's components are the host's surfaces and the kit's first parts. `chrome`,
-`panel` and `dialog` are host surfaces: they and the `focus` and `scrim` roles are generated into
-`host-surfaces`, which only the host crate may depend on. No component takes an image, an icon
+`panel` and `dialog` are host surfaces: they, the `chrome-surface`, `dialog-surface`,
+`panel-surface`, `focus` and `scrim` roles and the panel and dialog elevations are generated into
+`host-surfaces`, which only the host crate may depend on. A frame is outlined by the divider;
+controls with a boundary (fields) sit on a plain surface, never on a soft one. No component takes an image, an icon
 source or a URL; the three status icons are drawn by the project, on a 16-unit grid.
 
 ```design-roles
@@ -389,4 +396,6 @@ rationale:
 - Do show a status with its icon and words; never by color alone (WCAG 1.4.1).
 - Don't put normal-size text on a solid step (9–10).
 - Don't use the host's surfaces, the scrim or the focus style outside the host.
+- Don't draw `border-control` or `accent-text` on a soft surface: a role is drawn only where its
+  `on` says, and the lint checks only there.
 - Do change a role's step, never a threshold, when the contrast check fails.
