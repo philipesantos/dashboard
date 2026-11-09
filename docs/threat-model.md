@@ -154,7 +154,7 @@ suite grows with every phase and never shrinks.
 | Something that is not a host dialog passes for one: the operating system's native prompt, or a widget drawing one | T1 | A2, A4 | B4 | A host dialog takes a form no widget content or declared control can produce: it covers the host's chrome, blocks every host window, keeps keyboard focus and is the only thing assistive technology sees; no plugin content takes a dialog's role; native prompts are never used for trust decisions (V, VII) | Phase 3 |
 | Widget content imitates a host dialog inside its frame, with placed declared actions as its buttons ("Allow access?") | T1 | A1, A4 | B4 | No frame covers the host's chrome, which only a host dialog covers; the buttons can only run that widget's own declared actions, within their declared effect (V, VII). Not enough on its own: see the open questions | Phase 3 |
 | A dialog appears under the user's pointer or keystroke, so input meant for something else answers it | T1, T3 | A4 | B4 | A new dialog's buttons ignore input for a short time after it appears, and no answer is preselected for a key that was already held | Phase 3 |
-| Crafted image, SVG or font exploits a decoder, which now runs in the host process beside the vault | T1, T4 | A2, A3 | B1, B4 | Images only as bytes within size limits; decoding moved out of the host process if decision 0001 is revisited that way in Phase 3; pinned decoders, `cargo audit` | Phase 3 |
+| Crafted image, SVG or font exploits a decoder, which now runs in the host process beside the vault | T1, T4 | A2, A3 | B1, B4 | Nothing a plugin supplies is decoded yet: no image block or plugin icon, GPUI's loaders banned outside the host's own bytes, only the host's fonts (decision 0001, revisited in feature 008); when the widget kit brings images, they arrive only as bytes within size limits and it decides where decoding runs; pinned decoders, `cargo audit` | Phase 3 |
 | Asks for little at install, then presses the user to turn on optional permissions one at a time | T1 | A1, A4 | B4 | Only host controls turn a permission on (VII); the dangerous-combination warning runs on every grant change, judged on the permissions the plugin will hold afterwards | Phase 3 |
 | Action declared as writing nothing, or calling only reads, writes the store or calls another operation | T1 | A1, A4 | B1, B2 | The host refuses every store write and connector operation the action's declaration does not state (V) | Phase 3 |
 | Calls an operation that changes data with no action the user started (in `update`, or from an action the AI ran unconfirmed) | T1, T3 | A1 | B2 | Outside a user-started or confirmed action, change operations are refused (V, VI) | Phase 2 (`update`), Phase 3 (actions) |
@@ -186,10 +186,12 @@ suite grows with every phase and never shrinks.
 
 ## Open questions
 
-- Does the plugin runtime run in a separate OS process? Not during Phase 1:
+- Does the plugin runtime run in a separate OS process? Not yet:
   [decision 0001](decisions/0001-plugin-process-isolation.md) explains why and when to revisit
-  it, in Phase 3's plan at the latest. With GPUI, image, SVG and font decoding also runs in the
-  host process, so the same plan decides where that runs.
+  it. Feature 008, Phase 3's first plan, revisited it: plugins still run and compile in the host
+  process, which decodes nothing a plugin supplies. Installation decides next where the runtime
+  and compilation run, before the app installs a package it did not build; the widget kit decides
+  where image, SVG and font decoding runs, before any image block or plugin icon.
 - What replaces the webview's Content Security Policy? Decided on 2026-11-07 (constitution
   v3.0.0): there is no webview. Widget content maps only to the host's components, images
   arrive only as bytes, no plugin string reaches GPUI's `img()` or `open_url`, and GPUI's HTTP

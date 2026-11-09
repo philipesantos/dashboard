@@ -283,8 +283,11 @@ VoiceOver on macOS, Narrator on Windows and Orca on Linux are an extra check bef
   never passes a plugin string to GPUI's `img()` or `open_url`; and the host window, which keeps
   GPUI's HTTP client null.
 - Crafted image, SVG or font exploits a decoder, which now runs in the host process beside the vault
-  Owner: the host window's plan, which revisits decision 0001; until then no image block or
-  plugin icon exists, and fonts are the host's own and, for glyphs Barlow and IBM Plex Mono lack, the system's.
+  Owner: the widget kit, before any image block or plugin icon, for where decoding runs; and
+  installation, for where the runtime and compilation run. The host window (feature 008) revisited
+  decision 0001 and keeps every plugin byte from a decoder: no image block or plugin icon exists,
+  GPUI's loaders are banned outside the host's own bytes, and fonts are the host's own and, for
+  glyphs Barlow and IBM Plex Mono lack, the system's.
 - Asks for little at install, then presses the user to turn on optional permissions one at a time
   Owner: installation, whose dialogs warn on every grant change.
 - Value outside its declared type, or a parameter type the host cannot draw, reaches the plugin

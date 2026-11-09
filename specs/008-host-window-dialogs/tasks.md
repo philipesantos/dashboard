@@ -332,10 +332,10 @@ status, focus ready for the first Tab.
   build libraries; `host/` already counts as code for the changes filter. The "Host window" job also
   runs the `host/ban-fixture` clippy step of T039, expecting the failure, as the deny job does for
   `design/ban-fixture`.
-- [ ] T047 [P] `docs/decisions/0001-plugin-process-isolation.md`: the revisit section of research R2
+- [X] T047 [P] `docs/decisions/0001-plugin-process-isolation.md`: the revisit section of research R2
   (four triggers kept, the compile-out option weighed, the stale line about local files corrected,
   next owners named).
-- [ ] T048 [P] `docs/threat-model.md` and `docs/design/host-surfaces.md`: research R16 (the decoder
+- [X] T048 [P] `docs/threat-model.md` and `docs/design/host-surfaces.md`: research R16 (the decoder
   row's mitigation, the process question, the "Decided elsewhere" owners), the row's first cell
   unchanged; `design-gen`'s criteria test still passes.
 - [ ] T049 [P] `specs/008-host-window-dialogs/performance.md`: the start, dialog, compile and memory

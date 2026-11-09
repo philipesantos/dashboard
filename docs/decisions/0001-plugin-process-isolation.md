@@ -52,14 +52,41 @@ During Phase 1, plugins run in the host process. No separate process is built ye
 
 ## Revisit when
 
-- Before the app can install a plugin it did not build itself. Phase 3 brings install from a
-  local file, so this decision is reviewed in Phase 3's plan at the latest. The likely direction
-  is compiling at install time in a separate process with operating-system limits, then
-  loading the result; whether rendering also moves out of process is decided then.
+- Before the app can install a plugin it did not build itself. Installation comes only from
+  repositories (the threat model; this line once said "from a local file", which the project no
+  longer plans), and Phase 3's plan reviewed this decision first (below). The likely direction is
+  compiling at install time in a separate process with operating-system limits, then loading the
+  result; whether rendering also moves out of process is decided then.
 - Immediately when an advisory reports a sandbox escape in Wasmtime or Cranelift.
 - When loading a package near the size cap takes more than 2 s, or more than 1 GiB of memory,
   on any CI system.
 - Before AI-generated modules are compiled on the user's machine (Phase 5).
+
+## Revisited for the host window (feature 008, 2026-11-09)
+
+[Feature 008](../../specs/008-host-window-dialogs/research.md) (research R2) is the first plan of
+Phase 3, where this decision asked to be reviewed at the latest. It stands, with these changes:
+
+- **Plugins keep running, and compiling, in the host process.** The window now compiles packages
+  at start and on every reload, where before only the command-line tool did; it loads only
+  packages the maintainer approved with that tool, the trust this decision already accepts. It
+  measures the compile time of each package it loads, so the third trigger below can be seen from
+  the window as well as from the bench.
+- **No image, SVG or font a plugin supplies reaches a decoder.** GPUI decodes in the host process,
+  beside the vault, so the window keeps plugin bytes out: frames show no widget content yet, no
+  image block or plugin icon exists, GPUI's image and SVG loaders are banned outside one module
+  that takes only the host's bytes, and the only fonts are the host's own (with the system's for
+  glyphs they lack). A plugin's name reaches text shaping only as text in those fonts.
+- **All four triggers stay**, unchanged except for the correction above.
+- **Compiling in a separate process** (the option below) was weighed and deferred: until the app
+  installs a package the maintainer did not build, the window compiles only what the maintainer
+  already compiles with the tool. Moving the whole runtime out now would mean designing and
+  securing an inter-process protocol before any plugin can be installed; the cost is better paid
+  where the risk arrives.
+
+Next owners: **installation**, for where the runtime and compilation run once the app installs
+packages it did not build; **the widget kit**, before any image block or plugin-supplied icon,
+for where decoding runs.
 
 ## Options considered
 
