@@ -7,6 +7,7 @@ mod common;
 mod checker;
 mod drift;
 mod dtcg;
+mod hue_rule;
 mod math;
 mod pins;
 mod preview;

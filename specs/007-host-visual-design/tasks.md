@@ -225,12 +225,13 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
 
 ### Tests for User Story 4
 
-- [ ] T022 [P] [US4] Write `design/tokens/tests/appearance.rs` first, failing:
+- [X] T022 [P] [US4] Write `design/tokens/tests/appearance.rs` first, failing:
   `Appearance::DEFAULT` validates; blue with an indigo host is `TooClose` at 15°; bronze, gold and
   brown as the widget color are `NotChromatic`; with a monochrome host the accepted widget colors
   are exactly lime, sky, cyan, blue, indigo, iris, violet, purple, plum and pink; and, for every
-  pair of scales, the verdict equals one computed independently in the test from the vendored
-  Radix data through `design-gen`'s math (SC-004).
+  pair of scales, the verdict equals one computed independently from the vendored Radix data
+  (SC-004). That comparison lives in `design/gen/tests/hue_rule.rs`, with its own OKLCH code:
+  `design-tokens` cannot depend on `design-gen`, which `deny.toml` keeps to `xtask`.
 
 ### Implementation for User Story 4
 

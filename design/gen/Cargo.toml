@@ -14,6 +14,8 @@ autotests = false
 yaml-rust2 = { version = "=0.13.0", default-features = false }
 
 [dev-dependencies]
+# SC-004 compares the appearance rule of design-tokens with an independent computation
+design-tokens = { path = "../tokens" }
 # The pins test hashes the vendored files under design/
 sha2 = "0.10"
 
