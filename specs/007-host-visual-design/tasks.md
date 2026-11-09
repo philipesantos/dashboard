@@ -427,10 +427,10 @@ position or the accessibility tree and names its screen readers and systems.
   the credential benchmark) could not run on the maintainer's machine, whose keychain asks for a
   password; CI runs them on a fresh keychain. `runtime/`, `plugins/`, `wit/`, `connectors/` and
   `bench/` are unchanged from master.
-- [ ] T041 Before the merge, and only when the maintainer asks: mark the development guide's
+- [X] T041 Before the merge, and only when the maintainer asks: mark the development guide's
   Phase 3 items "Sistema visual em `DESIGN.md`" and "Spec de design da moldura e dos diálogos do
   host" as done.
-- [ ] T042 Human review (Principle IX) and merge:
+- [X] T042 Human review (Principle IX) and merge:
   - The maintainer reviews every commit line by line, the `deny.toml` hunk with the care of the
     network stack's bans.
   - The maintainer ticks the pull request's review box with their handle.
