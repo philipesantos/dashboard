@@ -79,6 +79,11 @@ fn run(program: &str, args: &[&str]) -> String {
         .args(args)
         .output()
         .unwrap_or_else(|error| panic!("{program}: {error}"));
+    // A reader the system refuses (no accessibility access, no bus) says why only here
+    let errors = String::from_utf8_lossy(&output.stderr);
+    if !errors.trim().is_empty() {
+        eprintln!("window: {program} {}: {}", args.join(" "), errors.trim());
+    }
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
@@ -195,7 +200,31 @@ impl Os {
     /// The centre, in screen coordinates, of the node named `name` in the window `title`.
     fn centre(&self, title: &str, name: &str) -> Option<(f64, f64)> {
         let out = if cfg!(target_os = "linux") {
-            run("python3", &[&script("atspi.py"), "find", title, name])
+            // AT-SPI's screen coordinates rest on the window position GPUI reports, which is off
+            // with no window manager: take the node's place in its window, and the window's
+            // place on the screen from X itself
+            let ids = run("xdotool", &["search", "--name", &format!("^{title}$")]);
+            let id = ids.split_whitespace().next()?;
+            let geometry = run("xdotool", &["getwindowgeometry", "--shell", id]);
+            let field = |key: &str| -> Option<f64> {
+                geometry
+                    .lines()
+                    .find_map(|line| line.strip_prefix(key))
+                    .and_then(|value| value.trim().parse().ok())
+            };
+            let (left, top) = (field("X=")?, field("Y=")?);
+            let found = run(
+                "python3",
+                &[&script("atspi.py"), "find-in-window", title, name],
+            );
+            let numbers: Vec<f64> = found
+                .split_whitespace()
+                .filter_map(|word| word.parse().ok())
+                .collect();
+            return match numbers.as_slice() {
+                [x, y, w, h, ..] => Some((left + x + w / 2.0, top + y + h / 2.0)),
+                _ => None,
+            };
         } else if cfg!(target_os = "macos") {
             let pid = std::process::id().to_string();
             run(

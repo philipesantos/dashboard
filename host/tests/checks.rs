@@ -237,7 +237,12 @@ fn the_pin_check_catches_every_slip() {
         (
             "not a direct dependency",
             readme.clone(),
-            manifest.replace(&format!("{pin}\n"), ""),
+            // Line by line: a Windows checkout ends lines with CRLF
+            manifest
+                .lines()
+                .filter(|line| line.trim() != pin)
+                .collect::<Vec<_>>()
+                .join("\n"),
             lock.clone(),
         ),
     ];

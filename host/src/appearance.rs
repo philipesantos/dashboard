@@ -389,6 +389,7 @@ fn line(id: &'static str, theme: &Theme, words: impl Into<SharedString>) -> Stat
         .id(id)
         .role(Role::Label)
         .aria_label(words.clone())
+        .aria_value(words.clone())
         .child(text(body_md(), theme.text_secondary, words))
 }
 
@@ -400,6 +401,7 @@ pub fn notice_line(id: &'static str, theme: &Theme, notice: Msg) -> Stateful<Div
         .debug_selector(move || id.to_owned())
         .role(Role::Label)
         .aria_label(words.clone())
+        .aria_value(words.clone())
         .mb(px(12.0))
         .pl(px(8.0))
         .border_l(px(2.0))
@@ -535,6 +537,7 @@ pub fn screen(
                 .debug_selector(|| "appearance-refusal".to_owned())
                 .role(Role::Label)
                 .aria_label(words.clone())
+                .aria_value(words.clone())
                 .pl(px(8.0))
                 .border_l(px(2.0))
                 .border_color(theme.error_icon)

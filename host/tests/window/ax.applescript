@@ -6,9 +6,19 @@ on run argv
 	set title to item 3 of argv
 	set out to ""
 	tell application "System Events"
+		if command is "dump" then
+			set out to "# UI scripting enabled: " & (UI elements enabled as text) & linefeed
+		end if
 		set proc to first process whose unix id is pid
+		if command is "dump" then
+			set out to out & "# windows: " & ((name of every window of proc) as text) & linefeed
+		end if
 		set win to (first window of proc whose name is title)
-		repeat with element in (entire contents of win)
+		set elements to entire contents of win
+		if command is "dump" then
+			set out to out & "# elements: " & ((count of elements) as text) & linefeed
+		end if
+		repeat with element in elements
 			set label to ""
 			try
 				set label to (name of element) as text

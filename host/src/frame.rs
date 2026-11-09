@@ -120,11 +120,13 @@ pub fn frame(
         .children(open_menu)
         .child(
             // The status, one node for assistive technology in the host's words and normal
-            // case: GPUI exposes only elements with an id and a role (FR-024)
+            // case: GPUI exposes only elements with an id and a role (FR-024). AccessKit names a
+            // label from its value on Windows and from its label elsewhere: both are set
             div()
                 .id(("frame-status", index))
                 .role(Role::Label)
                 .aria_label(status_words(widget))
+                .aria_value(status_words(widget))
                 .p(px(12.0))
                 .child(status(theme, widget)),
         )

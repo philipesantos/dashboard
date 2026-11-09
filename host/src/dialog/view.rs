@@ -96,6 +96,8 @@ fn dialog(theme: &Theme, window: &Window, shown: &Shown) -> impl IntoElement {
             .id("dialog-subject")
             .role(Role::Label)
             .aria_label(name.clone())
+            // AccessKit names a label from its value on Windows
+            .aria_value(name.clone())
             .child(text(label_mono(), theme.text_secondary, name))
     });
     div()

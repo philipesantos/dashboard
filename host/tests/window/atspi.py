@@ -1,7 +1,8 @@
 """The accessibility tree of a host window through AT-SPI, for host/tests/window.rs.
 
 `dump TITLE` prints one line per node of the window titled TITLE: `role<TAB>name`.
-`find TITLE NAME` prints `x y width height` in screen pixels of the first node named NAME.
+`find TITLE NAME` prints `x y width height` in screen pixels of the first node named NAME;
+`find-in-window TITLE NAME` prints them relative to its window.
 """
 import sys
 
@@ -38,8 +39,9 @@ def main():
             name = node.get_name() or ""
             if command == "dump":
                 print(f"{node.get_role_name()}\t{name}")
-            elif command == "find" and name == sys.argv[3]:
-                box = node.get_extents(Atspi.CoordType.SCREEN)
+            elif command in ("find", "find-in-window") and name == sys.argv[3]:
+                kind = Atspi.CoordType.SCREEN if command == "find" else Atspi.CoordType.WINDOW
+                box = node.get_extents(kind)
                 print(f"{box.x} {box.y} {box.width} {box.height}")
                 return
 
