@@ -3,6 +3,7 @@
 //! dialog above it, drawn only with the host's components and host-surface tokens.
 
 use super::{Answer, Request};
+use crate::a11y::Modality;
 use crate::label::Label;
 use crate::text::HostText;
 use crate::theme::{Theme, body_md, label_mono, title_md};
@@ -97,6 +98,7 @@ fn dialog(theme: &Theme, window: &Window, shown: &Shown) -> impl IntoElement {
         .id("dialog")
         .debug_selector(|| "dialog".to_owned())
         .role(Role::Dialog)
+        .modal()
         .aria_label(SharedString::from(request.name))
         .aria_description(SharedString::from(request.question))
         .w(px(WIDTH))

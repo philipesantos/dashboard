@@ -703,3 +703,56 @@ mod dialog_form {
         assert_eq!(approvals.len(), 1);
     }
 }
+
+/// US4: a dialog from the keyboard (HS-16, HS-17).
+mod dialog_keys {
+    use crate::common::{World, request};
+    use gpui::{TestAppContext, VisualTestContext};
+    use host::dialog::{self, Answer};
+    use std::time::Duration;
+
+    fn press(cx: &mut VisualTestContext, key: &str) {
+        cx.simulate_keystrokes(key);
+        let last = key.rsplit(' ').next().unwrap_or(key);
+        cx.simulate_event(gpui::KeyUpEvent {
+            keystroke: gpui::Keystroke::parse(last).expect("a key"),
+        });
+    }
+
+    /// HS-16, HS-17: focus starts on the refusing control; Tab and Shift+Tab, more times than the
+    /// dialog has controls, stay on its two controls; Escape refuses and gives focus back.
+    #[gpui::test]
+    fn focus_stays_in_the_dialog_and_escape_gives_it_back(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (windows, clock) = world.open_windows(cx, 1);
+        let mut cx = VisualTestContext::from_window(windows[0].into(), cx);
+        let before = windows[0]
+            .read_with(&cx, |view, _| view.reload_focus().clone())
+            .unwrap();
+        cx.update(|window, cx| window.focus(&before, cx));
+        let mut answer = cx.update(|_, cx| dialog::ask(cx, windows[0].into(), request()));
+        cx.run_until_parked();
+        let (refuse, confirm) = cx.update(|_, cx| {
+            let open = dialog::open(cx).expect("open");
+            (open.refuse.clone(), open.confirm.clone())
+        });
+        cx.update(|window, _| assert!(refuse.is_focused(window), "focus on Cancel"));
+        for keys in ["tab", "shift-tab"] {
+            for _ in 0..5 {
+                press(&mut cx, keys);
+                cx.update(|window, _| {
+                    assert!(
+                        refuse.is_focused(window) || confirm.is_focused(window),
+                        "{keys} left the dialog"
+                    )
+                });
+            }
+        }
+        clock.advance(Duration::from_millis(1000));
+        press(&mut cx, "escape");
+        assert_eq!(answer.try_recv().ok().flatten(), Some(Answer::Refused));
+        cx.run_until_parked();
+        cx.update(|window, _| assert!(before.is_focused(window), "focus back where it was"));
+    }
+}

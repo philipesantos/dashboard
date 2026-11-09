@@ -4,6 +4,7 @@
 //! regains focus and from the chrome's "Reload" (FR-040), and draws a host dialog's scrim over
 //! everything while one is open (HS-02).
 
+use crate::a11y::Modality;
 use crate::chrome::chrome;
 use crate::dialog::view::{Shown, overlay};
 use crate::dialog::{self, Answer, DialogHost, Request};
@@ -17,8 +18,8 @@ use crate::vendor::gpui_base::tab::{CONTEXT, Tab, TabPrev, advance_focus};
 use design_tokens::Appearance;
 use gpui::{
     AnyWindowHandle, Context, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
-    KeyUpEvent, ParentElement, Render, ScrollHandle, StatefulInteractiveElement, Styled,
-    Subscription, Window, div, px,
+    KeyUpEvent, ParentElement, Render, Role, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, px,
 };
 use runtime::Runtime;
 use runtime::grants::GrantStore;
@@ -434,20 +435,30 @@ impl Render for Dashboard {
             .on_key_up(|event: &KeyUpEvent, _, cx| dialog::key_up(cx, &event.keystroke.key))
             .relative()
             .size_full()
-            .flex()
-            .flex_col()
             .bg(theme.canvas)
-            .child(chrome(&theme, window, &self.reload, on_reload))
             .child(
+                // The window's background, one node for assistive technology: hidden while a
+                // dialog is open, so only the dialog is exposed (HS-18)
                 div()
-                    .id("content")
-                    .debug_selector(|| "content".to_owned())
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.scroll)
-                    .p(px(CONTENT_PADDING))
-                    .child(body),
+                    .id("background")
+                    .role(Role::Pane)
+                    .aria_label(SharedString::from(Msg::AppName.text()))
+                    .hidden_while(shown.is_some())
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .child(chrome(&theme, window, &self.reload, on_reload))
+                    .child(
+                        div()
+                            .id("content")
+                            .debug_selector(|| "content".to_owned())
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.scroll)
+                            .p(px(CONTENT_PADDING))
+                            .child(body),
+                    ),
             )
             .children(shown.map(|shown| overlay(&theme, window, &shown)))
     }

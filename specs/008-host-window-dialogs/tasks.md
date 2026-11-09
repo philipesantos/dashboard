@@ -237,7 +237,7 @@ status, focus ready for the first Tab.
 
 ### Tests first
 
-- [ ] T032 [P] [US4] `host/tests/logic.rs` part 7: initial focus on the refusing control, no default
+- [X] T032 [P] [US4] `host/tests/logic.rs` part 7: initial focus on the refusing control, no default
   button, Enter there never confirms (HS-16); Tab and Shift+Tab cycle inside; Escape refuses and
   restores focus (HS-17); every focusable host control shows the `focus` ring 2 px wide, 2 px out
   (HS-24).
@@ -255,10 +255,10 @@ status, focus ready for the first Tab.
 
 ### Implementation
 
-- [ ] T035 [US4] `host/src/a11y.rs`: the element that writes `set_hidden` on each window's background
+- [X] T035 [US4] `host/src/a11y.rs`: the element that writes `set_hidden` on each window's background
   root (role `Pane`) and `set_modal` with role `Dialog`, label and description on the dialog
   (research R10); frames expose their label and status as the widget's content.
-- [ ] T036 [US4] `host/src/dialog/`: initial focus, no default button, the vendored focus trap,
+- [X] T036 [US4] `host/src/dialog/`: initial focus, no default button, the vendored focus trap,
   Escape and focus restoration (research R9).
 - [ ] T037 [US4] `docs/accessibility/screen-reader-walk.md`: the release walk script for VoiceOver,
   Narrator and Orca over every host dialog, what to record and where (FR-026).
