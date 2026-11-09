@@ -15,11 +15,14 @@ use gpui::{
 /// The panel's width, beside a frame.
 pub const WIDTH: f32 = 280.0;
 
+/// What pressing a control does.
+pub type Press = Box<dyn Fn(&mut Window, &mut App)>;
+
 /// One entry of a frame's menu.
 pub struct MenuItem {
     pub name: HostText,
     pub focus: FocusHandle,
-    pub on_press: Box<dyn Fn(&mut Window, &mut App)>,
+    pub on_press: Press,
 }
 
 /// A frame's menu, inside the frame under its header. `on_close` runs on Escape and on a click
