@@ -35,7 +35,7 @@ fn button(
     theme: &Theme,
     window: &Window,
     name: HostText,
-    accent: bool,
+    inked: bool,
     answer: Answer,
 ) -> Stateful<Div> {
     let ring = if focus.is_focused(window) {
@@ -43,10 +43,12 @@ fn button(
     } else {
         transparent_black()
     };
-    let (face, ink) = if accent {
-        (theme.accent_soft, theme.accent_strong)
+    // The confirming button in the host's ink, never the widgets' color: the dialog is the
+    // host's, and nothing in it borrows what widgets draw with
+    let (face, ink, edge) = if inked {
+        (theme.ink, theme.on_ink, theme.ink)
     } else {
-        (theme.neutral_soft, theme.text)
+        (theme.neutral_soft, theme.text, theme.border_control)
     };
     div()
         .id(id)
@@ -80,7 +82,7 @@ fn button(
                 .rounded(theme.radius)
                 .bg(face)
                 .border(px(1.0))
-                .border_color(theme.border_control)
+                .border_color(edge)
                 .child(text(label_mono(), ink, name)),
         )
 }
