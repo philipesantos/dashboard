@@ -321,15 +321,15 @@ fn tokens_rs(design: &Design, palette: &Palette) -> String {
     let default = &design.picks.default;
     let _ = writeln!(
         out,
-        "/// picks.default.\npub(crate) const DEFAULT_GRAY: GrayFamily = GrayFamily::{};\npub(crate) const DEFAULT_HOST: Option<Scale> = {};\npub(crate) const DEFAULT_WIDGET: Scale = Scale::{};\npub(crate) const DEFAULT_RADIUS: &str = {};\npub(crate) const DEFAULT_THEME: &str = {};",
+        "/// picks.default.\npub(crate) const DEFAULT_GRAY: GrayFamily = GrayFamily::{};\npub(crate) const DEFAULT_HOST: Option<Scale> = {};\npub(crate) const DEFAULT_WIDGET: Scale = Scale::{};\npub(crate) const DEFAULT_RADIUS: crate::Radius = crate::Radius::{};\npub(crate) const DEFAULT_THEME: crate::ThemePick = crate::ThemePick::{};",
         variant(&default.gray),
         default.host.as_ref().map_or("None".to_owned(), |h| format!(
             "Some(Scale::{})",
             variant(h)
         )),
         variant(&default.widget),
-        literal(&default.radius),
-        literal(&default.theme)
+        variant(&default.radius),
+        variant(&default.theme)
     );
 
     let _ = writeln!(

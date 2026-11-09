@@ -137,8 +137,8 @@ pub(crate) const STATUS: [Scale; 3] = [Scale::Green, Scale::Amber, Scale::Red];
 pub(crate) const DEFAULT_GRAY: GrayFamily = GrayFamily::Gray;
 pub(crate) const DEFAULT_HOST: Option<Scale> = None;
 pub(crate) const DEFAULT_WIDGET: Scale = Scale::Blue;
-pub(crate) const DEFAULT_RADIUS: &str = "medium";
-pub(crate) const DEFAULT_THEME: &str = "system";
+pub(crate) const DEFAULT_RADIUS: crate::Radius = crate::Radius::Medium;
+pub(crate) const DEFAULT_THEME: crate::ThemePick = crate::ThemePick::System;
 
 /// The text color a scale's solid steps take.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

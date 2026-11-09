@@ -235,7 +235,7 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
 
 ### Implementation for User Story 4
 
-- [ ] T023 [US4] Implement `Appearance`, `HostColor`, `Radius`, `ThemePick`, `GrayFamily`,
+- [X] T023 [US4] Implement `Appearance`, `HostColor`, `Radius`, `ThemePick`, `GrayFamily`,
   `Refusal` and `validate()` in `design/tokens/src/lib.rs` over the generated hue and chroma
   table (contracts/tokens-api.md, data-model.md: "hue ≥ 30° from `host` (if chromatic) and from
   green, amber and red"; FR-011, FR-013). T022 passes. It comes before US2 because the lint

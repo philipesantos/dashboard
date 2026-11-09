@@ -4,7 +4,11 @@
 use design_tokens::{Appearance, GrayFamily, HostColor, Other, Radius, Refusal, Scale, ThemePick};
 
 fn with(widget: Scale, host: HostColor) -> Appearance {
-    Appearance { widget, host, ..Appearance::DEFAULT }
+    Appearance {
+        widget,
+        host,
+        ..Appearance::DEFAULT
+    }
 }
 
 #[test]
@@ -22,28 +26,48 @@ fn the_default_is_neutral_and_valid() {
 fn a_widget_color_near_the_host_color_is_refused() {
     assert_eq!(
         with(Scale::Blue, HostColor::Scale(Scale::Indigo)).validate(),
-        Err(Refusal::TooClose { widget: Scale::Blue, other: Other::Host(Scale::Indigo), degrees: 15 })
+        Err(Refusal::TooClose {
+            widget: Scale::Blue,
+            other: Other::Host(Scale::Indigo),
+            degrees: 15
+        })
     );
     assert_eq!(
         with(Scale::Blue, HostColor::Scale(Scale::Blue)).validate(),
-        Err(Refusal::TooClose { widget: Scale::Blue, other: Other::Host(Scale::Blue), degrees: 0 })
+        Err(Refusal::TooClose {
+            widget: Scale::Blue,
+            other: Other::Host(Scale::Blue),
+            degrees: 0
+        })
     );
-    assert_eq!(with(Scale::Blue, HostColor::Scale(Scale::Purple)).validate(), Ok(()));
+    assert_eq!(
+        with(Scale::Blue, HostColor::Scale(Scale::Purple)).validate(),
+        Ok(())
+    );
 }
 
 #[test]
 fn a_widget_color_near_a_status_is_refused() {
     assert!(matches!(
         with(Scale::Grass, HostColor::Monochrome).validate(),
-        Err(Refusal::TooClose { other: Other::Ok, .. })
+        Err(Refusal::TooClose {
+            other: Other::Ok,
+            ..
+        })
     ));
     assert!(matches!(
         with(Scale::Yellow, HostColor::Monochrome).validate(),
-        Err(Refusal::TooClose { other: Other::Warning, .. })
+        Err(Refusal::TooClose {
+            other: Other::Warning,
+            ..
+        })
     ));
     assert!(matches!(
         with(Scale::Tomato, HostColor::Monochrome).validate(),
-        Err(Refusal::TooClose { other: Other::Error, .. })
+        Err(Refusal::TooClose {
+            other: Other::Error,
+            ..
+        })
     ));
 }
 
@@ -66,8 +90,10 @@ fn neutral_scales_are_never_picks() {
 /// With a monochrome host, exactly these ten widget colors are accepted (research R3).
 #[test]
 fn the_widget_colors_a_monochrome_host_accepts() {
-    let accepted: Vec<Scale> =
-        Scale::ALL.into_iter().filter(|scale| with(*scale, HostColor::Monochrome).validate().is_ok()).collect();
+    let accepted: Vec<Scale> = Scale::ALL
+        .into_iter()
+        .filter(|scale| with(*scale, HostColor::Monochrome).validate().is_ok())
+        .collect();
     assert_eq!(
         accepted,
         [
