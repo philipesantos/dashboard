@@ -316,9 +316,9 @@ status, focus ready for the first Tab.
 
 ## Phase 9: User Story 6 - The maintainer can update GPUI safely (Priority: P3)
 
-- [ ] T044 [P] [US6] `host/tests/checks.rs`: an unpinned, caret or `-pre` GPUI crate, or one that
+- [X] T044 [P] [US6] `host/tests/checks.rs`: an unpinned, caret or `-pre` GPUI crate, or one that
   differs from `host/README.md`, fails the pin check (extends T005 with the mutations).
-- [ ] T045 [US6] `CONTRIBUTING.md`: how to upgrade GPUI: at most monthly or for an advisory, read the
+- [X] T045 [US6] `CONTRIBUTING.md`: how to upgrade GPUI: at most monthly or for an advisory, read the
   patch list's diff since the recorded commit, move all nineteen pins together, update
   `host/README.md`, and let the "Host window" job run on the three systems.
 

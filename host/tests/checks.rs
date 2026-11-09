@@ -55,22 +55,17 @@ fn code(text: &str) -> String {
         .join("\n")
 }
 
-/// The version `host/README.md` records for GPUI.
-fn recorded_gpui_version() -> String {
-    let readme = read("host/README.md");
+/// The version a `host/README.md` records for GPUI.
+fn recorded_gpui_version(readme: &str) -> Option<String> {
     let line = readme
         .lines()
-        .find(|line| line.starts_with("| Version |"))
-        .expect("host/README.md records the GPUI version");
-    line.split('`')
-        .nth(1)
-        .expect("the version in backticks")
-        .to_owned()
+        .find(|line| line.starts_with("| Version |"))?;
+    line.split('`').nth(1).map(str::to_owned)
 }
 
-/// The gpui-unofficial packages `host/Cargo.toml` depends on, with their requirement.
-fn host_gpui_dependencies() -> Vec<(String, String)> {
-    read("host/Cargo.toml")
+/// The gpui-unofficial packages a `host/Cargo.toml` depends on, with their requirement.
+fn host_gpui_dependencies(manifest: &str) -> Vec<(String, String)> {
+    manifest
         .lines()
         .filter(|line| !line.trim_start().starts_with('#') && line.contains("gpui-unofficial"))
         .map(|line| {
@@ -93,16 +88,15 @@ fn host_gpui_dependencies() -> Vec<(String, String)> {
                         .split_once("version = \"")
                         .map(|(_, rest)| rest.split('"').next().expect("a version"))
                 })
-                .expect("a version requirement")
+                .unwrap_or("")
                 .to_owned();
             (name, version)
         })
         .collect()
 }
 
-/// `(name, version)` of every package in `Cargo.lock` whose name holds `gpui-unofficial`.
-fn locked_gpui_packages() -> Vec<(String, String)> {
-    let lock = read("Cargo.lock");
+/// `(name, version)` of every package in a `Cargo.lock` whose name holds `gpui-unofficial`.
+fn locked_gpui_packages(lock: &str) -> Vec<(String, String)> {
     lock.split("[[package]]")
         .filter_map(|block| {
             let field = |key: &str| {
@@ -118,42 +112,139 @@ fn locked_gpui_packages() -> Vec<(String, String)> {
         .collect()
 }
 
+/// What breaks R1 and FR-003 in a README, a host manifest and a lock file: every gpui-unofficial
+/// package a direct `=` dependency of `host` at the version the README records, never a
+/// pre-release, all nineteen of them.
+fn pin_problems(readme: &str, manifest: &str, lock: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+    let Some(recorded) = recorded_gpui_version(readme) else {
+        return vec!["host/README.md does not record the GPUI version".to_owned()];
+    };
+    if recorded.contains('-') {
+        problems.push(format!("the recorded version {recorded} is a pre-release"));
+    }
+    // The dev-dependency with GPUI's test support names gpui-unofficial again, pinned the same
+    let direct = host_gpui_dependencies(manifest);
+    let mut names: Vec<&str> = direct.iter().map(|(name, _)| name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    if names.len() != 19 {
+        problems.push(format!("not nineteen gpui-unofficial crates: {names:?}"));
+    }
+    for (name, requirement) in &direct {
+        if *requirement != format!("={recorded}") {
+            problems.push(format!(
+                "{name} is {requirement:?}, not pinned with ={recorded}"
+            ));
+        }
+    }
+    let locked = locked_gpui_packages(lock);
+    if locked.is_empty() {
+        problems.push("Cargo.lock has no gpui-unofficial package".to_owned());
+    }
+    for (name, version) in locked {
+        if version != recorded {
+            problems.push(format!("Cargo.lock has {name} {version}, not {recorded}"));
+        }
+        if !direct.iter().any(|(direct, _)| *direct == name) {
+            problems.push(format!(
+                "{name} is in Cargo.lock but not a direct dependency of host"
+            ));
+        }
+    }
+    problems
+}
+
 /// R1, FR-003: every gpui-unofficial package is a direct `=` dependency of `host`, at the version
 /// `host/README.md` records, never a pre-release.
 #[test]
 fn gpui_is_pinned_as_recorded() {
-    let recorded = recorded_gpui_version();
-    assert!(
-        !recorded.contains('-'),
-        "the recorded version {recorded} is a pre-release"
+    let problems = pin_problems(
+        &read("host/README.md"),
+        &read("host/Cargo.toml"),
+        &read("Cargo.lock"),
     );
-    // The dev-dependency with GPUI's test support names gpui-unofficial again, pinned the same
-    let direct = host_gpui_dependencies();
-    let mut names: Vec<&str> = direct.iter().map(|(name, _)| name.as_str()).collect();
-    names.sort_unstable();
-    names.dedup();
+    assert!(problems.is_empty(), "{problems:#?}");
+    // The fixture that must fail clippy builds the same GPUI
+    let recorded = recorded_gpui_version(&read("host/README.md")).expect("recorded");
     assert_eq!(
-        names.len(),
-        19,
-        "nineteen gpui-unofficial crates: {names:?}"
+        host_gpui_dependencies(&read("host/ban-fixture/Cargo.toml")),
+        [("gpui-unofficial".to_owned(), format!("={recorded}"))],
+        "host/ban-fixture pins GPUI as host does"
     );
-    for (name, requirement) in &direct {
-        assert_eq!(
-            requirement,
-            &format!("={recorded}"),
-            "{name} must be pinned with ={recorded}"
-        );
-    }
-    let locked = locked_gpui_packages();
-    assert!(
-        !locked.is_empty(),
-        "Cargo.lock has gpui-unofficial packages"
+}
+
+/// US6, T044: the pin check refuses each way a pin can slip: a GPUI crate unpinned, with a caret,
+/// at a pre-release or at a version the README does not record; a pre-release recorded; a GPUI
+/// crate in the lock file that `host` does not name.
+#[test]
+fn the_pin_check_catches_every_slip() {
+    let (readme, manifest, lock) = (
+        read("host/README.md"),
+        read("host/Cargo.toml"),
+        read("Cargo.lock"),
     );
-    for (name, version) in locked {
-        assert_eq!(version, recorded, "Cargo.lock has {name} {version}");
+    let recorded = recorded_gpui_version(&readme).expect("recorded");
+    let pin = format!("collections-gpui-unofficial = \"={recorded}\"");
+    assert!(manifest.contains(&pin), "the manifest has {pin}");
+    let with_pin = |requirement: String| {
+        manifest.replace(
+            &pin,
+            &format!("collections-gpui-unofficial = \"{requirement}\""),
+        )
+    };
+    let with_recorded = |version: &str| {
+        readme.replace(
+            &format!("| Version | `{recorded}` |"),
+            &format!("| Version | `{version}` |"),
+        )
+    };
+    let pre = format!("{recorded}-pre");
+    let mutations = [
+        (
+            "unpinned",
+            readme.clone(),
+            with_pin(recorded.clone()),
+            lock.clone(),
+        ),
+        (
+            "caret",
+            readme.clone(),
+            with_pin(format!("^{recorded}")),
+            lock.clone(),
+        ),
+        (
+            "pre-release pin",
+            readme.clone(),
+            with_pin(format!("={pre}")),
+            lock.clone(),
+        ),
+        (
+            "differs from the README",
+            with_recorded("1.99.0"),
+            manifest.clone(),
+            lock.clone(),
+        ),
+        (
+            "pre-release recorded",
+            with_recorded(&pre),
+            manifest.replace(&format!("\"={recorded}\""), &format!("\"={pre}\"")),
+            lock.replace(
+                &format!("version = \"{recorded}\""),
+                &format!("version = \"{pre}\""),
+            ),
+        ),
+        (
+            "not a direct dependency",
+            readme.clone(),
+            manifest.replace(&format!("{pin}\n"), ""),
+            lock.clone(),
+        ),
+    ];
+    for (slip, readme, manifest, lock) in mutations {
         assert!(
-            direct.iter().any(|(direct, _)| *direct == name),
-            "{name} is in Cargo.lock but not a direct dependency of host"
+            !pin_problems(&readme, &manifest, &lock).is_empty(),
+            "the pin check let through: {slip}"
         );
     }
 }

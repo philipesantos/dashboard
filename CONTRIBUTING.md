@@ -20,10 +20,11 @@ You need:
 
 - Rust (stable), installed with [rustup](https://rustup.rs/), with the WebAssembly targets
   plugins build for: `rustup target add wasm32-unknown-unknown wasm32-wasip2`
-- On Linux, the packages the secrets vault builds with. On Debian or Ubuntu:
+- On Linux, the packages the secrets vault and the host window build with. On Debian or Ubuntu:
 
   ```bash
-  sudo apt-get install libdbus-1-dev pkg-config
+  sudo apt-get install libdbus-1-dev pkg-config libxkbcommon-dev libxkbcommon-x11-dev \
+    libxcb1-dev libx11-xcb-dev libfreetype-dev libfontconfig-dev libwayland-dev
   ```
 
 Then, from the repository root, build the plugins and check everything:
@@ -135,6 +136,40 @@ What a failure means:
 The host compiles in Radix's colors and ships Barlow and IBM Plex Mono: when it is packaged,
 Radix's MIT notice (`design/radix/3.0.0/LICENSE`) and the fonts' licenses
 (`design/fonts/barlow/OFL.txt`, `design/fonts/plex-mono/LICENSE.txt`) go with it.
+
+### The host window
+
+The `host` crate draws the dashboard with GPUI (`cargo run -p host --bin dashboard`). Its checks
+run with the others, and three of its test targets need more:
+
+- `cargo test -p host --test pixels` draws offscreen on the GPU; without a GPU it needs Mesa's
+  software Vulkan (`mesa-vulkan-drivers` on Debian or Ubuntu). Windows has no headless renderer
+  and skips it.
+- `cargo test -p host --test window` opens real windows and drives them with the system's own
+  input and accessibility tree. It runs in the "Host window" CI job on the three systems; locally
+  it takes over the keyboard and pointer for about a minute, and on Linux it needs X11 (the job
+  runs it under Xvfb with the AT-SPI bus, `xdotool` and Python's AT-SPI bindings).
+- `host/ban-fixture` calls each GPUI method `clippy.toml` bans and must fail clippy with one
+  "disallowed method" error per call; the "Host window" job checks that it does.
+
+A screen-reader walk of every host dialog, with VoiceOver, Narrator and Orca, comes before each
+release ([`docs/accessibility/screen-reader-walk.md`](docs/accessibility/screen-reader-walk.md)).
+
+**Upgrading GPUI.** GPUI comes from gpui-unofficial, a third party's republish of Zed's GPUI, and
+its nineteen crates are pinned with `=` to one version, recorded in
+[`host/README.md`](host/README.md). Upgrade at most once a month, or at once for a security
+advisory:
+
+1. Take a version published from a Zed stable tag at least two weeks old, never a pre-release.
+2. Read the changes to gpui-unofficial's patch list (`docs/upstream-patches.md` in its repository)
+   since the commit `host/README.md` records, and note anything that touches input, windows,
+   prompts, URLs, assets, credentials or accessibility.
+3. Move all nineteen pins in `host/Cargo.toml` (and the fixture's in `host/ban-fixture/`)
+   together, then update the table in `host/README.md`: version, Zed tag and commit, publish date
+   and the patch list's commit. `host/tests/checks.rs` fails while any of them disagree.
+4. Run `cargo test -p host` and `cargo clippy --manifest-path host/ban-fixture/Cargo.toml` (it
+   must still fail with every ban), and let the "Host window" job run on the three systems before
+   merging.
 
 Performance is measured by hand, on the three systems: a maintainer adds the `bench` label to
 the pull request, which runs [`bench.yml`](.github/workflows/bench.yml). Compare its results
