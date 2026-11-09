@@ -86,4 +86,17 @@ disallowed-methods = [
     { path = "gpui::Svg::external_path", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
     { path = "gpui::Window::use_asset", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
     { path = "gpui::App::fetch_asset", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    # Found by the implementation review (008 research, "Review of the implementation")
+    { path = "gpui::Window::get_asset", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::ImageCacheItem::new", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::RetainAllImageCache::load", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::AnyImageCache::load", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::ImageCache::load", reason = "no plugin string reaches the image loader, a file or an asset: only host/src/media.rs, with host bytes (008 research R12)" },
+    { path = "gpui::Platform::prompt_for_paths", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
+    { path = "gpui::Platform::prompt_for_new_path", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
+    { path = "gpui::Platform::open_with_system", reason = "the host never opens a URL or a file with the system (FR-029; 008 research R12)" },
+    { path = "gpui::Platform::reveal_path", reason = "the host never opens a URL or a file with the system (FR-029; 008 research R12)" },
+    { path = "gpui::Platform::write_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
+    { path = "gpui::Platform::read_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
+    { path = "gpui::Platform::delete_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
 ]

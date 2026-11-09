@@ -65,6 +65,10 @@ pub enum Msg {
     StatusOk,
     StatusWarning,
     StatusError,
+    // Host notices
+    RecordUnreadable,
+    RemoveFailed,
+    RemoveDataKept,
 }
 
 impl Msg {
@@ -133,6 +137,15 @@ impl Msg {
             Msg::StatusOk => "ok",
             Msg::StatusWarning => "warning",
             Msg::StatusError => "error",
+            Msg::RecordUnreadable => {
+                "The approvals could not be read, so the dashboard still shows what it showed before. Choose Reload to try again."
+            }
+            Msg::RemoveFailed => {
+                "The widget could not be removed: its approval could not be changed. Nothing was deleted; try again."
+            }
+            Msg::RemoveDataKept => {
+                "The widget was removed, but the data the host kept for it could not be deleted."
+            }
         })
     }
 

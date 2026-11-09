@@ -150,6 +150,10 @@ fn show_next(cx: &mut App) {
     // the dialog's window gives it to the refusing control on the dialog's first frame
     // (start_gate_if_needed), so no focused node outside the dialog stays exposed (HS-16, HS-18)
     cx.defer(move |cx| {
+        // Answered before this ran: the answer already gave focus back, so leave it
+        if open(cx).is_none_or(|open| open.generation != generation) {
+            return;
+        }
         let mut saved = Vec::new();
         for handle in cx.windows() {
             let focused = handle
@@ -193,11 +197,36 @@ pub fn answer(cx: &mut App, answer: Answer) {
     show_next(cx);
 }
 
-/// Answers the open dialog as a refusal, if there is one: a window's close request and the app's
-/// quit call it before they proceed (HS-10).
+/// Answers the open dialog as a refusal, if there is one, and every dialog still waiting: the
+/// app's quit calls it before it proceeds (HS-10).
 pub fn refuse_if_open(cx: &mut App) {
+    refuse_waiting(cx, |_| true);
     if is_open(cx) {
         answer(cx, Answer::Refused);
+    }
+}
+
+/// A window is closing: the dialogs waiting to show in it are refused, then the open dialog, so
+/// none of them shows in a window that is gone (HS-10).
+pub fn refuse_for_closing(cx: &mut App, window: AnyWindowHandle) {
+    refuse_waiting(cx, |pending| pending == window);
+    if is_open(cx) {
+        answer(cx, Answer::Refused);
+    }
+}
+
+/// Refuses every waiting dialog whose window `matches`.
+fn refuse_waiting(cx: &mut App, matches: impl Fn(AnyWindowHandle) -> bool) {
+    if !cx.has_global::<DialogHost>() {
+        return;
+    }
+    let queue = std::mem::take(&mut cx.global_mut::<DialogHost>().queue);
+    let (refused, kept): (Vec<_>, Vec<_>) = queue
+        .into_iter()
+        .partition(|pending| matches(pending.window));
+    cx.global_mut::<DialogHost>().queue = kept.into();
+    for pending in refused {
+        let _ = pending.answer.send(Answer::Refused);
     }
 }
 

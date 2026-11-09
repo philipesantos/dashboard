@@ -59,15 +59,15 @@ pub fn start_runtime(data_dir: &Path) -> Result<Runtime, String> {
         .map_err(|error| format!("the plugin runtime did not start: {error:#}"))
 }
 
-/// The approvals to show, in the record's order (by plugin id).
-pub fn approvals(grants: &GrantStore) -> Vec<Widget> {
-    match grants.approvals() {
-        Ok(approvals) => approvals
+/// The approvals to show, in the record's order (by plugin id), or `None` when the record cannot
+/// be read now (locked by the development tool, or damaged).
+pub fn approvals(grants: &GrantStore) -> Option<Vec<Widget>> {
+    grants.approvals().ok().map(|approvals| {
+        approvals
             .into_iter()
             .map(|(id, origin)| Widget::new(id, origin))
-            .collect(),
-        Err(_) => Vec::new(),
-    }
+            .collect()
+    })
 }
 
 /// Reads at most one byte more than the package limit, so an oversized file is refused by the

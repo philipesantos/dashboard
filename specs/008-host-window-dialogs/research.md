@@ -456,3 +456,25 @@ threat model and decision 0001. Each finding was checked at the source before an
 | The 0001 revisit dropped two triggers, the compile-out option and a stale line | Yes | R2 rewritten |
 | A failure's detail could show a plugin's text as host text | Yes | Host words per error kind only; a hostile case (R5) |
 | `clippy.toml` not named for review; panel click-through; focus after the menu closes; "no byte"; UI-thread reads; window title and tooltips | Yes | Each corrected in the plan, spec and contracts |
+
+## Review of the implementation
+
+An independent review on 2026-11-09 (T052) read `host/src/dialog/`, `a11y.rs`, `media.rs`,
+`app.rs`, `plugins.rs`, `appearance.rs`, `dashboard.rs`, the `approvals()` and `APP_DIR` hunks of
+`runtime/src/grants.rs`, `clippy.toml`, `deny.toml`, `host/ban-fixture/` and the "Host window" job
+against constitution v5.0.1, the criteria, the threat model and decision 0001. Each finding was
+checked at the source (GPUI 1.25.3 included) before anything changed.
+
+| Finding | Held? | Outcome |
+| --- | --- | --- |
+| A panel left open behind a dialog: GPUI's `on_mouse_down_out` runs in the capture phase whatever the scrim occludes, so a click on the scrim closed the panel and moved focus to the menu button behind it, out of the trap | Yes | A dialog closes every window's menus and panels; closing them moves no focus while a dialog is open; the dialog's window puts focus back on Cancel whenever it is anywhere else; a test (`a_panel_behind_the_dialog_cannot_take_focus`), which fails without the fix |
+| The bans missed `Window::get_asset`, `ImageCacheItem::new`, the image caches' `load` and `Platform`'s file, prompt and credential methods (reachable through `gpui_platform::current_platform()`) | Yes | Twelve more paths in `clippy.toml` (29 in all), each called in `host/ban-fixture`, which CI now requires to fail 29 times; `image_cache()` and `retain_all()` only hand a cache to `img` children, which stay banned, so they are not |
+| "Remove" ignored a failed `GrantStore::remove` and discarded the kept data anyway, unlike the tool's `remove` | Yes | The approval first, the kept data only once it is gone, a host notice when either fails; a test |
+| A slower, older reload could replace a newer list and write statuses into the wrong frames | Yes | The epoch is checked before the list is replaced too |
+| Every focus regain started another reload, the old ones compiling on | Yes | The running reload is kept as a task; a new reload drops it, which stops its loads |
+| A record that cannot be read (locked or damaged) showed the empty dashboard and its advice | Yes | The frames stay and a host notice says the approvals could not be read; a test |
+| Closing a window refused the open dialog, then showed the next one, possibly in the closing window | Yes | The dialogs waiting for that window are refused first; quitting refuses every one; a test |
+| A dialog answered before its deferred focus save ran left every window blurred | Yes | The save does nothing once its dialog is gone |
+| The appearance file's partial file had a fixed name, followed links and was not flushed before the rename | Yes | A new file named for the process and moment, created only if absent, flushed, then renamed; removed on failure; a test that nothing is left |
+| (Possible) GPUI turns Enter's and Space's release into a click, which reached `click()` without the gate's held-key rule, and pressed host controls twice | Yes | Keyboard clicks are ignored: keys press controls and answer dialogs only through their key handlers; a test that Enter presses once, which fails without the fix |
+| (Possible) The dialog names a plugin by its id's last segment, so two owners' `notes` read alike | Partly | Kept as R8 decided: only the development tool approves plugins in this feature; the frame's description carries the full id. Installation, which brings plugins from different owners, decides how the dialog names the owner |

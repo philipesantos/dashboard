@@ -21,7 +21,7 @@ use design_tokens::Refusal;
 use gpui::{
     AnyWindowHandle, Context, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
     KeyUpEvent, ParentElement, Render, Role, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window, div, px,
 };
 use runtime::Runtime;
 use runtime::grants::GrantStore;
@@ -55,6 +55,10 @@ pub struct Dashboard {
     epoch: u64,
     /// A reload asked for while a dialog was open, run when it is answered (FR-040).
     pending_reload: bool,
+    /// The reload running now; a new one drops it, which stops its loads.
+    reloading: Option<Task<()>>,
+    /// The host's notice about the record or a removal, until the next reload that reads it.
+    notice: Option<Msg>,
     handle: AnyWindowHandle,
     _activation: Subscription,
     _dialogs: Subscription,
@@ -88,6 +92,12 @@ impl Dashboard {
             this.reload(cx);
         });
         let dialogs = cx.observe_global::<DialogHost>(|this, cx| {
+            // A dialog closes every menu and panel, in every window, so nothing behind the scrim
+            // can take focus back when it closes (HS-10, HS-17)
+            if dialog::is_open(cx) {
+                this.open_menu = None;
+                this.open_panel = None;
+            }
             if this.pending_reload && !dialog::is_open(cx) {
                 this.pending_reload = false;
                 this.reload(cx);
@@ -98,9 +108,11 @@ impl Dashboard {
         let appearance_changed = cx.observe_global::<appearance::Settings>(|_, cx| cx.notify());
         // With the system's theme picked, a switch of the system's redraws it (FR-037)
         let system_theme = cx.observe_window_appearance(window, |_, _, cx| cx.notify());
-        // Closing the window answers an open dialog as a refusal first (HS-10)
-        window.on_window_should_close(cx, |_, cx| {
-            dialog::refuse_if_open(cx);
+        // Closing the window answers an open dialog as a refusal first, and the dialogs waiting
+        // to show in it (HS-10)
+        let closing = window.window_handle();
+        window.on_window_should_close(cx, move |_, cx| {
+            dialog::refuse_for_closing(cx, closing);
             true
         });
         let mut dashboard = Dashboard {
@@ -122,6 +134,8 @@ impl Dashboard {
             scroll: ScrollHandle::new(),
             epoch: 0,
             pending_reload: false,
+            reloading: None,
+            notice: None,
             handle: window.window_handle(),
             _activation: activation,
             _dialogs: dialogs,
@@ -135,6 +149,11 @@ impl Dashboard {
     /// How many reloads have started: for tests that check a click reached "Reload".
     pub fn reloads(&self) -> u64 {
         self.epoch
+    }
+
+    /// The host's notice about the record or the last removal, if it shows one.
+    pub fn notice(&self) -> Option<Msg> {
+        self.notice
     }
 
     pub fn widgets(&self) -> &[Widget] {
@@ -288,7 +307,10 @@ impl Dashboard {
     /// Closes the open menu; focus goes back to its frame's menu button.
     pub fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(index) = self.open_menu.take() {
-            if let Some(button) = self.menus.get(index) {
+            // While a dialog is open, focus stays where the dialog put it
+            if !dialog::is_open(cx)
+                && let Some(button) = self.menus.get(index)
+            {
                 window.focus(button, cx);
             }
             cx.notify();
@@ -300,6 +322,7 @@ impl Dashboard {
     /// reloads. Focus goes back to the frame's menu button whatever the answer.
     pub fn ask_remove(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.close_menu(window, cx);
+        self.notice = None;
         let Some(widget) = self.widgets.get(index).cloned() else {
             return;
         };
@@ -325,16 +348,25 @@ impl Dashboard {
                 return;
             }
             let id = widget.id.clone();
-            cx.background_executor()
+            // As the development tool's `remove`: the approval first, and the kept data only once
+            // it is gone (or the tool removed it meanwhile)
+            let notice = cx
+                .background_executor()
                 .spawn(async move {
-                    // Nothing more to do if the tool removed it meanwhile
-                    let _ = grants.remove(&id);
-                    if let Some(runtime) = runtime {
-                        let _ = runtime.discard_kept_data(&id);
+                    if grants.remove(&id).is_err() {
+                        return Some(Msg::RemoveFailed);
+                    }
+                    match runtime.map(|runtime| runtime.discard_kept_data(&id)) {
+                        Some(Err(_)) => Some(Msg::RemoveDataKept),
+                        _ => None,
                     }
                 })
                 .await;
-            let _ = this.update(cx, |this, cx| this.reload(cx));
+            let _ = this.update(cx, |this, cx| {
+                this.reload(cx);
+                this.notice = notice;
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -350,7 +382,9 @@ impl Dashboard {
     /// Closes the open panel; focus goes back to its frame's menu button.
     pub fn close_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(index) = self.open_panel.take() {
-            if let Some(button) = self.menus.get(index) {
+            if !dialog::is_open(cx)
+                && let Some(button) = self.menus.get(index)
+            {
                 window.focus(button, cx);
             }
             cx.notify();
@@ -369,7 +403,8 @@ impl Dashboard {
         let epoch = self.epoch;
         let grants = Arc::clone(&self.grants);
         let runtime = self.runtime.clone();
-        cx.spawn(async move |this, cx| {
+        // Replacing the task drops the reload before it: its loads stop at their next await
+        self.reloading = Some(cx.spawn(async move |this, cx| {
             let listed = cx
                 .background_executor()
                 .spawn({
@@ -379,6 +414,20 @@ impl Dashboard {
                 .await;
             let origins: Vec<(usize, String)> = this
                 .update(cx, |this, cx| {
+                    // A newer reload started meanwhile: its list wins
+                    if this.epoch != epoch {
+                        return Vec::new();
+                    }
+                    let Some(listed) = listed else {
+                        // The record cannot be read now: keep the frames, say so, unless a
+                        // removal's notice already says more
+                        this.notice.get_or_insert(Msg::RecordUnreadable);
+                        cx.notify();
+                        return Vec::new();
+                    };
+                    if this.notice == Some(Msg::RecordUnreadable) {
+                        this.notice = None;
+                    }
                     this.widgets = listed;
                     while this.menus.len() < this.widgets.len() {
                         this.menus.push(cx.focus_handle().tab_stop(true));
@@ -425,8 +474,7 @@ impl Dashboard {
                     break;
                 }
             }
-        })
-        .detach();
+        }));
     }
 
     fn empty_state(theme: &Theme) -> impl IntoElement {
@@ -521,10 +569,13 @@ impl Render for Dashboard {
             trap: open.trap.clone(),
             here: open.window == self.handle,
         });
-        if shown.as_ref().is_some_and(|shown| shown.here)
-            && let Some(refuse) = dialog::start_gate_if_needed(cx)
-        {
-            window.focus(&refuse, cx);
+        if let Some(shown) = shown.as_ref().filter(|shown| shown.here) {
+            if let Some(refuse) = dialog::start_gate_if_needed(cx) {
+                window.focus(&refuse, cx);
+            } else if !shown.refuse.is_focused(window) && !shown.confirm.is_focused(window) {
+                // Focus is never anywhere but the dialog's controls while it is open (HS-17)
+                window.focus(&shown.refuse, cx);
+            }
         }
         let here = self.handle;
         let body = if self.appearance_open {
@@ -548,7 +599,12 @@ impl Render for Dashboard {
         } else {
             div().flex().flex_wrap().gap(px(12.0)).children(frames)
         };
-        let notice = appearance::notice(cx).map(|notice| appearance::notice_line(&theme, notice));
+        let notices = [
+            appearance::notice(cx)
+                .map(|notice| appearance::notice_line("appearance-notice", &theme, notice)),
+            self.notice
+                .map(|notice| appearance::notice_line("host-notice", &theme, notice)),
+        ];
         div()
             .id("dashboard")
             .key_context(CONTEXT)
@@ -605,7 +661,7 @@ impl Render for Dashboard {
                             .overflow_y_scroll()
                             .track_scroll(&self.scroll)
                             .p(px(CONTENT_PADDING))
-                            .children(notice)
+                            .children(notices.into_iter().flatten())
                             .child(body),
                     ),
             )

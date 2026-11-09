@@ -57,7 +57,13 @@ pub fn control(
         .border(px(RING))
         .border_color(ring)
         .rounded(theme.radius + px(2.0 * RING))
-        .on_click(move |_, window, cx| on_press(window, cx))
+        // Enter and Space press it on their way down; GPUI's click on their release would press
+        // it a second time
+        .on_click(move |event, window, cx| {
+            if !matches!(event, gpui::ClickEvent::Keyboard(_)) {
+                on_press(window, cx)
+            }
+        })
         .on_key_down(move |event: &KeyDownEvent, window, cx| {
             if matches!(event.keystroke.key.as_str(), "enter" | "space") {
                 on_key(window, cx);

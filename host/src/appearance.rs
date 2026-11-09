@@ -220,14 +220,34 @@ pub fn load(path: &Path) -> (Appearance, Option<Msg>) {
     }
 }
 
-/// Writes the choice to `path`, through a file beside it, so a crash never leaves half of one.
+/// Writes the choice to `path` through a new file beside it, written to the disk before it
+/// replaces the old one, so a crash leaves the old choice or the new one, never half of one. The
+/// new file's name is this process's and this moment's, and it is created only if it does not
+/// exist, so it never follows a link or meets another instance's file.
 pub fn save(path: &Path, appearance: &Appearance) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+    use std::io::Write;
+    let dir = path.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let partial = dir.join(format!(
+        ".appearance.{}.{stamp}.partial",
+        std::process::id()
+    ));
+    let written = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)?;
+        file.write_all(to_json(appearance).as_bytes())?;
+        file.sync_all()?;
+        std::fs::rename(&partial, path)
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&partial);
     }
-    let partial = path.with_extension("json.partial");
-    std::fs::write(&partial, to_json(appearance))?;
-    std::fs::rename(&partial, path)
+    written
 }
 
 /// The app's appearance: the choice, the file that keeps it (none in tests that keep nothing),
@@ -372,12 +392,12 @@ fn line(id: &'static str, theme: &Theme, words: impl Into<SharedString>) -> Stat
         .child(text(body_md(), theme.text_secondary, words))
 }
 
-/// The host's notice about the appearance, at the top of the content area.
-pub fn notice_line(theme: &Theme, notice: Msg) -> Stateful<Div> {
+/// A host notice at the top of the content area: `id` names it for assistive technology and tests.
+pub fn notice_line(id: &'static str, theme: &Theme, notice: Msg) -> Stateful<Div> {
     let words: SharedString = notice.text().into();
     div()
-        .id("appearance-notice")
-        .debug_selector(|| "appearance-notice".to_owned())
+        .id(id)
+        .debug_selector(move || id.to_owned())
         .role(Role::Label)
         .aria_label(words.clone())
         .mb(px(12.0))

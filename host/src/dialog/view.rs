@@ -59,8 +59,12 @@ fn button(
         .border_color(ring)
         .rounded(theme.radius + px(2.0 * RING))
         .on_mouse_down(MouseButton::Left, |_, _, cx| super::pointer_down(cx))
-        .on_click(move |_, _, cx| {
-            super::click(cx, answer);
+        .on_click(move |event, _, cx| {
+            // Enter and Space answer only through `key_press`, which applies the gate's held
+            // keys; GPUI also turns their release into a click, which is ignored here
+            if !matches!(event, gpui::ClickEvent::Keyboard(_)) {
+                super::click(cx, answer);
+            }
         })
         .on_key_down(move |event: &KeyDownEvent, _, cx| {
             let key = event.keystroke.key.as_str();

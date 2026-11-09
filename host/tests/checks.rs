@@ -250,7 +250,7 @@ fn the_pin_check_catches_every_slip() {
 }
 
 /// The GPUI paths `clippy.toml` must disallow (contracts/bans-and-checks.md).
-const BANNED: [&str; 17] = [
+const BANNED: [&str; 29] = [
     "gpui::Window::prompt",
     "gpui::AsyncWindowContext::prompt",
     "gpui::PlatformWindow::prompt",
@@ -268,6 +268,18 @@ const BANNED: [&str; 17] = [
     "gpui::Svg::external_path",
     "gpui::Window::use_asset",
     "gpui::App::fetch_asset",
+    "gpui::Window::get_asset",
+    "gpui::ImageCacheItem::new",
+    "gpui::RetainAllImageCache::load",
+    "gpui::AnyImageCache::load",
+    "gpui::ImageCache::load",
+    "gpui::Platform::prompt_for_paths",
+    "gpui::Platform::prompt_for_new_path",
+    "gpui::Platform::open_with_system",
+    "gpui::Platform::reveal_path",
+    "gpui::Platform::write_credentials",
+    "gpui::Platform::read_credentials",
+    "gpui::Platform::delete_credentials",
 ];
 
 /// HS-12, FR-019, FR-029: every ban is in `clippy.toml`.

@@ -69,7 +69,7 @@ SC-006).
 
 Add a call to `window.prompt(...)`, `cx.open_url(...)` or `img("https://…")` anywhere in `host/src/`
 outside `media.rs`: `cargo clippy -p host` fails naming the rule;
-`cargo clippy --manifest-path host/ban-fixture/Cargo.toml` fails once for each of the 17 banned
+`cargo clippy --manifest-path host/ban-fixture/Cargo.toml` fails once for each of the 29 banned
 methods. Add a string literal to a `child(...)` in a screen: `cargo test -p host --test checks`
 fails. Change a GPUI pin to `^1.25.3`: the pin check fails.
 

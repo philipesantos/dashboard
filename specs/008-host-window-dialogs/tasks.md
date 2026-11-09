@@ -340,13 +340,18 @@ status, focus ready for the first Tab.
   unchanged; `design-gen`'s criteria test still passes.
 - [ ] T049 [P] `specs/008-host-window-dialogs/performance.md`: the start, dialog, compile and memory
   numbers T033 and T020 measured on the three systems and the reference machine (SC-001, SC-006).
-- [ ] T050 Every local check: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+- [X] T050 Every local check: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
   --locked -- -D warnings`, `cargo test --workspace --locked` (on the maintainer's machine the
   tests that write to the real keychain wait on its password prompt; they are skipped there and
   checked in CI, as in feature 007's T047),
   `cargo test -p host --test window` under Xvfb as quickstart §6, `cargo xtask design --check`,
   `cargo deny check`, `cargo audit`; `git diff master -- runtime/` shows only `approvals()` and its
   tests, and the runtime's security suite passes unchanged.
+  Done 2026-11-09: fmt, clippy, `design --check`, `cargo deny check` and `cargo audit` (six
+  allowed "unmaintained" warnings, no vulnerability) pass; 763 workspace tests pass, none failed,
+  the keychain benchmark skipped. `runtime/` differs from master by `approvals()` and its tests and
+  by `APP_DIR` made public, so the host keeps its appearance file in the app's directory. The
+  window target runs in CI only: locally it would take over the maintainer's keyboard and pointer.
 - [X] T051 Walk `quickstart.md` §1–§8 and fix any drift between it, the contracts and the code.
   Fixed: `cargo run -p runtime --bin runtime` (the package has two binaries), the chrome's
   "Appearance" as the first control, the ban fixture in §7 and in the bans contract, the HTTP
@@ -354,7 +359,7 @@ status, focus ready for the first Tab.
   system's data directory whatever `--data` says, and R11's screen drawn in place of the frames.
   §1–§5 by hand on a desktop (the system theme switch above all) stay for the maintainer's look
   approval in T053.
-- [ ] T052 Independent review: a fresh agent reads `host/src/dialog/`, `a11y.rs`, `media.rs`,
+- [X] T052 Independent review: a fresh agent reads `host/src/dialog/`, `a11y.rs`, `media.rs`,
   `app.rs`, `plugins.rs`, the `approvals()` hunk, `clippy.toml` and `deny.toml` against constitution
   v5.0.1, the criteria and the threat model; check each finding at the source; record findings and
   outcomes at the end of `research.md` under "Review of the implementation".

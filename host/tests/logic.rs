@@ -334,6 +334,26 @@ mod window {
         cx.update(|window, cx| assert!(view.read(cx).reload_focus().is_focused(window)));
     }
 
+    /// HS-24 (implementation review): Enter presses a host control once, though GPUI also turns
+    /// its release into a click.
+    #[gpui::test]
+    fn enter_presses_a_control_once(cx: &mut TestAppContext) {
+        let world = World::new();
+        let (view, cx) = world.open(cx);
+        cx.update(|window, cx| {
+            let reload = view.read(cx).reload_focus().clone();
+            window.focus(&reload, cx);
+        });
+        cx.run_until_parked();
+        let before = view.read_with(cx, |view, _| view.reloads());
+        cx.simulate_keystrokes("enter");
+        cx.simulate_event(gpui::KeyUpEvent {
+            keystroke: gpui::Keystroke::parse("enter").expect("a key"),
+        });
+        cx.run_until_parked();
+        assert_eq!(view.read_with(cx, |view, _| view.reloads()), before + 1);
+    }
+
     /// FR-040: "Reload" adds newly approved plugins and drops removed ones.
     #[gpui::test]
     fn reload_follows_the_record(cx: &mut TestAppContext) {
@@ -525,6 +545,7 @@ mod dialog_form {
     use futures::channel::oneshot;
     use gpui::{Modifiers, TestAppContext, VisualTestContext};
     use host::dialog::{self, Answer};
+    use host::text::Msg;
     use std::time::Duration;
 
     fn answer_now(receiver: &mut oneshot::Receiver<Answer>) -> Option<Answer> {
@@ -615,6 +636,115 @@ mod dialog_form {
         let mut second = VisualTestContext::from_window(windows[1].into(), cx);
         assert!(second.simulate_close());
         assert_eq!(answer_now(&mut answer), Some(Answer::Refused));
+    }
+
+    /// HS-10: closing a window refuses the dialogs waiting to show in it, so none opens in a
+    /// window that is gone; a dialog for another window still shows there.
+    #[gpui::test]
+    fn closing_a_window_refuses_what_waits_in_it(cx: &mut TestAppContext) {
+        let world = World::new();
+        let (windows, _clock) = world.open_windows(cx, 2);
+        let mut open = cx.update(|cx| dialog::ask(cx, windows[1].into(), request()));
+        let mut waiting = cx.update(|cx| dialog::ask(cx, windows[1].into(), request()));
+        let mut elsewhere = cx.update(|cx| dialog::ask(cx, windows[0].into(), request()));
+        cx.run_until_parked();
+        let mut second = VisualTestContext::from_window(windows[1].into(), cx);
+        assert!(second.simulate_close());
+        assert_eq!(answer_now(&mut open), Some(Answer::Refused));
+        assert_eq!(answer_now(&mut waiting), Some(Answer::Refused));
+        assert_eq!(answer_now(&mut elsewhere), None, "still to answer");
+        let shown_in = cx.update(|cx| dialog::open(cx).map(|open| open.window));
+        assert_eq!(
+            shown_in,
+            Some(windows[0].into()),
+            "shown in the window that stays"
+        );
+    }
+
+    /// HS-10, HS-17 (implementation review): a panel left open behind a dialog closes with it, and
+    /// a click on the scrim cannot hand focus to the frame's menu button behind it.
+    #[gpui::test]
+    fn a_panel_behind_the_dialog_cannot_take_focus(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (windows, clock) = world.open_windows(cx, 1);
+        let mut window = VisualTestContext::from_window(windows[0].into(), cx);
+        windows[0]
+            .update(&mut window, |view, window, cx| {
+                view.open_panel_of(0, window, cx);
+                view.toggle_menu(0, window, cx);
+                view.ask_remove(0, window, cx);
+            })
+            .unwrap();
+        window.run_until_parked();
+        clock.advance(Duration::from_millis(1500));
+        let refuse = window.update(|_, cx| dialog::open(cx).expect("open").refuse.clone());
+        assert_eq!(
+            windows[0]
+                .read_with(&window, |view, _| view.open_panel())
+                .unwrap(),
+            None,
+            "the dialog closed the panel"
+        );
+        let scrim = window.debug_bounds("scrim").expect("the scrim");
+        window.simulate_click(
+            scrim.origin + gpui::point(gpui::px(5.0), gpui::px(5.0)),
+            Modifiers::none(),
+        );
+        window.run_until_parked();
+        window.update(|window, _| assert!(refuse.is_focused(window), "focus stays on Cancel"));
+        window.simulate_keystrokes("tab tab tab");
+        window.update(|window, cx| {
+            let open = dialog::open(cx).expect("open");
+            assert!(open.refuse.is_focused(window) || open.confirm.is_focused(window));
+        });
+    }
+
+    /// FR-038 (implementation review): when the record cannot be changed, "Remove" deletes
+    /// nothing, keeps the frame and says so in the host's words, as the tool's `remove` stops.
+    #[gpui::test]
+    fn a_removal_that_fails_deletes_nothing_and_says_so(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (windows, clock) = world.open_windows(cx, 1);
+        let mut window = VisualTestContext::from_window(windows[0].into(), cx);
+        let record = world.dir.path().join("grants.json");
+        let saved = std::fs::read(&record).expect("the record");
+        windows[0]
+            .update(&mut window, |view, window, cx| {
+                view.ask_remove(0, window, cx)
+            })
+            .unwrap();
+        window.run_until_parked();
+        std::fs::write(&record, b"not a record").expect("damaged");
+        clock.advance(Duration::from_millis(1500));
+        window.update(|_, cx| dialog::answer(cx, Answer::Confirmed));
+        window.run_until_parked();
+        let (count, notice) = windows[0]
+            .read_with(&window, |view, _| (view.widgets().len(), view.notice()))
+            .unwrap();
+        assert_eq!(notice, Some(Msg::RemoveFailed));
+        assert_eq!(count, 1, "the frame stays");
+        assert!(window.debug_bounds("host-notice").is_some(), "shown");
+        std::fs::write(&record, saved).expect("restored");
+        assert_eq!(world.grants.approvals().expect("readable").len(), 1);
+    }
+
+    /// FR-040 (implementation review): a record that cannot be read keeps the frames and says
+    /// so, instead of an empty dashboard that tells the person to approve a plugin.
+    #[gpui::test]
+    fn an_unreadable_record_keeps_the_frames(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (view, cx) = world.open(cx);
+        std::fs::write(world.dir.path().join("grants.json"), b"not a record").expect("damaged");
+        view.update(cx, |view, cx| view.reload(cx));
+        cx.run_until_parked();
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.widgets().len(), 1);
+            assert_eq!(view.notice(), Some(Msg::RecordUnreadable));
+        });
+        assert!(cx.debug_bounds("host-notice").is_some());
     }
 
     /// FR-018: one dialog at a time; the next shows when the first is answered.
@@ -1004,6 +1134,11 @@ mod appearance {
             ..Appearance::DEFAULT
         };
         assert_eq!(load(&file), (expected, None));
+        let left: Vec<_> = std::fs::read_dir(file.parent().expect("a directory"))
+            .expect("readable")
+            .map(|entry| entry.expect("an entry").file_name())
+            .collect();
+        assert_eq!(left, ["appearance.json"], "no partial file left");
         assert_eq!(from_json(&to_json(&expected)), Some(expected));
     }
 

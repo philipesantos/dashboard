@@ -8,10 +8,16 @@ HS-12)" or "no plugin string reaches the image loader or URL opener (FR-029)":
 - `gpui::Window::prompt`, `gpui::AsyncWindowContext::prompt`, `gpui::PlatformWindow::prompt`
 - `gpui::App::open_url`, `gpui::Platform::open_url`, `gpui::App::open_with_system`,
   `gpui::App::reveal_path`, `gpui::App::prompt_for_paths`, `gpui::App::prompt_for_new_path`
-- `gpui::App::write_credentials`, `gpui::App::read_credentials`, `gpui::App::delete_credentials`
+- `gpui::Platform::prompt_for_paths`, `gpui::Platform::prompt_for_new_path`,
+  `gpui::Platform::open_with_system`, `gpui::Platform::reveal_path`: the same through the platform
+  object `gpui_platform::current_platform()` returns
+- `gpui::App::write_credentials`, `gpui::App::read_credentials`, `gpui::App::delete_credentials`,
+  and the same three on `gpui::Platform`
 - `gpui::img`, `gpui::svg`, `gpui::Svg::external_path`, `gpui::Window::use_asset`,
-  `gpui::App::fetch_asset`: allowed only in `host/src/media.rs`, with an inner `#[allow]` and its
-  reason; `media` takes only bytes the host holds
+  `gpui::Window::get_asset`, `gpui::App::fetch_asset`, `gpui::ImageCacheItem::new`,
+  `gpui::ImageCache::load`, `gpui::RetainAllImageCache::load`, `gpui::AnyImageCache::load`: allowed
+  only in `host/src/media.rs`, with an inner `#[allow]` and its reason; `media` takes only bytes
+  the host holds
 
 The exact paths are confirmed by the first task (research R15); each entry is proved by
 `host/ban-fixture`, a crate outside the workspace that calls every one: the "Host window" CI job
