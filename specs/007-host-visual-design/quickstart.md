@@ -27,19 +27,21 @@ Then `cargo xtask design` regenerates, and `--check` passes again. Undo the chan
 
 ## 3. A failing pairing is caught (US2, FR-008)
 
-In `DESIGN.md`'s project layer, make the control boundary use gray step 8 instead of 9:
+In `DESIGN.md`, make `border-control` use gray step 8 in the light theme, and its front-matter
+color `#bbbbbb`, gray 8, so only the contrast rule can refuse it:
 
 ```sh
 cargo xtask design --check
 ```
 
-Expected: exit 1, naming `border-control` on `surface`, kind `non-text`, theme `light`, the gray
-family `slate` and a ratio near 1.86 (R5). Undo the change.
+Expected: exit 1, naming `roles.border-control` on `surface` (non-text, light theme), a ratio
+under 3:1 and the appearance where it is worst (R5). Undo the change.
 
 ## 4. The hue rule (US4, FR-011)
 
 ```sh
-cargo test -p design-tokens appearance
+cargo test -p design-tokens --test appearance
+cargo test -p design-gen --test it hue_rule::
 ```
 
 Expected: the default passes; blue with an indigo host (15° apart) is refused as `TooClose`;
@@ -50,7 +52,7 @@ monochrome host are exactly lime, sky, cyan, blue, indigo, iris, violet, purple,
 ## 5. The kit cannot reach a host surface (US3, FR-015)
 
 ```sh
-cargo test -p design-gen host_surfaces
+cargo test -p design-gen --test it host_surfaces::
 cargo deny --manifest-path design/ban-fixture/Cargo.toml check bans   # must fail
 ```
 
@@ -61,7 +63,7 @@ Expected: the test passes (every host-surface token is absent from `design-token
 ## 6. The criteria cover the threat model (US5, SC-005)
 
 ```sh
-cargo test -p design-gen criteria
+cargo test -p design-gen --test it criteria::
 ```
 
 Expected: pass. Removing a criterion's **Answers** line, or adding a Phase 3 B4 row to

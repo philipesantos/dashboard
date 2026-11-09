@@ -22,23 +22,31 @@ impl Appearance {
     pub fn validate(&self) -> Result<(), Refusal>;
 }
 pub enum Refusal {
-    TooClose { widget: Scale, other: Other, degrees: u16 },   // Other: the host color or a status
-    NotChromatic { scale: Scale },
+    TooClose { widget: Scale, other: Other, degrees: u16 },   // the distance, rounded down
+    NotChromatic { scale: Scale },                             // a neutral host or widget color
 }
+pub enum Other { Host(Scale), Ok, Warning, Error }
+
+impl Scale { pub fn hue(self) -> f64; pub fn chroma(self) -> f64; pub fn is_chromatic(self) -> bool; }
+impl Radius { pub const ALL: [Radius; 5]; pub const fn name(self) -> &'static str; pub const fn px(self) -> f32; }
 
 pub enum Tone { Default, Accent, Ok, Warning, Error }
-impl Tone { pub fn parse(name: &str) -> Result<Tone, UnknownTone>; }
+impl Tone { pub const ALL: [Tone; 5]; pub fn parse(name: &str) -> Result<Tone, UnknownTone>; }
 pub struct UnknownTone(pub String);   // the kit draws Default and logs this name escaped (FR-017)
-pub struct ToneColors { pub text: Rgb, pub surface: Rgb, pub border: Rgb, pub icon: Option<Icon> }
+pub struct ToneColors { pub text: Rgb, pub surface: Rgb, pub border: Option<Rgb>, pub icon: Option<(Icon, Rgb)> }
 pub fn tone(tone: Tone, appearance: &Appearance, theme: Theme) -> ToneColors;
 
 pub struct Rgb { pub r: u8, pub g: u8, pub b: u8 }
 pub fn contrast(a: Rgb, b: Rgb) -> f64;                      // WCAG 2.2 ratio
 
-pub mod typography { /* generated levels */ }
-pub mod spacing { /* generated steps */ }
-pub mod elevation { /* flat, frame */ }
-pub enum Icon { Check, Alert, Cross }
+pub mod typography { pub struct Level { .. }; pub const BODY_MD: Level; /* ... */ }
+pub mod spacing { pub const MD: f32; /* ... */ }
+pub mod radius { pub const MEDIUM: f32; /* ... */ }
+pub mod elevation { pub struct Shadow { .. }; pub const FLAT: Option<Shadow>; pub const FRAME: Option<Shadow>; }
+pub enum Icon { Check, Alert, Cross }                       // Icon::path(self) -> &'static str
+
+#[doc(hidden)]
+pub mod raw { /* RoleDef, Source, StepRef, resolve(): what the generated tables of both crates use */ }
 ```
 
 No item of this crate is a host-surface token; a `design-gen` test checks every marked token
@@ -50,8 +58,14 @@ For the host only; `deny.toml` bans it except for the crate `host`, and bans `de
 for `xtask` (R6).
 
 ```rust
+pub use design_tokens::{Appearance, Rgb, Theme};
+pub const COMPONENTS: [&str; 3];                             // chrome, panel, dialog
+pub struct ChromeColors { pub surface: Rgb, pub text: Rgb }
+pub struct DialogStyle { pub surface: Rgb, pub scrim: Rgb, pub scrim_opacity: f64, pub shadow: Option<Shadow> }
+pub struct PanelStyle { pub surface: Rgb, pub shadow: Option<Shadow> }
+pub struct FocusStyle { pub ring: Rgb, pub width: f32 }    // 2 px
 pub fn chrome(appearance: &Appearance, theme: Theme) -> ChromeColors;
-pub fn dialog(appearance: &Appearance, theme: Theme) -> DialogStyle;   // surface, scrim, elevation
+pub fn dialog(appearance: &Appearance, theme: Theme) -> DialogStyle;
 pub fn panel_attachment(appearance: &Appearance, theme: Theme) -> PanelStyle;
 pub fn focus(appearance: &Appearance, theme: Theme) -> FocusStyle;
 ```

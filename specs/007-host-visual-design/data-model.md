@@ -24,20 +24,22 @@ A color role of the project layer (`text`, `text-secondary`, `surface`, `border-
 | Field | Type | Rule |
 | --- | --- | --- |
 | `name` | kebab-case | unique |
-| `source` | `gray` \| `widget` \| `host` \| `ok` \| `warning` \| `error` | which pick or fixed scale it reads |
-| `light`, `dark` | step 1–12, or `solid-text` | per theme |
+| `source` | `gray` \| `widget` \| `host` \| `ok` \| `warning` \| `error` \| `overlay` | which pick or fixed scale it reads; `overlay` is `blackA` |
+| `light`, `dark` | step 1–12, `white`, `black` or `solid-text` | per theme |
 | `why` | text | required (FR-001) |
 | `host_surface` | bool | true routes it to the `host-surfaces` crate (R6) |
 
 ## Pairing
 
-A foreground role over a background role that the contrast lint checks.
+Not a separate entry: a foreground role carries `kind` and `on`, the backgrounds it is drawn on,
+and each (role, background) is a pairing the lint checks. Components and tones must only draw a
+role on a background its `on` lists (rule 11).
 
-| Field | Type | Rule |
+| Field (on the role) | Type | Rule |
 | --- | --- | --- |
-| `fg`, `bg` | role names | must exist |
 | `kind` | `text` \| `large-text` \| `non-text` \| `decorative` \| `inactive` | thresholds 4.5, 3, 3; none for the last two, which only WCAG's exemptions allow (R5) |
-| `why` | text | required for `decorative` and `inactive` |
+| `on` | role names | must exist; required with `kind` |
+| `exempt` | text | required for `decorative` and `inactive`: the exemption it rests on |
 
 ## Tone
 

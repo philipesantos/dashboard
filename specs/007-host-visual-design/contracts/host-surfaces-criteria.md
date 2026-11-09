@@ -15,28 +15,25 @@ file and `docs/threat-model.md`.
 - **Observe**: the bounds of the chrome and of every frame and panel, at every window size the
   grid allows.
 - **Expect**: no frame or panel intersects the chrome.
-- **Answers**: V; "Password field or drawing over the frame (fake login)"; "Something that is not
-  a host dialog passes for one: the operating system's native prompt, or a widget drawing one"
+- **Answers**: V
+  - Password field or drawing over the frame (fake login)
 - **Tested by**: host window
 
-## Widget frame
-## Frame panel
-## Host dialogs
-## Fields the host draws for a plugin
-## Keyboard and screen readers
-
 ## Decided elsewhere
-- "Widget content imitates a host dialog inside its frame, with placed declared actions as its
-  buttons (\"Allow access?\")": the control of an action that changes data, and whether a
-  destructive action asks for a host dialog, are decided in the Phase 3 spec for declared actions
-  and settings (threat model, open questions).
+- Widget content imitates a host dialog inside its frame, with placed declared actions as its buttons ("Allow access?")
+  Owner: declared actions. <why, and where it is decided>
 ```
+
+**Answers** names the constitution rules on its own line, then quotes each threat row on an
+indented `  - ` line of its own, since row titles may hold quotes. Under "Decided elsewhere", each
+`- ` line is a row title, and the indented lines below it name the owner.
 
 ## Rules the coverage test enforces
 
 1. Every `### HS-NN` heading is unique and followed by the four fields, each non-empty.
-2. Every threat row quoted in **Answers** or under "Decided elsewhere" matches the first cell of
-   a row of the threat model's table, exactly.
+2. Every threat row quoted under **Answers** or listed under "Decided elsewhere" matches the
+   first cell of a row of the threat model's table, exactly, and every criterion quotes at least
+   one row.
 3. Every row of that table whose boundary includes B4 and whose "Test from" names Phase 3 is
    quoted by at least one criterion or under "Decided elsewhere". Rows that are not about the
    host's surfaces go under "Decided elsewhere" with the feature that owns them: the decoder row
