@@ -4,3 +4,4 @@
 
 pub mod label;
 pub mod text;
+pub mod theme;

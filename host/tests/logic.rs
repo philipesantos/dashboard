@@ -73,3 +73,52 @@ mod label {
         assert_eq!(monogram("\u{301}x"), "X");
     }
 }
+
+mod theme {
+    use design_tokens::{Appearance, Theme as Mode, ThemePick};
+    use gpui::{Rgba, WindowAppearance};
+    use host::theme::{Theme, resolve_theme};
+
+    fn hex(color: gpui::Hsla) -> String {
+        let rgba = Rgba::from(color);
+        format!(
+            "#{:02x}{:02x}{:02x}",
+            (rgba.r * 255.0).round() as u8,
+            (rgba.g * 255.0).round() as u8,
+            (rgba.b * 255.0).round() as u8
+        )
+    }
+
+    /// FR-006: the default look is DESIGN.md's front matter, light and dark.
+    #[test]
+    fn the_default_theme_is_design_mds() {
+        let light = Theme::new(&Appearance::DEFAULT, Mode::Light);
+        assert_eq!(hex(light.canvas), "#f1f0ef");
+        assert_eq!(hex(light.surface), "#fdfdfc");
+        assert_eq!(hex(light.chrome), "#e9e8e6");
+        assert_eq!(hex(light.ink), "#21201c");
+        assert_eq!(hex(light.focus), "#21201c");
+        assert_eq!(f32::from(light.radius), 2.0);
+        let dark = Theme::new(&Appearance::DEFAULT, Mode::Dark);
+        assert_eq!(hex(dark.canvas), "#111110");
+        assert_eq!(hex(dark.ink), "#eeeeec");
+        assert!(dark.scrim.a > 0.0 && dark.scrim.a < 1.0);
+    }
+
+    /// FR-037: the system pick follows the window's appearance.
+    #[test]
+    fn the_system_pick_follows_the_window() {
+        assert_eq!(
+            resolve_theme(ThemePick::System, WindowAppearance::VibrantDark),
+            Mode::Dark
+        );
+        assert_eq!(
+            resolve_theme(ThemePick::System, WindowAppearance::Light),
+            Mode::Light
+        );
+        assert_eq!(
+            resolve_theme(ThemePick::Dark, WindowAppearance::Light),
+            Mode::Dark
+        );
+    }
+}

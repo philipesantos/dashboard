@@ -386,6 +386,17 @@ pub struct ToneColors {
     pub icon: Option<(Icon, Rgb)>,
 }
 
+/// A role of this crate by its `DESIGN.md` name (`canvas`, `surface`, `divider`, `text`, ...),
+/// resolved under an appearance in a theme; `None` for a name this crate does not hold, such as a
+/// host surface. For the host, which draws its frames and chrome from these roles; widget content
+/// asks for a [`Tone`] instead.
+pub fn role_color(name: &str, appearance: &Appearance, theme: Theme) -> Option<Rgb> {
+    generated::ROLES
+        .iter()
+        .find(|role| role.name == name)
+        .map(|role| raw::resolve(role, appearance, theme).0)
+}
+
 /// A tone's colors under the person's appearance in a theme.
 pub fn tone(tone: Tone, appearance: &Appearance, theme: Theme) -> ToneColors {
     let index = Tone::ALL.iter().position(|t| *t == tone).expect("in ALL");
@@ -402,6 +413,22 @@ pub fn tone(tone: Tone, appearance: &Appearance, theme: Theme) -> ToneColors {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_color_resolves_this_crates_roles_only() {
+        let appearance = Appearance::DEFAULT;
+        // DESIGN.md's front matter: canvas #f1f0ef in the light theme, sand by default
+        assert_eq!(
+            role_color("canvas", &appearance, Theme::Light),
+            Some(Rgb {
+                r: 0xf1,
+                g: 0xf0,
+                b: 0xef
+            })
+        );
+        assert_eq!(role_color("host-strong", &appearance, Theme::Light), None);
+        assert_eq!(role_color("nothing", &appearance, Theme::Light), None);
+    }
 
     #[test]
     fn radius_names_are_design_mds_picks() {

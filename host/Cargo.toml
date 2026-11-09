@@ -54,3 +54,6 @@ gpui-windows-gpui-unofficial = "=1.25.3"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 gpui-web-gpui-unofficial = "=1.25.3"
+
+[dev-dependencies]
+gpui = { package = "gpui-unofficial", version = "=1.25.3", features = ["test-support"] }

@@ -96,6 +96,13 @@ they lack (scripts outside Latin, emoji). The host ships the fonts' licenses.
 **Rationale**: the fonts are the host's (feature 007, R9 and R14); embedding them makes the window
 look the same on every system and leaves no font path a plugin could name.
 
+GPUI 1.25.3 has no letter spacing in its text style, so `label-mono` is drawn in capitals without
+its 0.06 em; the preview and `DESIGN.md` keep the value for when GPUI can draw it.
+
+The host reads the roles of `design-tokens` by name through `design_tokens::role_color`, a small
+public function added for it (the kit keeps asking for tones), and the host surfaces through
+`host-surfaces`.
+
 ## R5. Which plugins the window shows, and the one runtime change
 
 **Decision**: the window lists the approvals of the development grant record and loads each from

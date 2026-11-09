@@ -109,7 +109,7 @@ done and the maintainer has seen its result.
   crates that bring it (both security core).
 - [X] T010 [P] `host/src/text.rs`: `Msg`, `HostText`, the English catalog (data-model "Host text").
 - [X] T011 [P] `host/src/label.rs`: `PluginText`, the label and monogram rules (T006).
-- [ ] T012 [P] `host/src/theme.rs`: `design-tokens` and `host-surfaces` values to GPUI colors, sizes,
+- [X] T012 [P] `host/src/theme.rs`: `design-tokens` and `host-surfaces` values to GPUI colors, sizes,
   radii and lines for an `Appearance` and theme; nothing else in `host` names a color or size.
 - [ ] T013 [P] `host/src/media.rs`: the only module allowed to call `gpui::img` and `gpui::svg`, with
   an inner `#[allow]` and its reason; `image_from_bytes(Arc<gpui::Image>)` and the three status icons
