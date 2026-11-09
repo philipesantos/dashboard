@@ -386,7 +386,7 @@ position or the accessibility tree and names its screen readers and systems.
   - `cargo deny check`, the ban fixture failing as it must, and `cargo audit`.
 - [X] T037 Confirm FR-022: `git diff master -- runtime/ plugins/ wit/ connectors/` is empty, and
   the security suite passes unchanged.
-- [ ] T038 Walk `specs/007-host-visual-design/quickstart.md` §1–§7, including each mutation
+- [X] T038 Walk `specs/007-host-visual-design/quickstart.md` §1–§7, including each mutation
   (a value in `DESIGN.md`, gray step 8 for a control boundary, a criterion's **Answers** line, a
   new B4 row), and fix any drift between it, the contracts and the code.
 - [X] T039 Independent review: a fresh agent with none of this feature's context reads
