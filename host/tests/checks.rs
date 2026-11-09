@@ -741,8 +741,9 @@ fn public_functions(lib: &str, dir: &Path) -> Vec<(String, String)> {
     found
 }
 
-/// Whether a public function's name or signature says it may load, read, open, prompt, decode,
-/// reach the network or the keychain.
+/// Whether a public function's name, an argument's name or an argument's type says it may load,
+/// read, open, prompt, decode, reach the network or the keychain. A word filter: a function named
+/// and typed like none of these still passes, so GPUI upgrades are also read by hand.
 fn may_reach_out(path: &str, signature: &str) -> bool {
     const NAMES: [&str; 17] = [
         "open",
@@ -776,8 +777,21 @@ fn may_reach_out(path: &str, signature: &str) -> bool {
         "Image",
         "RenderImage",
     ];
+    const ARGUMENTS: [&str; 16] = [
+        "path", "paths", "url", "urls", "uri", "src", "source", "sources", "file", "files",
+        "filename", "location", "address", "href", "link", "resource",
+    ];
     let name = path.rsplit("::").next().unwrap_or(path);
-    NAMES.iter().any(|word| name.contains(word))
+    // `fn x(path: impl Into<SharedString>)`: an argument named for what it reaches
+    let argument_named = signature.split(['(', ',']).skip(1).any(|piece| {
+        let piece = piece.trim_start();
+        let piece = piece.strip_prefix("mut ").unwrap_or(piece);
+        piece
+            .split_once(':')
+            .is_some_and(|(argument, _)| ARGUMENTS.contains(&argument.trim()))
+    });
+    argument_named
+        || NAMES.iter().any(|word| name.contains(word))
         || signature
             .split(|c: char| !(c.is_alphanumeric() || c == '_'))
             .any(|word| TYPES.contains(&word))
@@ -921,4 +935,9 @@ fn the_gpui_scanner_reads_rust() {
         "pub fn nested_free(resource: Resource)"
     ));
     assert!(!may_reach_out("demo::Platform::other", "fn other(&self)"));
+    // Named and typed like nothing above, but its argument is named for what it reads
+    assert!(may_reach_out(
+        "demo::Svg::external_path",
+        "pub fn external_path(mut self, path: impl Into<SharedString>) -> Self"
+    ));
 }

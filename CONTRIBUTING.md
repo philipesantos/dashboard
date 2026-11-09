@@ -167,7 +167,9 @@ advisory:
 3. Run `cargo test -p host --test checks`. It reads the new GPUI's source and fails on every public
    function whose name or signature may load, read, open, prompt, decode, or reach the network or
    the keychain, unless it is banned in `clippy.toml` or listed in `host/gpui-reviewed.txt` under
-   the reason it is safe; it also fails on a listed function GPUI no longer has. For each new one,
+   the reason it is safe; it also fails on a listed function GPUI no longer has. It is a word
+   filter (a function's name, its arguments' names and types), so a new way out named like none
+   of them passes it: step 2's reading by hand still decides. For each new one it flags,
    decide: ban it (in `clippy.toml`, in `BANNED` in `host/tests/checks.rs` and as a call in
    `host/ban-fixture/src/lib.rs`, raising the count the "Host window" job expects), or add it to
    the list under its reason. The check reads the crates for other systems only on those systems,

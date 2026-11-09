@@ -5,6 +5,7 @@
 # here under a reason (CONTRIBUTING.md, "Upgrading GPUI").
 
 ## Test support: built only with GPUI's test-support feature, which the dashboard binary does not enable
+gpui::TestAppContext::set_screen_capture_sources
 gpui::HeadlessAppContext::open_window
 gpui::HeadlessAppContext::with_asset_source
 gpui::HeadlessAppContext::with_platform
@@ -56,6 +57,8 @@ gpui::App::set_http_client
 gpui::Application::with_http_client
 http_client_gpui_unofficial::GithubBinaryMetadata::read_from_file
 http_client_gpui_unofficial::GithubBinaryMetadata::write_to_file
+http_client_gpui_unofficial::HttpClient::get
+http_client_gpui_unofficial::HttpClient::post_json
 http_client_gpui_unofficial::HttpClient::proxy
 http_client_gpui_unofficial::HttpClientWithProxy::new
 http_client_gpui_unofficial::HttpClientWithProxy::new_url
@@ -106,6 +109,7 @@ gpui::PlatformWindow::render_to_image
 gpui::Window::paint_image
 gpui::Window::paint_path
 gpui::Window::render_to_image
+gpui::surface
 
 ## Windows, the app's own paths and the system's integration (recent documents, jump list, restart, URL schemes the app registers): no plugin input reaches them
 gpui::App::add_recent_document
@@ -156,9 +160,22 @@ gpui::Platform::write_to_clipboard
 ## The host's own prompt builder (app.rs installs the refusing one); the native prompts it replaces are banned
 gpui::App::set_prompt_builder
 
-## Not about images, files or addresses: the name matched (keymaps loaded from the host's own text, scrolling to an item)
+## Not about images, files or addresses: a name or an argument matched (keymaps and keystrokes parsed from the host's own text, scrolling, layout reuse, timing and error logging)
+gpui::DispatchTree::reuse_subtree
 gpui::KeyBinding::load
+gpui::KeyBindingContextPredicate::parse
+gpui::KeyContext::parse
+gpui::Keystroke::parse
 gpui::ListState::scroll_to_reveal_item
+gpui::PlatformFrameSignal::record
+gpui::ThreadTimings::update_running_task
+gpui::update_running_task
+gpui_util_gpui_unofficial::TryFutureExt::log_tracked_err
+gpui_util_gpui_unofficial::TryFutureExtBacktrace::log_tracked_err_with_backtrace
 
 ## The asset source the app is built with: the host gives it none, so it holds only what the binary embeds
+gpui::AssetSource::list
 gpui::AssetSource::load
+
+## On an `Svg` element, which only the banned `gpui::svg()` makes: an SVG from the app's asset source by name
+gpui::Svg::path

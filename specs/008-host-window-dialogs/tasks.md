@@ -389,7 +389,8 @@ status, focus ready for the first Tab.
   check that `host/src/` names no OS-specific GPUI crate; a test of the scanner on known Rust. It
   found twelve more paths (SVG and image decoders, `Asset::load`, `Window::paint_svg`,
   `App::reset_prompt_builder`, `fallback_prompt_renderer`), now banned (41 in all) and called in
-  the fixture; the other 137 are listed with their reasons.
+  the fixture; the other 152 are listed with their reasons. It matches a function's name and its
+  arguments' names and types: a word filter, so upgrades are still read by hand (CONTRIBUTING).
 
 ---
 
