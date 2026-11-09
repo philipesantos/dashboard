@@ -290,13 +290,13 @@ use; nothing includes their source (FR-014–FR-017).
 
 ### Tests for User Story 3
 
-- [ ] T028 [P] [US3] Write `design/gen/tests/host_surfaces.rs` first, failing (research R6):
+- [X] T028 [P] [US3] Write `design/gen/tests/host_surfaces.rs` first, failing (research R6):
   every token `DESIGN.md` marks `host-surface` is absent from
   `design/tokens/src/generated.rs` and present in `design/host-surfaces/src/generated.rs`; no
   token outside the marks is in `host-surfaces`; and a scan of every `.rs` file of the workspace
   outside `design/host-surfaces/` finds no `include!`, `include_str!` or `#[path]` naming
   `host-surfaces/src`.
-- [ ] T029 [P] [US3] Write `design/tokens/tests/tone.rs` first, failing (FR-015, FR-017,
+- [X] T029 [P] [US3] Write `design/tokens/tests/tone.rs` first, failing (FR-015, FR-017,
   FR-024, FR-025): `Tone::parse` accepts the five names and returns `UnknownTone` with the name
   for anything else; `tone()` resolves default from the gray family, accent from the widget
   color, ok, warning and error from green, amber and red; each status tone has its icon.

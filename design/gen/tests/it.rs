@@ -7,6 +7,7 @@ mod common;
 mod checker;
 mod drift;
 mod dtcg;
+mod host_surfaces;
 mod hue_rule;
 mod lint;
 mod math;
