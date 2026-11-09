@@ -332,7 +332,7 @@ FR-019, FR-021).
 
 ### Implementation for User Story 5
 
-- [ ] T032 [US5] Write `docs/design/host-surfaces.md`, sections Chrome, Widget frame, Frame panel,
+- [X] T032 [US5] Write `docs/design/host-surfaces.md`, sections Chrome, Widget frame, Frame panel,
   Host dialogs and Fields the host draws for a plugin, with every criterion FR-019 lists
   (contracts/host-surfaces-criteria.md, "Criteria the file must hold"), the 1000 ms delay of
   research R11, the frame's label and monogram rules of the spec's edge cases (the label capped
