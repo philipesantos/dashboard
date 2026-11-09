@@ -389,7 +389,7 @@ position or the accessibility tree and names its screen readers and systems.
 - [ ] T038 Walk `specs/007-host-visual-design/quickstart.md` §1–§7, including each mutation
   (a value in `DESIGN.md`, gray step 8 for a control boundary, a criterion's **Answers** line, a
   new B4 row), and fix any drift between it, the contracts and the code.
-- [ ] T039 Independent review: a fresh agent with none of this feature's context reads
+- [X] T039 Independent review: a fresh agent with none of this feature's context reads
   `DESIGN.md` and `docs/design/host-surfaces.md` against constitution v5.0.0,
   `docs/threat-model.md` and `research.md`, and returns each rationale that does not hold, each
   criterion that is a judgement rather than an observation, and each threat row a criterion

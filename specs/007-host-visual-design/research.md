@@ -318,3 +318,24 @@ every shadow takes its color from `blackA` (R2).
 
 **Rationale**: these are the values a host with dense widgets needs; the rationale of each lives
 next to it in `DESIGN.md` (FR-001).
+
+## Review of DESIGN.md and the criteria
+
+A reviewer with none of this feature's context read `DESIGN.md` and `docs/design/host-surfaces.md`
+against constitution v5.0.0, the threat model and this file, on 2026-11-08 (T039). Each finding was
+checked at the source (the vendored Radix data, the files) before anything changed.
+
+| Finding | Checked | Outcome |
+| --- | --- | --- |
+| Frames do not stand out: gray 1 on gray 2 is 1.03:1 light, 1.07:1 dark | Yes | Frames are outlined by the divider; `surface`'s rationale says so; the preview draws it |
+| The soft-accent rationale cites green, which is not a widget color | Yes: blue 4.25, cyan 4.26, lime 4.29 | Cites blue, the default |
+| "Status colors only where…": a host may take a status hue | Yes | Reworded: a host may share a status hue, harmless since no status rests on color alone (rule 8, FR-025) |
+| The radius pick contradicts the dialog's `large` corners | Yes | Shapes states the radius per component for each pick |
+| `border-control` and `accent-text` fail on soft surfaces | Yes, but nothing draws them there | A Don't, and the lint checks only declared places |
+| `solid-text: dark` undefined; R5 listed step 9 failures only | Yes | Defined as the gray family's light step 12; R5 updated to 14 scales on steps 9 and 10 |
+| Gray 8 on gray 1 is 1.87:1, not 1.86 (1.86 is slate) | Yes: 1.8712 | R5 says so; the constitution's sentence is brought to the maintainer |
+| Criteria not testable as written: unbounded window sizes, notifications, "visible characters", the panel's shadow, closing a window, the delay's clock and restarts, native dialog hooks, the panel's heading, a default button, screen-reader speech | Yes | HS-01, HS-04, HS-06, HS-09–HS-12, HS-15, HS-16, HS-19 rewritten; `deny.toml` bans `rfd` and `native-dialog` |
+| Screen-reader walks cannot be the automated test of Principle VIII | Yes | The accessibility tree is checked in CI; walks are an extra check before a release |
+| HS-06 and HS-07 claimed the fake-login row | Yes | They answer the row on things passing for a host dialog |
+| "Decided elsewhere" cited the wrong HS ranges, left out the host window for GPUI's HTTP client, and said fonts are only the host's | Yes | Corrected |
+| Gaps: declared controls from the keyboard, popups, panels over another label, the smallest frame, the focus ring | Yes | HS-20 to HS-24 |
