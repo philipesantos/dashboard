@@ -376,7 +376,7 @@ position or the accessibility tree and names its screen readers and systems.
   host must ship Radix's MIT notice and Inter's OFL.
 - [X] T035 [P] Update `.github/pull_request_template.md`'s security-core comment to name the
   `deny.toml` bans of `host-surfaces` and `design-gen` among what needs line-by-line review.
-- [ ] T036 Run every local check, under the memory cap:
+- [X] T036 Run every local check, under the memory cap:
   - `cargo fmt --all --check`;
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`;
   - `cargo test --workspace --locked`, on Linux inside a `dbus-run-session` with gnome-keyring;
@@ -384,7 +384,7 @@ position or the accessibility tree and names its screen readers and systems.
     is under 5 s on the reference machine; over it, bring it to the maintainer); and
     `cargo xtask design --preview target/design-preview`;
   - `cargo deny check`, the ban fixture failing as it must, and `cargo audit`.
-- [ ] T037 Confirm FR-022: `git diff master -- runtime/ plugins/ wit/ connectors/` is empty, and
+- [X] T037 Confirm FR-022: `git diff master -- runtime/ plugins/ wit/ connectors/` is empty, and
   the security suite passes unchanged.
 - [ ] T038 Walk `specs/007-host-visual-design/quickstart.md` §1–§7, including each mutation
   (a value in `DESIGN.md`, gray step 8 for a control boundary, a criterion's **Answers** line, a
