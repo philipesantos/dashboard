@@ -174,7 +174,7 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
   FR-023), with
   messages as `contracts/tokens-api.md` says (file and line or token path, text escaped). T012
   passes for those rules.
-- [ ] T017 [US1] Write `DESIGN.md` (FR-001, FR-002, FR-012, FR-024; research R1, R3, R5, R9,
+- [X] T017 [US1] Write `DESIGN.md` (FR-001, FR-002, FR-012, FR-024; research R1, R3, R5, R9,
   R13; contracts/design-md.md):
   - the front matter and the eight sections in the format's order, each with prose saying what
     the section decides and why;

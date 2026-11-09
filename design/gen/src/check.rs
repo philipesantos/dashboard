@@ -600,6 +600,7 @@ impl<'a> Checker<'a> {
     fn components(
         &mut self,
         typography: &[(String, Typography)],
+        roles: &BTreeSet<String>,
         host_roles: &BTreeSet<String>,
     ) -> Vec<Component> {
         let host_list = self.host_surface_components();
@@ -653,7 +654,8 @@ impl<'a> Checker<'a> {
                         _ => "spacing",
                     };
                     let exists = match group {
-                        "colors" => !self.source.front["colors"][token].is_badvalue(),
+                        // A color reference names a role; the front matter's colors are those roles resolved
+                        "colors" => roles.contains(token.strip_suffix("-dark").unwrap_or(token)),
                         "typography" => typography.iter().any(|(level, _)| level == token),
                         "rounded" | "spacing" => !self.source.front[group][token].is_badvalue(),
                         _ => false,
@@ -1378,7 +1380,8 @@ pub fn check(source: &Source, palette: &Palette) -> Result<Design, Vec<Problem>>
         .filter(|spec| spec.role.host_surface)
         .map(|spec| spec.role.name.clone())
         .collect();
-    let components = checker.components(&typography, &host_roles);
+    let role_names: BTreeSet<String> = roles.iter().map(|spec| spec.role.name.clone()).collect();
+    let components = checker.components(&typography, &role_names, &host_roles);
     let icons = checker.icons();
     let tones = checker.tones(&roles, &icons);
     let elevation = checker.elevation();
