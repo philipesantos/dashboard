@@ -15,6 +15,10 @@ design-tokens = { path = "../design/tokens" }
 # Only this crate may depend on it (deny.toml, specs/007-host-visual-design/research.md, R6)
 host-surfaces = { path = "../design/host-surfaces" }
 serde_json = "1"
+# A plugin's name made safe for the frame's label: grapheme clusters and general categories
+# (docs/design/host-surfaces.md, HS-06, HS-07; research R8)
+unicode-segmentation = "1"
+unicode-properties = "0.1"
 
 # GPUI from gpui-unofficial, the republish of Zed's GPUI at Zed's stable tags (constitution, Fixed
 # Technical Decisions). Every crate of the line is a direct dependency pinned with `=` to the same

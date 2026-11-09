@@ -2705,6 +2705,8 @@ dependencies = [
  "scheduler-gpui-unofficial",
  "serde_json",
  "sum-tree-gpui-unofficial",
+ "unicode-properties",
+ "unicode-segmentation",
  "ztracing-gpui-unofficial",
  "ztracing-macro-gpui-unofficial",
 ]

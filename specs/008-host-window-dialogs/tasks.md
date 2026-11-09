@@ -91,7 +91,7 @@ done and the maintainer has seen its result.
   `development(`; the host-words scan over `child`, `aria_label`, `aria_description`, tooltips,
   `TitlebarOptions` and text elements outside `host/src/text.rs`; `deny.toml` keeps `host-surfaces`
   wrapped by `host` and bans `rfd` and `native-dialog`).
-- [ ] T006 [P] `host/tests/logic.rs` part 1: `label` follows HS-06 and HS-07 exactly (research R8):
+- [X] T006 [P] `host/tests/logic.rs` part 1: `label` follows HS-06 and HS-07 exactly (research R8):
   Cc, Cf, Zl, Zp removed; 40 grapheme clusters and an ellipsis; "Unnamed widget"; host-imitating
   names unchanged; the monogram's first letter or digit, upper-cased, or the host glyph, for names
   starting with an emoji, a digit, a symbol and a non-Latin letter.
@@ -107,8 +107,8 @@ done and the maintainer has seen its result.
 - [ ] T009 [P] `clippy.toml`: the entries of `contracts/bans-and-checks.md` with the paths T004
   confirmed, each with its reason; `deny.toml`: each license T002 found, with a comment naming the
   crates that bring it (both security core).
-- [ ] T010 [P] `host/src/text.rs`: `Msg`, `HostText`, the English catalog (data-model "Host text").
-- [ ] T011 [P] `host/src/label.rs`: `PluginText`, the label and monogram rules (T006).
+- [X] T010 [P] `host/src/text.rs`: `Msg`, `HostText`, the English catalog (data-model "Host text").
+- [X] T011 [P] `host/src/label.rs`: `PluginText`, the label and monogram rules (T006).
 - [ ] T012 [P] `host/src/theme.rs`: `design-tokens` and `host-surfaces` values to GPUI colors, sizes,
   radii and lines for an `Appearance` and theme; nothing else in `host` names a color or size.
 - [ ] T013 [P] `host/src/media.rs`: the only module allowed to call `gpui::img` and `gpui::svg`, with
