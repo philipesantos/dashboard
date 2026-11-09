@@ -3,5 +3,6 @@
 //! `DESIGN.md` generates.
 
 pub mod label;
+pub mod media;
 pub mod text;
 pub mod theme;

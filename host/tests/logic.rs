@@ -122,3 +122,18 @@ mod theme {
         );
     }
 }
+
+mod media {
+    use design_tokens::Icon;
+    use host::media::status_icon_svg;
+
+    /// The status icons are built from DESIGN.md's path data and the given color only: no
+    /// address, no reference outside the document.
+    #[test]
+    fn status_icons_are_self_contained_svg() {
+        let svg = status_icon_svg(Icon::Check, gpui::black());
+        assert!(svg.contains(Icon::Check.path()));
+        assert!(svg.contains(r##"fill="#000000""##));
+        assert!(!svg.contains("href"), "no reference to anything outside");
+    }
+}

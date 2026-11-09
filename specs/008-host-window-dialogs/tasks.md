@@ -111,7 +111,7 @@ done and the maintainer has seen its result.
 - [X] T011 [P] `host/src/label.rs`: `PluginText`, the label and monogram rules (T006).
 - [X] T012 [P] `host/src/theme.rs`: `design-tokens` and `host-surfaces` values to GPUI colors, sizes,
   radii and lines for an `Appearance` and theme; nothing else in `host` names a color or size.
-- [ ] T013 [P] `host/src/media.rs`: the only module allowed to call `gpui::img` and `gpui::svg`, with
+- [X] T013 [P] `host/src/media.rs`: the only module allowed to call `gpui::img` and `gpui::svg`, with
   an inner `#[allow]` and its reason; `image_from_bytes(Arc<gpui::Image>)` and the three status icons
   from `DESIGN.md`'s embedded paths (research R12).
 - [ ] T014 `host/src/app.rs`: fonts from `design/fonts/` with `include_bytes!` (research R4), the app
