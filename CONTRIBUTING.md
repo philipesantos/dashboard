@@ -164,10 +164,15 @@ advisory:
 2. Read the changes to gpui-unofficial's patch list (`docs/upstream-patches.md` in its repository)
    since the commit `host/README.md` records, and note anything that touches input, windows,
    prompts, URLs, assets, credentials or accessibility.
-3. Move all nineteen pins in `host/Cargo.toml` (and the fixture's in `host/ban-fixture/`)
+3. Look in the new GPUI for public functions that load an image or an asset, read a file, open a
+   URL or a path, show a native prompt or touch the keychain (search its `src/` for `Resource`,
+   `Path`, `open_`, `prompt` and `credentials`). The bans in `clippy.toml` block only the paths
+   they name: add each new one there, to `BANNED` in `host/tests/checks.rs` and as a call in
+   `host/ban-fixture/src/lib.rs`, and raise the count the "Host window" job expects.
+4. Move all nineteen pins in `host/Cargo.toml` (and the fixture's in `host/ban-fixture/`)
    together, then update the table in `host/README.md`: version, Zed tag and commit, publish date
    and the patch list's commit. `host/tests/checks.rs` fails while any of them disagree.
-4. Run `cargo test -p host` and `cargo clippy --manifest-path host/ban-fixture/Cargo.toml` (it
+5. Run `cargo test -p host` and `cargo clippy --manifest-path host/ban-fixture/Cargo.toml` (it
    must still fail with every ban), and let the "Host window" job run on the three systems before
    merging.
 
