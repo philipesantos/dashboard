@@ -373,6 +373,31 @@ bench numbers are recorded in this feature's `performance.md`, as earlier featur
   `rustybuzz`, `ttf-parser`, `zbus_names`, `zvariant`, `zvariant_derive`), which the audit allows
   by default and none of which is a vulnerability.
 
+### What the spike found (T003, T004, 2026-11-09)
+
+The throwaway branch `008-spike` (deleted afterwards) ran an example that opens a GPUI window
+titled "Dashboard spike" with one focusable button, on GitHub's `ubuntu-24.04`, `macos-latest` and
+`windows-latest` (runs 42642457786 and 42649459520):
+
+| System | Window drew | A real Tab arrived and moved focus | The platform read the tree |
+| --- | --- | --- | --- |
+| Linux: Xvfb, Mesa's software Vulkan, `dbus-run-session`, AT-SPI bus with `IsEnabled` set | yes | yes (`xdotool windowfocus … key Tab`) | yes: AT-SPI listed "push button: Spike button" |
+| macOS 26 arm64 | yes | yes (`osascript` key code 48, CGEvent) | yes: AX listed "button Spike button" with role `AXButton` |
+| Windows Server 2025 | yes | yes (`SendKeys`, SendInput) | yes: UI Automation listed "ControlType.Button: Spike button" |
+
+On every system GPUI built its accessibility tree only after a platform client asked for it
+(`is_a11y_active` turned true after the first query), and then `debug_a11y_tree_json` held the
+button too, so the `window` target reads the platform first and GPUI's tree after. Research R15's
+items 1–4 are settled: 1.25.3 builds and runs on the three runners, macOS draws and takes keys,
+Xvfb with lavapipe works. The `window` target may use `enigo` or the same system tools the spike
+used; both send through XTEST, CGEvent and SendInput.
+
+Run locally, outside CI:
+- **clippy**: all seventeen `disallowed-methods` paths of `contracts/bans-and-checks.md` are
+  caught as written (a crate calling each, clippy 1.99), none reported as an invalid path.
+- **The scale factor**: GPUI's test platform honours `simulate_scale_factor_change` at 1, 1.5 and
+  2 and lays out in logical pixels, so HS-01's scale cases stay in the headless layer (T017, T024).
+
 ## R16. The documents this feature updates
 
 **Decision**: besides 0001 (R2), the threat model's decoder row keeps its first cell (the criteria

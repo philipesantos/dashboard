@@ -61,7 +61,7 @@ done and the maintainer has seen its result.
   published, the MSRV that builds (if 1.97 fails, the oldest stable that builds, brought to the
   maintainer before the workspace's MSRV moves), and each license `cargo deny check licenses`
   refuses.
-- [ ] T003 Spike in CI on a throwaway branch `008-spike` (never merged; pushed only once the
+- [X] T003 Spike in CI on a throwaway branch `008-spike` (never merged; pushed only once the
   maintainer agrees, and deleted after T004): a job on `ubuntu-24.04`,
   `macos-latest` and `windows-latest` that builds `host`, opens its window (Linux: inside
   `dbus-run-session`, with `xvfb`, `mesa-vulkan-drivers`, `libegl1`, `libgl1-mesa-dri`,
@@ -71,7 +71,7 @@ done and the maintainer has seen its result.
   entry of `contracts/bans-and-checks.md`'s clippy list, expecting each to be refused. Also,
   headless on each system: open a window of GPUI's test platform at 800 × 600 with scale factors
   1, 1.5 and 2, and read an element's bounds at each.
-- [ ] T004 Record T003's outcome in research R15, per system: the window drew or not, the key
+- [X] T004 Record T003's outcome in research R15, per system: the window drew or not, the key
   arrived or not, the tree was read or not, each clippy path caught or corrected. If macOS cannot
   draw or take keys, bring it to the maintainer with the options before going on (research R15,
   item 2). Record whether the test platform honours the scale factor; if it does not, T017 and T024
