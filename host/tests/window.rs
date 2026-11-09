@@ -12,7 +12,7 @@ mod common;
 use design_tokens::Appearance;
 use gpui::{
     AppContext as _, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowHandle,
-    WindowOptions, px, size,
+    WindowOptions, point, px, size,
 };
 use host::dashboard::Dashboard;
 use host::plugins::{FrameStatus, start_runtime};
@@ -227,6 +227,14 @@ impl Os {
     }
 }
 
+/// Why a control could not be clicked, with the tree the platform showed.
+fn missing(os: &Os, title: &str, name: &str) -> String {
+    format!(
+        "the platform tree of {title} has no {name:?} to click:\n{}",
+        os.dump(title).join("\n")
+    )
+}
+
 fn names(lines: &[String]) -> String {
     lines.join("\n").to_lowercase()
 }
@@ -281,7 +289,7 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
     let reloads = snapshot(shared).a.reloads;
     let (x, y) = os
         .centre(TITLE_A, "Reload")
-        .ok_or("the platform tree has no Reload to click")?;
+        .ok_or_else(|| missing(&os, TITLE_A, "Reload"))?;
     os.click(x, y);
     wait(
         shared,
@@ -373,14 +381,14 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
     // HS-16 from the pointer
     let (x, y) = os
         .centre(TITLE_A, "Widget menu")
-        .ok_or("the platform tree has no Widget menu to click")?;
+        .ok_or_else(|| missing(&os, TITLE_A, "Widget menu"))?;
     os.click(x, y);
     wait(shared, "a click opens the menu", |s| {
         s.a.open_menu == Some(0)
     })?;
     let (x, y) = os
         .centre(TITLE_A, "Remove from dashboard")
-        .ok_or("the platform tree has no Remove from dashboard to click")?;
+        .ok_or_else(|| missing(&os, TITLE_A, "Remove from dashboard"))?;
     os.click(x, y);
     wait(
         shared,
@@ -391,7 +399,7 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
     std::thread::sleep(Duration::from_millis(1300));
     let (x, y) = os
         .centre(TITLE_A, "Cancel")
-        .ok_or("the platform tree has no Cancel to click")?;
+        .ok_or_else(|| missing(&os, TITLE_A, "Cancel"))?;
     os.click(x, y);
     wait(shared, "a click on Cancel refuses", |s| {
         !s.dialog_open && s.a.frames == 2
@@ -436,7 +444,12 @@ fn state(view: &Dashboard, window: &gpui::Window, cx: &gpui::App) -> WindowState
     }
 }
 
-fn open(cx: &mut gpui::App, title: &'static str, world: &common::World) -> WindowHandle<Dashboard> {
+fn open(
+    cx: &mut gpui::App,
+    title: &'static str,
+    left: f32,
+    world: &common::World,
+) -> WindowHandle<Dashboard> {
     let runtime = Arc::new(start_runtime(world.dir.path()).expect("a runtime"));
     let grants = Arc::clone(&world.grants);
     let options = WindowOptions {
@@ -444,11 +457,11 @@ fn open(cx: &mut gpui::App, title: &'static str, world: &common::World) -> Windo
             title: Some(SharedString::new_static(title)),
             ..Default::default()
         }),
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-            None,
-            size(px(1024.0), px(700.0)),
-            cx,
-        ))),
+        // Side by side: with no window manager (Xvfb), overlapping windows hide each other
+        window_bounds: Some(WindowBounds::Windowed(Bounds {
+            origin: point(px(left), px(40.0)),
+            size: size(px(1000.0), px(700.0)),
+        })),
         ..Default::default()
     };
     cx.open_window(options, |window, cx| {
@@ -468,8 +481,8 @@ fn main() {
     gpui_platform::application().run(move |cx| {
         host::app::install(cx).expect("installs");
         host::vendor::gpui_base::init(cx);
-        let a = open(cx, TITLE_A, &app_world);
-        let b = open(cx, TITLE_B, &app_world);
+        let a = open(cx, TITLE_A, 20.0, &app_world);
+        let b = open(cx, TITLE_B, 1060.0, &app_world);
         let publish = Arc::clone(&app_shared);
         cx.spawn(async move |cx| {
             loop {

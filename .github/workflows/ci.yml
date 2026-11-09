@@ -344,7 +344,7 @@ jobs:
             busctl --user call org.a11y.Bus /org/a11y/bus org.a11y.Bus GetAddress
             busctl --user set-property org.a11y.Bus /org/a11y/bus org.a11y.Status IsEnabled b true
             unset WAYLAND_DISPLAY
-            Xvfb :99 -screen 0 1600x1000x24 &
+            Xvfb :99 -screen 0 2200x1000x24 &
             xvfb=$!
             sleep 2
             export DISPLAY=:99

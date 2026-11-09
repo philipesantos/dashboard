@@ -41,6 +41,20 @@ fn status(theme: &Theme, widget: &Widget) -> Div {
     }
 }
 
+/// The status as one sentence of the host's words, for assistive technology.
+fn status_words(widget: &Widget) -> SharedString {
+    match widget.status {
+        FrameStatus::Loading => Msg::Loading.text().into(),
+        FrameStatus::Rendered => Msg::Rendered.text().into(),
+        FrameStatus::Failed(reason) => format!(
+            "{}. {}",
+            Msg::DidNotRender.text().as_str(),
+            reason.text().as_str()
+        )
+        .into(),
+    }
+}
+
 /// One widget's frame. `menu` is the focus handle of its menu control; `open_menu`, when the
 /// menu is open, is drawn inside the frame under the header (research R6).
 pub fn frame(
@@ -104,5 +118,14 @@ pub fn frame(
         .rounded(theme.radius)
         .child(header)
         .children(open_menu)
-        .child(div().p(px(12.0)).child(status(theme, widget)))
+        .child(
+            // The status, one node for assistive technology in the host's words and normal
+            // case: GPUI exposes only elements with an id and a role (FR-024)
+            div()
+                .id(("frame-status", index))
+                .role(Role::Label)
+                .aria_label(status_words(widget))
+                .p(px(12.0))
+                .child(status(theme, widget)),
+        )
 }
