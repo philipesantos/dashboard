@@ -396,12 +396,16 @@ position or the accessibility tree and names its screen readers and systems.
   claims to answer but does not. Check each finding at the source before changing anything;
   record them and their outcomes at the end of `research.md` under "Review of DESIGN.md and the
   criteria".
-- [ ] T040 Once the maintainer has pushed and the pull request's run is green, open its
+- [X] T040 Once the maintainer has pushed and the pull request's run is green, open its
   `design-preview` artifact and bring the five SVG files to the maintainer for approval of the
   look (SC-007). Changes they ask for go into `DESIGN.md` as new commits. On the same run,
   confirm quickstart §8 (SC-006): when the pushed commits touch `DESIGN.md`, the `changes` job's
   log shows `code=true` and every job ran on the three systems; if no pushed commit changed only
   `DESIGN.md`, check the job's decision on that path with its regex locally and record both.
+  Done: the first preview (run 42542474605) led to direction F (R14, T043–T047); the maintainer
+  approved the preview of run 42620693534 on 2026-11-09. Both runs ran every job on the three
+  systems (`code=true`); no pushed commit changed only `DESIGN.md`, and the job's regex, run
+  locally, sends `DESIGN.md`, `design/`, `docs/design/` and `docs/threat-model.md` to code.
 - [X] T043 From the maintainer's review (T040, research R14): replace Inter with Barlow 1.422
   (Regular, Medium, SemiBold) and IBM Plex Mono 2.5.0 (Regular, Medium), TTF and WOFF2 as
   released, with their licenses, under `design/fonts/barlow/` and `design/fonts/plex-mono/`;
