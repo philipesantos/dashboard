@@ -501,8 +501,9 @@ restart and check the choice is kept.
 - **SC-006**: A host dialog appears within 100 ms of the host asking for it, so the delay a person
   feels is the deliberate 1000 ms and not more.
 - **SC-007**: The screen-reader walk script covers every host dialog on VoiceOver, Narrator and
-  Orca; its first run, with Orca, passes before this feature merges, and the VoiceOver and
-  Narrator runs pass before the first release, each with its results recorded.
+  Orca; the runs with all three pass before the first release, each with its results recorded.
+  (The first Orca run was to come before this feature merged; the maintainer moved it to before
+  the first release on 2026-11-09, with the automated tree checks green on the three systems.)
 - **SC-008**: A change that adds an unpinned or `-pre` GPUI crate, a native prompt, a plugin string
   reaching the image loader or URL opener, or a working HTTP client fails CI.
 

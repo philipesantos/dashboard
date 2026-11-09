@@ -326,7 +326,7 @@ status, focus ready for the first Tab.
 
 ## Phase 10: Polish & Cross-Cutting Concerns
 
-- [ ] T046 `.github/workflows/ci.yml`: the "Host window" job on the three systems (Linux packages,
+- [X] T046 `.github/workflows/ci.yml`: the "Host window" job on the three systems (Linux packages,
   `dbus-run-session`, the AT-SPI bus, Xvfb, `WAYLAND_DISPLAY` unset), running
   `cargo test -p host --test window` with its own timeout; the build job's apt list gains GPUI's
   build libraries; `host/` already counts as code for the changes filter. The "Host window" job also
@@ -363,15 +363,20 @@ status, focus ready for the first Tab.
   `app.rs`, `plugins.rs`, the `approvals()` hunk, `clippy.toml` and `deny.toml` against constitution
   v5.0.1, the criteria and the threat model; check each finding at the source; record findings and
   outcomes at the end of `research.md` under "Review of the implementation".
-- [ ] T053 Once the maintainer has pushed and the pull request's run is green on the three systems,
+- [X] T053 Once the maintainer has pushed and the pull request's run is green on the three systems,
   including "Host window", bring them the screenshots of the window and the dialog for approval of
   the look; changes go in as new commits. The maintainer also runs
   `docs/accessibility/screen-reader-walk.md` once with Orca on Linux; record the result in that
   file's log (SC-007), and fix what it finds as new commits.
-- [ ] T054 Before the merge, and only when the maintainer asks: mark the development guide's Phase 3
+  Done 2026-11-09: run 42700093486 green on the three systems, "Host window" included; the
+  maintainer approved the look from the screenshots, with the dialog's confirming button changed to
+  the host's ink. The maintainer moved the Orca walk to before the first release, with VoiceOver and
+  Narrator (SC-007 amended); the log in `docs/accessibility/screen-reader-walk.md` stays open for it.
+- [X] T054 Before the merge, and only when the maintainer asks: mark the development guide's Phase 3
   items "Host em GPUI", "Acessibilidade dos diálogos", "Regras que substituem a CSP da webview" and
-  "Diálogos do host desenhados só com os componentes do próprio host" as done.
-- [ ] T055 Human review (Principle IX) and merge:
+  "Diálogos do host desenhados só com os componentes do próprio host" as done. Done 2026-11-09 at
+  the maintainer's request (guide rev 145).
+- [X] T055 Human review (Principle IX) and merge:
   - The maintainer reviews every commit line by line: `approvals()`, `clippy.toml` and `deny.toml`
     with the care of the security core, and the dialog, a11y, media and app modules.
   - The maintainer ticks the pull request's review box with their handle.
