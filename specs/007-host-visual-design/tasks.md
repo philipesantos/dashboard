@@ -191,11 +191,11 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
     step-12 text; control boundaries at a step that reaches 3:1; the host's focus style as a
     host surface.
   `cargo xtask design --check` (T020) may fail on contrast until US2.
-- [ ] T018 [US1] Implement generation in `design/gen/src/generate.rs` (FR-003, FR-004): the Rust tokens split by
+- [X] T018 [US1] Implement generation in `design/gen/src/generate.rs` (FR-003, FR-004): the Rust tokens split by
   the `host-surface` marks into the two crates' `generated.rs` (contracts/tokens-api.md), the
   DTCG file, and the hue and chroma per scale for US4. Output is deterministic (sorted, LF, no
   timestamps). T013 and T014 pass.
-- [ ] T019 [US1] Implement the preview in `design/gen/src/preview.rs` (FR-026, research R8): the five SVG
+- [X] T019 [US1] Implement the preview in `design/gen/src/preview.rs` (FR-026, research R8): the five SVG
   files, drawn from the default appearance's tokens, Inter embedded as WOFF2 `@font-face`, no
   script, `index.svg` linking only its siblings. T015 passes.
 - [ ] T020 [US1] (SC-001) Add `design`, `design --check` and `design --preview <dir>` to

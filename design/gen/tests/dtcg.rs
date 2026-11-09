@@ -33,11 +33,12 @@ fn every_token_has_a_type_a_value_and_a_description() {
         text.matches("\"$value\"").count(),
         "every $type has a $value"
     );
-    assert_eq!(
-        types,
-        text.matches("\"$description\"").count(),
-        "every token has a $description"
-    );
+    for line in text.lines().filter(|line| line.contains("\"$type\"")) {
+        assert!(
+            line.contains("\"$description\""),
+            "a token without a $description: {line}"
+        );
+    }
     assert!(types > 40, "only {types} tokens");
 }
 
