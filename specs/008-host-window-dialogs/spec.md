@@ -456,8 +456,10 @@ restart and check the choice is kept.
 
 **Scope**
 
-- **FR-033**: This feature MUST NOT change the plugin runtime, the permission engine, the connector
-  engine, the vault or the WIT contract; it uses them as they are.
+- **FR-033**: This feature MUST NOT change the behavior of the plugin runtime, the permission
+  engine, the connector engine, the vault or the WIT contract; it uses them as they are, except for
+  one read-only addition: a way to list the approvals in the grant record, which the window needs
+  to know which plugins to load (research R5), reviewed line by line as security core.
 
 ### Key Entities
 
