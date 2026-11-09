@@ -370,11 +370,11 @@ position or the accessibility tree and names its screen readers and systems.
 
 **Purpose**: docs for contributors, checks, reviews and merge
 
-- [ ] T034 [P] Update `CONTRIBUTING.md`: how to change `DESIGN.md` (edit, `cargo xtask design`,
+- [X] T034 [P] Update `CONTRIBUTING.md`: how to change `DESIGN.md` (edit, `cargo xtask design`,
   commit the generated files with it), what each check means when it fails, how to move the
   Radix or format pin (its own commit, reviewed like a dependency upgrade), and that the future
   host must ship Radix's MIT notice and Inter's OFL.
-- [ ] T035 [P] Update `.github/pull_request_template.md`'s security-core comment to name the
+- [X] T035 [P] Update `.github/pull_request_template.md`'s security-core comment to name the
   `deny.toml` bans of `host-surfaces` and `design-gen` among what needs line-by-line review.
 - [ ] T036 Run every local check, under the memory cap:
   - `cargo fmt --all --check`;
