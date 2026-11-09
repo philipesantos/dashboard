@@ -207,7 +207,8 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
     `'^(docs/authors|docs/design|wit|design)/|^DESIGN\.md$|^docs/threat-model\.md$'`; its
     comment names these paths as Markdown the build uses as code and cites constitution v5.0.0
     instead of v2.4.1;
-  - in the Linux build job: `cargo xtask design --check`; the ban fixture step, which passes only
+  - in the Linux build job: `cargo xtask design --check`; in the `deny` job, where cargo-deny is
+    installed, the ban fixture step, which passes only
     when `cargo deny --manifest-path design/ban-fixture/Cargo.toml check bans` fails; `cargo xtask design --preview target/design-preview`; and
     `actions/upload-artifact` pinned to a commit SHA with its tag in a comment, artifact
     `design-preview`, kept 14 days.
