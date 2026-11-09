@@ -465,6 +465,7 @@ impl Dashboard {
                         }
                         if let Some(widget) = this.widgets.get_mut(index) {
                             widget.status = outcome.status;
+                            widget.load_time = outcome.load_time;
                         }
                         cx.notify();
                         true

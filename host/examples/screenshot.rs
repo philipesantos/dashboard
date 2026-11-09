@@ -6,7 +6,9 @@
 //!
 //! `--dialog` asks "Remove from dashboard" for the first frame before the screenshot;
 //! `--appearance` opens the appearance screen, and `--refuse` then picks a widget color, which
-//! shows the host's refusal when the rule refuses it.
+//! shows the host's refusal when the rule refuses it. `--time` prints how long after the program
+//! started every approved plugin's frame had its status, and each package's load (compile) time
+//! (SC-001, research R14), measured offscreen with GPUI's headless renderer.
 
 use design_tokens::{Appearance, ThemePick};
 use gpui::{AppContext as _, HeadlessAppContext, px, size};
@@ -25,6 +27,8 @@ fn main() -> Result<(), String> {
     let mut with_dialog = false;
     let mut with_appearance = false;
     let mut refuse = None;
+    let mut time = false;
+    let started = std::time::Instant::now();
     let (mut width, mut height) = (1280.0, 800.0);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -35,6 +39,7 @@ fn main() -> Result<(), String> {
             "--dark" => dark = true,
             "--dialog" => with_dialog = true,
             "--appearance" => with_appearance = true,
+            "--time" => time = true,
             "--refuse" => {
                 let name = args.next().ok_or("--refuse needs a color")?;
                 refuse = Some(
@@ -82,6 +87,28 @@ fn main() -> Result<(), String> {
         })
         .map_err(|error| format!("the window did not open: {error:#}"))?;
     cx.run_until_parked();
+    if time {
+        let widgets = cx
+            .update(|cx| window.update(cx, |view, _, _| view.widgets().to_vec()))
+            .map_err(|error| format!("the window is gone: {error:#}"))?;
+        let pending = widgets
+            .iter()
+            .filter(|widget| widget.status == host::plugins::FrameStatus::Loading)
+            .count();
+        println!(
+            "every frame drawn with its status: {:?} after start ({} frames, {pending} still loading)",
+            started.elapsed(),
+            widgets.len()
+        );
+        for widget in &widgets {
+            println!(
+                "  {}: {:?}, loaded in {:?}",
+                widget.id.as_str(),
+                widget.status,
+                widget.load_time
+            );
+        }
+    }
     if with_appearance {
         cx.update(|cx| {
             window.update(cx, |view, window, cx| {

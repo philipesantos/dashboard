@@ -338,7 +338,7 @@ status, focus ready for the first Tab.
 - [X] T048 [P] `docs/threat-model.md` and `docs/design/host-surfaces.md`: research R16 (the decoder
   row's mitigation, the process question, the "Decided elsewhere" owners), the row's first cell
   unchanged; `design-gen`'s criteria test still passes.
-- [ ] T049 [P] `specs/008-host-window-dialogs/performance.md`: the start, dialog, compile and memory
+- [X] T049 [P] `specs/008-host-window-dialogs/performance.md`: the start, dialog, compile and memory
   numbers T033 and T020 measured on the three systems and the reference machine (SC-001, SC-006).
 - [X] T050 Every local check: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
   --locked -- -D warnings`, `cargo test --workspace --locked` (on the maintainer's machine the

@@ -30,6 +30,9 @@ pub struct Widget {
     pub label: Label,
     pub monogram: String,
     pub status: FrameStatus,
+    /// How long loading (compiling) its package took on the last reload, once it has loaded
+    /// (decision 0001's third trigger, research R14).
+    pub load_time: Option<std::time::Duration>,
 }
 
 /// A plugin's name: its id's last segment (`local/<name>`, `github.com/<owner>/<repository>`).
@@ -48,6 +51,7 @@ impl Widget {
             id,
             origin,
             status: FrameStatus::Loading,
+            load_time: None,
         }
     }
 }
