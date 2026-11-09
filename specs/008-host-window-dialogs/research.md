@@ -283,7 +283,7 @@ one the development tool already uses.
   request reaching a recording client.
 - **Nothing slips the bans**: a check fails on any `allow(clippy::disallowed_methods)` or
   `allow(clippy::disallowed_types)` in `host/src/` outside `media.rs`.
-- Each rule has a hostile case (FR-031): the headless ones under `host/tests/hostile/`, the ones
+- Each rule has a hostile case (FR-031): the headless ones under `host/tests/hostile.rs`, the ones
   that need a real window (the accessibility tree, the scrim's cover in pixels) in the `window`
   target, all counted in the security suite.
 

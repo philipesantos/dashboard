@@ -137,16 +137,17 @@ status, focus ready for the first Tab.
 
 ### Tests first
 
-- [ ] T016 [P] [US1] `host/tests/logic.rs` part 2: a window with two approved fixtures (one renders,
+- [X] T016 [P] [US1] `host/tests/logic.rs` part 2: a window with two approved fixtures (one renders,
   one traps) shows two frames with label, monogram and status ("Rendered" in the ok tone; "Did not
   render" with the host's words for the error kind in the error tone); nothing of what `render`
   returned is in the frame's elements; a third failing plugin does not stop the others (FR-007 to
   FR-009); the window's root is focused on open (FR-005); reload on window activation and from the
-  chrome adds and removes frames, and waits while a dialog is open (FR-040).
-- [ ] T017 [P] [US1] `host/tests/logic.rs` part 3: HS-01: no frame intersects the chrome at 800 × 600,
+  chrome adds and removes frames (FR-040); waiting while a dialog is open is tested with the
+  dialog, in T026.
+- [X] T017 [P] [US1] `host/tests/logic.rs` part 3: HS-01: no frame intersects the chrome at 800 × 600,
   1280 × 800 and 2560 × 1440, scale factors 1, 1.5 and 2, with the content scrolled so frames sit
   past the top, bottom and sides (FR-011, research R6).
-- [ ] T018 [P] [US1] `host/tests/hostile/content.rs`: the fixtures of T019 whose output is markup and
+- [X] T018 [P] [US1] `host/tests/hostile.rs` (`content`): the fixtures of T019 whose output is markup and
   addresses, whose names imitate the host and whose render error imitates host text: the frame holds
   only host text and the safe label; no request, no file read (FR-008, FR-027, FR-029).
 - [X] T019 [P] [US1] `plugins/hostile/`: fixtures `window-addresses` (render output of markup,
@@ -161,16 +162,16 @@ status, focus ready for the first Tab.
 
 ### Implementation
 
-- [ ] T020 [US1] `host/src/plugins.rs`: approvals through `GrantStore::approvals()`, each package read
+- [X] T020 [US1] `host/src/plugins.rs`: approvals through `GrantStore::approvals()`, each package read
   capped at the package size limit, loaded and rendered on the background executor with the runtime
   started without development mode (research R5); each outcome mapped to `FrameStatus`, failures
   by `ErrorKind` to a `Msg`; compile time and peak memory measured per load (research R14).
-- [ ] T021 [US1] `host/src/chrome.rs`: the chrome band from `theme`, with "Reload" and the entries
+- [X] T021 [US1] `host/src/chrome.rs`: the chrome band from `theme`, with "Reload" and the entries
   later stories add.
-- [ ] T022 [US1] `host/src/frame.rs`: the header (monogram, label, menu button), the status body with
+- [X] T022 [US1] `host/src/frame.rs`: the header (monogram, label, menu button), the status body with
   the status icon from `media`; frames in a wrap of fixed-width columns inside a scrolling content
   area that clips everything it holds, with 4 px inside its edges (research R6).
-- [ ] T023 [US1] `host/src/lib.rs` and `host/src/main.rs`: the root view (chrome above the content
+- [X] T023 [US1] `host/src/lib.rs` and `host/src/main.rs`: the root view (chrome above the content
   area), the empty state in host words when nothing is approved, reload on activation and from the
   chrome (FR-040).
 
@@ -204,11 +205,11 @@ status, focus ready for the first Tab.
 
 - [ ] T026 [P] [US3] `host/tests/logic.rs` part 5: the dialog's form, every row of
   `contracts/dialog.md` that needs no real window: the scrim over every host window, chrome
-  included, in the element tree (HS-02); input to the chrome, frames, a panel and a second window
+  included, in the element tree (HS-02); a reload asked while it is open waits for its answer (FR-040); input to the chrome, frames, a panel and a second window
   reaches nothing; a click outside neither closes nor answers; other windows drop keys and lose
   focus, restored after; the close request and quit answer `Refused` (HS-10); the queue shows one
   at a time (FR-018).
-- [ ] T027 [P] [US3] `host/tests/hostile/gate.rs`: with the manual clock, input at 0, 500 and 999 ms
+- [ ] T027 [P] [US3] `host/tests/hostile.rs` (`gate`): with the manual clock, input at 0, 500 and 999 ms
   answers nothing and at 1000 ms does; a key and a button held from before answer nothing until
   released; the 1000 ms restart on activation, content change and a new dialog (HS-11, FR-017).
 - [ ] T028 [P] [US3] `host/tests/logic.rs` part 6: "Remove from dashboard": confirmed, the approval
@@ -270,16 +271,16 @@ status, focus ready for the first Tab.
 
 ### Tests first
 
-- [ ] T038 [P] [US5] `host/tests/hostile/network.rs`: the app's HTTP client refuses a request; an
+- [ ] T038 [P] [US5] `host/tests/hostile.rs` (`network`): the app's HTTP client refuses a request; an
   image element from a URI string, drawn in a test harness with a recording client, sends nothing;
   an SVG from an external path reads no file (FR-028 to FR-030).
-- [ ] T039 [P] [US5] `host/tests/hostile/prompts.rs`: GPUI's prompt builder is the host's and
+- [ ] T039 [P] [US5] `host/tests/hostile.rs` (`prompts`): GPUI's prompt builder is the host's and
   refuses at once (FR-019). `host/ban-fixture/`, a crate outside the workspace (root `Cargo.toml`
   `exclude`, like `design/ban-fixture`), with the workspace's `clippy.toml` and the same GPUI pins,
   holds one function per banned method of `contracts/bans-and-checks.md`; CI runs
   `cargo clippy --manifest-path host/ban-fixture/Cargo.toml -- -D warnings` and requires it to fail
   with one `disallowed_methods` error per function, each named (FR-019, FR-029).
-- [ ] T040 [P] [US5] `host/tests/hostile/content.rs` addition: `window-local-connector` does not load
+- [ ] T040 [P] [US5] `host/tests/hostile.rs` (`content`) addition: `window-local-connector` does not load
   and its frame says why in host words (FR-041).
 
 ### Implementation

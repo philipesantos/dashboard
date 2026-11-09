@@ -18,6 +18,7 @@ pub enum Msg {
     // A frame
     UnnamedWidget,
     WidgetMenu,
+    MenuGlyph,
     WidgetSettings,
     Loading,
     Rendered,
@@ -55,6 +56,7 @@ impl Msg {
             }
             Msg::UnnamedWidget => "Unnamed widget",
             Msg::WidgetMenu => "Widget menu",
+            Msg::MenuGlyph => "⋯",
             Msg::WidgetSettings => "Settings",
             Msg::Loading => "Loading",
             Msg::Rendered => "Rendered",

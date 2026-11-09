@@ -1,31 +1,55 @@
 //! `dashboard`: opens the host window (contracts/host-binary.md).
 
-use gpui::{App, AppContext, Context, IntoElement, Render, Window, WindowOptions, div};
+use design_tokens::Appearance;
+use gpui::{
+    App, AppContext, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowOptions, px, size,
+};
 use host::app::{exit, install, parse_options};
+use host::dashboard::Dashboard;
+use host::plugins::start_runtime;
+use host::text::Msg;
+use runtime::grants::GrantStore;
 use std::process::ExitCode;
-
-struct Empty;
-
-impl Render for Empty {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-    }
-}
+use std::sync::Arc;
 
 fn main() -> ExitCode {
-    let _options = match parse_options(std::env::args().skip(1)) {
+    let options = match parse_options(std::env::args().skip(1)) {
         Ok(options) => options,
         Err(problem) => {
             eprintln!("error: {problem}\nusage: dashboard [--grants <path>] [--data <dir>]");
             return ExitCode::from(exit::USAGE);
         }
     };
-    gpui_platform::application().run(|cx: &mut App| {
+    let runtime = match start_runtime(&options.data) {
+        Ok(runtime) => Arc::new(runtime),
+        Err(problem) => {
+            eprintln!("error: {problem}");
+            return ExitCode::from(exit::NO_RUNTIME);
+        }
+    };
+    let grants = Arc::new(GrantStore::open(&options.grants));
+    gpui_platform::application().run(move |cx: &mut App| {
         if let Err(problem) = install(cx) {
             eprintln!("error: {problem}");
             std::process::exit(i32::from(exit::NO_RUNTIME));
         }
-        if let Err(error) = cx.open_window(WindowOptions::default(), |_, cx| cx.new(|_| Empty)) {
+        host::vendor::gpui_base::init(cx);
+        let window_options = WindowOptions {
+            titlebar: Some(TitlebarOptions {
+                title: Some(SharedString::from(Msg::AppName.text())),
+                ..Default::default()
+            }),
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                None,
+                size(px(1280.0), px(800.0)),
+                cx,
+            ))),
+            ..Default::default()
+        };
+        let opened = cx.open_window(window_options, |window, cx| {
+            cx.new(|cx| Dashboard::new(Some(runtime), grants, Appearance::DEFAULT, window, cx))
+        });
+        if let Err(error) = opened {
             eprintln!(
                 "error: the window could not open: {error:#}\nThe dashboard draws with the GPU: on Linux it needs a Vulkan or OpenGL 4.3 driver (Mesa's, for example)."
             );

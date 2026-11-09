@@ -1,6 +1,8 @@
 //! The host's logic, headless: GPUI's test platform where a window is needed, plain functions
 //! elsewhere (research R13, layer 1).
 
+mod common;
+
 mod label {
     use host::label::{Label, MAX_LABEL_GRAPHEMES, MONOGRAM_FALLBACK, label, monogram};
     use host::text::Msg;
@@ -268,6 +270,144 @@ mod focus_trap {
                     );
                     assert!(!view.outside.is_focused(window));
                 });
+            }
+        }
+    }
+}
+
+/// US1: the window, its frames and their status, reload, and the chrome kept uncovered.
+mod window {
+    use crate::common::World;
+    use gpui::{Bounds, Entity, Pixels, TestAppContext, VisualTestContext, point, px, size};
+    use host::dashboard::Dashboard;
+    use host::plugins::FrameStatus;
+    use host::text::Msg;
+
+    fn statuses(
+        view: &Entity<Dashboard>,
+        cx: &mut VisualTestContext,
+    ) -> Vec<(String, FrameStatus)> {
+        view.read_with(cx, |view, _| {
+            view.widgets()
+                .iter()
+                .map(|widget| (widget.label.as_str().to_owned(), widget.status))
+                .collect()
+        })
+    }
+
+    /// FR-007 to FR-009: one frame per approval, labelled with the id's last segment, with the
+    /// host's status: rendered, or the host's words for the error kind; a failure does not stop
+    /// the others.
+    #[gpui::test]
+    fn frames_show_each_widgets_status(cx: &mut TestAppContext) {
+        let world = World::new();
+        for name in ["hello-widget", "out-of-bounds", "window-error-imitation"] {
+            world.approve(name);
+        }
+        let (view, cx) = world.open(cx);
+        assert_eq!(
+            statuses(&view, cx),
+            vec![
+                ("hello-widget".to_owned(), FrameStatus::Rendered),
+                (
+                    "out-of-bounds".to_owned(),
+                    FrameStatus::Failed(Msg::ReasonCrashed)
+                ),
+                (
+                    "window-error-imitation".to_owned(),
+                    FrameStatus::Failed(Msg::ReasonReported)
+                ),
+            ]
+        );
+    }
+
+    /// FR-005: the window focuses its root, and the first Tab reaches the first control.
+    #[gpui::test]
+    fn the_first_tab_reaches_the_first_control(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (view, cx) = world.open(cx);
+        cx.update(|window, cx| assert!(view.read(cx).root_focus().is_focused(window)));
+        cx.simulate_keystrokes("tab");
+        cx.update(|window, cx| assert!(view.read(cx).reload_focus().is_focused(window)));
+    }
+
+    /// FR-040: "Reload" adds newly approved plugins and drops removed ones.
+    #[gpui::test]
+    fn reload_follows_the_record(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (view, cx) = world.open(cx);
+        assert_eq!(statuses(&view, cx).len(), 1);
+        world.approve("state-leak");
+        view.update(cx, |view, cx| view.reload(cx));
+        cx.run_until_parked();
+        assert_eq!(statuses(&view, cx).len(), 2);
+        let removed = runtime::manifest::PluginId::parse("local/hello-widget").expect("an id");
+        world.grants.remove(&removed).expect("removed");
+        view.update(cx, |view, cx| view.reload(cx));
+        cx.run_until_parked();
+        assert_eq!(
+            statuses(&view, cx),
+            vec![("state-leak".to_owned(), FrameStatus::Rendered)]
+        );
+    }
+
+    fn intersects(a: Bounds<Pixels>, b: Bounds<Pixels>) -> bool {
+        a.intersects(&b)
+    }
+
+    /// HS-01, FR-011: no frame intersects the chrome, at three window sizes and three scale
+    /// factors, with the content scrolled so frames sit past the top and bottom.
+    #[gpui::test]
+    fn the_chrome_is_never_covered(cx: &mut TestAppContext) {
+        let world = World::new();
+        for name in [
+            "hello-widget",
+            "state-leak",
+            "log-flood",
+            "log-spoof",
+            "out-of-bounds",
+            "window-addresses",
+            "window-error-imitation",
+            "malformed-output",
+        ] {
+            world.approve(name);
+        }
+        let (view, cx) = world.open(cx);
+        let frames = statuses(&view, cx).len();
+        for (width, height) in [(800.0, 600.0), (1280.0, 800.0), (2560.0, 1440.0)] {
+            for scale in [1.0, 1.5, 2.0] {
+                cx.simulate_scale_factor_change(scale);
+                cx.simulate_resize(size(px(width), px(height)));
+                for offset in [0.0, -150.0, -400.0, -2000.0, 150.0] {
+                    view.update(cx, |view, _| {
+                        view.scroll_handle().set_offset(point(px(0.0), px(offset)))
+                    });
+                    cx.run_until_parked();
+                    let chrome = cx.debug_bounds("chrome").expect("the chrome is drawn");
+                    let content = cx.debug_bounds("content").expect("the content area");
+                    assert!(
+                        content.top() >= chrome.bottom(),
+                        "the content area starts under the chrome"
+                    );
+                    for index in 0..frames {
+                        let selector: &'static str =
+                            Box::leak(format!("frame-{index}").into_boxed_str());
+                        let Some(frame) = cx.debug_bounds(selector) else {
+                            continue;
+                        };
+                        // What is drawn of a frame is what the content area, which clips, lets show
+                        if let Some(visible) = Some(frame.intersect(&content)).filter(|visible| {
+                            visible.size.width > px(0.0) && visible.size.height > px(0.0)
+                        }) {
+                            assert!(
+                                !intersects(visible, chrome),
+                                "frame {index} over the chrome at {width}x{height}, scale {scale}, offset {offset}"
+                            );
+                        }
+                    }
+                }
             }
         }
     }

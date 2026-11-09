@@ -57,3 +57,10 @@ gpui-web-gpui-unofficial = "=1.25.3"
 
 [dev-dependencies]
 gpui = { package = "gpui-unofficial", version = "=1.25.3", features = ["test-support"] }
+# The headless renderer, for examples/screenshot.rs
+gpui_platform = { package = "gpui-platform-gpui-unofficial", version = "=1.25.3", features = ["test-support"] }
+# Saves the screenshots of examples/screenshot.rs; GPUI already depends on it
+image = { version = "0.25", default-features = false, features = ["png"] }
+# Temporary records and data directories in tests
+tempfile = "3"
+anyhow = "1"

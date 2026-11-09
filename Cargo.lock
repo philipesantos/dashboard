@@ -2487,6 +2487,7 @@ dependencies = [
  "gpui-macos-gpui-unofficial",
  "gpui-unofficial",
  "gpui-web-gpui-unofficial",
+ "gpui-wgpu-gpui-unofficial",
  "gpui-windows-gpui-unofficial",
 ]
 
@@ -2624,6 +2625,7 @@ dependencies = [
  "etagere",
  "gpui-unofficial",
  "gpui-util-gpui-unofficial",
+ "image",
  "itertools",
  "log",
  "parking_lot",
@@ -2795,6 +2797,7 @@ dependencies = [
 name = "host"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "collections-gpui-unofficial",
  "derive-refineable-gpui-unofficial",
  "design-tokens",
@@ -2811,11 +2814,13 @@ dependencies = [
  "gpui-windows-gpui-unofficial",
  "host-surfaces",
  "http-client-gpui-unofficial",
+ "image",
  "refineable-gpui-unofficial",
  "runtime",
  "scheduler-gpui-unofficial",
  "serde_json",
  "sum-tree-gpui-unofficial",
+ "tempfile",
  "unicode-properties",
  "unicode-segmentation",
  "ztracing-gpui-unofficial",

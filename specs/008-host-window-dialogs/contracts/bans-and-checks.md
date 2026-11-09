@@ -32,7 +32,7 @@ that calls it and must fail clippy.
 
 ## Hostile cases (FR-031)
 
-Headless ones in `host/tests/hostile/`; those that need a real window in `host/tests/window.rs`; all
+Headless ones in `host/tests/hostile.rs`; those that need a real window in `host/tests/window.rs`; all
 counted in the security suite.
 
 | Case | Rule |

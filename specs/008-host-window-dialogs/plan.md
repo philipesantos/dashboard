@@ -35,7 +35,7 @@ dev-dependencies for the real-window target: `enigo` 0.6.1 (key events), `atspi`
 
 **Testing**: `cargo test -p host` (logic layer with GPUI's test platform, the source scans, the pin
 and ban checks); the `window` test target with `harness = false` in a real window (keys and the
-accessibility tree, R13); `host/tests/hostile/` in the security suite; `cargo deny`, `cargo audit`;
+accessibility tree, R13); `host/tests/hostile.rs` in the security suite; `cargo deny`, `cargo audit`;
 the screen-reader walk before each release.
 
 **Target Platform**: Windows, macOS and Linux desktops; CI on `windows-latest`, `macos-latest`
@@ -122,7 +122,7 @@ host/                              # new workspace member: library `host`, binar
 └── tests/
     ├── logic.rs                   # GPUI test platform: gate, queue, focus, HS-01 bounds, files
     ├── checks.rs                  # pins, clippy bans, catalog scan, deny wrappers
-    ├── hostile/                   # one case per CSP and form rule (FR-031)
+    ├── hostile.rs                 # one case per CSP and form rule (FR-031)
     └── window.rs                  # harness = false, test = false: real input and the tree (R13)
 
 runtime/src/grants.rs              # + GrantStore::approvals(), read-only (R5)
