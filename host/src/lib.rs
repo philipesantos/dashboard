@@ -5,6 +5,7 @@
 pub mod app;
 pub mod chrome;
 pub mod dashboard;
+pub mod dialog;
 pub mod frame;
 pub mod label;
 pub mod media;

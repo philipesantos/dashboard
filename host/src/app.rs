@@ -65,6 +65,13 @@ fn refuse_prompt(
 pub fn install(cx: &mut App) -> Result<(), String> {
     cx.set_http_client(Arc::new(BlockedHttpClient::new()));
     cx.set_prompt_builder(refuse_prompt);
+    crate::dialog::init(cx);
+    // Quitting answers an open host dialog as a refusal first (HS-10)
+    cx.on_app_quit(|cx| {
+        crate::dialog::refuse_if_open(cx);
+        async {}
+    })
+    .detach();
     cx.text_system()
         .add_fonts(FONTS.iter().map(|font| Cow::Borrowed(*font)).collect())
         .map_err(|error| format!("the host's fonts did not load: {error}"))

@@ -515,3 +515,191 @@ mod panel {
         });
     }
 }
+
+/// US3: the host dialog's form (HS-02, HS-10, FR-016, FR-018, FR-040) and "Remove from
+/// dashboard" (FR-038).
+mod dialog_form {
+    use crate::common::{World, request};
+    use futures::channel::oneshot;
+    use gpui::{Modifiers, TestAppContext, VisualTestContext};
+    use host::dialog::{self, Answer};
+    use std::time::Duration;
+
+    fn answer_now(receiver: &mut oneshot::Receiver<Answer>) -> Option<Answer> {
+        receiver.try_recv().ok().flatten()
+    }
+
+    /// HS-02: in every host window the scrim covers the whole window, chrome included; the
+    /// dialog is drawn only in the window that asked, inside the scrim.
+    #[gpui::test]
+    fn the_scrim_covers_every_window_and_the_chrome(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (windows, _clock) = world.open_windows(cx, 2);
+        let _answer = cx.update(|cx| dialog::ask(cx, windows[0].into(), request()));
+        for (index, handle) in windows.iter().enumerate() {
+            let mut cx = VisualTestContext::from_window((*handle).into(), cx);
+            cx.run_until_parked();
+            let size = cx.update(|window, _| window.viewport_size());
+            let scrim = cx.debug_bounds("scrim").expect("the scrim is drawn");
+            let chrome = cx.debug_bounds("chrome").expect("the chrome");
+            assert_eq!(scrim.origin, gpui::point(gpui::px(0.0), gpui::px(0.0)));
+            assert_eq!(scrim.size, size, "the scrim covers window {index} whole");
+            let covers = |inner: gpui::Bounds<gpui::Pixels>| {
+                inner.left() >= scrim.left()
+                    && inner.top() >= scrim.top()
+                    && inner.right() <= scrim.right()
+                    && inner.bottom() <= scrim.bottom()
+            };
+            assert!(covers(chrome), "the scrim covers the chrome");
+            let dialog = cx.debug_bounds("dialog");
+            if index == 0 {
+                let dialog = dialog.expect("the dialog in the window that asked");
+                assert!(covers(dialog), "the dialog sits inside the scrim");
+            } else {
+                assert!(dialog.is_none(), "only the scrim in another window");
+            }
+        }
+    }
+
+    /// HS-10, FR-016: nothing outside the dialog takes input: a click on Reload or on the scrim,
+    /// keys in another window, even after the delay; the other window has no focus.
+    #[gpui::test]
+    fn nothing_outside_the_dialog_takes_input(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (windows, clock) = world.open_windows(cx, 2);
+        let mut answer = cx.update(|cx| dialog::ask(cx, windows[0].into(), request()));
+        cx.run_until_parked();
+        clock.advance(Duration::from_millis(1500));
+        {
+            let mut first = VisualTestContext::from_window(windows[0].into(), cx);
+            first.run_until_parked();
+            let reloads = windows[0]
+                .read_with(&first, |view, _| view.reloads())
+                .unwrap();
+            let reload = first.debug_bounds("reload").expect("Reload");
+            first.simulate_click(reload.center(), Modifiers::none());
+            let scrim = first.debug_bounds("scrim").expect("the scrim");
+            first.simulate_click(
+                scrim.origin + gpui::point(gpui::px(5.0), gpui::px(5.0)),
+                Modifiers::none(),
+            );
+            assert_eq!(
+                windows[0]
+                    .read_with(&first, |view, _| view.reloads())
+                    .unwrap(),
+                reloads,
+                "the click on Reload did not reach it"
+            );
+        }
+        {
+            let mut second = VisualTestContext::from_window(windows[1].into(), cx);
+            second.run_until_parked();
+            second.update(|window, cx| assert!(window.focused(cx).is_none()));
+            second.simulate_keystrokes("enter tab space escape");
+        }
+        assert_eq!(answer_now(&mut answer), None, "still open");
+        assert!(cx.update(|cx| dialog::is_open(cx)));
+    }
+
+    /// HS-10: closing a window answers the dialog as a refusal.
+    #[gpui::test]
+    fn closing_a_window_refuses(cx: &mut TestAppContext) {
+        let world = World::new();
+        let (windows, _clock) = world.open_windows(cx, 2);
+        let mut answer = cx.update(|cx| dialog::ask(cx, windows[0].into(), request()));
+        cx.run_until_parked();
+        let mut second = VisualTestContext::from_window(windows[1].into(), cx);
+        assert!(second.simulate_close());
+        assert_eq!(answer_now(&mut answer), Some(Answer::Refused));
+    }
+
+    /// FR-018: one dialog at a time; the next shows when the first is answered.
+    #[gpui::test]
+    fn dialogs_wait_in_order(cx: &mut TestAppContext) {
+        let world = World::new();
+        let (windows, _clock) = world.open_windows(cx, 1);
+        let mut first = cx.update(|cx| dialog::ask(cx, windows[0].into(), request()));
+        let mut second = cx.update(|cx| dialog::ask(cx, windows[0].into(), request()));
+        let generation = cx.update(|cx| dialog::open(cx).map(|open| open.generation));
+        cx.update(|cx| dialog::answer(cx, Answer::Confirmed));
+        assert_eq!(answer_now(&mut first), Some(Answer::Confirmed));
+        assert_eq!(answer_now(&mut second), None);
+        let next = cx.update(|cx| dialog::open(cx).map(|open| open.generation));
+        assert_eq!(next, generation.map(|g| g + 1), "the second is shown");
+        cx.update(|cx| dialog::answer(cx, Answer::Refused));
+        assert_eq!(answer_now(&mut second), Some(Answer::Refused));
+        assert!(!cx.update(|cx| dialog::is_open(cx)));
+    }
+
+    /// FR-040: a reload asked for while a dialog is open waits for its answer.
+    #[gpui::test]
+    fn a_reload_waits_for_the_dialog(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        let (windows, _clock) = world.open_windows(cx, 1);
+        let reloads = windows[0].read_with(cx, |view, _| view.reloads()).unwrap();
+        let _answer = cx.update(|cx| dialog::ask(cx, windows[0].into(), request()));
+        windows[0]
+            .update(cx, |view, _, cx| view.reload(cx))
+            .unwrap();
+        assert_eq!(
+            windows[0].read_with(cx, |view, _| view.reloads()).unwrap(),
+            reloads
+        );
+        cx.update(|cx| dialog::answer(cx, Answer::Refused));
+        cx.run_until_parked();
+        assert_eq!(
+            windows[0].read_with(cx, |view, _| view.reloads()).unwrap(),
+            reloads + 1
+        );
+    }
+
+    /// FR-038: "Remove from dashboard": confirmed, the approval and kept data go and the frame
+    /// leaves; refused, nothing changes; focus goes back to the menu button.
+    #[gpui::test]
+    fn remove_from_dashboard(cx: &mut TestAppContext) {
+        let world = World::new();
+        world.approve("hello-widget");
+        world.approve("state-leak");
+        let (windows, clock) = world.open_windows(cx, 1);
+        let mut cx = VisualTestContext::from_window(windows[0].into(), cx);
+        let view = windows[0];
+        // Refused with Escape
+        view.update(&mut cx, |view, window, cx| view.ask_remove(0, window, cx))
+            .unwrap();
+        cx.run_until_parked();
+        clock.advance(Duration::from_millis(1001));
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert_eq!(
+            view.read_with(&cx, |view, _| view.widgets().len()).unwrap(),
+            2
+        );
+        let button = view
+            .read_with(&cx, |view, _| view.menu_focus(0).cloned())
+            .unwrap()
+            .expect("a menu button");
+        cx.update(|window, _| assert!(button.is_focused(window), "focus back on the menu button"));
+        // Confirmed with a click on Remove
+        view.update(&mut cx, |view, window, cx| view.ask_remove(0, window, cx))
+            .unwrap();
+        cx.run_until_parked();
+        clock.advance(Duration::from_millis(1001));
+        let confirm = cx.debug_bounds("dialog-confirm").expect("Remove");
+        cx.simulate_click(confirm.center(), Modifiers::none());
+        cx.run_until_parked();
+        let left: Vec<String> = view
+            .read_with(&cx, |view, _| {
+                view.widgets()
+                    .iter()
+                    .map(|w| w.id.as_str().to_owned())
+                    .collect()
+            })
+            .unwrap();
+        assert_eq!(left, vec!["local/state-leak".to_owned()]);
+        let approvals = world.grants.approvals().expect("readable");
+        assert_eq!(approvals.len(), 1);
+    }
+}

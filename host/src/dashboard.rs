@@ -1,9 +1,12 @@
 //! The dashboard window's root view (US1): the chrome above a content area that scrolls and
 //! clips everything it holds, so no frame or panel can cover the chrome (HS-01, research R6), one
 //! frame per approved plugin, and the empty state. It reloads the approvals when the window
-//! regains focus and from the chrome's "Reload" (FR-040).
+//! regains focus and from the chrome's "Reload" (FR-040), and draws a host dialog's scrim over
+//! everything while one is open (HS-02).
 
 use crate::chrome::chrome;
+use crate::dialog::view::{Shown, overlay};
+use crate::dialog::{self, Answer, DialogHost, Request};
 use crate::frame::frame;
 use crate::panel::{MenuItem, attached, menu, panel};
 use crate::plugins::{FrameStatus, Outcome, Widget, approvals, load_and_render};
@@ -13,8 +16,9 @@ use crate::ui::text;
 use crate::vendor::gpui_base::tab::{CONTEXT, Tab, TabPrev, advance_focus};
 use design_tokens::Appearance;
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+    AnyWindowHandle, Context, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
+    KeyUpEvent, ParentElement, Render, ScrollHandle, StatefulInteractiveElement, Styled,
+    Subscription, Window, div, px,
 };
 use runtime::Runtime;
 use runtime::grants::GrantStore;
@@ -42,7 +46,11 @@ pub struct Dashboard {
     scroll: ScrollHandle,
     /// Bumped on every reload, so a slow load from an earlier one cannot overwrite a newer frame.
     epoch: u64,
+    /// A reload asked for while a dialog was open, run when it is answered (FR-040).
+    pending_reload: bool,
+    handle: AnyWindowHandle,
     _activation: Subscription,
+    _dialogs: Subscription,
 }
 
 impl Dashboard {
@@ -58,9 +66,26 @@ impl Dashboard {
         // The window focuses its root, so the first Tab reaches the first control (FR-005)
         window.focus(&root, cx);
         let activation = cx.observe_window_activation(window, |this, window, cx| {
-            if window.is_window_active() {
+            if !window.is_window_active() {
+                return;
+            }
+            // The dialog's window regained focus: its 1000 ms start over (HS-11)
+            if dialog::open(cx).is_some_and(|open| open.window == this.handle) {
+                dialog::restart_gate(cx);
+            }
+            this.reload(cx);
+        });
+        let dialogs = cx.observe_global::<DialogHost>(|this, cx| {
+            if this.pending_reload && !dialog::is_open(cx) {
+                this.pending_reload = false;
                 this.reload(cx);
             }
+            cx.notify();
+        });
+        // Closing the window answers an open dialog as a refusal first (HS-10)
+        window.on_window_should_close(cx, |_, cx| {
+            dialog::refuse_if_open(cx);
+            true
         });
         let mut dashboard = Dashboard {
             runtime,
@@ -77,7 +102,10 @@ impl Dashboard {
             panel_close: cx.focus_handle().tab_stop(true),
             scroll: ScrollHandle::new(),
             epoch: 0,
+            pending_reload: false,
+            handle: window.window_handle(),
             _activation: activation,
+            _dialogs: dialogs,
         };
         dashboard.reload(cx);
         dashboard
@@ -145,6 +173,50 @@ impl Dashboard {
         }
     }
 
+    /// "Remove from dashboard" (FR-038): asks in a host dialog; confirmed, removes the approval and
+    /// the data the host kept for the plugin, as the development tool's `remove` does, then
+    /// reloads. Focus goes back to the frame's menu button whatever the answer.
+    pub fn ask_remove(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_menu(window, cx);
+        let Some(widget) = self.widgets.get(index).cloned() else {
+            return;
+        };
+        // The dialog gives focus back to what held it: the frame's menu button
+        if let Some(button) = self.menus.get(index) {
+            window.focus(button, cx);
+        }
+        let answer = dialog::ask(
+            cx,
+            self.handle,
+            Request {
+                name: Msg::RemoveDialogName.text(),
+                question: Msg::RemoveDialogQuestion.text(),
+                subject: Some(widget.label.clone()),
+                refuse: Msg::Cancel.text(),
+                confirm: Msg::Remove.text(),
+            },
+        );
+        let grants = Arc::clone(&self.grants);
+        let runtime = self.runtime.clone();
+        cx.spawn(async move |this, cx| {
+            if answer.await != Ok(Answer::Confirmed) {
+                return;
+            }
+            let id = widget.id.clone();
+            cx.background_executor()
+                .spawn(async move {
+                    // Nothing more to do if the tool removed it meanwhile
+                    let _ = grants.remove(&id);
+                    if let Some(runtime) = runtime {
+                        let _ = runtime.discard_kept_data(&id);
+                    }
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| this.reload(cx));
+        })
+        .detach();
+    }
+
     /// Opens frame `index`'s panel, attached to it, focus on its close control.
     pub fn open_panel_of(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.open_menu = None;
@@ -167,6 +239,10 @@ impl Dashboard {
     /// origin, adds the new ones and drops the rest, then loads and renders every widget off the
     /// UI thread.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
+        if dialog::is_open(cx) {
+            self.pending_reload = true;
+            return;
+        }
         self.epoch += 1;
         let epoch = self.epoch;
         let grants = Arc::clone(&self.grants);
@@ -282,7 +358,8 @@ impl Render for Dashboard {
                             name: Msg::RemoveFromDashboard.text(),
                             focus: self.item_remove.clone(),
                             on_press: Box::new(move |window, cx| {
-                                let _ = remove.update(cx, |this, cx| this.close_menu(window, cx));
+                                let _ = remove
+                                    .update(cx, |this, cx| this.ask_remove(index, window, cx));
                             }),
                         },
                     ],
@@ -314,6 +391,19 @@ impl Render for Dashboard {
                 frames.push(drawn.into_any_element());
             }
         }
+        let shown = dialog::open(cx).map(|open| Shown {
+            request: open.request.clone(),
+            refuse: open.refuse.clone(),
+            confirm: open.confirm.clone(),
+            trap: open.trap.clone(),
+            here: open.window == self.handle,
+        });
+        if shown.as_ref().is_some_and(|shown| shown.here)
+            && let Some(refuse) = dialog::start_gate_if_needed(cx)
+        {
+            window.focus(&refuse, cx);
+        }
+        let here = self.handle;
         let body = if frames.is_empty() {
             div().child(Self::empty_state(&theme))
         } else {
@@ -323,12 +413,26 @@ impl Render for Dashboard {
             .id("dashboard")
             .key_context(CONTEXT)
             .track_focus(&self.root)
-            .on_action(
-                cx.listener(|_, _: &Tab, window, cx| advance_focus(window, cx, Window::focus_next)),
-            )
-            .on_action(cx.listener(|_, _: &TabPrev, window, cx| {
-                advance_focus(window, cx, Window::focus_prev)
+            .on_action(cx.listener(move |_, _: &Tab, window, cx| {
+                if !dialog_elsewhere(here, cx) {
+                    advance_focus(window, cx, Window::focus_next)
+                }
             }))
+            .on_action(cx.listener(move |_, _: &TabPrev, window, cx| {
+                if !dialog_elsewhere(here, cx) {
+                    advance_focus(window, cx, Window::focus_prev)
+                }
+            }))
+            // Every key is seen for the gate's held keys; while a dialog is open in another
+            // window, this one drops every key (HS-10)
+            .capture_key_down(move |event: &KeyDownEvent, _, cx| {
+                dialog::key_down(cx, &event.keystroke.key);
+                if dialog_elsewhere(here, cx) {
+                    cx.stop_propagation();
+                }
+            })
+            .on_key_up(|event: &KeyUpEvent, _, cx| dialog::key_up(cx, &event.keystroke.key))
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -345,5 +449,11 @@ impl Render for Dashboard {
                     .p(px(CONTENT_PADDING))
                     .child(body),
             )
+            .children(shown.map(|shown| overlay(&theme, window, &shown)))
     }
+}
+
+/// Whether a dialog is open in another host window, so this one drops its input.
+fn dialog_elsewhere(here: AnyWindowHandle, cx: &gpui::App) -> bool {
+    dialog::open(cx).is_some_and(|open| open.window != here)
 }

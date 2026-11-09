@@ -2801,6 +2801,7 @@ dependencies = [
  "collections-gpui-unofficial",
  "derive-refineable-gpui-unofficial",
  "design-tokens",
+ "futures",
  "gpui-apple-gpui-unofficial",
  "gpui-linux-gpui-unofficial",
  "gpui-macos-gpui-unofficial",

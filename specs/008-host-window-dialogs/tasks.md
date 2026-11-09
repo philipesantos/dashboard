@@ -203,27 +203,27 @@ status, focus ready for the first Tab.
 
 ### Tests first
 
-- [ ] T026 [P] [US3] `host/tests/logic.rs` part 5: the dialog's form, every row of
+- [X] T026 [P] [US3] `host/tests/logic.rs` part 5: the dialog's form, every row of
   `contracts/dialog.md` that needs no real window: the scrim over every host window, chrome
   included, in the element tree (HS-02); a reload asked while it is open waits for its answer (FR-040); input to the chrome, frames, a panel and a second window
   reaches nothing; a click outside neither closes nor answers; other windows drop keys and lose
   focus, restored after; the close request and quit answer `Refused` (HS-10); the queue shows one
   at a time (FR-018).
-- [ ] T027 [P] [US3] `host/tests/hostile.rs` (`gate`): with the manual clock, input at 0, 500 and 999 ms
+- [X] T027 [P] [US3] `host/tests/hostile.rs` (`gate`): with the manual clock, input at 0, 500 and 999 ms
   answers nothing and at 1000 ms does; a key and a button held from before answer nothing until
   released; the 1000 ms restart on activation, content change and a new dialog (HS-11, FR-017).
-- [ ] T028 [P] [US3] `host/tests/logic.rs` part 6: "Remove from dashboard": confirmed, the approval
+- [X] T028 [P] [US3] `host/tests/logic.rs` part 6: "Remove from dashboard": confirmed, the approval
   and kept data go (as `runtime remove`) and the frame leaves; refused, closed or quit, nothing
   changes; focus returns to the menu button (FR-038); if the tool removed the plugin meanwhile,
   confirming removes nothing more.
 
 ### Implementation
 
-- [ ] T029 [US3] `host/src/dialog/`: `DialogHost`, `Request`, `Answer`, the queue, the modal layer in
+- [X] T029 [US3] `host/src/dialog/`: `DialogHost`, `Request`, `Answer`, the queue, the modal layer in
   every window's root view, other windows dropping input and clearing focus, close and quit
   answering `Refused` (research R9, `contracts/dialog.md`).
-- [ ] T030 [US3] `host/src/dialog/gate.rs`: `Clock`, the input gate (data-model "Input gate").
-- [ ] T031 [US3] `host/src/frame.rs`: "Remove from dashboard" in the frame's menu, asking through
+- [X] T030 [US3] `host/src/dialog/gate.rs`: `Clock`, the input gate (data-model "Input gate").
+- [X] T031 [US3] `host/src/frame.rs`: "Remove from dashboard" in the frame's menu, asking through
   `DialogHost` with the texts of `contracts/dialog.md`, then `GrantStore::remove` and
   `Runtime::discard_kept_data` on the background executor.
 

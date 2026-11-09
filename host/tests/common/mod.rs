@@ -75,3 +75,48 @@ impl World {
         (view, cx)
     }
 }
+
+impl World {
+    /// Installs the host on `cx` with a manual clock for the dialogs, and opens `count` dashboard
+    /// windows on this record.
+    pub fn open_windows(
+        &self,
+        cx: &mut TestAppContext,
+        count: usize,
+    ) -> (
+        Vec<gpui::WindowHandle<Dashboard>>,
+        Arc<host::dialog::gate::ManualClock>,
+    ) {
+        let clock = host::dialog::gate::ManualClock::new();
+        let shared: Arc<dyn host::dialog::gate::Clock> = clock.clone();
+        cx.update(|cx| {
+            host::app::install(cx).expect("installs");
+            host::vendor::gpui_base::init(cx);
+            host::dialog::set_clock(cx, shared);
+        });
+        let runtime = Arc::new(start_runtime(self.dir.path()).expect("a runtime"));
+        let windows = (0..count)
+            .map(|_| {
+                let runtime = Arc::clone(&runtime);
+                let grants = Arc::clone(&self.grants);
+                cx.add_window(move |window, cx| {
+                    Dashboard::new(Some(runtime), grants, Appearance::DEFAULT, window, cx)
+                })
+            })
+            .collect();
+        cx.run_until_parked();
+        (windows, clock)
+    }
+}
+
+/// A request like "Remove from dashboard"'s, for tests that only need a dialog on screen.
+pub fn request() -> host::dialog::Request {
+    use host::text::Msg;
+    host::dialog::Request {
+        name: Msg::RemoveDialogName.text(),
+        question: Msg::RemoveDialogQuestion.text(),
+        subject: None,
+        refuse: Msg::Cancel.text(),
+        confirm: Msg::Remove.text(),
+    }
+}
