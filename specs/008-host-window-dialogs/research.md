@@ -175,7 +175,10 @@ passed to `child`, `aria_label`, `aria_description` or a text element outside `t
 **Decision**: the label follows HS-06 and HS-07 exactly: every Cc, Cf, Zl and Zp character
 removed (bidirectional overrides and zero-width characters included); capped at 40 grapheme
 clusters (UAX #29) followed by an ellipsis; an empty result shown as the host's "Unnamed widget"
-(a `Msg`); a name imitating the host drawn like any other. The monogram is the first letter or
+(a `Msg`); a name imitating the host drawn like any other. A manifest has no display name:
+a plugin's only name is its id (`local/<name>` or `github.com/<owner>/<repository>`, lowercase
+ASCII, `PluginId::parse`), so the frame's label is the id's last segment, made safe the same way,
+and the full id is the frame's accessible description. The monogram is the first letter or
 digit of the cleaned name, upper-cased where the script has case, or a fixed host glyph when there
 is none, in the monogram component's roles. It reaches the screen only as
 `PluginText`, drawn as plain text, and for assistive technology in a child node of its own after

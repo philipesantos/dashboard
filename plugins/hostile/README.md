@@ -20,6 +20,8 @@ normally. They are security test fixtures and are never shipped.
 | `log-spoof` | Logs and errors with line breaks and terminal escapes | `plugin-error`, with every text escaped |
 | `storage-file` | Declares storage, then opens a store file with `std::fs` | `capability-refused`, listing `wasi:filesystem/*` |
 | `token-hunt` | Declares a connector with an account, then reads its environment, arguments and files with the standard library | `capability-refused`, listing `wasi:cli/*` and `wasi:filesystem/*` |
+| `window-addresses` | Returns content of markup, remote and `file://` addresses and paths | Renders; the host window draws none of it and fetches, reads and opens nothing (008 FR-027) |
+| `window-error-imitation` | Fails with an error whose text imitates the host window's words | `plugin-error`; the host window shows only its own reason (008 FR-008) |
 
 The [data model](../../specs/001-plugin-runtime/data-model.md#hostile-plugin-case) is the
 source of these outcomes, and [`docs/threat-model.md`](../../docs/threat-model.md) maps them to

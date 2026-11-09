@@ -149,11 +149,15 @@ status, focus ready for the first Tab.
 - [ ] T018 [P] [US1] `host/tests/hostile/content.rs`: the fixtures of T019 whose output is markup and
   addresses, whose names imitate the host and whose render error imitates host text: the frame holds
   only host text and the safe label; no request, no file read (FR-008, FR-027, FR-029).
-- [ ] T019 [P] [US1] `plugins/hostile/`: fixtures `window-addresses` (render output of markup,
+- [X] T019 [P] [US1] `plugins/hostile/`: fixtures `window-addresses` (render output of markup,
   `https://`, `file://` and paths), `window-names` (long, empty, bidi, control, mixed-script and
   host-imitating names), `window-error-imitation` (a render error and names reading "Rendered",
   "Remove a widget") and `window-local-connector` (declares a `local/` connector); built by
   `cargo xtask plugins`.
+  Done without `window-names`: a plugin's only name is its id, which the runtime limits to
+  lowercase ASCII (`PluginId::parse`), so no package can carry bidi or control characters in it;
+  the label rules stay tested on arbitrary strings (T006), and the frame shows the id's last
+  segment (research R8). `window-local-connector` comes with US5 (T040).
 
 ### Implementation
 

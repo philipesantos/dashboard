@@ -22,6 +22,8 @@ members = [
     "hostile/log-spoof",
     "hostile/storage-file",
     "hostile/token-hunt",
+    "hostile/window-addresses",
+    "hostile/window-error-imitation",
     "fixtures/hello-v0",
     "fixtures/probe",
     "fixtures/quiet",

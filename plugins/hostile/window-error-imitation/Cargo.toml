@@ -1,0 +1,12 @@
+[package]
+name = "window-error-imitation"
+version = "0.1.0"
+description = "Hostile plugin (security test fixture, never shipped): fails with an error that imitates the host window's own words"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen.workspace = true
