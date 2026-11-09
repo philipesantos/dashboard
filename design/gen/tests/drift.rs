@@ -5,7 +5,10 @@ use crate::common::{design_md, mutate, palette, root};
 #[test]
 fn the_committed_files_are_what_design_md_produces() {
     if let Err(differences) = design_gen::generate::compare(&root()) {
-        panic!("generated files are stale; run `cargo xtask design`:\n{}", differences.join("\n"));
+        panic!(
+            "generated files are stale; run `cargo xtask design`:\n{}",
+            differences.join("\n")
+        );
     }
 }
 

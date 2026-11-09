@@ -170,7 +170,7 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Implement the checker rules 1–9, 12 and 14 in `design/gen/src/check.rs` (FR-005,
+- [X] T016 [US1] Implement the checker rules 1–9, 12 and 14 in `design/gen/src/check.rs` (FR-005,
   FR-023), with
   messages as `contracts/tokens-api.md` says (file and line or token path, text escaped). T012
   passes for those rules.
