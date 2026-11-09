@@ -81,7 +81,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,6 +99,9 @@ jobs:
           # The secrets vault: libdbus to build the Secret Service store, gnome-keyring for
           # the tests that use the real keychain (specs/005-plugin-credentials/research.md, R15)
           sudo apt-get $apt_options install -y libdbus-1-dev gnome-keyring
+          # The host window links GPUI's X11 and Wayland libraries (specs/008-host-window-dialogs)
+          sudo apt-get $apt_options install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev \
+            libx11-xcb-dev libfreetype-dev libfontconfig-dev libwayland-dev
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -287,9 +290,76 @@ jobs:
 
   # The only check the master ruleset requires, so jobs can be added or renamed without
   # touching the ruleset. It fails when any job failed or was cancelled.
+  # The host in a real window: real input from the operating system and the accessibility tree
+  # read through the platform, then the pixels GPUI's headless renderer draws
+  # (specs/008-host-window-dialogs, research R13). Its own job: GPUI's build and the window take
+  # their own time.
+  host-window:
+    name: Host window (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install system dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 8
+        run: |
+          apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          sudo apt-get $apt_options update
+          # GPUI's libraries, Mesa's software Vulkan and GL, a virtual display, the AT-SPI bus,
+          # xdotool for real input and Python's AT-SPI bindings to read the tree
+          sudo apt-get $apt_options install -y libdbus-1-dev pkg-config \
+            libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libx11-xcb-dev libfreetype-dev \
+            libfontconfig-dev libwayland-dev libvulkan1 mesa-vulkan-drivers libegl1 \
+            libgl1-mesa-dri xvfb at-spi2-core xdotool python3-gi gir1.2-atspi-2.0
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          # The fixtures the window loads build for WebAssembly
+          targets: wasm32-unknown-unknown, wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - run: cargo xtask plugins --locked
+
+      # The scrim and the focus ring, in pixels, on the GPU without a display (Windows has no
+      # headless renderer and skips; the window below covers it)
+      - run: cargo test -p host --test pixels --locked
+
+      - name: Real window (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -c '
+            set -e
+            busctl --user call org.a11y.Bus /org/a11y/bus org.a11y.Bus GetAddress
+            busctl --user set-property org.a11y.Bus /org/a11y/bus org.a11y.Status IsEnabled b true
+            unset WAYLAND_DISPLAY
+            Xvfb :99 -screen 0 1600x1000x24 &
+            xvfb=$!
+            sleep 2
+            export DISPLAY=:99
+            status=0
+            cargo test -p host --test window --locked || status=$?
+            kill $xvfb
+            exit $status'
+
+      - name: Real window (macOS, Windows)
+        if: runner.os != 'Linux'
+        run: cargo test -p host --test window --locked
+
   result:
     name: CI result
-    needs: [changes, build, docs, audit, deny]
+    needs: [changes, build, host-window, docs, audit, deny]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5

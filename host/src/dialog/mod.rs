@@ -55,6 +55,8 @@ pub struct Open {
     pub trap: FocusHandle,
     /// Increases with every dialog shown, so a view can tell a new dialog from the same one.
     pub generation: u64,
+    /// When it was asked for, on the dialogs' clock, to measure how soon it shows (SC-006).
+    pub asked_at: std::time::Duration,
     answer: Option<oneshot::Sender<Answer>>,
     saved_focus: Vec<(AnyWindowHandle, Option<FocusHandle>)>,
 }
@@ -139,6 +141,7 @@ fn show_next(cx: &mut App) {
         confirm,
         trap,
         generation: host.generation,
+        asked_at: host.clock.now(),
         answer: Some(pending.answer),
         saved_focus: Vec::new(),
     });

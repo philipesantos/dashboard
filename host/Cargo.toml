@@ -67,3 +67,15 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 tempfile = "3"
 anyhow = "1"
 futures = "0.3"
+
+# Pixels drawn by GPUI's headless renderer, on the main thread (research R13)
+[[test]]
+name = "pixels"
+harness = false
+
+# A real window with real input and the platform's accessibility tree (research R13): run only on
+# its own, as CI's "Host window" job does, never by `cargo test --workspace`
+[[test]]
+name = "window"
+harness = false
+test = false

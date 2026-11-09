@@ -153,6 +153,34 @@ impl Dashboard {
         &self.item_settings
     }
 
+    /// The name of the host control focused in `window`, for tests that drive a real window:
+    /// `root`, `reload`, `menu-<frame>`, `settings`, `remove`, `panel-close`, `dialog-refuse` or
+    /// `dialog-confirm`.
+    pub fn focused_name(&self, window: &Window, cx: &gpui::App) -> Option<String> {
+        if let Some(open) = dialog::open(cx) {
+            if open.refuse.is_focused(window) {
+                return Some("dialog-refuse".to_owned());
+            }
+            if open.confirm.is_focused(window) {
+                return Some("dialog-confirm".to_owned());
+            }
+        }
+        let named = [
+            (&self.root, "root"),
+            (&self.reload, "reload"),
+            (&self.item_settings, "settings"),
+            (&self.item_remove, "remove"),
+            (&self.panel_close, "panel-close"),
+        ];
+        if let Some((_, name)) = named.iter().find(|(handle, _)| handle.is_focused(window)) {
+            return Some((*name).to_owned());
+        }
+        self.menus
+            .iter()
+            .position(|handle| handle.is_focused(window))
+            .map(|index| format!("menu-{index}"))
+    }
+
     /// Opens frame `index`'s menu, focus on its first entry; or closes it if it is open.
     pub fn toggle_menu(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.open_menu == Some(index) {

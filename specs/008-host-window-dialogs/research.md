@@ -333,6 +333,21 @@ window tests.
 layers 2 and 3 need a real window; AccessKit's own CI proves UI Automation on `windows-latest`, and
 enigo's proves XTEST under Xvfb.
 
+### How the layers were built (T033, T034)
+
+- **Pixels** (`host/tests/pixels.rs`): GPUI's headless renderer draws the dashboard on the GPU
+  without a display; the scrim's colour over the chrome, the content and every corner, and the
+  focus ring around a focused control, are checked in pixels. Linux (Mesa's software Vulkan in CI)
+  and macOS (Metal) have the renderer; Windows has none and skips, and its real window covers the
+  rest.
+- **Real window** (`host/tests/window.rs`): two dashboard windows, real keys and clicks from the
+  system's own tools (`xdotool` under Xvfb, `osascript` and a CGEvent click on macOS, `SendKeys`
+  and `SendInput` on Windows), the same ones the spike proved, instead of `enigo`; the
+  accessibility tree read through AT-SPI (Python's Atspi), AX (AppleScript) and UI Automation
+  (PowerShell), which also give the screen positions to click. GPUI's `debug_a11y_tree_json` is
+  GPUI's own format, not AccessKit's `TreeUpdate`, so the platform reading, after each adapter's
+  own `common_filter`, is the check of HS-18.
+
 ## R14. Performance goals and what is measured
 
 **Decision**: the real-window target measures, on the three systems, the time from start to the

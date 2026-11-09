@@ -69,6 +69,11 @@ impl Gate {
         self.pointer_armed = false;
     }
 
+    /// When the gate last started: the dialog's first frame, or its last restart.
+    pub fn started_at(&self) -> Option<Duration> {
+        self.started_at
+    }
+
     pub fn is_started(&self) -> bool {
         self.started_at.is_some()
     }

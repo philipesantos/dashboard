@@ -241,13 +241,13 @@ status, focus ready for the first Tab.
   button, Enter there never confirms (HS-16); Tab and Shift+Tab cycle inside; Escape refuses and
   restores focus (HS-17); every focusable host control shows the `focus` ring 2 px wide, 2 px out
   (HS-24).
-- [ ] T033 [US4] `host/tests/window.rs` (`harness = false`, `test = false` in `host/Cargo.toml`):
+- [X] T033 [US4] `host/tests/window.rs` (`harness = false`, `test = false` in `host/Cargo.toml`):
   the real window with real OS input through `enigo`: the first Tab; the panel's Escape and click
   outside; the dialog opened from the keyboard and from the pointer; initial focus, Tab, Shift+Tab,
   Escape; Enter in a second window after 1000 ms answering nothing; the gate in real time; every
   focusable control's ring unclipped; the pixels under the scrim in every window (FR-015); the
   start and dialog times (SC-001, SC-006).
-- [ ] T034 [US4] `host/tests/window.rs`, accessibility part: with the adapter active, the platform
+- [X] T034 [US4] `host/tests/window.rs`, accessibility part: with the adapter active, the platform
   tree (AT-SPI, UI Automation, AX) and `debug_a11y_tree_json` through `accesskit_consumer`'s
   `common_filter`, in the dialog's window and in a second window: only the dialog and its children
   while it is open (HS-18, FR-022); its role, label, description and the subject's child node
