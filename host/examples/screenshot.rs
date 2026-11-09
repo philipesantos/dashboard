@@ -2,7 +2,9 @@
 //! reviewing the look without a display (specs/008-host-window-dialogs, T053).
 //!
 //! `cargo run -p host --example screenshot -- --grants <path> --data <dir> --out <file.png>
-//! [--dark] [--size <w>x<h>]`
+//! [--dark] [--size <w>x<h>] [--dialog]`
+//!
+//! `--dialog` asks "Remove from dashboard" for the first frame before the screenshot.
 
 use design_tokens::{Appearance, ThemePick};
 use gpui::{AppContext as _, HeadlessAppContext, px, size};
@@ -18,6 +20,7 @@ fn main() -> Result<(), String> {
     let mut data = None;
     let mut out = PathBuf::from("dashboard.png");
     let mut dark = false;
+    let mut with_dialog = false;
     let (mut width, mut height) = (1280.0, 800.0);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -26,6 +29,7 @@ fn main() -> Result<(), String> {
             "--data" => data = args.next().map(PathBuf::from),
             "--out" => out = PathBuf::from(args.next().ok_or("--out needs a file")?),
             "--dark" => dark = true,
+            "--dialog" => with_dialog = true,
             "--size" => {
                 let value = args.next().ok_or("--size needs <w>x<h>")?;
                 let (w, h) = value.split_once('x').ok_or("--size needs <w>x<h>")?;
@@ -63,6 +67,11 @@ fn main() -> Result<(), String> {
         })
         .map_err(|error| format!("the window did not open: {error:#}"))?;
     cx.run_until_parked();
+    if with_dialog {
+        cx.update(|cx| window.update(cx, |view, window, cx| view.ask_remove(0, window, cx)))
+            .map_err(|error| format!("the window is gone: {error:#}"))?;
+        cx.run_until_parked();
+    }
     let image = cx
         .capture_screenshot(window.into())
         .map_err(|error| format!("no screenshot: {error:#}"))?;
