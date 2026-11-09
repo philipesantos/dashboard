@@ -24,10 +24,12 @@ jobs:
   # skip them. The workflow still runs, because a skipped job counts as passing for the
   # required "CI result" check, while a workflow that never starts leaves it pending forever.
   # New advisories do not need a change here; audit.yml checks for them every week.
-  # The constitution (v2.4.1, Development Workflow) allows this skip; keep the documentation
+  # The constitution (v5.0.0, Development Workflow) allows this skip; keep the documentation
   # paths below in sync with the ones it lists. Markdown the build uses as code is not
-  # documentation for that rule: the docs checks read docs/authors/ and wit/, so a change there
-  # runs everything (specs/006-contract-v1-docs/research.md, R11).
+  # documentation for that rule: the docs checks read docs/authors/ and wit/, and the design
+  # checks read DESIGN.md, design/, docs/design/ and docs/threat-model.md, so a change there runs
+  # everything (specs/006-contract-v1-docs/research.md, R11; specs/007-host-visual-design/
+  # research.md, R12).
   changes:
     name: Detect code changes
     runs-on: ubuntu-24.04
@@ -59,8 +61,8 @@ jobs:
             changed=$(git diff --name-only --no-renames "$range")
             printf '%s\n' "$changed"
             # Documentation only: Markdown anywhere, specs/, docs/, .specify/ and LICENSE, except
-            # docs/authors/ and wit/, which the docs checks read
-            if grep -qE '^(docs/authors|wit)/' <<< "$changed"; then
+            # what the docs and design checks read
+            if grep -qE '^(docs/authors|docs/design|wit|design)/|^DESIGN\.md$|^docs/threat-model\.md$' <<< "$changed"; then
               code=true
             elif grep -qvE '\.md$|^(specs|docs|\.specify)/|^LICENSE$' <<< "$changed"; then
               code=true
@@ -124,6 +126,23 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'ci' && cargo test --workspace --locked"
+
+      # DESIGN.md checked against the format and the contrast rules, and the generated files
+      # compared with what it produces (specs/007-host-visual-design, FR-004, FR-005)
+      - run: cargo xtask design --check
+        if: runner.os == 'Linux'
+
+      # The SVG preview of the visual system, for a reviewer to open in a browser (FR-026)
+      - run: cargo xtask design --preview target/design-preview
+        if: runner.os == 'Linux'
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: runner.os == 'Linux'
+        with:
+          name: design-preview
+          path: target/design-preview/
+          retention-days: 14
+          if-no-files-found: error
 
       # The connectors' test seam replaces DNS and the trusted roots; the runtime refuses to
       # compile with it outside debug builds, so no build anyone runs can include it
@@ -250,6 +269,21 @@ jobs:
       - run: cargo deny --manifest-path plugins/Cargo.toml check
 
       - run: cargo deny --manifest-path docs/authors/getting-started/Cargo.toml check
+
+      # A crate that depends on host-surfaces must fail the bans, which shows the ban bites
+      # before any kit crate exists (specs/007-host-visual-design/research.md, R6). The root
+      # deny.toml applies, since cargo-deny reads <cwd>/deny.toml.
+      - name: The host-surfaces ban refuses a crate that is not the host
+        run: |
+          if cargo deny --manifest-path design/ban-fixture/Cargo.toml check bans 2> bans.txt; then
+            echo "design/ban-fixture passed the bans, but it depends on host-surfaces" >&2
+            exit 1
+          fi
+          grep -q "crate 'host-surfaces = 0.1.0' is explicitly banned" bans.txt || {
+            cat bans.txt >&2
+            echo "the ban fixture failed, but not because of the host-surfaces ban" >&2
+            exit 1
+          }
 
   # The only check the master ruleset requires, so jobs can be added or renamed without
   # touching the ruleset. It fails when any job failed or was cancelled.

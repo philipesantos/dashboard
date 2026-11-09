@@ -202,7 +202,7 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
   `xtask/src/main.rs` as `contracts/tokens-api.md` says, calling `design-gen` (add it as an
   `xtask` dependency; the T004 ban allows only `xtask`). Update `xtask/Cargo.toml`'s
   `description`. Run `cargo xtask design` and commit the generated files.
-- [ ] T021 [US1] Update `.github/workflows/ci.yml` (FR-006, FR-026; research R12):
+- [X] T021 [US1] Update `.github/workflows/ci.yml` (FR-006, FR-026; research R12):
   - the `changes` job's first test becomes
     `'^(docs/authors|docs/design|wit|design)/|^DESIGN\.md$|^docs/threat-model\.md$'`; its
     comment names these paths as Markdown the build uses as code and cites constitution v5.0.0
