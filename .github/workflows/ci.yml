@@ -364,7 +364,7 @@ jobs:
           CARGO_TARGET_DIR: target/ban-fixture
         run: |
           cp Cargo.lock host/ban-fixture/Cargo.lock
-          if cargo clippy --manifest-path host/ban-fixture/Cargo.toml -- -D warnings 2> bans.txt; then
+          if cargo clippy --color never --manifest-path host/ban-fixture/Cargo.toml -- -D warnings 2> bans.txt; then
             echo "host/ban-fixture passed clippy, but it calls every banned GPUI method" >&2
             exit 1
           fi

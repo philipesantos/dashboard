@@ -131,38 +131,53 @@ impl Os {
     }
 
     fn key(&self, key: Key) {
+        self.keys(&[key]);
+    }
+
+    /// Sends `keys` in one call of the system's input tool, so they arrive milliseconds apart
+    /// however long the tool takes to start.
+    fn keys(&self, keys: &[Key]) {
         if cfg!(target_os = "linux") {
-            let name = match key {
-                Key::Tab => "Tab",
-                Key::ShiftTab => "shift+Tab",
-                Key::Enter => "Return",
-                Key::Escape => "Escape",
-            };
-            run("xdotool", &["key", "--clearmodifiers", name]);
+            let names: Vec<&str> = keys
+                .iter()
+                .map(|key| match key {
+                    Key::Tab => "Tab",
+                    Key::ShiftTab => "shift+Tab",
+                    Key::Enter => "Return",
+                    Key::Escape => "Escape",
+                })
+                .collect();
+            let mut args = vec!["key", "--clearmodifiers"];
+            args.extend(names);
+            run("xdotool", &args);
         } else if cfg!(target_os = "macos") {
-            let code = match key {
-                Key::Tab => "key code 48",
-                Key::ShiftTab => "key code 48 using {shift down}",
-                Key::Enter => "key code 36",
-                Key::Escape => "key code 53",
-            };
-            run(
-                "osascript",
-                &[
-                    "-e",
-                    &format!("tell application \"System Events\" to {code}"),
-                ],
+            let codes: Vec<&str> = keys
+                .iter()
+                .map(|key| match key {
+                    Key::Tab => "key code 48",
+                    Key::ShiftTab => "key code 48 using {shift down}",
+                    Key::Enter => "key code 36",
+                    Key::Escape => "key code 53",
+                })
+                .collect();
+            let script = format!(
+                "tell application \"System Events\"\n{}\nend tell",
+                codes.join("\n")
             );
+            run("osascript", &["-e", &script]);
         } else {
-            let keys = match key {
-                Key::Tab => "{TAB}",
-                Key::ShiftTab => "+{TAB}",
-                Key::Enter => "{ENTER}",
-                Key::Escape => "{ESC}",
-            };
+            let sequence: String = keys
+                .iter()
+                .map(|key| match key {
+                    Key::Tab => "{TAB}",
+                    Key::ShiftTab => "+{TAB}",
+                    Key::Enter => "{ENTER}",
+                    Key::Escape => "{ESC}",
+                })
+                .collect();
             run(
                 "powershell",
-                &["-NoProfile", "-File", &script("uia.ps1"), "keys", keys],
+                &["-NoProfile", "-File", &script("uia.ps1"), "keys", &sequence],
             );
         }
         std::thread::sleep(Duration::from_millis(150));
@@ -188,27 +203,16 @@ impl Os {
         let out = if cfg!(target_os = "linux") {
             run("python3", &[&script("atspi.py"), "dump", title])
         } else if cfg!(target_os = "macos") {
+            // The AX API directly: System Events returns nothing for an AccessKit tree
             let pid = std::process::id().to_string();
-            let out = run(
-                "osascript",
-                &[&script("ax.applescript"), "dump", &pid, title],
-            );
-            // System Events can return nothing for an AccessKit tree: ask AX directly
-            if out.lines().any(|line| !line.starts_with('#')) {
-                out
-            } else {
-                run("swift", &[&script("ax.swift"), "dump", &pid, title])
-            }
+            run("swift", &[&script("ax.swift"), "dump", &pid, title])
         } else {
             run(
                 "powershell",
                 &["-NoProfile", "-File", &script("uia.ps1"), "dump", title],
             )
         };
-        out.lines()
-            .filter(|line| !line.starts_with('#'))
-            .map(str::to_owned)
-            .collect()
+        out.lines().map(str::to_owned).collect()
     }
 
     /// The centre, in screen coordinates, of the node named `name` in the window `title`.
@@ -241,15 +245,7 @@ impl Os {
             };
         } else if cfg!(target_os = "macos") {
             let pid = std::process::id().to_string();
-            let out = run(
-                "osascript",
-                &[&script("ax.applescript"), "find", &pid, title, name],
-            );
-            if out.trim().is_empty() {
-                run("swift", &[&script("ax.swift"), "find", &pid, title, name])
-            } else {
-                out
-            }
+            run("swift", &[&script("ax.swift"), "find", &pid, title, name])
         } else {
             run(
                 "powershell",
@@ -369,17 +365,23 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
     wait(shared, "Tab reaches Remove from dashboard", |s| {
         s.a.focused.as_deref() == Some("remove")
     })?;
-    os.key(Key::Enter);
+    // Enter opens the dialog and a second Enter follows it within milliseconds, in one call of
+    // the input tool: it lands as the dialog appears, before or just after its first frame
+    os.keys(&[Key::Enter, Key::Enter]);
     wait(shared, "the dialog opens with focus on Cancel", |s| {
         s.dialog_open && s.a.focused.as_deref() == Some("dialog-refuse")
     })?;
     report.push("HS-16: focus starts on Cancel (keyboard)".to_owned());
-    os.key(Key::Enter);
     std::thread::sleep(Duration::from_millis(300));
-    if !snapshot(shared).dialog_open {
+    let after = snapshot(shared);
+    if !after.dialog_open {
         return Err("HS-11: Enter right after the dialog appeared answered it".to_owned());
     }
-    report.push("HS-11: a key in the first second answers nothing".to_owned());
+    if after.a.open_menu.is_some() {
+        return Err("HS-10: Enter right after the dialog appeared reached the menu".to_owned());
+    }
+    report
+        .push("HS-11: a key as the dialog appears answers nothing and reaches nothing".to_owned());
     std::thread::sleep(Duration::from_millis(1200));
     for key in [Key::Tab, Key::ShiftTab] {
         for _ in 0..5 {

@@ -621,9 +621,16 @@ impl Render for Dashboard {
             }))
             // Every key is seen for the gate's held keys; while a dialog is open in another
             // window, this one drops every key (HS-10)
-            .capture_key_down(move |event: &KeyDownEvent, _, cx| {
+            .capture_key_down(move |event: &KeyDownEvent, window, cx| {
                 dialog::key_down(cx, &event.keystroke.key);
-                if dialog_elsewhere(here, cx) {
+                // While a dialog is open, a key reaches only its controls: in another window
+                // nothing, and in its own window nothing until its first frame has put focus on
+                // Cancel (HS-10)
+                let outside = dialog::open(cx).is_some_and(|open| {
+                    open.window != here
+                        || !(open.refuse.is_focused(window) || open.confirm.is_focused(window))
+                });
+                if outside {
                     cx.stop_propagation();
                 }
             })
