@@ -81,8 +81,13 @@ fn run(program: &str, args: &[&str]) -> String {
         .unwrap_or_else(|error| panic!("{program}: {error}"));
     // A reader the system refuses (no accessibility access, no bus) says why only here
     let errors = String::from_utf8_lossy(&output.stderr);
-    if !errors.trim().is_empty() {
-        eprintln!("window: {program} {}: {}", args.join(" "), errors.trim());
+    if !errors.trim().is_empty() || !output.status.success() {
+        eprintln!(
+            "window: {program} {} ({}): {}",
+            args.join(" "),
+            output.status,
+            errors.trim()
+        );
     }
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
@@ -184,17 +189,26 @@ impl Os {
             run("python3", &[&script("atspi.py"), "dump", title])
         } else if cfg!(target_os = "macos") {
             let pid = std::process::id().to_string();
-            run(
+            let out = run(
                 "osascript",
                 &[&script("ax.applescript"), "dump", &pid, title],
-            )
+            );
+            // System Events can return nothing for an AccessKit tree: ask AX directly
+            if out.lines().any(|line| !line.starts_with('#')) {
+                out
+            } else {
+                run("swift", &[&script("ax.swift"), "dump", &pid, title])
+            }
         } else {
             run(
                 "powershell",
                 &["-NoProfile", "-File", &script("uia.ps1"), "dump", title],
             )
         };
-        out.lines().map(str::to_owned).collect()
+        out.lines()
+            .filter(|line| !line.starts_with('#'))
+            .map(str::to_owned)
+            .collect()
     }
 
     /// The centre, in screen coordinates, of the node named `name` in the window `title`.
@@ -227,10 +241,15 @@ impl Os {
             };
         } else if cfg!(target_os = "macos") {
             let pid = std::process::id().to_string();
-            run(
+            let out = run(
                 "osascript",
                 &[&script("ax.applescript"), "find", &pid, title, name],
-            )
+            );
+            if out.trim().is_empty() {
+                run("swift", &[&script("ax.swift"), "find", &pid, title, name])
+            } else {
+                out
+            }
         } else {
             run(
                 "powershell",
@@ -386,16 +405,35 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
             ));
         }
     }
-    for hidden in [
-        "appearance",
-        "reload",
-        "widget menu",
-        "hello-widget",
-        "out-of-bounds",
-    ] {
-        if seen_a.contains(hidden) || seen_b.contains(hidden) {
+    // Exactly the dialog: each window's own node, and in A the dialog's name, its subject (the
+    // plugin's name, once, after the host's words) and its two buttons; nothing else
+    let name_of = |line: &str| line.rsplit('\t').next().unwrap_or("").to_owned();
+    let mut subject_seen = false;
+    let mut dialog_seen = false;
+    for line in seen_a.lines() {
+        let name = name_of(line);
+        let allowed = match name.as_str() {
+            "dashboard a" | "cancel" | "remove" => true,
+            "remove a widget" => {
+                dialog_seen = true;
+                true
+            }
+            "hello-widget" if dialog_seen && !subject_seen => {
+                subject_seen = true;
+                true
+            }
+            _ => false,
+        };
+        if !allowed {
             return Err(format!(
-                "HS-18: {hidden:?} is exposed while the dialog is open:\nA:\n{seen_a}\nB:\n{seen_b}"
+                "HS-18: {line:?} is exposed in A while the dialog is open:\nA:\n{seen_a}\nB:\n{seen_b}"
+            ));
+        }
+    }
+    for line in seen_b.lines() {
+        if !matches!(name_of(line).as_str(), "dashboard b" | "") {
+            return Err(format!(
+                "HS-18: {line:?} is exposed in B while the dialog is open:\nA:\n{seen_a}\nB:\n{seen_b}"
             ));
         }
     }
