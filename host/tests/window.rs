@@ -342,12 +342,15 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
     report.push("HS-17: Tab and Shift+Tab stay in the dialog".to_owned());
 
     // HS-18, HS-19: the platform sees only the dialog, in both windows
-    let seen_a = names(&os.dump(TITLE_A));
+    let exact_a = os.dump(TITLE_A).join("\n");
+    let seen_a = exact_a.to_lowercase();
     let seen_b = names(&os.dump(TITLE_B));
-    for expected in ["remove a widget", "cancel", "remove"] {
-        if !seen_a.contains(expected) {
+    // Exact case: the names come from the host's catalog, never from the capitals drawn on
+    // screen, which a reader could spell out letter by letter
+    for expected in ["Remove a widget", "Cancel", "Remove"] {
+        if !exact_a.contains(expected) {
             return Err(format!(
-                "HS-19: the dialog's {expected:?} is not exposed:\n{seen_a}"
+                "HS-19: the dialog's {expected:?} is not exposed:\n{exact_a}"
             ));
         }
     }
@@ -408,15 +411,22 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
 
     // FR-024: the frames' names and statuses, as the widgets' content
     std::thread::sleep(Duration::from_millis(300));
-    let seen = names(&os.dump(TITLE_A));
+    let seen = os.dump(TITLE_A).join("\n");
     for expected in [
         "hello-widget",
         "out-of-bounds",
-        "rendered",
-        "did not render",
+        "Rendered",
+        "Did not render",
     ] {
         if !seen.contains(expected) {
             return Err(format!("FR-024: {expected:?} is not exposed:\n{seen}"));
+        }
+    }
+    for drawn in ["RENDERED", "DID NOT RENDER", "CANCEL"] {
+        if seen.contains(drawn) {
+            return Err(format!(
+                "FR-024: the capitals drawn on screen reach the tree as {drawn:?}"
+            ));
         }
     }
     report.push("FR-024: each frame's name and status are exposed".to_owned());
