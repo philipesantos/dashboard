@@ -1,6 +1,7 @@
 //! The SVG preview (specs/007-host-visual-design/research.md, R8): static files a reviewer opens
-//! in a browser. No script, no reference outside the preview directory; Inter is embedded as
-//! WOFF2 so the text looks the same everywhere. Everything is drawn from the design's tokens.
+//! in a browser. No script, no reference outside the preview directory; the host's fonts, Barlow
+//! and IBM Plex Mono, are embedded as WOFF2 so the text looks the same everywhere. Everything is
+//! drawn from the design's tokens.
 
 use crate::check::{Appearance, Color, Design};
 use crate::color::{Rgb, composite};
@@ -67,6 +68,16 @@ impl Canvas {
         );
     }
 
+    /// Text in the `label-mono` style: IBM Plex Mono, in capitals, spaced as the level says.
+    fn mono(&mut self, x: f64, y: f64, level: (f64, u16, f64), fill: &str, content: &str) {
+        let (size, weight, spacing) = level;
+        let _ = writeln!(
+            self.body,
+            r#"<text x="{x}" y="{y}" font-size="{size}" font-weight="{weight}" letter-spacing="{spacing}" font-family="IBM Plex Mono, monospace" fill="{fill}">{}</text>"#,
+            xml(&content.to_uppercase())
+        );
+    }
+
     fn icon(&mut self, x: f64, y: f64, path: &str, fill: &str) {
         let _ = writeln!(
             self.body,
@@ -75,12 +86,8 @@ impl Canvas {
         );
     }
 
-    fn finish(self, title: &str, font: Option<&str>, background: &str) -> String {
-        let style = font.map_or(String::new(), |font| {
-            format!(
-                "<style>@font-face{{font-family:\"Inter\";src:url(data:font/woff2;base64,{font}) format(\"woff2\");font-weight:100 900}}text{{font-family:\"Inter\",sans-serif}}</style>\n"
-            )
-        });
+    fn finish(self, title: &str, fonts: Option<&str>, background: &str) -> String {
+        let style = fonts.map_or(String::new(), |css| format!("<style>{css}</style>\n"));
         format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n<title>{}</title>\n{style}<rect width=\"{w}\" height=\"{h}\" fill=\"{background}\"/>\n{}</svg>\n",
             xml(title),
@@ -141,6 +148,21 @@ impl Paint<'_> {
             .find(|(name, _)| name == level)
             .map(|(_, level)| (level.size, level.weight))
             .unwrap_or((14.0, 400))
+    }
+
+    /// The `label-mono` level: size, weight and letter spacing in pixels.
+    fn mono(&self) -> (f64, u16, f64) {
+        self.design
+            .typography
+            .iter()
+            .find(|(name, _)| name == "label-mono")
+            .map_or((11.0, 500, 0.66), |(_, level)| {
+                (
+                    level.size,
+                    level.weight,
+                    level.size * level.letter_spacing_em.unwrap_or(0.0),
+                )
+            })
     }
 
     fn radius(&self) -> f64 {
@@ -245,11 +267,35 @@ fn palette_svg(design: &Design, palette: &Palette, theme: Theme, font: &str) -> 
     )
 }
 
+/// A stroke attribute in a role's color.
+fn stroke(paint: &Paint<'_>, role: &str) -> String {
+    format!("stroke=\"{}\" stroke-width=\"1\"", paint.color(role))
+}
+
+/// A button as the host draws it: a fill, a step-9 boundary and a monospaced label.
+fn button(
+    canvas: &mut Canvas,
+    paint: &Paint<'_>,
+    (x, y, w): (f64, f64, f64),
+    (fill, ink): (&str, &str),
+    label: &str,
+) {
+    let edge = stroke(paint, "border-control");
+    canvas.rect(
+        (x + 0.5, y + 0.5, w - 1.0, 27.0),
+        paint.radius(),
+        &paint.color(fill),
+        &edge,
+    );
+    canvas.mono(x + 12.0, y + 18.0, paint.mono(), &paint.color(ink), label);
+}
+
 fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
     let (w, h) = (720.0, 520.0);
     let radius = paint.radius();
+    let mono = paint.mono();
     canvas.rect((x0, 40.0, w, h), 8.0, &paint.color("canvas"), "");
-    // The chrome: the host's own bar
+    // The chrome: the host's own bar, closed by the divider
     canvas.rect((x0, 40.0, w, 40.0), 0.0, &paint.color("chrome-surface"), "");
     let (label, weight) = paint.size("label-md");
     canvas.text(
@@ -262,47 +308,47 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
     );
     canvas.rect((x0, 79.0, w, 1.0), 0.0, &paint.color("divider"), "");
 
-    // A widget frame with its label and monogram
+    // A widget frame: one sheet, outlined by the divider, with no shadow. Edges sit on half
+    // pixels so a 1 px line covers one pixel.
     let (fx, fy, fw, fh) = (x0 + 16.0, 96.0, 400.0, 300.0);
-    // The frame is outlined by the divider: one step off the canvas is too faint alone
-    let frame_edge = format!(
-        "stroke=\"{}\" stroke-width=\"1\" {}",
-        paint.color("divider"),
-        paint.shadow("frame")
-    );
+    let frame_edge = format!("{} {}", stroke(paint, "divider"), paint.shadow("frame"));
     canvas.rect(
-        (fx, fy, fw, fh),
+        (fx + 0.5, fy + 0.5, fw - 1.0, fh - 1.0),
         radius,
         &paint.color("surface"),
         &frame_edge,
     );
-    canvas.rect(
-        (fx + 12.0, fy + 12.0, 20.0, 20.0),
-        3.0,
-        &paint.color("neutral-soft"),
-        "",
+    // The header the host draws: the monogram on the host's ink, the label, a header action
+    let ink = paint.color("host-strong");
+    let on_ink = paint.color("on-host-strong");
+    let _ = writeln!(
+        canvas.body,
+        r#"<circle cx="{}" cy="{}" r="10" fill="{ink}"/>"#,
+        fx + 22.0,
+        fy + 18.0
     );
     let (small, small_weight) = paint.size("label-sm");
-    canvas.text(
-        fx + 17.5,
-        fy + 26.5,
-        small,
-        small_weight,
-        &paint.color("text"),
-        "T",
-    );
-    canvas.text(
+    canvas.text(fx + 18.5, fy + 22.5, small, small_weight, &on_ink, "T");
+    canvas.mono(
         fx + 40.0,
-        fy + 26.5,
-        small,
-        small_weight,
+        fy + 22.0,
+        mono,
         &paint.color("text-secondary"),
         "Tasks",
     );
+    canvas.rect((fx + fw - 72.0, fy + 6.0, 62.0, 24.0), radius, &ink, "");
+    canvas.mono(fx + fw - 62.0, fy + 22.0, mono, &on_ink, "+ Add");
+    canvas.rect(
+        (fx + 1.0, fy + 36.0, fw - 2.0, 1.0),
+        0.0,
+        &paint.color("divider"),
+        "",
+    );
+
     let (body, body_weight) = paint.size("body-md");
     canvas.text(
         fx + 12.0,
-        fy + 60.0,
+        fy + 62.0,
         body,
         body_weight,
         &paint.color("text"),
@@ -310,14 +356,14 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
     );
     canvas.text(
         fx + 12.0,
-        fy + 82.0,
+        fy + 84.0,
         body,
         body_weight,
         &paint.color("accent-text"),
         "Open the preview artifact",
     );
 
-    // Status badges: icon and words, never color alone
+    // Status badges: the icon in its color, the words in text color, never color alone
     for (index, (tone, word)) in [
         ("ok", "Done"),
         ("warning", "Due today"),
@@ -330,8 +376,8 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
         let by = fy + 104.0;
         canvas.rect(
             (bx, by, 110.0, 24.0),
-            12.0,
-            &paint.color(&format!("{tone}-soft")),
+            radius,
+            &paint.color("neutral-soft"),
             "",
         );
         let icon = match *tone {
@@ -345,56 +391,31 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
             paint.icon(icon),
             &paint.color(&format!("{tone}-icon")),
         );
-        canvas.text(
-            bx + 28.0,
-            by + 16.5,
-            small,
-            small_weight,
-            &paint.color("text"),
-            word,
-        );
+        canvas.mono(bx + 28.0, by + 16.0, mono, &paint.color("text"), word);
     }
 
     // Two declared actions, as the host draws them
-    canvas.rect(
-        (fx + 12.0, fy + 144.0, 96.0, 28.0),
-        radius,
-        &paint.color("neutral-soft"),
-        "",
-    );
-    canvas.text(
-        fx + 30.0,
-        fy + 162.5,
-        label,
-        weight,
-        &paint.color("text"),
+    button(
+        canvas,
+        paint,
+        (fx + 12.0, fy + 144.0, 96.0),
+        ("neutral-soft", "text"),
         "Snooze",
     );
-    canvas.rect(
-        (fx + 116.0, fy + 144.0, 96.0, 28.0),
-        radius,
-        &paint.color("accent-soft"),
-        "",
-    );
-    canvas.text(
-        fx + 136.0,
-        fy + 162.5,
-        label,
-        weight,
-        &paint.color("accent-strong"),
+    button(
+        canvas,
+        paint,
+        (fx + 116.0, fy + 144.0, 104.0),
+        ("accent-soft", "accent-strong"),
         "Complete",
     );
 
     // A field the host draws for a plugin, with the host's note
-    let field = format!(
-        "stroke=\"{}\" stroke-width=\"1\"",
-        paint.color("border-control")
-    );
     canvas.rect(
-        (fx + 12.0, fy + 192.0, fw - 24.0, 28.0),
+        (fx + 12.5, fy + 192.5, fw - 25.0, 27.0),
         radius,
         &paint.color("surface"),
-        &field,
+        &stroke(paint, "border-control"),
     );
     canvas.text(
         fx + 20.0,
@@ -421,26 +442,27 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
         &paint.color("text-secondary"),
         "It is not for passwords, tokens or codes.",
     );
-    // The focus ring, the host's own style
+    // The focus ring, the host's own style: 2 px, 2 px outside the control
     let focus = format!(
         "fill=\"none\" stroke=\"{}\" stroke-width=\"2\"",
         paint.color("focus")
     );
     let _ = writeln!(
         canvas.body,
-        r#"<rect x="{}" y="{}" width="100" height="32" rx="{}" {focus}/>"#,
-        fx + 10.0,
-        fy + 142.0,
+        r#"<rect x="{}" y="{}" width="102" height="34" rx="{}" {focus}/>"#,
+        fx + 9.0,
+        fy + 141.0,
         radius + 2.0
     );
 
     // The panel the frame opens, attached to it
     let (px, py) = (fx + fw + 8.0, fy);
+    let panel_edge = format!("{} {}", stroke(paint, "divider"), paint.shadow("panel"));
     canvas.rect(
-        (px, py, 280.0, 200.0),
+        (px + 0.5, py + 0.5, 279.0, 199.0),
         radius,
         &paint.color("panel-surface"),
-        &paint.shadow("panel"),
+        &panel_edge,
     );
     let (title, title_weight) = paint.size("title-sm");
     canvas.text(
@@ -451,11 +473,10 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
         &paint.color("text"),
         "Tasks settings",
     );
-    canvas.text(
+    canvas.mono(
         px + 16.0,
         py + 54.0,
-        small,
-        small_weight,
+        mono,
         &paint.color("text-secondary"),
         "Settings of the Tasks widget",
     );
@@ -464,11 +485,12 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
         // A host dialog: the scrim covers the whole window, chrome included
         canvas.rect((x0, 40.0, w, h), 8.0, &paint.color("scrim"), "");
         let (dx, dy) = (x0 + 120.0, 140.0);
+        let dialog_edge = format!("{} {}", stroke(paint, "divider"), paint.shadow("dialog"));
         canvas.rect(
-            (dx, dy, 480.0, 260.0),
-            10.0,
+            (dx + 0.5, dy + 0.5, 479.0, 259.0),
+            radius,
             &paint.color("dialog-surface"),
-            &paint.shadow("dialog"),
+            &dialog_edge,
         );
         let (heading, heading_weight) = paint.size("title-md");
         canvas.text(
@@ -495,32 +517,18 @@ fn window(canvas: &mut Canvas, paint: &Paint<'_>, x0: f64, dialog: bool) {
             &paint.color("text"),
             "It asks to keep up to 1 MiB of data on this computer.",
         );
-        canvas.rect(
-            (dx + 264.0, dy + 208.0, 96.0, 28.0),
-            radius,
-            &paint.color("neutral-soft"),
-            "",
-        );
-        canvas.text(
-            dx + 288.0,
-            dy + 226.5,
-            label,
-            weight,
-            &paint.color("text"),
+        button(
+            canvas,
+            paint,
+            (dx + 256.0, dy + 208.0, 96.0),
+            ("neutral-soft", "text"),
             "Cancel",
         );
-        canvas.rect(
-            (dx + 368.0, dy + 208.0, 88.0, 28.0),
-            radius,
-            &paint.color("accent-soft"),
-            "",
-        );
-        canvas.text(
-            dx + 390.0,
-            dy + 226.5,
-            label,
-            weight,
-            &paint.color("accent-strong"),
+        button(
+            canvas,
+            paint,
+            (dx + 360.0, dy + 208.0, 96.0),
+            ("accent-soft", "accent-strong"),
             "Install",
         );
     }
@@ -591,19 +599,32 @@ fn index_svg() -> String {
     canvas.finish("DESIGN.md preview", None, "#ffffff")
 }
 
+/// The host's fonts the preview embeds: family, weight and file under `design/fonts/`.
+const FONTS: [(&str, u16, &str); 5] = [
+    ("Barlow", 400, "barlow/Barlow-Regular.woff2"),
+    ("Barlow", 500, "barlow/Barlow-Medium.woff2"),
+    ("Barlow", 600, "barlow/Barlow-SemiBold.woff2"),
+    ("IBM Plex Mono", 400, "plex-mono/IBMPlexMono-Regular.woff2"),
+    ("IBM Plex Mono", 500, "plex-mono/IBMPlexMono-Medium.woff2"),
+];
+
 /// The preview files, as names and SVG text.
 pub fn render(
     design: &Design,
     palette: &Palette,
     design_dir: &Path,
 ) -> Result<Vec<(String, String)>, String> {
-    let font_path = design_dir
-        .join("fonts")
-        .join("inter")
-        .join("InterVariable.woff2");
-    let font = base64(
-        &std::fs::read(&font_path).map_err(|error| format!("{}: {error}", font_path.display()))?,
-    );
+    let mut font = String::new();
+    for (family, weight, file) in FONTS {
+        let path = design_dir.join("fonts").join(file);
+        let bytes = std::fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let _ = write!(
+            font,
+            "@font-face{{font-family:\"{family}\";src:url(data:font/woff2;base64,{}) format(\"woff2\");font-weight:{weight}}}",
+            base64(&bytes)
+        );
+    }
+    font.push_str("text{font-family:\"Barlow\",sans-serif}");
     Ok(vec![
         ("index.svg".to_owned(), index_svg()),
         (

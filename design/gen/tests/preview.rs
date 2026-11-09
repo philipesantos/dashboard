@@ -50,7 +50,7 @@ fn five_static_svg_files_with_the_font_embedded() {
         if name != "index.svg" {
             assert!(
                 svg.contains("font/woff2;base64,"),
-                "{name} does not embed Inter"
+                "{name} does not embed the host's fonts"
             );
         }
     }

@@ -47,11 +47,11 @@ fn digest(file: &str, bytes: Vec<u8>) -> String {
 #[test]
 fn every_vendored_file_matches_its_recorded_hash() {
     let pins = recorded();
-    // Radix (4), the format (2), Inter (3)
+    // Radix (4), the format (2), Barlow (7), IBM Plex Mono (5)
     assert_eq!(
         pins.len(),
-        9,
-        "design/README.md should record nine files: {pins:?}"
+        18,
+        "design/README.md should record eighteen files: {pins:?}"
     );
     for (file, pinned) in pins {
         let bytes = std::fs::read(design_dir().join(&file))
