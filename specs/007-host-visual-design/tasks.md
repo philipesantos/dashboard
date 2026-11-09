@@ -303,7 +303,7 @@ use; nothing includes their source (FR-014–FR-017).
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Implement `design/tokens/src/lib.rs`'s hand-written part (`Tone`, `UnknownTone`,
+- [X] T030 [US3] Implement `design/tokens/src/lib.rs`'s hand-written part (`Tone`, `UnknownTone`,
   `ToneColors`, `tone()`, `Rgb`, `contrast()`, `Icon`) over the generated tables, and
   `design/host-surfaces/src/lib.rs` (`chrome`, `dialog`, `panel_attachment`, `focus`), as
   `contracts/tokens-api.md` says. T028 and T029 pass.

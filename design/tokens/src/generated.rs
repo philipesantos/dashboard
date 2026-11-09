@@ -140,7 +140,8 @@ pub(crate) const DEFAULT_WIDGET: Scale = Scale::Blue;
 pub(crate) const DEFAULT_RADIUS: crate::Radius = crate::Radius::Medium;
 pub(crate) const DEFAULT_THEME: crate::ThemePick = crate::ThemePick::System;
 
-/// The text color a scale's solid steps take.
+/// The text color a scale's solid steps take; a variant no scale declares goes unused.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SolidText {
     White,
@@ -286,37 +287,9 @@ pub(crate) const GRAY_DARK: [[[u8; 3]; 12]; 6] = [
 /// blackA1-12: black at these opacities.
 pub(crate) const BLACK_A: [f64; 12] = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95];
 
-/// Which pick or fixed scale a role reads.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Source {
-    Gray,
-    Widget,
-    Host,
-    Ok,
-    Warning,
-    Error,
-    Overlay,
-}
+use crate::raw::{RoleDef, Source, StepRef};
 
-/// The step a role takes in one theme.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum StepRef {
-    Radix(u8),
-    White,
-    Black,
-    SolidText,
-}
-
-/// A color role: where it reads its color in each theme.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct RoleDef {
-    pub(crate) name: &'static str,
-    pub(crate) source: Source,
-    pub(crate) light: StepRef,
-    pub(crate) dark: StepRef,
-}
-
-pub(crate) const ROLES: &[RoleDef] = &[
+pub const ROLES: &[RoleDef] = &[
     // roles.text: Body text; step 12 is Radix's high-contrast text.
     RoleDef { name: "text", source: Source::Gray, light: StepRef::Radix(12), dark: StepRef::Radix(12) },
     // roles.text-secondary: Labels, captions and the field note; step 11 is Radix's low-contrast text, still AA on steps 1-3.
@@ -462,7 +435,8 @@ pub mod radius {
     pub const FULL: f32 = 9999.0;
 }
 
-/// radius-picks.
+/// radius-picks; `Radius` mirrors it, and a test compares them.
+#[allow(dead_code)]
 pub(crate) const RADIUS_PICKS: [&str; 5] = ["none", "small", "medium", "large", "full"];
 
 /// Elevation levels the kit may use.

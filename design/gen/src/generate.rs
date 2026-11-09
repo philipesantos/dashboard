@@ -80,40 +80,8 @@ fn step_variant(step: Step) -> String {
     }
 }
 
-const ROLE_TYPES: &str = "\
-/// Which pick or fixed scale a role reads.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Source {
-    Gray,
-    Widget,
-    Host,
-    Ok,
-    Warning,
-    Error,
-    Overlay,
-}
-
-/// The step a role takes in one theme.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum StepRef {
-    Radix(u8),
-    White,
-    Black,
-    SolidText,
-}
-
-/// A color role: where it reads its color in each theme.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct RoleDef {
-    pub(crate) name: &'static str,
-    pub(crate) source: Source,
-    pub(crate) light: StepRef,
-    pub(crate) dark: StepRef,
-}
-";
-
 fn roles(out: &mut String, design: &Design, host_surface: bool) {
-    let _ = writeln!(out, "pub(crate) const ROLES: &[RoleDef] = &[");
+    let _ = writeln!(out, "pub const ROLES: &[RoleDef] = &[");
     for spec in design
         .roles
         .iter()
@@ -334,7 +302,7 @@ fn tokens_rs(design: &Design, palette: &Palette) -> String {
 
     let _ = writeln!(
         out,
-        "\n/// The text color a scale's solid steps take.\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub(crate) enum SolidText {{\n    White,\n    Dark,\n    None,\n}}"
+        "\n/// The text color a scale's solid steps take; a variant no scale declares goes unused.\n#[allow(dead_code)]\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub(crate) enum SolidText {{\n    White,\n    Dark,\n    None,\n}}"
     );
     let solid: Vec<String> = chromatic
         .iter()
@@ -390,7 +358,7 @@ fn tokens_rs(design: &Design, palette: &Palette) -> String {
         alphas.join(", ")
     );
 
-    let _ = writeln!(out, "\n{ROLE_TYPES}");
+    let _ = writeln!(out, "\nuse crate::raw::{{RoleDef, Source, StepRef}};\n");
     roles(&mut out, design, false);
 
     let _ = writeln!(
@@ -504,7 +472,7 @@ fn tokens_rs(design: &Design, palette: &Palette) -> String {
     let picks: Vec<String> = design.radius_picks.iter().map(|n| literal(n)).collect();
     let _ = writeln!(
         out,
-        "\n/// radius-picks.\npub(crate) const RADIUS_PICKS: [&str; {}] = [{}];",
+        "\n/// radius-picks; `Radius` mirrors it, and a test compares them.\n#[allow(dead_code)]\npub(crate) const RADIUS_PICKS: [&str; {}] = [{}];",
         picks.len(),
         picks.join(", ")
     );
@@ -520,7 +488,10 @@ fn tokens_rs(design: &Design, palette: &Palette) -> String {
 
 fn host_surfaces_rs(design: &Design) -> String {
     let mut out = String::from(HEADER);
-    let _ = writeln!(out, "\n{ROLE_TYPES}");
+    let _ = writeln!(
+        out,
+        "\nuse design_tokens::raw::{{RoleDef, Source, StepRef}};\n"
+    );
     roles(&mut out, design, true);
     let _ = writeln!(
         out,
@@ -536,7 +507,7 @@ fn host_surfaces_rs(design: &Design) -> String {
         .collect();
     let _ = writeln!(
         out,
-        "\n/// host-surfaces: the components only the host draws.\npub(crate) const COMPONENTS: [&str; {}] = [{}];",
+        "\n/// host-surfaces: the components only the host draws.\npub const COMPONENTS: [&str; {}] = [{}];",
         names.len(),
         names.join(", ")
     );
