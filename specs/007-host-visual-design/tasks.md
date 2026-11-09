@@ -198,7 +198,7 @@ follow from it; drift and format errors fail CI; a `DESIGN.md`-only change runs 
 - [X] T019 [US1] Implement the preview in `design/gen/src/preview.rs` (FR-026, research R8): the five SVG
   files, drawn from the default appearance's tokens, Inter embedded as WOFF2 `@font-face`, no
   script, `index.svg` linking only its siblings. T015 passes.
-- [ ] T020 [US1] (SC-001) Add `design`, `design --check` and `design --preview <dir>` to
+- [X] T020 [US1] (SC-001) Add `design`, `design --check` and `design --preview <dir>` to
   `xtask/src/main.rs` as `contracts/tokens-api.md` says, calling `design-gen` (add it as an
   `xtask` dependency; the T004 ban allows only `xtask`). Update `xtask/Cargo.toml`'s
   `description`. Run `cargo xtask design` and commit the generated files.

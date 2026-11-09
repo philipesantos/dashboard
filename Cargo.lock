@@ -2639,6 +2639,7 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "design-gen",
  "serde_json",
  "wasm-encoder 0.262.0",
  "wit-component 0.262.0",

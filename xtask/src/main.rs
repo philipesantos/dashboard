@@ -57,8 +57,15 @@ fn main() -> ExitCode {
         ["plugins"] => plugins(false),
         ["plugins", "--locked"] => plugins(true),
         ["clean-space"] => root().and_then(clean_space::run),
+        ["design"] => root().and_then(|root| design(root, Design::Write)),
+        ["design", "--check"] => root().and_then(|root| design(root, Design::Check)),
+        ["design", "--preview", dir] => {
+            root().and_then(|root| design(root, Design::Preview(Path::new(dir))))
+        }
         _ => {
-            eprintln!("usage: cargo xtask plugins [--locked] | cargo xtask clean-space");
+            eprintln!(
+                "usage: cargo xtask plugins [--locked] | cargo xtask clean-space\n       cargo xtask design [--check | --preview <dir>]"
+            );
             return ExitCode::from(2);
         }
     };
@@ -237,4 +244,48 @@ fn plugin_crates(manifest: &Path) -> Result<Vec<PluginCrate>> {
 /// The cargo that runs this task, so plugins build with the same toolchain.
 fn cargo() -> Command {
     Command::new(env::var_os("CARGO").map_or_else(|| PathBuf::from("cargo"), PathBuf::from))
+}
+
+/// What `cargo xtask design` does (specs/007-host-visual-design/contracts/tokens-api.md).
+enum Design<'a> {
+    /// Check DESIGN.md, then write the generated files.
+    Write,
+    /// Run every check and compare the generated files, writing nothing.
+    Check,
+    /// Write the SVG preview into a directory.
+    Preview(&'a Path),
+}
+
+fn design(root: &Path, what: Design<'_>) -> Result<()> {
+    let (design, palette) = design_gen::load(root).map_err(|problems| {
+        for problem in &problems {
+            eprintln!("{problem}");
+        }
+        format!("DESIGN.md has {} problem(s)", problems.len())
+    })?;
+    match what {
+        Design::Write => {
+            design_gen::generate::write(root, &design_gen::generate::generate(&design, &palette))?;
+        }
+        Design::Check => {
+            let differences = design_gen::generate::differences(
+                root,
+                &design_gen::generate::generate(&design, &palette),
+            );
+            if !differences.is_empty() {
+                for difference in &differences {
+                    eprintln!("{difference}");
+                }
+                return Err("the generated files are stale: run `cargo xtask design`".into());
+            }
+        }
+        Design::Preview(dir) => {
+            std::fs::create_dir_all(dir)?;
+            for (name, svg) in design_gen::preview::render(&design, &palette, &root.join("design"))?
+            {
+                std::fs::write(dir.join(name), svg)?;
+            }
+        }
+    }
+    Ok(())
 }
