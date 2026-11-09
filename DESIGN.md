@@ -216,19 +216,22 @@ The front matter's `colors` are these roles resolved at the default appearance (
 host, blue widgets); the dark ones end in `-dark`.
 
 Some roles take a step other than the one Radix names for their role, because Radix's own step
-falls short of WCAG's minimums:
+falls short of WCAG's minimums. The worst case of each, over the 1,176 appearances the host
+accepts in both themes, is what the lint measured on 2026-11-08:
 
 - **Control boundaries** take step 9: Radix's border steps (6–8) reach 1.86:1 on step 1 in the
-  light theme, under the 3:1 a control's boundary needs (WCAG 1.4.11).
+  light theme, under the 3:1 a control's boundary needs (WCAG 1.4.11). Step 9: 3.21:1 at worst
+  (slate, on a frame, light).
 - **The focus ring** takes step 11 of the host color: Radix's focus-ring steps fail 3:1 too, and a
-  ring in the widget color would be lost on lime or sky.
+  ring in the widget color would be lost on lime or sky. Step 11: 3.90:1 at worst (an orange host,
+  on a pink widget's soft accent).
 - **Status text** is gray step 12 beside an icon in the status color's step 11: amber 11 on sage 2
-  is 4.36:1, under 4.5:1 for text.
+  is 4.36:1, under 4.5:1 for text. The icons reach 4.21:1 at worst (ok, on its soft badge).
 - **Text on a soft accent** is the widget color's step 12: step 11 on step 3 of the same scale
-  reaches only 4.21:1 for green.
-- **No normal-size text sits on a solid step** (9–10): on red, tomato, ruby, crimson, pink and gold
-  neither white nor dark text reaches 4.5:1. `solid-text` declares, per scale, which text color a
-  solid step takes when large text is placed on it.
+  reaches only 4.21:1 for green. Step 12: 9.82:1 at worst (lime).
+- **No normal-size text sits on a solid step** (9–10): on 14 of the 25 scales, blue, the purples
+  and the reds among them, neither white nor dark text reaches 4.5:1 on both step 9 and its hover
+  step 10. `solid-text` declares, per scale, the text color that does, or `none`.
 
 ```design-roles
 scales:
@@ -240,19 +243,19 @@ scales:
     ruby: none
     crimson: none
     pink: none
-    plum: white
-    purple: white
-    violet: white
-    iris: white
-    indigo: white
-    blue: dark
+    plum: none
+    purple: none
+    violet: none
+    iris: none
+    indigo: none
+    blue: none
     cyan: dark
     teal: dark
     jade: dark
     green: dark
     grass: dark
-    brown: dark
-    bronze: dark
+    brown: none
+    bronze: none
     gold: none
     sky: dark
     mint: dark

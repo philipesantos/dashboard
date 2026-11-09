@@ -148,7 +148,7 @@ pub(crate) enum SolidText {
     None,
 }
 /// scales.solid-text, per `Scale::ALL`.
-pub(crate) const SOLID_TEXT: [SolidText; 25] = [SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::White, SolidText::White, SolidText::White, SolidText::White, SolidText::White, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::None, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark];
+pub(crate) const SOLID_TEXT: [SolidText; 25] = [SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::None, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::None, SolidText::None, SolidText::None, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark, SolidText::Dark];
 
 /// Radix 3.0.0, light and dark, per `Scale::ALL` and `GrayFamily::ALL`.
 pub(crate) const SCALE_LIGHT: [[[u8; 3]; 12]; 25] = [
