@@ -4,11 +4,13 @@
 #![allow(dead_code, unused_must_use, clippy::let_underscore_future)]
 
 use gpui::{
-    AnyImageCache, App, AsyncWindowContext, ImageCache, ImageCacheItem, Img, ImgResourceLoader,
-    PathPromptOptions, Platform, PlatformWindow, PromptLevel, Resource, RetainAllImageCache, Svg,
-    Window, img, svg,
+    AnyImageCache, App, Asset, AssetSource, AsyncWindowContext, Bounds, Hsla, Image, ImageCache,
+    ImageCacheItem, Img, ImgResourceLoader, ParsedSvg, PathPromptOptions, Platform, PlatformWindow,
+    PromptHandle, PromptLevel, RenderablePromptHandle, Resource, RetainAllImageCache, Svg,
+    SvgRenderer, TransformationMatrix, Window, fallback_prompt_renderer, img, svg,
 };
 use std::path::Path;
+use std::sync::Arc;
 
 fn window_prompt(window: &mut Window, cx: &mut App) {
     let _ = window.prompt(PromptLevel::Info, "Allow?", None, &["Allow"], cx);
@@ -104,4 +106,52 @@ fn platform_read_credentials(platform: &dyn Platform) {
 }
 fn platform_delete_credentials(platform: &dyn Platform) {
     let _ = platform.delete_credentials("https://attacker.example");
+}
+fn paint_svg(window: &mut Window, cx: &App) {
+    let _ = window.paint_svg(
+        Bounds::default(),
+        "/etc/passwd".into(),
+        None,
+        TransformationMatrix::unit(),
+        Hsla::default(),
+        cx,
+    );
+}
+fn asset_load(cx: &mut App) {
+    let _ =
+        <ImgResourceLoader as Asset>::load(Resource::Uri("https://attacker.example".into()), cx);
+}
+fn to_image_data(image: &Image, renderer: SvgRenderer) {
+    let _ = image.to_image_data(renderer);
+}
+fn use_render_image(image: Arc<Image>, window: &mut Window, cx: &mut App) {
+    let _ = image.use_render_image(window, cx);
+}
+fn get_render_image(image: Arc<Image>, window: &mut Window, cx: &mut App) {
+    let _ = image.get_render_image(window, cx);
+}
+fn svg_renderer(cx: &App) -> SvgRenderer {
+    cx.svg_renderer()
+}
+fn svg_renderer_new(source: Arc<dyn AssetSource>) -> SvgRenderer {
+    SvgRenderer::new(source)
+}
+fn parse_svg(renderer: &SvgRenderer) {
+    let _ = renderer.parse_svg(b"<svg/>");
+}
+fn render_parsed(renderer: &SvgRenderer, svg: &ParsedSvg) {
+    let _ = renderer.render_parsed(svg, 1.0);
+}
+fn render_single_frame(renderer: &SvgRenderer) {
+    let _ = renderer.render_single_frame(b"<svg/>", 1.0);
+}
+fn reset_prompt_builder(cx: &mut App) {
+    cx.reset_prompt_builder();
+}
+fn fallback_prompt(
+    handle: PromptHandle,
+    window: &mut Window,
+    cx: &mut App,
+) -> RenderablePromptHandle {
+    fallback_prompt_renderer(PromptLevel::Info, "Allow?", None, &[], handle, window, cx)
 }

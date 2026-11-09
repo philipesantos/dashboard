@@ -99,4 +99,17 @@ disallowed-methods = [
     { path = "gpui::Platform::write_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
     { path = "gpui::Platform::read_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
     { path = "gpui::Platform::delete_credentials", reason = "only runtime/src/vault/ touches the keychain (Principle IX; 008 research R9)" },
+    # Found by the check of every GPUI function that may reach out (T056)
+    { path = "gpui::Window::paint_svg", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::Asset::load", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::Image::to_image_data", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::Image::use_render_image", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::Image::get_render_image", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::App::svg_renderer", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::SvgRenderer::new", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::SvgRenderer::parse_svg", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::SvgRenderer::render_parsed", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::SvgRenderer::render_single_frame", reason = "no plugin bytes or string reach a decoder or an asset load: only host/src/media.rs, with host bytes (008 research R2, R12)" },
+    { path = "gpui::App::reset_prompt_builder", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
+    { path = "gpui::fallback_prompt_renderer", reason = "the host never shows a native prompt or dialog (Principle VII, HS-12; 008 research R9)" },
 ]

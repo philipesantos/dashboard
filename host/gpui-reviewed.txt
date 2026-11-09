@@ -1,0 +1,164 @@
+# GPUI functions the host's check flags by name or signature (loads, reads, opens, prompts,
+# decodes, the network, the keychain) that are not banned in clippy.toml, each reviewed and
+# allowed for the reason heading its group. host/tests/checks.rs fails when GPUI gains one that
+# is in neither list, or when one listed here is gone: on a GPUI upgrade, ban it or add it
+# here under a reason (CONTRIBUTING.md, "Upgrading GPUI").
+
+## Test support: built only with GPUI's test-support feature, which the dashboard binary does not enable
+gpui::HeadlessAppContext::open_window
+gpui::HeadlessAppContext::with_asset_source
+gpui::HeadlessAppContext::with_platform
+gpui::TestApp::did_prompt_for_new_path
+gpui::TestApp::has_pending_prompt
+gpui::TestApp::open_window
+gpui::TestApp::open_window_with_options
+gpui::TestApp::opened_url
+gpui::TestApp::read_from_clipboard
+gpui::TestApp::simulate_new_path_selection
+gpui::TestApp::simulate_prompt_answer
+gpui::TestApp::with_text_system_and_assets
+gpui::TestApp::write_to_clipboard
+gpui::TestAppContext::did_prompt_for_new_path
+gpui::TestAppContext::did_prompt_for_paths
+gpui::TestAppContext::expect_restart
+gpui::TestAppContext::has_pending_prompt
+gpui::TestAppContext::open_window
+gpui::TestAppContext::opened_url
+gpui::TestAppContext::pending_prompt
+gpui::TestAppContext::read_from_clipboard
+gpui::TestAppContext::simulate_new_path_selection
+gpui::TestAppContext::simulate_path_prompt_response
+gpui::TestAppContext::simulate_prompt_answer
+gpui::TestAppContext::write_to_clipboard
+gpui::TestWindow::external_drag_files
+gpui::VisualTestAppContext::open_offscreen_window
+gpui::VisualTestAppContext::open_offscreen_window_default
+gpui::VisualTestAppContext::read_from_clipboard
+gpui::VisualTestAppContext::with_asset_source
+gpui::VisualTestAppContext::write_to_clipboard
+gpui::VisualTestContext::document_path
+
+## A crate for one operating system or for WebAssembly, which host/src may not name (checks.rs, `host_names_no_os_specific_gpui_crate`)
+gpui_apple_gpui_unofficial::MetalRenderer::render_scene_to_image
+gpui_apple_gpui_unofficial::MetalRenderer::render_to_image
+gpui_apple_gpui_unofficial::delete_credentials
+gpui_apple_gpui_unofficial::read_credentials
+gpui_apple_gpui_unofficial::write_credentials
+gpui_macos_gpui_unofficial::MacWindow::open
+gpui_macos_gpui_unofficial::UTType::svg
+gpui_web_gpui_unofficial::FetchHttpClient::with_credentials
+gpui_web_gpui_unofficial::WebPlatform::fetch_http_client
+gpui_web_gpui_unofficial::WebPlatform::fetch_http_client_with_user_agent
+
+## GPUI's HTTP crate: every request goes through an `HttpClient`, and the only one built for the host's targets is `BlockedHttpClient`, which refuses all (FR-030); its file helpers read and write files the caller names, as std does
+gpui::App::http_client
+gpui::App::set_http_client
+gpui::Application::with_http_client
+http_client_gpui_unofficial::GithubBinaryMetadata::read_from_file
+http_client_gpui_unofficial::GithubBinaryMetadata::write_to_file
+http_client_gpui_unofficial::HttpClient::proxy
+http_client_gpui_unofficial::HttpClientWithProxy::new
+http_client_gpui_unofficial::HttpClientWithProxy::new_url
+http_client_gpui_unofficial::HttpClientWithUrl::base_url
+http_client_gpui_unofficial::HttpClientWithUrl::build_url
+http_client_gpui_unofficial::HttpClientWithUrl::build_zed_api_url
+http_client_gpui_unofficial::HttpClientWithUrl::build_zed_cloud_url
+http_client_gpui_unofficial::HttpClientWithUrl::build_zed_cloud_url_with_query
+http_client_gpui_unofficial::HttpClientWithUrl::build_zed_llm_url
+http_client_gpui_unofficial::HttpClientWithUrl::new
+http_client_gpui_unofficial::HttpClientWithUrl::new_url
+http_client_gpui_unofficial::HttpClientWithUrl::set_base_url
+http_client_gpui_unofficial::build_asset_url
+http_client_gpui_unofficial::download_server_binary
+http_client_gpui_unofficial::download_server_raw_binary
+http_client_gpui_unofficial::get_release_by_tag_name
+http_client_gpui_unofficial::latest_github_release
+http_client_gpui_unofficial::read_proxy_from_env
+
+## Image-cache and asset-cache bookkeeping: checks, removes or styles what is cached; every load that fills a cache is banned
+gpui::App::asset_source
+gpui::App::drop_image
+gpui::App::has_asset
+gpui::App::remove_asset
+gpui::Div::image_cache
+gpui::Image::is_asset_cached
+gpui::Image::remove_asset
+gpui::ImageCacheItem::get
+gpui::ImageCacheItem::use_image
+gpui::ImageSource::is_asset_cached
+gpui::ImageSource::remove_asset
+gpui::Img::image_cache
+gpui::RetainAllImageCache::remove
+gpui::StyledImage::image_style
+gpui::StyledImage::with_loading
+gpui::Window::drop_image
+gpui::Window::has_image_atlas_entry
+gpui::Window::with_image_cache
+gpui::image_cache
+
+## Draws or captures what is already decoded or vector geometry: no file, address or plugin bytes
+gpui::ClipboardItem::new_image
+gpui::Path::scale
+gpui::PathBuilder::build
+gpui::PathBuilder::build_path
+gpui::PlatformHeadlessRenderer::render_scene_to_image
+gpui::PlatformWindow::render_to_image
+gpui::Window::paint_image
+gpui::Window::paint_path
+gpui::Window::render_to_image
+
+## Windows, the app's own paths and the system's integration (recent documents, jump list, restart, URL schemes the app registers): no plugin input reaches them
+gpui::App::add_recent_document
+gpui::App::app_path
+gpui::App::can_select_mixed_files_and_dirs
+gpui::App::open_window
+gpui::App::path_for_auxiliary_executable
+gpui::App::register_url_scheme
+gpui::App::set_restart_path
+gpui::App::update_jump_list
+gpui::Application::on_open_urls
+gpui::Application::on_reopen
+gpui::Application::path_for_auxiliary_executable
+gpui::Application::with_assets
+gpui::AsyncApp::open_window
+gpui::Platform::add_recent_document
+gpui::Platform::app_path
+gpui::Platform::can_select_mixed_files_and_dirs
+gpui::Platform::on_open_urls
+gpui::Platform::on_reopen
+gpui::Platform::on_will_open_app_menu
+gpui::Platform::open_window
+gpui::Platform::path_for_auxiliary_executable
+gpui::Platform::register_url_scheme
+gpui::Platform::restart
+gpui::Platform::update_jump_list
+gpui::PlatformWindow::set_document_path
+gpui::Window::has_active_prompt
+gpui::Window::set_document_path
+
+## Files the person drags in: the host accepts no drop
+gpui::ExternalPaths::paths
+gpui::FileDragPaths::entries
+gpui::FileDragPaths::new
+gpui::InteractiveElement::on_file_drop_exit
+gpui::Interactivity::external_drag_payload
+gpui::Interactivity::on_file_drop_exit
+gpui::StatefulInteractiveElement::external_drag_payload
+
+## The clipboard: the host neither reads nor writes it, and it opens, loads and decodes nothing
+gpui::App::read_from_clipboard
+gpui::App::read_from_clipboard_async
+gpui::App::write_to_clipboard
+gpui::Platform::read_from_clipboard
+gpui::Platform::read_from_clipboard_async
+gpui::Platform::write_to_clipboard
+
+## The host's own prompt builder (app.rs installs the refusing one); the native prompts it replaces are banned
+gpui::App::set_prompt_builder
+
+## Not about images, files or addresses: the name matched (keymaps loaded from the host's own text, scrolling to an item)
+gpui::KeyBinding::load
+gpui::ListState::scroll_to_reveal_item
+
+## The asset source the app is built with: the host gives it none, so it holds only what the binary embeds
+gpui::AssetSource::load

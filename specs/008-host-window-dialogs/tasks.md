@@ -381,6 +381,16 @@ status, focus ready for the first Tab.
   - Merge with `gh pr merge <number> --merge --match-head-commit <sha> --author-email
     8193616+philipesantos@users.noreply.github.com`.
 
+- [X] T056 `host/tests/checks.rs` (`every_gpui_way_out_is_banned_or_reviewed`, added at the
+  maintainer's request after the review): read the source of every downloaded gpui-unofficial crate
+  and fail on a public function whose name or signature may load, read, open, prompt, decode, or
+  reach the network or the keychain unless `clippy.toml` bans it or `host/gpui-reviewed.txt` lists
+  it under a reason; fail on a listed function that is gone and on a ban that names nothing; a
+  check that `host/src/` names no OS-specific GPUI crate; a test of the scanner on known Rust. It
+  found twelve more paths (SVG and image decoders, `Asset::load`, `Window::paint_svg`,
+  `App::reset_prompt_builder`, `fallback_prompt_renderer`), now banned (41 in all) and called in
+  the fixture; the other 137 are listed with their reasons.
+
 ---
 
 ## Dependencies & Execution Order

@@ -356,7 +356,7 @@ jobs:
         run: cargo test -p host --test window --locked
 
       # Each GPUI method clippy.toml bans, called once in a crate outside the workspace; it passes
-      # only when clippy refuses all 29 (contracts/bans-and-checks.md). The bans are the same on
+      # only when clippy refuses all 41 (contracts/bans-and-checks.md). The bans are the same on
       # every system, so Linux runs it.
       - name: Clippy refuses every banned GPUI method
         if: runner.os == 'Linux'
@@ -371,9 +371,9 @@ jobs:
           refused=$(grep -c 'error: use of a disallowed method' bans.txt || true)
           others=$(grep -E '^(error|warning)' bans.txt | grep -v 'disallowed method' \
             | grep -vc '^error: could not compile' || true)
-          if [ "$refused" != 29 ] || [ "$others" != 0 ]; then
+          if [ "$refused" != 41 ] || [ "$others" != 0 ]; then
             cat bans.txt >&2
-            echo "expected 29 disallowed-method errors and nothing else; got $refused and $others" >&2
+            echo "expected 41 disallowed-method errors and nothing else; got $refused and $others" >&2
             exit 1
           fi
 

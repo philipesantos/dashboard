@@ -164,11 +164,14 @@ advisory:
 2. Read the changes to gpui-unofficial's patch list (`docs/upstream-patches.md` in its repository)
    since the commit `host/README.md` records, and note anything that touches input, windows,
    prompts, URLs, assets, credentials or accessibility.
-3. Look in the new GPUI for public functions that load an image or an asset, read a file, open a
-   URL or a path, show a native prompt or touch the keychain (search its `src/` for `Resource`,
-   `Path`, `open_`, `prompt` and `credentials`). The bans in `clippy.toml` block only the paths
-   they name: add each new one there, to `BANNED` in `host/tests/checks.rs` and as a call in
-   `host/ban-fixture/src/lib.rs`, and raise the count the "Host window" job expects.
+3. Run `cargo test -p host --test checks`. It reads the new GPUI's source and fails on every public
+   function whose name or signature may load, read, open, prompt, decode, or reach the network or
+   the keychain, unless it is banned in `clippy.toml` or listed in `host/gpui-reviewed.txt` under
+   the reason it is safe; it also fails on a listed function GPUI no longer has. For each new one,
+   decide: ban it (in `clippy.toml`, in `BANNED` in `host/tests/checks.rs` and as a call in
+   `host/ban-fixture/src/lib.rs`, raising the count the "Host window" job expects), or add it to
+   the list under its reason. The check reads the crates for other systems only on those systems,
+   so let CI run on all three.
 4. Move all nineteen pins in `host/Cargo.toml` (and the fixture's in `host/ban-fixture/`)
    together, then update the table in `host/README.md`: version, Zed tag and commit, publish date
    and the patch list's commit. `host/tests/checks.rs` fails while any of them disagree.

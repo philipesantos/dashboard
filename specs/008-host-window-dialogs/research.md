@@ -478,3 +478,12 @@ checked at the source (GPUI 1.25.3 included) before anything changed.
 | The appearance file's partial file had a fixed name, followed links and was not flushed before the rename | Yes | A new file named for the process and moment, created only if absent, flushed, then renamed; removed on failure; a test that nothing is left |
 | (Possible) GPUI turns Enter's and Space's release into a click, which reached `click()` without the gate's held-key rule, and pressed host controls twice | Yes | Keyboard clicks are ignored: keys press controls and answer dialogs only through their key handlers; a test that Enter presses once, which fails without the fix |
 | (Possible) The dialog names a plugin by its id's last segment, so two owners' `notes` read alike | Partly | Kept as R8 decided: only the development tool approves plugins in this feature; the frame's description carries the full id. Installation, which brings plugins from different owners, decides how the dialog names the owner |
+
+After the review, at the maintainer's request (T056), a check reads GPUI's source for every public
+function whose name or signature may load, read, open, prompt, decode, or reach the network or the
+keychain, and requires each to be banned or listed with a reason in `host/gpui-reviewed.txt`, so a
+GPUI upgrade cannot add a way out unnoticed. Its first run found twelve more: the SVG and image
+decoders (`SvgRenderer`, `App::svg_renderer`, `Image::to_image_data`, `use_render_image`,
+`get_render_image`), `Asset::load` (which runs a loader such as `ImgResourceLoader` directly),
+`Window::paint_svg` (an asset by name), `App::reset_prompt_builder` (native prompts back) and
+`fallback_prompt_renderer` (GPUI's own prompt). All are banned; the bans number 41.

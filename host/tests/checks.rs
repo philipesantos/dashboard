@@ -250,7 +250,7 @@ fn the_pin_check_catches_every_slip() {
 }
 
 /// The GPUI paths `clippy.toml` must disallow (contracts/bans-and-checks.md).
-const BANNED: [&str; 29] = [
+const BANNED: [&str; 41] = [
     "gpui::Window::prompt",
     "gpui::AsyncWindowContext::prompt",
     "gpui::PlatformWindow::prompt",
@@ -280,6 +280,18 @@ const BANNED: [&str; 29] = [
     "gpui::Platform::write_credentials",
     "gpui::Platform::read_credentials",
     "gpui::Platform::delete_credentials",
+    "gpui::Window::paint_svg",
+    "gpui::Asset::load",
+    "gpui::Image::to_image_data",
+    "gpui::Image::use_render_image",
+    "gpui::Image::get_render_image",
+    "gpui::App::svg_renderer",
+    "gpui::SvgRenderer::new",
+    "gpui::SvgRenderer::parse_svg",
+    "gpui::SvgRenderer::render_parsed",
+    "gpui::SvgRenderer::render_single_frame",
+    "gpui::App::reset_prompt_builder",
+    "gpui::fallback_prompt_renderer",
 ];
 
 /// HS-12, FR-019, FR-029: every ban is in `clippy.toml`.
@@ -367,4 +379,546 @@ fn deny_keeps_the_host_surfaces_and_dialog_bans() {
     assert!(deny.contains("{ name = \"host-surfaces\", wrappers = [\"host\"] }"));
     assert!(deny.contains("{ name = \"rfd\" }"));
     assert!(deny.contains("{ name = \"native-dialog\" }"));
+}
+
+/// The GPUI source the lock file pins, by package: every gpui-unofficial crate whose source Cargo
+/// has downloaded (the crates for other systems are absent until a build for them needs them).
+fn gpui_sources() -> Vec<(String, PathBuf)> {
+    let version = recorded_gpui_version(&read("host/README.md")).expect("recorded");
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|home| PathBuf::from(home).join(".cargo"))
+        })
+        .expect("a Cargo home");
+    let registries: Vec<PathBuf> = fs::read_dir(cargo_home.join("registry/src"))
+        .map(|entries| {
+            entries
+                .filter_map(|entry| Some(entry.ok()?.path()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut names: Vec<String> = locked_gpui_packages(&read("Cargo.lock"))
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    names.sort();
+    names.dedup();
+    let found: Vec<(String, PathBuf)> = names
+        .into_iter()
+        .filter_map(|name| {
+            let dir = registries
+                .iter()
+                .map(|registry| registry.join(format!("{name}-{version}")))
+                .find(|dir| dir.join("src").is_dir())?;
+            Some((name, dir))
+        })
+        .collect();
+    assert!(
+        found.iter().any(|(name, _)| name == "gpui-unofficial"),
+        "gpui-unofficial {version} not found under {}: build the host first",
+        cargo_home.display()
+    );
+    found
+}
+
+/// The name a crate is used by: its `[lib]` name, or its package name with `_` for `-`.
+fn lib_name(name: &str, dir: &Path) -> String {
+    let manifest = fs::read_to_string(dir.join("Cargo.toml")).unwrap_or_default();
+    let mut in_lib = false;
+    for line in manifest.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_lib = line == "[lib]";
+        } else if in_lib
+            && let Some(value) = line.strip_prefix("name")
+            && let Some(value) = value.trim_start().strip_prefix('=')
+        {
+            return value.trim().trim_matches('"').to_owned();
+        }
+    }
+    name.replace('-', "_")
+}
+
+/// Rust source with comments removed and string and character literals emptied (line breaks
+/// kept), so the braces left are the code's.
+fn strip_literals(source: &str) -> String {
+    let chars: Vec<char> = source.chars().collect();
+    let mut out = String::with_capacity(source.len());
+    let mut i = 0;
+    let at = |i: usize, text: &str| {
+        text.chars()
+            .enumerate()
+            .all(|(k, c)| chars.get(i + k) == Some(&c))
+    };
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    while i < chars.len() {
+        let c = chars[i];
+        if at(i, "//") {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if at(i, "/*") {
+            let mut depth = 0;
+            while i < chars.len() {
+                if at(i, "/*") {
+                    depth += 1;
+                    i += 2;
+                } else if at(i, "*/") {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    if chars[i] == '\n' {
+                        out.push('\n');
+                    }
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        let before_is_ident = i > 0 && ident(chars[i - 1]);
+        // Raw strings: r"…", r#"…"#, br#"…"#
+        let raw_start = if !before_is_ident && at(i, "br") {
+            Some(i + 2)
+        } else if !before_is_ident && c == 'r' {
+            Some(i + 1)
+        } else {
+            None
+        };
+        if let Some(mut j) = raw_start {
+            let mut hashes = 0;
+            while chars.get(j) == Some(&'#') {
+                hashes += 1;
+                j += 1;
+            }
+            if chars.get(j) == Some(&'"') {
+                let end: String = std::iter::once('"')
+                    .chain(std::iter::repeat_n('#', hashes))
+                    .collect();
+                j += 1;
+                let mut lines = 0;
+                while j < chars.len() && !at(j, &end) {
+                    if chars[j] == '\n' {
+                        lines += 1;
+                    }
+                    j += 1;
+                }
+                out.push_str("\"\"");
+                out.extend(std::iter::repeat_n('\n', lines));
+                i = j + end.chars().count();
+                continue;
+            }
+        }
+        if c == '"' || (c == 'b' && chars.get(i + 1) == Some(&'"') && !before_is_ident) {
+            i += if c == '"' { 1 } else { 2 };
+            let mut lines = 0;
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' {
+                    i += 1;
+                }
+                if chars.get(i) == Some(&'\n') {
+                    lines += 1;
+                }
+                i += 1;
+            }
+            i += 1;
+            out.push_str("\"\"");
+            out.extend(std::iter::repeat_n('\n', lines));
+            continue;
+        }
+        if c == '\'' {
+            // A character literal, not a lifetime: 'x', '\n', '\u{..}', '\x..'
+            let close = if chars.get(i + 1) == Some(&'\\') {
+                (i + 2..(i + 12).min(chars.len())).find(|&k| chars[k] == '\'')
+            } else if chars.get(i + 2) == Some(&'\'') {
+                Some(i + 2)
+            } else {
+                None
+            };
+            if let Some(close) = close {
+                out.push_str("' '");
+                i = close + 1;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+/// `text` without its attributes (`#[…]`, `#![…]`).
+fn without_attributes(text: &str) -> String {
+    let mut out = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '#' && matches!(chars.peek(), Some('[') | Some('!')) {
+            let mut depth = 0;
+            for c in chars.by_ref() {
+                match c {
+                    '[' => depth += 1,
+                    ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out.trim().to_owned()
+}
+
+/// The identifier after the word `word` in `text`, if `word` appears as a whole word.
+fn word_then_ident(text: &str, word: &str) -> Option<String> {
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    let mut from = 0;
+    while let Some(found) = text[from..].find(word) {
+        let start = from + found;
+        let end = start + word.len();
+        let before = text[..start].chars().next_back();
+        let after = text[end..].chars().next();
+        if before.is_none_or(|c| !ident(c)) && after.is_some_and(char::is_whitespace) {
+            let name: String = text[end..]
+                .trim_start()
+                .chars()
+                .take_while(|c| ident(*c))
+                .collect();
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+        from = end;
+    }
+    None
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Scope {
+    /// An inherent `impl` of the named type: its `pub fn`s are public.
+    Impl(String),
+    /// A `pub trait`: every `fn` in it is public.
+    Trait(String),
+    /// A trait impl or a private trait: its functions are not public ones.
+    Hidden,
+    /// A function's body: nothing in it is public.
+    Body,
+}
+
+/// Every public function of a crate's source, as `crate::Type::function` or `crate::function`
+/// (modules left out, as GPUI re-exports them at its root), with its signature.
+fn public_functions(lib: &str, dir: &Path) -> Vec<(String, String)> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(&dir.join("src"), &mut files);
+    let mut found = Vec::new();
+    for file in files {
+        let source = strip_literals(&fs::read_to_string(&file).unwrap_or_default());
+        // (depth it opened at, scope); `None` for blocks that change nothing (mod, struct, …)
+        let mut scopes: Vec<(usize, Option<Scope>)> = Vec::new();
+        let mut depth = 0;
+        let mut statement = String::new();
+        for c in source.chars() {
+            if !matches!(c, '{' | '}' | ';') {
+                statement.push(c);
+                continue;
+            }
+            let head = without_attributes(&statement);
+            statement.clear();
+            let inner = scopes.iter().rev().find_map(|(_, scope)| scope.clone());
+            let public = |head: &str| {
+                let before_fn = head.split("fn ").next().unwrap_or("");
+                let mut words = before_fn.split_whitespace();
+                words.next() == Some("pub")
+                    && words.all(|word| {
+                        matches!(word, "const" | "async" | "unsafe" | "extern" | "\"\"")
+                    })
+            };
+            let function = word_then_ident(&head, "fn").filter(|_| {
+                !head.starts_with("impl")
+                    && !head.starts_with("unsafe impl")
+                    && word_then_ident(&head, "trait").is_none()
+            });
+            if let Some(name) = &function
+                && c != '}'
+            {
+                let path = match &inner {
+                    _ if scopes.iter().any(|(_, scope)| scope == &Some(Scope::Body)) => None,
+                    None if public(&head) => Some(format!("{lib}::{name}")),
+                    Some(Scope::Impl(ty)) if public(&head) => Some(format!("{lib}::{ty}::{name}")),
+                    Some(Scope::Trait(tr)) => Some(format!("{lib}::{tr}::{name}")),
+                    _ => None,
+                };
+                if let Some(path) = path {
+                    found.push((path, head.clone()));
+                }
+            }
+            match c {
+                '{' => {
+                    depth += 1;
+                    let scope = if function.is_some() {
+                        Some(Scope::Body)
+                    } else if let Some(rest) = head
+                        .strip_prefix("unsafe impl")
+                        .or_else(|| head.strip_prefix("impl"))
+                        .filter(|rest| rest.starts_with(|c: char| c.is_whitespace() || c == '<'))
+                    {
+                        if rest.split_whitespace().any(|word| word == "for") {
+                            Some(Scope::Hidden)
+                        } else {
+                            // `impl<T> Name<T>` / `impl path::Name`: the type's last segment
+                            let mut rest = rest.trim_start();
+                            if rest.starts_with('<') {
+                                let mut level = 0;
+                                let end = rest
+                                    .char_indices()
+                                    .find(|&(_, c)| {
+                                        level += match c {
+                                            '<' => 1,
+                                            '>' => -1,
+                                            _ => 0,
+                                        };
+                                        level == 0
+                                    })
+                                    .map_or(rest.len(), |(at, _)| at + 1);
+                                rest = rest[end..].trim_start();
+                            }
+                            let path = rest
+                                .split(|c: char| c == '<' || c.is_whitespace())
+                                .next()
+                                .unwrap_or("");
+                            Some(Scope::Impl(
+                                path.rsplit("::").next().unwrap_or(path).to_owned(),
+                            ))
+                        }
+                    } else if let Some(name) = word_then_ident(&head, "trait") {
+                        let words: Vec<&str> = head.split_whitespace().collect();
+                        let at = words.iter().position(|word| *word == "trait").unwrap_or(0);
+                        let public = words[..at]
+                            .iter()
+                            .filter(|word| **word != "unsafe")
+                            .eq(["pub"].iter());
+                        Some(if public {
+                            Scope::Trait(name)
+                        } else {
+                            Scope::Hidden
+                        })
+                    } else {
+                        None
+                    };
+                    scopes.push((depth, scope));
+                }
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    while scopes.last().is_some_and(|(opened, _)| *opened > depth) {
+                        scopes.pop();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    found
+}
+
+/// Whether a public function's name or signature says it may load, read, open, prompt, decode,
+/// reach the network or the keychain.
+fn may_reach_out(path: &str, signature: &str) -> bool {
+    const NAMES: [&str; 17] = [
+        "open",
+        "prompt",
+        "credential",
+        "reveal",
+        "asset",
+        "image",
+        "img",
+        "svg",
+        "url",
+        "uri",
+        "fetch",
+        "load",
+        "file",
+        "http",
+        "download",
+        "keychain",
+        "clipboard",
+    ];
+    const TYPES: [&str; 11] = [
+        "Resource",
+        "Path",
+        "PathBuf",
+        "Uri",
+        "Url",
+        "ImageSource",
+        "SharedUri",
+        "HttpClient",
+        "AssetSource",
+        "Image",
+        "RenderImage",
+    ];
+    let name = path.rsplit("::").next().unwrap_or(path);
+    NAMES.iter().any(|word| name.contains(word))
+        || signature
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .any(|word| TYPES.contains(&word))
+}
+
+/// `host/gpui-reviewed.txt`: each GPUI function allowed, with the reason heading its group.
+fn reviewed_gpui_functions() -> Vec<(String, String)> {
+    let mut reason = None;
+    let mut reviewed = Vec::new();
+    for line in read("host/gpui-reviewed.txt").lines() {
+        let line = line.trim();
+        if let Some(heading) = line.strip_prefix("## ") {
+            reason = Some(heading.to_owned());
+        } else if !line.is_empty() && !line.starts_with('#') {
+            let reason = reason
+                .clone()
+                .unwrap_or_else(|| panic!("{line} has no reason above it"));
+            reviewed.push((line.to_owned(), reason));
+        }
+    }
+    reviewed
+}
+
+/// T056: every public GPUI function whose name or signature may load, read, open, prompt,
+/// decode, or reach the network or the keychain is banned in `clippy.toml` or reviewed in
+/// `host/gpui-reviewed.txt`, so a GPUI upgrade that adds one fails here until someone decides;
+/// a reviewed one that is gone, and a ban that names nothing, fail too.
+#[test]
+fn every_gpui_way_out_is_banned_or_reviewed() {
+    let reviewed = reviewed_gpui_functions();
+    let mut problems = Vec::new();
+    let mut scanned_libs = Vec::new();
+    let mut all = std::collections::BTreeSet::new();
+    let mut flagged = std::collections::BTreeSet::new();
+    for (name, dir) in gpui_sources() {
+        let lib = lib_name(&name, &dir);
+        for (path, signature) in public_functions(&lib, &dir) {
+            if may_reach_out(&path, &signature) {
+                flagged.insert(path.clone());
+            }
+            all.insert(path);
+        }
+        scanned_libs.push(lib);
+    }
+    for path in &flagged {
+        let banned = BANNED.contains(&path.as_str());
+        let allowed = reviewed.iter().any(|(entry, _)| entry == path);
+        if !banned && !allowed {
+            problems.push(format!(
+                "{path}: new in GPUI and neither banned in clippy.toml nor reviewed in host/gpui-reviewed.txt"
+            ));
+        }
+        if banned && allowed {
+            problems.push(format!("{path}: both banned and reviewed"));
+        }
+    }
+    for (entry, _) in &reviewed {
+        let lib = entry.split("::").next().unwrap_or("");
+        if scanned_libs.iter().any(|scanned| scanned == lib) && !flagged.contains(entry) {
+            problems.push(format!("{entry}: reviewed, but GPUI no longer has it"));
+        }
+    }
+    for path in BANNED {
+        if !all.contains(path) {
+            problems.push(format!(
+                "{path}: banned, but GPUI has no such public function"
+            ));
+        }
+    }
+    assert!(problems.is_empty(), "{problems:#?}");
+}
+
+/// T056: `host/src` names no GPUI crate for one system (or for WebAssembly), whose functions the
+/// review above covers only on that system.
+#[test]
+fn host_names_no_os_specific_gpui_crate() {
+    for (name, text) in host_sources() {
+        for crate_name in [
+            "gpui_linux",
+            "gpui_macos",
+            "gpui_apple",
+            "gpui_windows",
+            "gpui_web",
+            "gpui_wgpu",
+        ] {
+            assert!(
+                !code(&text).contains(crate_name),
+                "{name} names {crate_name}"
+            );
+        }
+    }
+}
+
+/// T056: the scanner reads what it must: comments and literals do not move its braces, trait
+/// impls and private items are not public, and `pub trait` methods are.
+#[test]
+fn the_gpui_scanner_reads_rust() {
+    let dir = tempfile::TempDir::new().expect("a directory");
+    fs::create_dir(dir.path().join("src")).expect("src");
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        r##"
+        // pub fn in_a_comment() {
+        /* pub fn in_a_block() { */
+        pub fn img(source: &str) -> Img { let s = "}{"; let c = '{'; let r = r#"}"#; todo!() }
+        fn private_free() {}
+        pub(crate) fn crate_only() {}
+        pub struct Window { field: u8 }
+        impl Window {
+            pub fn open_url(&self) { if true { let _ = |x: u8| { x }; } }
+            fn private_method(&self) {}
+            pub async fn load_later(&self) {}
+        }
+        impl<T> Clone for Holder<T> { fn clone(&self) -> Self { todo!() } }
+        impl<'a, T: Into<u8>> crate::Holder<T> { pub fn fetch(&self, path: &Path) {} }
+        pub trait Platform { fn reveal_path(&self, path: &Path); fn other(&self) {} }
+        trait Private { fn hidden(&self); }
+        mod nested { pub fn nested_free(resource: Resource) {} }
+        "##,
+    )
+    .expect("written");
+    let mut found: Vec<String> = public_functions("demo", dir.path())
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    found.sort();
+    assert_eq!(
+        found,
+        [
+            "demo::Holder::fetch",
+            "demo::Platform::other",
+            "demo::Platform::reveal_path",
+            "demo::Window::load_later",
+            "demo::Window::open_url",
+            "demo::img",
+            "demo::nested_free",
+        ]
+    );
+    assert!(may_reach_out(
+        "demo::nested_free",
+        "pub fn nested_free(resource: Resource)"
+    ));
+    assert!(!may_reach_out("demo::Platform::other", "fn other(&self)"));
 }

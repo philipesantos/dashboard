@@ -15,9 +15,14 @@ HS-12)" or "no plugin string reaches the image loader or URL opener (FR-029)":
   and the same three on `gpui::Platform`
 - `gpui::img`, `gpui::svg`, `gpui::Svg::external_path`, `gpui::Window::use_asset`,
   `gpui::Window::get_asset`, `gpui::App::fetch_asset`, `gpui::ImageCacheItem::new`,
-  `gpui::ImageCache::load`, `gpui::RetainAllImageCache::load`, `gpui::AnyImageCache::load`: allowed
-  only in `host/src/media.rs`, with an inner `#[allow]` and its reason; `media` takes only bytes
-  the host holds
+  `gpui::ImageCache::load`, `gpui::RetainAllImageCache::load`, `gpui::AnyImageCache::load`,
+  `gpui::Asset::load`, `gpui::Window::paint_svg`, and the decoders `gpui::Image::to_image_data`,
+  `gpui::Image::use_render_image`, `gpui::Image::get_render_image`, `gpui::App::svg_renderer` and
+  `gpui::SvgRenderer::{new, parse_svg, render_parsed, render_single_frame}`: allowed only in
+  `host/src/media.rs`, with an inner `#[allow]` and its reason; `media` takes only bytes the host
+  holds
+- `gpui::App::reset_prompt_builder` (it would bring the native prompts back) and
+  `gpui::fallback_prompt_renderer` (GPUI's own prompt, drawn in the window)
 
 The exact paths are confirmed by the first task (research R15); each entry is proved by
 `host/ban-fixture`, a crate outside the workspace that calls every one: the "Host window" CI job
@@ -33,6 +38,8 @@ requires clippy to fail on it with exactly one "disallowed method" error per ent
 | no floating layer | `deferred(` or `anchored(` appears in `host/src/` (research R6) |
 | host words | a string literal is passed to `child`, `aria_label`, `aria_description`, a tooltip, the window title (`TitlebarOptions`) or a text element in `host/src/` outside `text.rs` |
 | development mode | `development(` appears in `host/src/` |
+| every GPUI way out | a public function of a downloaded gpui-unofficial crate whose name or signature may load, read, open, prompt, decode, or reach the network or the keychain is neither banned above nor listed, under a reason, in `host/gpui-reviewed.txt`; a listed one is gone; or a ban names no function GPUI has (T056) |
+| OS-specific crates | `host/src/` names a GPUI crate for one system or for WebAssembly, whose functions that check reads only on that system |
 | deny wrappers | `deny.toml` stops limiting `host-surfaces` to `host` or stops banning `rfd` and `native-dialog` |
 
 ## Hostile cases (FR-031)
