@@ -410,12 +410,18 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
     // Exactly the dialog: each window's own node, and in A the dialog's name, its subject (the
     // plugin's name, once, after the host's words) and its two buttons; nothing else
     let name_of = |line: &str| line.rsplit('\t').next().unwrap_or("").to_owned();
+    // macOS adds the system's title bar to each window's tree, outside GPUI's: its close,
+    // minimize and zoom buttons and their groups, all nameless (the title is the window's name).
+    // Every node the host exposes is named, so a host node shown behind the dialog is still
+    // caught by its name
+    let system_chrome = |name: &str| cfg!(target_os = "macos") && name.is_empty();
     let mut subject_seen = false;
     let mut dialog_seen = false;
     for line in seen_a.lines() {
         let name = name_of(line);
         let allowed = match name.as_str() {
             "dashboard a" | "cancel" | "remove" => true,
+            name if system_chrome(name) => true,
             "remove a widget" => {
                 dialog_seen = true;
                 true
@@ -433,7 +439,8 @@ fn drive(shared: &Shared) -> Result<Vec<String>, String> {
         }
     }
     for line in seen_b.lines() {
-        if !matches!(name_of(line).as_str(), "dashboard b" | "") {
+        let name = name_of(line);
+        if name != "dashboard b" && !name.is_empty() {
             return Err(format!(
                 "HS-18: {line:?} is exposed in B while the dialog is open:\nA:\n{seen_a}\nB:\n{seen_b}"
             ));
