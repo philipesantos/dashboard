@@ -35,6 +35,4 @@
   constitution's fixed decisions and the guide's items name them: they are the rules this feature
   must enforce, not choices it makes. How they are enforced is left to the plan.
 - SC-008 names the same fixed decisions as the build failures a reviewer looks for.
-- Open for `/speckit-clarify`: whether a first real dialog ships in this feature (the spec assumes
-  none, only a dialog that asks nothing a plugin can influence), and how frames lay out before
-  the grid.
+- Clarified on 2026-11-09: the appearance settings ship here, and the first real host dialog is "Remove from dashboard".

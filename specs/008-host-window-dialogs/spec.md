@@ -32,6 +32,25 @@ the criteria of docs/design/host-surfaces.md tested by 'host window' or 'host di
 then no plugin image or icon. Out of scope: Linux without hardware Vulkan, the dashboard grid,
 the UI kit, declared actions and settings, the install dialog, official widgets."
 
+## Clarifications
+
+### Session 2026-11-09
+
+- Q: Feature 007 left the screen where the person picks the appearance (gray family, host color,
+  widget color, corners, theme, with the 30° refusal) to "the host window". Does it ship in 008?
+  → A: Yes. It is a host settings screen opened from the chrome, not a trust dialog; it applies
+  the choice at once and keeps it between runs.
+- Q: No trust decision happens in the window yet. Which real host dialog does 008 bring, so a
+  person can open it and walk it with a screen reader? → A: "Remove from dashboard", from the
+  frame's menu: confirmed, it removes the plugin's approval and every grant with it, as the
+  command-line tool's `remove` does; refused, nothing changes.
+- Q: In what language does the host write its own text (chrome, frame status, menus, appearance
+  settings, dialogs)? → A: English for now, every string from one message catalog, so other
+  languages can be added later without touching the screens.
+- Q: The window and the development command-line tool share the approval record. When does the
+  window show a change the tool made while it was open? → A: When the window regains focus, and
+  when the person chooses "Reload" in the chrome; no file watching.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The people in these stories are the **person** who uses the dashboard; a **keyboard or
@@ -118,9 +137,10 @@ system's native prompt.
 anything a widget draws. Installation, permissions, accounts and destinations (later features)
 all depend on this component behaving exactly so.
 
-**Independent Test**: open a host dialog over a dashboard with frames, an open panel and a second
-host window; send clicks and keys to everything outside it and to its buttons at timed moments;
-check what each one reaches and how the dialog is answered.
+**Independent Test**: from a frame's menu, choose "Remove from dashboard" over a dashboard with
+frames, an open panel and a second host window; send clicks and keys to everything outside the
+dialog and to its buttons at timed moments; check what each one reaches and how the dialog is
+answered.
 
 **Acceptance Scenarios**:
 
@@ -139,6 +159,9 @@ check what each one reaches and how the dialog is answered.
 5. **Given** the host's code and dependencies, **When** they are checked, **Then** no path that
    grants, installs, connects or chooses a destination calls a native prompt, and the native
    dialog crates stay banned (HS-12).
+6. **Given** the person chose "Remove from dashboard" on a frame, **When** they confirm the dialog,
+   **Then** the plugin's approval and every grant with it are removed and its frame leaves the
+   window; **When** they refuse it, close the window or quit, **Then** nothing changes.
 
 ---
 
@@ -232,6 +255,36 @@ systems.
 
 ---
 
+### User Story 7 - The person picks the dashboard's appearance (Priority: P2)
+
+From the chrome, the person opens the host's appearance settings and picks a gray family, a host
+color (or monochrome), a widget color, the corners and the theme (light, dark or the system's).
+The window takes the new look at once. A widget color whose hue sits less than 30° from the host
+color or from a status tone is refused, and the host says why in its own words, naming the colors.
+The choice is kept for the next run.
+
+**Why this priority**: feature 007 built the picks and the rule and left their screen to the host
+window; without it the person can only ever see the default look.
+
+**Independent Test**: open the appearance settings, pick each option, check the window redraws in
+the new look; pick a widget color too close to the host color and check the refusal and its words;
+restart and check the choice is kept.
+
+**Acceptance Scenarios**:
+
+1. **Given** the window, **When** the person opens the appearance settings from the chrome,
+   **Then** they see every gray family, the host color (monochrome or a chromatic scale), the
+   widget color, the corners and the theme, with the current choice marked.
+2. **Given** a valid choice, **When** the person applies it, **Then** the window redraws at once in
+   that appearance, chrome, frames, panels and dialogs alike.
+3. **Given** a widget color less than 30° from the host color or a status tone, **When** the person
+   picks it, **Then** the host refuses it and names, in its own words, the colors that are too
+   close; the previous choice stays.
+4. **Given** a saved choice, **When** the dashboard starts again, **Then** it opens in that
+   appearance.
+
+---
+
 ### Edge Cases
 
 - **No approved plugins**: the window opens with the chrome and an empty state in the host's words
@@ -243,6 +296,10 @@ systems.
   shows the failure in the host's words and the window stays responsive.
 - **The window is resized smaller than a frame**: frames and panels move or clip, but never cover
   the chrome (HS-01).
+- **The command-line tool changes the approval record while the window is open**: the window
+  shows the change when it regains focus or on "Reload" (FR-040); if the tool removed a plugin
+  whose "Remove from dashboard" dialog is open, confirming it removes nothing more and the frame
+  leaves the window.
 - **Two dialogs are requested at once**: one shows at a time; the second waits, and when it
   appears its first-second delay starts over (HS-11).
 - **A dialog opens while a key or pointer button is held**: that press answers nothing until
@@ -255,6 +312,11 @@ systems.
 - **A screen reader is running when the dashboard starts**: the tree is correct from the first
   frame; nothing depends on the screen reader starting first.
 - **A second host window exists** (for example a test window): a dialog blocks it too (HS-10).
+- **The saved appearance is no longer valid** (a hand-edited or damaged settings file, or a rule
+  that changed): the host opens in the default appearance and says, in its own words, that the
+  saved one could not be used.
+- **The theme is the system's and the system switches between light and dark**: the window follows
+  without a restart.
 
 ## Requirements *(mandatory)*
 
@@ -286,6 +348,10 @@ systems.
   why it failed; it MUST NOT show any part of what the plugin's render returned.
 - **FR-009**: A failure in one plugin MUST NOT stop the window from drawing or taking input for the
   others.
+- **FR-040**: The window MUST read the approval record again when it regains focus and when the
+  person chooses "Reload" in the chrome, adding frames for newly approved plugins and removing
+  those no longer approved; it MUST NOT watch the file. A change of the record while a host dialog
+  is open MUST wait until the dialog is answered.
 - **FR-010**: A frame MUST be able to open its panel, attached to it, drawn with the host's panel
   tokens; the panel MUST NOT dim anything or block input to the rest of the window, and MUST
   close on Escape and on a click outside it, returning focus to the control that opened it.
@@ -296,6 +362,21 @@ systems.
   focus: the `focus` role, 2 px thick and 2 px outside the control, never hidden (HS-24).
 - **FR-013**: When no GPU driver GPUI can use is present, the host MUST NOT crash silently; it MUST
   say, in words a person can act on, why the window cannot open.
+
+**Appearance**
+
+- **FR-034**: The chrome MUST open the host's appearance settings, a host surface drawn with host
+  components, where the person picks the gray family, the host color (monochrome or a chromatic
+  scale), the widget color, the corner radius and the theme (light, dark or the system's), from
+  the sets feature 007 defines.
+- **FR-035**: The host MUST refuse a widget color less than 30° of hue from the host color or a
+  status tone, using feature 007's rule, and MUST name the colors involved in its own words; a
+  refused choice MUST leave the previous one in place.
+- **FR-036**: A valid choice MUST apply at once to every host surface and MUST be kept, in a host
+  file no plugin can reach, for the next run; a saved choice the host cannot use MUST fall back to
+  the default with a notice in the host's words.
+- **FR-037**: With the system's theme picked, the window MUST follow the system's switches between
+  light and dark without a restart.
 
 **Host dialogs**
 
@@ -311,6 +392,11 @@ systems.
   nothing until released and pressed again; the 1000 ms MUST start over when the window regains
   focus and when the dialog's content changes or another dialog replaces it (HS-11).
 - **FR-018**: Only one host dialog MAY be shown at a time; further requests wait in order.
+- **FR-038**: Each frame MUST offer, from a menu the host draws in its header, "Remove from
+  dashboard", which asks in a host dialog named with the host's words for the decision (the
+  plugin's name in a child node of its own). Confirmed, it MUST remove the plugin's approval and
+  every grant with it, exactly as the command-line tool's `remove` does, and the frame leaves the
+  window; refused (including by closing or quitting), nothing changes.
 - **FR-019**: The host MUST NOT ask for any trust decision (granting a permission, installing a
   plugin or connector, connecting an account, choosing a destination) through GPUI's native
   prompt or any operating-system dialog; the native dialog crates MUST stay banned, and a check
@@ -361,6 +447,13 @@ systems.
   and the decoding of images, SVG and fonts, move to a separate process; its outcome MUST be
   recorded in `docs/decisions/`. Until it allows them, FR-028 holds.
 
+**The host's words**
+
+- **FR-039**: Every text the host writes in the window (chrome, frame status, menus, appearance
+  settings, dialog names, questions and buttons, and their accessible names) MUST come from one
+  message catalog, in English in this feature; no host text MAY be written inline in a screen, and
+  a check MUST fail the build when one is.
+
 **Scope**
 
 - **FR-033**: This feature MUST NOT change the plugin runtime, the permission engine, the connector
@@ -380,6 +473,8 @@ systems.
   answer (confirmed or refused; closing and quitting refuse).
 - **Approved plugin**: a plugin the host may load; at this stage, one in the development grant
   record.
+- **Appearance choice**: the person's gray family, host color, widget color, radius and theme,
+  valid only under feature 007's hue rule, kept by the host between runs.
 
 ## Success Criteria *(mandatory)*
 
@@ -407,8 +502,9 @@ systems.
 
 - The window loads the plugins the development command-line tool approved, from its development
   grant record; installing plugins from repositories, and the install dialog, are later features.
-  No trust decision is asked in the window yet, so the dialog component is exercised by the host's
-  own tests and by a dialog that asks nothing a plugin can influence.
+  No decision that grants anything is asked in the window yet; its first real host dialog is
+  "Remove from dashboard" (FR-038), which only takes away, and the tests and screen-reader walks
+  use it.
 - The widget kit, which draws widget content, is a later feature; until then frames show status,
   not content, and the rule of FR-027 is met by drawing none of the returned content.
 - The dashboard grid (adding, moving, resizing and saving layouts) is a later feature; this one
