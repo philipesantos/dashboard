@@ -157,3 +157,41 @@ fn rule_14_no_images() {
     );
     refused_naming(&mutate(&text, "check: \"M", "check: \"<script/>M"), "check");
 }
+
+/// Rule 10: every pairing meets its minimum in every appearance the host accepts, both themes.
+#[test]
+fn rule_10_contrast_in_every_appearance() {
+    let text = design_md();
+    let changed = mutate(
+        &text,
+        "border-control: { source: gray, light: 9, dark: 9,",
+        "border-control: { source: gray, light: 8, dark: 9,",
+    );
+    let problems = crate::common::refusals(&changed);
+    assert!(
+        problems.iter().any(|p| p.contains("roles.border-control") && p.contains("non-text") && p.contains("light")),
+        "{}",
+        problems.join("\n")
+    );
+}
+
+/// Rule 11: every foreground is paired with every background it is drawn on, and the focus ring
+/// with every background a control can have.
+#[test]
+fn rule_11_every_pairing_is_declared() {
+    let text = design_md();
+    refused_naming(
+        &mutate(&text, "text-secondary: { source: gray, light: 11, dark: 11, kind: text, on: [canvas, surface, ", "text-secondary: { source: gray, light: 11, dark: 11, kind: text, on: [canvas, "),
+        "text-secondary",
+    );
+    refused_naming(&mutate(&text, "on: [canvas, surface, neutral-soft, accent-soft, chrome-surface", "on: [canvas, surface, neutral-soft, chrome-surface"), "focus");
+}
+
+/// Rule 13: each chromatic scale declares the text its solid steps take, and it is right.
+#[test]
+fn rule_13_solid_text() {
+    let text = design_md();
+    refused_naming(&mutate(&text, "    cyan: dark\n", "    cyan: white\n"), "cyan");
+    refused_naming(&mutate(&text, "    plum: white\n", "    plum: none\n"), "plum");
+    refused_naming(&mutate(&text, "    lime: dark\n", ""), "lime");
+}

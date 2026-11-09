@@ -254,12 +254,12 @@ both themes, and an undeclared or failing pairing fails CI (constitution v5.0.0,
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Extend `design/gen/tests/checker.rs` first, failing, for rules 10, 11 and
+- [X] T024 [P] [US2] Extend `design/gen/tests/checker.rs` first, failing, for rules 10, 11 and
   13: a fixture whose control boundary uses gray step 8 fails on `slate`, light, near 1.86 (the
   message names pairing, kind, theme, picks and ratio); a foreground role with no pairing on a
   background it is drawn on fails; `focus` not paired on accent step 9 fails; `solid-text: white`
   on `cyan` fails, and `none` on `blue` fails because dark text reaches 4.5:1.
-- [ ] T025 [P] [US2] Write `design/gen/tests/lint.rs` first, failing: the lint over the committed
+- [X] T025 [P] [US2] Write `design/gen/tests/lint.rs` first, failing: the lint over the committed
   `DESIGN.md` covers every appearance the host accepts in both themes (count them and assert the
   count matches an independent enumeration from the picks, at most about 2,760), and passes;
   translucent roles are measured after compositing over each background.
@@ -267,8 +267,9 @@ both themes, and an undeclared or failing pairing fails CI (constitution v5.0.0,
 ### Implementation for User Story 2
 
 - [ ] T026 [US2] Implement the contrast lint and rules 10, 11 and 13 in `design/gen/src/lint.rs`
-  (research R5): enumerate the appearances `Appearance::validate` (T023) accepts, resolve every
-  role per theme, composite translucent ones, apply the
+  (research R5): enumerate the accepted appearances from `DESIGN.md`'s own picks (so a broken
+  generated file never stops regeneration; T025 shows the set equals what `Appearance::validate`
+  accepts), resolve every role per theme, composite translucent ones, apply the
   thresholds by `kind`, skip `decorative` and `inactive` only with a `why`. T024 and T025's
   failing parts pass except where `DESIGN.md` itself fails.
 - [ ] T027 [US2] Fix `DESIGN.md` until the lint passes, changing the step a role uses, never a
