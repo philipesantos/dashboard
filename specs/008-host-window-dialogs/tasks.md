@@ -85,7 +85,7 @@ done and the maintainer has seen its result.
 
 ### Tests first
 
-- [ ] T005 [P] `host/tests/checks.rs`: the checks of `contracts/bans-and-checks.md` (GPUI pins
+- [X] T005 [P] `host/tests/checks.rs`: the checks of `contracts/bans-and-checks.md` (GPUI pins
   against `Cargo.lock` and `host/README.md`; every clippy entry present; no
   `allow(clippy::disallowed_*)` outside `host/src/media.rs`; no `deferred(` or `anchored(`; no
   `development(`; the host-words scan over `child`, `aria_label`, `aria_description`, tooltips,
