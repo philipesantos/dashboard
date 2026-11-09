@@ -260,7 +260,7 @@ status, focus ready for the first Tab.
   (research R10); frames expose their label and status as the widget's content.
 - [X] T036 [US4] `host/src/dialog/`: initial focus, no default button, the vendored focus trap,
   Escape and focus restoration (research R9).
-- [ ] T037 [US4] `docs/accessibility/screen-reader-walk.md`: the release walk script for VoiceOver,
+- [X] T037 [US4] `docs/accessibility/screen-reader-walk.md`: the release walk script for VoiceOver,
   Narrator and Orca over every host dialog, what to record and where (FR-026).
 
 ---
