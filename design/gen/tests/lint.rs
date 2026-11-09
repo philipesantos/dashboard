@@ -15,7 +15,12 @@ fn covers_exactly_the_appearances_design_tokens_accepts() {
     for gray in GrayFamily::ALL {
         for host in &hosts {
             for widget in Scale::ALL {
-                let appearance = Appearance { gray, host: *host, widget, ..Appearance::DEFAULT };
+                let appearance = Appearance {
+                    gray,
+                    host: *host,
+                    widget,
+                    ..Appearance::DEFAULT
+                };
                 if appearance.validate().is_ok() {
                     let host = match host {
                         HostColor::Monochrome => None,
@@ -28,17 +33,36 @@ fn covers_exactly_the_appearances_design_tokens_accepts() {
     }
     let linted: std::collections::BTreeSet<(String, Option<String>, String)> = linted
         .iter()
-        .map(|a| (a.gray.to_owned(), a.host.map(str::to_owned), a.widget.to_owned()))
+        .map(|a| {
+            (
+                a.gray.to_owned(),
+                a.host.map(str::to_owned),
+                a.widget.to_owned(),
+            )
+        })
         .collect();
     assert_eq!(linted, accepted);
-    assert!(accepted.len() > 1000 && accepted.len() <= 1380, "{} appearances", accepted.len());
+    assert!(
+        accepted.len() > 1000 && accepted.len() <= 1380,
+        "{} appearances",
+        accepted.len()
+    );
 }
 
 #[test]
 fn translucent_colors_are_composited_before_measuring() {
     use design_gen::color::{Rgb, Rgba, composite, contrast};
-    let white = Rgb { r: 255, g: 255, b: 255 };
-    let half = Rgba { r: 0, g: 0, b: 0, a: 0.5 };
+    let white = Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
+    let half = Rgba {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0.5,
+    };
     let measured = design_gen::lint::measure_over(half, white);
     assert_eq!(measured, contrast(composite(half, white), white));
     assert!(measured > 1.0 && measured < 21.0);

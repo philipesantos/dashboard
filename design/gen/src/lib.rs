@@ -4,6 +4,7 @@
 pub mod check;
 pub mod color;
 pub mod generate;
+pub mod lint;
 pub mod model;
 pub mod preview;
 pub mod radix;

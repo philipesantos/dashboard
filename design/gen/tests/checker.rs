@@ -167,9 +167,17 @@ fn rule_10_contrast_in_every_appearance() {
         "border-control: { source: gray, light: 9, dark: 9,",
         "border-control: { source: gray, light: 8, dark: 9,",
     );
+    // The front matter follows, so only the contrast rule can refuse it
+    let changed = mutate(
+        &changed,
+        "  border-control: \"#8d8d8d\"",
+        "  border-control: \"#bbbbbb\"",
+    );
     let problems = crate::common::refusals(&changed);
     assert!(
-        problems.iter().any(|p| p.contains("roles.border-control") && p.contains("non-text") && p.contains("light")),
+        problems.iter().any(|p| p.contains("roles.border-control")
+            && p.contains("non-text")
+            && p.contains("light")),
         "{}",
         problems.join("\n")
     );
@@ -181,17 +189,34 @@ fn rule_10_contrast_in_every_appearance() {
 fn rule_11_every_pairing_is_declared() {
     let text = design_md();
     refused_naming(
-        &mutate(&text, "text-secondary: { source: gray, light: 11, dark: 11, kind: text, on: [canvas, surface, ", "text-secondary: { source: gray, light: 11, dark: 11, kind: text, on: [canvas, "),
+        &mutate(
+            &text,
+            "text-secondary: { source: gray, light: 11, dark: 11, kind: text, on: [canvas, surface, ",
+            "text-secondary: { source: gray, light: 11, dark: 11, kind: text, on: [canvas, ",
+        ),
         "text-secondary",
     );
-    refused_naming(&mutate(&text, "on: [canvas, surface, neutral-soft, accent-soft, chrome-surface", "on: [canvas, surface, neutral-soft, chrome-surface"), "focus");
+    refused_naming(
+        &mutate(
+            &text,
+            "on: [canvas, surface, neutral-soft, accent-soft, chrome-surface",
+            "on: [canvas, surface, neutral-soft, chrome-surface",
+        ),
+        "focus",
+    );
 }
 
 /// Rule 13: each chromatic scale declares the text its solid steps take, and it is right.
 #[test]
 fn rule_13_solid_text() {
     let text = design_md();
-    refused_naming(&mutate(&text, "    cyan: dark\n", "    cyan: white\n"), "cyan");
-    refused_naming(&mutate(&text, "    plum: white\n", "    plum: none\n"), "plum");
+    refused_naming(
+        &mutate(&text, "    cyan: dark\n", "    cyan: white\n"),
+        "cyan",
+    );
+    refused_naming(
+        &mutate(&text, "    cyan: dark\n", "    cyan: none\n"),
+        "cyan",
+    );
     refused_naming(&mutate(&text, "    lime: dark\n", ""), "lime");
 }

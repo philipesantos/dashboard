@@ -1,6 +1,7 @@
 //! The checker (specs/007-host-visual-design/contracts/design-md.md): builds the `Design` from a
 //! parsed `DESIGN.md` and the Radix palette, refusing every problem it finds with the line of
-//! `DESIGN.md` and the token path. Rules 10, 11 and 13 (contrast) are in `lint`.
+//! `DESIGN.md` and the token path. Rules 10, 11 and 13 (contrast) are in `lint`, run once the
+//! rest pass.
 
 use crate::color::{Rgb, Rgba};
 use crate::model::{PairingKind, Role, RoleSource, Step, Tone, ToneName};
@@ -1408,6 +1409,10 @@ pub fn check(source: &Source, palette: &Palette) -> Result<Design, Vec<Problem>>
     checker.scale_kinds(&design);
     if checker.problems.is_empty() {
         checker.front_colors(&design);
+    }
+    if checker.problems.is_empty() {
+        let lint = crate::lint::lint(&design, palette, source);
+        checker.problems.extend(lint);
     }
     let mut problems = checker.problems;
     problems.sort_by_key(|problem| problem.line);

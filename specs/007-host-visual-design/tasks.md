@@ -266,13 +266,13 @@ both themes, and an undeclared or failing pairing fails CI (constitution v5.0.0,
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Implement the contrast lint and rules 10, 11 and 13 in `design/gen/src/lint.rs`
+- [X] T026 [US2] Implement the contrast lint and rules 10, 11 and 13 in `design/gen/src/lint.rs`
   (research R5): enumerate the accepted appearances from `DESIGN.md`'s own picks (so a broken
   generated file never stops regeneration; T025 shows the set equals what `Appearance::validate`
   accepts), resolve every role per theme, composite translucent ones, apply the
   thresholds by `kind`, skip `decorative` and `inactive` only with a `why`. T024 and T025's
   failing parts pass except where `DESIGN.md` itself fails.
-- [ ] T027 [US2] Fix `DESIGN.md` until the lint passes, changing the step a role uses, never a
+- [X] T027 [US2] Fix `DESIGN.md` until the lint passes, changing the step a role uses, never a
   threshold. Record in the Colors section each pairing that needed a step other than Radix's
   usual one for its role, with its measured worst case. Regenerate with `cargo xtask design`.
   T024–T025 pass; quickstart §3 behaves as written.
