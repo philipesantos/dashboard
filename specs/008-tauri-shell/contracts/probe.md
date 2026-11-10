@@ -95,7 +95,9 @@ refused them.
 
 ## Report
 
-The probe prints one line per case and a summary, then exits:
+Before each case the page sends its id, and the probe prints `probe: running <id>`, so when a
+case unloads or blocks the page, the log names it. After the report, the probe prints one line
+per case and a summary, then exits:
 
 ```text
 probe: held script-inline-element (violation script-src, side effect absent)

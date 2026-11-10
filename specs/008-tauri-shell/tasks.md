@@ -274,7 +274,7 @@ draws (FR-009 to FR-012, FR-021).
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] In `window.rs` (research R5, R6):
+- [X] T017 [US3] In `window.rs` (research R5, R6):
   - `on_navigation` allows only `/` and `/index.html` of the app's origin, and `devUrl` when
     `tauri::is_dev()`;
   - `on_new_window` returns `NewWindowResponse::Deny`;
@@ -283,6 +283,12 @@ draws (FR-009 to FR-012, FR-021).
   - Tauri's drag-and-drop handler stays on.
 
   In `app/src/main.tsx`, when `import.meta.env.PROD`, cancel `contextmenu` on `document`.
+
+  Found while doing it: the window first loads `tauri://localhost`, with an empty path, and
+  `Url::origin` is opaque for the `tauri` scheme, so `may_load` compares scheme, host and port
+  and accepts the empty path; its unit tests cover both. The page now names each case to the
+  host before running it (`probe: running <id>`), so a case that unloads or blocks the page is
+  named in the log.
 - [ ] T018 [US3] In `window.rs` (research R14):
   - `on_permission_request` denies every request;
   - `on_download` returns `false`;

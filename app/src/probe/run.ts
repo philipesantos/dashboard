@@ -63,6 +63,8 @@ async function runAll(): Promise<void> {
     },
   ];
   for (const probeCase of cases) {
+    // Named first, so a case that unloads or blocks the page shows in the host's log
+    await invoke("shell_probe_report", { running: probeCase.id });
     seen = [];
     try {
       report.push({ id: probeCase.id, ...(await probeCase.run(context)) });

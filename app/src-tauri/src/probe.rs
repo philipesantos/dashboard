@@ -25,7 +25,7 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A refusal by one of the window's handlers.
 #[derive(Clone, Copy)]
-#[expect(dead_code, reason = "window.rs's handlers report refusals from T017 and T018")]
+#[expect(dead_code, reason = "window.rs's permission and download handlers report from T018")]
 pub enum Refusal {
     Navigation,
     NewWindow,
@@ -39,7 +39,6 @@ static PERMISSION: AtomicU32 = AtomicU32::new(0);
 static DOWNLOAD: AtomicU32 = AtomicU32::new(0);
 
 /// Counts a refusal. `window.rs` calls it from each handler; the handlers never depend on it.
-#[expect(dead_code, reason = "window.rs's handlers report refusals from T017 and T018")]
 pub fn refused(refusal: Refusal) {
     let counter = match refusal {
         Refusal::Navigation => &NAVIGATION,
@@ -114,9 +113,18 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// With `cases`, the page's final report. Either way, returns the handlers' counters.
+/// With `running`, the case about to run, printed so a case that unloads or blocks the page is
+/// named in the log. With `cases`, the page's final report. Either way, returns the handlers'
+/// counters.
 #[tauri::command]
-pub fn shell_probe_report(inbox: State<'_, Inbox>, cases: Option<Vec<Case>>) -> Counters {
+pub fn shell_probe_report(
+    inbox: State<'_, Inbox>,
+    running: Option<String>,
+    cases: Option<Vec<Case>>,
+) -> Counters {
+    if let Some(id) = running {
+        println!("probe: running {id}");
+    }
     if let Some(cases) = cases
         && let Some(sender) = inbox.0.lock().expect("probe inbox").take()
     {
