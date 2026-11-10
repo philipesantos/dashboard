@@ -19,6 +19,7 @@ Each stuck point is fixed in the docs, and the walk is repeated until one has no
 
 | date | docs commit | system | time (without tool downloads) | `cargo install` time | stuck points and fixes |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-07 | c9bcbc2 | Ubuntu (the maintainer's machine), by hand | 10 minutes, `cargo install` included | Not timed apart; inside the 10 minutes | None |
 
 ## The docs job's time
 
@@ -27,3 +28,4 @@ Performance Goals).
 
 | run | Linux | macOS | Windows |
 | --- | --- | --- | --- |
+| [42410269814](https://github.com/philipesantos/dashboard/actions/runs/42410269814), PR #11 at f574207 | 6m50s | 7m54s | 11m49s |
