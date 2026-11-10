@@ -412,7 +412,7 @@ a cited criterion checked only by review, each fails by name.
   - the form has no password or masked field, and its inputs are never offered for autofill;
   - no plugin string reaches the opener or anything that opens a link, a file or another app;
   - status is never shown by color alone.
-- [ ] T035 [US4] Update `docs/threat-model.md`.
+- [X] T035 [US4] Update `docs/threat-model.md`.
   - Add the Phase 3 row "Widget content imitates the host's styling" on B4. Its mitigation is
     the dialog form, and it names the declarative UI feature's hostile widget as its test
     (FR-020).
