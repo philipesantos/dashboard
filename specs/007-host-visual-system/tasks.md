@@ -477,7 +477,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
   dialog sketch.
 - [X] T040 Implement `design/src/preview.ts`, writing `design/preview/index.html` (research R8).
   Pass T039.
-- [ ] T041 [P] Write `design/test/licenses.test.ts`, with a fixture `node_modules` tree. A package
+- [X] T041 [P] Write `design/test/licenses.test.ts`, with a fixture `node_modules` tree. A package
   whose `license` is outside the allowlist fails, naming it. The allowlist is `deny.toml`'s list
   plus `BSD-2-Clause`, `0BSD`, `BlueOak-1.0.0`, `CC0-1.0` and `OFL-1.1` (research R13). SPDX
   `OR` expressions pass when one side is allowed.
