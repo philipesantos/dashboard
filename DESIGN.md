@@ -634,3 +634,4 @@ variants:
 - Do keep every pairing at WCAG AA in both themes; the check measures them.
 - Don't show a status by color alone.
 - Don't give widget content a way to reach a host-only role.
+- Don't add a role without the pairings it is drawn in; the check fails on a role it cannot measure.
