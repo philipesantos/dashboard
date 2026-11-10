@@ -1,9 +1,40 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
+
+// The development content policy (specs/008-tauri-shell/contracts/content-policy.md). On
+// desktop, `tauri dev` loads the page straight from this server, and Tauri attaches no policy to
+// it, so the server sends one: the release policy of tauri.conf.json, read here so the two
+// cannot drift, with these sources added and nothing else:
+// - a fixed development nonce in script-src and style-src. Vite puts it on the scripts and
+//   styles it writes (`html.cspNonce`), and main.tsx hands it to the components that insert
+//   <style> elements, as it hands them Tauri's per-response nonce in a release build;
+// - Vite's hot-reload socket in connect-src.
+const DEV_NONCE = "dashboard-development";
+const DEV_ADDITIONS: Record<string, string> = {
+  "script-src": `'nonce-${DEV_NONCE}'`,
+  "style-src": `'nonce-${DEV_NONCE}'`,
+  "connect-src": "ws://localhost:1420",
+};
+
+function developmentPolicy(): string {
+  const config = JSON.parse(
+    readFileSync(new URL("./src-tauri/tauri.conf.json", import.meta.url), "utf8"),
+  );
+  const release: unknown = config?.app?.security?.csp;
+  if (typeof release !== "object" || release === null) {
+    throw new Error("tauri.conf.json has no app.security.csp object to build the development policy from");
+  }
+  return Object.entries(release as Record<string, string>)
+    .map(([directive, sources]) =>
+      DEV_ADDITIONS[directive] ? `${directive} ${sources} ${DEV_ADDITIONS[directive]}` : `${directive} ${sources}`,
+    )
+    .join("; ");
+}
 
 // The shell probe (specs/008-tauri-shell/contracts/probe.md): in the `probe` mode only, the page
 // also loads src/probe/run.ts. No other mode bundles it.
@@ -22,8 +53,11 @@ function shellProbe(): Plugin {
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ command, mode }) => ({
   plugins: [react(), tailwindcss(), ...(mode === "probe" ? [shellProbe()] : [])],
+
+  // Only for the development server: in a build, Tauri sets each response's nonce itself
+  html: command === "serve" ? { cspNonce: DEV_NONCE } : undefined,
 
   // Fonts and images stay files, never data: URLs, which the content policy refuses
   // (specs/008-tauri-shell/contracts/content-policy.md)
@@ -43,6 +77,7 @@ export default defineConfig(({ mode }) => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
+    headers: { "Content-Security-Policy": developmentPolicy() },
     port: 1420,
     strictPort: true,
     host: host || false,

@@ -123,8 +123,11 @@ protections is what Principle IX's line-by-line review covers.
   `tauri-2.12.5/src/manager/webview.rs:43`), and it attaches its policy only to what it serves
   through its own protocol. So `devCsp` would do nothing here, and it is not set. Instead, Vite's
   `server.headers` sends the development policy: the release policy with two changes.
-  - `script-src` gains `'unsafe-inline'` for the React refresh preamble that
-    `@vitejs/plugin-react` writes into the page.
+  - `script-src` and `style-src` gain a fixed development nonce. Vite writes it on its scripts
+    and styles (`html.cspNonce`, set only for `serve`), including the React refresh preamble,
+    and `main.tsx` hands it to the run-time styles as it hands them Tauri's nonce in release.
+    The plan first had `'unsafe-inline'` in `script-src`, which would also have left Vite's CSS
+    `<style>` elements refused (T009).
   - `connect-src` gains `ws://localhost:1420` for hot reload. With `TAURI_DEV_HOST` unset, Vite
     uses its own port, and `'self'` is the server's origin.
 

@@ -14,7 +14,8 @@ There is no runtime storage. The entities are configuration and reports. File fo
 **Validation**:
 - The release policy never contains `'unsafe-eval'`, `data:`, `blob:`, `http:`, `https:`, `*`, or
   a host name.
-- It contains `'unsafe-inline'` only under `style-src`, and only with a recorded reason.
+- It contains no `'unsafe-inline'`. Run-time `<style>` elements carry Tauri's per-response nonce
+  (research R3); a new allowance would need a recorded reason and a probe case showing it.
 - The development policy differs from the release one only by the entries the contract lists.
 
 ## Surface entry

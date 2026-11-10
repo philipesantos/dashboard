@@ -40,12 +40,17 @@ release policy with these changes only:
 
 | Directive | Change | Reason |
 | --- | --- | --- |
-| `script-src` | + `'unsafe-inline'` | The React refresh preamble `@vitejs/plugin-react` writes into the page |
+| `script-src` | + `'nonce-dashboard-development'` | The React refresh preamble and Vite's client, which Vite marks with the nonce (`html.cspNonce`, set only for the server) |
+| `style-src` | + `'nonce-dashboard-development'` | The `<style>` elements Vite inserts for CSS in development, and the run-time styles of R3, which get the same nonce through `main.tsx` |
 | `connect-src` | + `ws://localhost:1420` | Hot module reload, on Vite's own port |
 
+A fixed nonce is no weaker than `'unsafe-inline'` here, and it keeps injected markup refused in
+development too. The probe, run against the development server, holds every case
+(T009).
+
 `'self'` is the development server's origin there. No other directive changes.
-`vite.config.ts` builds this header from `tauri.conf.json`'s `csp`, adding these two sources, so
-the two policies cannot drift.
+`vite.config.ts` builds this header from `tauri.conf.json`'s `csp`, adding these sources, so the
+two policies cannot drift.
 
 ## What the probe proves
 

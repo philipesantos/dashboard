@@ -160,12 +160,17 @@ proven by the probe.
   Done without the allowance: the scroll lock and the Select's viewport insert `<style>`
   elements, and both now carry Tauri's per-response nonce, read from an empty `<style>` in
   `index.html` (research R3). `get-nonce` 1.0.1 is a direct dependency.
-- [ ] T009 [US1] Send the development policy from Vite. In `app/vite.config.ts`, read
+- [X] T009 [US1] Send the development policy from Vite. In `app/vite.config.ts`, read
   `src-tauri/tauri.conf.json`'s `csp`, add `'unsafe-inline'` to `script-src` and
   `ws://localhost:1420` to `connect-src`, and set it as `server.headers['Content-Security-Policy']`.
   `pnpm tauri dev` must still hot-reload. Then, in the console, add an `<img>` whose `src` is on a
   `.invalid` host, and confirm the console reports the refusal naming `img-src` (FR-004). An
   inline script would not do: the development policy allows it.
+
+  Done with a fixed development nonce instead of `'unsafe-inline'` (contract updated). Checked by
+  running the probe's page against the development server with the debug `shell-probe` binary:
+  the page loads with no violation, hot reload's socket included, and every case holds,
+  `load-image-remote` refused by `img-src`.
 - [ ] T010 [US1] Try `app.security.freezePrototype: true` (research R9). Keep it if the demo and the
   probe pass. If not, revert it and record in research R9 which dependency broke.
 
