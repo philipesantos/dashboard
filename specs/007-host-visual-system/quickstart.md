@@ -70,7 +70,9 @@ it is host-only.
 ## 7. A DESIGN.md-only change runs all of CI (SC-004)
 
 Push a commit that touches only `DESIGN.md`, for example a word of prose. Then push another that
-touches only a fixture under `design/test/fixtures/`.
+touches only a fixture under `design/test/fixtures/`. On a pull request the filter compares the
+base with the head, so do this on a draft pull request whose base is the feature branch, and
+make the second commit revert the first, so that each push's diff holds one file.
 
 **Expected**: in both cases "Detect code changes" outputs `code=true`, and the build jobs run on
 Windows, macOS and Linux.

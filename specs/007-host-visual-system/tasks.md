@@ -523,7 +523,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
     dos diálogos do host…".
   - In the first item, note that the `@theme` is generated, the contrast lint runs in CI and
     `DESIGN.md` left the docs filter.
-- [ ] T049 Only once the maintainer has pushed and opened the pull request, as they ask:
+- [X] T049 Only once the maintainer has pushed and opened the pull request, as they ask:
   - walk quickstart §7, with a `DESIGN.md`-only commit and a fixture-only commit, each running
     every job on the three systems;
   - walk §10, downloading the `design-preview` artifact;

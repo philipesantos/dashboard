@@ -405,6 +405,21 @@ branch was captured in both themes by headless Chrome (with a time budget, so th
 transitions settle): the only differences were SC-006's list. §7 and the artifact half of §10
 need the pull request's CI (T049).
 
+**Walked on CI** (T049, 2026-11-10):
+- **The filter.** On a pull request, "Detect code changes" compares the base with the head, so
+  on PR #18 every push saw the whole branch (96 files). A temporary draft pull request, whose
+  base was this feature's branch, isolated each case:
+  - a `DESIGN.md`-only push (run 42826916741) listed only `DESIGN.md`;
+  - a fixture-only push (run 42830464872) listed only `design/test/fixtures/parse/valid.md`.
+
+  Both ran every job on Windows, macOS and Linux. The draft was then closed without merging.
+- **The preview.** The `design-preview` artifact of PR #18's first run (42815539031) downloaded
+  as `index.html`, with no script and no remote URL, byte-identical to a local `preview`.
+- **The design steps** passed on all three systems.
+- **Linux.** In 4 of the 5 runs, the Linux build failed in the step that installs the Tauri
+  system dependencies, when the Ubuntu mirror stalled past the step's 5-minute limit. That was
+  before any of this feature's steps. The failed job was rerun.
+
 **Rationale**: FR-006 and SC-004. The checks take seconds, so running them on the three systems
 costs little and catches line-ending issues on Windows.
 
