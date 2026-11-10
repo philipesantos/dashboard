@@ -267,7 +267,7 @@ every color the app's code draws is declared.
     pairing, as `fg` or in `on`, or is listed in `decorative` with a reason");
   - a decorative role used as a `boundary` or `focus` `fg` fails;
   - an `on` stack whose first layer is translucent fails.
-- [ ] T022 [P] [US2] Write `design/test/usage.test.ts`, with fixture `.tsx` and `.css` files in
+- [X] T022 [P] [US2] Write `design/test/usage.test.ts`, with fixture `.tsx` and `.css` files in
   `design/test/fixtures/usage/`.
   - `ring-ring/50` fails when `ring` is declared only at 100.
   - `outline-ring/50` inside an `@apply` fails the same way.
