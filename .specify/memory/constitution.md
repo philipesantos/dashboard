@@ -130,8 +130,9 @@ destinations every user trusts; a bug there breaks them all.
 
 | Layer | Decision | Why |
 | --- | --- | --- |
-| Host app | Rust + Tauri 2 | Light installers on Windows, macOS and Linux; permissions denied by default |
-| UI | TypeScript + React | Familiar to many contributors; runs in the Tauri webview |
+| Host app | Rust + Tauri 2 | Light installers on Windows and macOS; permissions denied by default |
+| UI | TypeScript + React | Familiar to many contributors; runs in the window's engine below |
+| Window engine | WebView2 on Windows, WKWebView on macOS; on Linux, an embedded Chromium (Tauri's CEF runtime) that the app ships | The system webviews of Windows and macOS are kept current by their vendors. On Linux the system's WebKitGTK is not reliable enough for the host's window, so the app ships its own engine, at the cost of a larger installer and of shipping its security fixes |
 | Plugin runtime | Wasmtime + Component Model (WIT), WASI 0.3 | Mature sandbox, typed multi-language contract |
 | JS/TS plugins | jco / componentize-js | Most accessible language for authors and for AI generation |
 | Rust plugins | cargo + wit-bindgen on `wasm32-unknown-unknown`, componentized with wit-component | Actively maintained; components import only what their WIT world declares |
@@ -143,6 +144,11 @@ destinations every user trusts; a bug there breaks them all.
 
 Changing any of these decisions requires an amendment (see Governance).
 
+On Linux, until the embedded engine passes a trial showing that it enforces every protection the
+host's window requires, in CI, the app MAY use the system's WebKitGTK with the same protections
+and tests. That is temporary: the trial MUST be repeated with each release of Tauri's CEF
+runtime, and the window engine above holds once one passes.
+
 ## Development Workflow and Quality Gates
 
 - Work is organized in phases, and each phase has a gate. A phase ends only when its gate
@@ -152,11 +158,17 @@ Changing any of these decisions requires an amendment (see Governance).
   (hostile-plugin tests blocked) and the Phase 2 gate (exfiltration tests blocked) pass.
 - Every feature goes through Spec Kit (specify → plan → tasks → implement), and every plan
   MUST pass the Constitution Check.
-- CI MUST build and test on Windows, macOS and Linux, run `cargo clippy`, `cargo audit` and
-  `cargo deny`, and run the security test suite on every change except one that touches only
-  documentation: Markdown files, `specs/`, `docs/`, `.specify/` and `LICENSE`. A Markdown file
-  that the build uses as code, such as a README included as crate documentation (its examples
-  run as tests), is not documentation for this rule.
+- CI MUST build and test on Windows, macOS and Linux, run `cargo clippy`, `cargo audit`,
+  `cargo deny`, `pnpm audit` and an npm license check, and run the security test suite on every
+  change except one that touches only documentation: Markdown files, `specs/`, `docs/`,
+  `.specify/` and `LICENSE`. A Markdown file that the build uses as code, such as a README
+  included as crate documentation (its examples run as tests), is not documentation for this
+  rule.
+- The project ships the security fixes of the engine it embeds. From the first public release, a
+  critical or high Chromium security fix MUST ship in a release within 14 days of the release of
+  Tauri's CEF runtime that carries it, and any other fix with the next regular release. A
+  scheduled check MUST report, at least weekly, when the embedded engine is behind a Chromium
+  security release, and every release MUST name the engine version it embeds.
 
 ## Governance
 
@@ -172,4 +184,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.4.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-25
+**Version**: 2.5.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10
