@@ -1,5 +1,4 @@
 import { useEffect, useState, type ComponentProps } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
   ChevronDown,
@@ -7,7 +6,6 @@ import {
   Ellipsis,
   Moon,
   Plus,
-  Send,
   ShoppingCart,
   Sun,
   TrendingDown,
@@ -94,22 +92,11 @@ function App() {
   const [dark, setDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
-  const [name, setName] = useState("");
-  const [greetMsg, setGreetMsg] = useState("");
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
 
-  async function greet() {
-    try {
-      // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-      setGreetMsg(await invoke<string>("greet", { name }));
-    } catch {
-      // `invoke` only exists inside the Tauri webview
-      setGreetMsg("Fora do Tauri. Rode com `pnpm tauri dev` para chamar o Rust.");
-    }
-  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -153,7 +140,6 @@ function App() {
           <TabsList>
             <TabsTrigger value="components">Componentes</TabsTrigger>
             <TabsTrigger value="table">Tabela</TabsTrigger>
-            <TabsTrigger value="tauri">Tauri</TabsTrigger>
           </TabsList>
 
           <TabsContent value="components" className="grid gap-4 md:grid-cols-2">
@@ -313,37 +299,6 @@ function App() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="tauri">
-            <Card>
-              <CardHeader>
-                <CardTitle>Comando Rust</CardTitle>
-                <CardDescription>
-                  Chama o comando <code>greet</code> de <code>src-tauri/src/lib.rs</code> com{" "}
-                  <code>invoke</code>.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <form
-                  className="flex gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    greet();
-                  }}
-                >
-                  <Input
-                    value={name}
-                    onChange={(e) => setName(e.currentTarget.value)}
-                    placeholder="Digite um nome..."
-                  />
-                  <Button type="submit">
-                    <Send data-icon="inline-start" />
-                    Enviar
-                  </Button>
-                </form>
-                {greetMsg && <p className="text-sm text-muted-foreground">{greetMsg}</p>}
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
       </main>
     </div>
