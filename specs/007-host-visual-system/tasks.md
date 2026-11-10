@@ -283,7 +283,7 @@ every color the app's code draws is declared.
 
 - [X] T023 [US2] Implement `design/src/checks/contrast.ts` (both themes, layer compositing) and the
   coverage rule, and wire them into `check`. Pass T021.
-- [ ] T024 [US2] Implement `design/src/checks/usage.ts`. It scans `app/src/**/*.tsx` and the
+- [X] T024 [US2] Implement `design/src/checks/usage.ts`. It scans `app/src/**/*.tsx` and the
   `@apply` lines of `app/src/*.css` for Tailwind color utilities: `bg`, `text`, `border`,
   `ring`, `outline`, `fill`, `stroke`, `divide`, `placeholder`, `caret`, `accent`, `shadow`,
   `from`, `via` and `to`, with any variant prefix. A utility is a color only when what follows

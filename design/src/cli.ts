@@ -14,6 +14,7 @@ import { checkDrift } from './checks/drift.ts';
 import { checkFonts } from './checks/fonts.ts';
 import { checkFormat } from './checks/format.ts';
 import { checkSchema } from './checks/schema.ts';
+import { checkUsage } from './checks/usage.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -32,6 +33,7 @@ const CHECKS: [string, Check][] = [
   ['format (design.md 0.4.0)', checkFormat],
   ['project layer', (ctx) => [...ctx.design.errors, ...checkSchema(ctx)]],
   ['contrast and coverage', checkContrast],
+  ['color usage in app/src', checkUsage],
   ['drift', checkDrift],
   ['font licenses', checkFonts],
 ];

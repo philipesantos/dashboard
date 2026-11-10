@@ -202,7 +202,14 @@ already checked. The components use them 15 times today, as in `bg-transparent` 
 A utility counts as a color only when what follows its prefix, without the `/opacity`, is a
 color role, a Tailwind palette color (`red-500`), `black`, `white` or an arbitrary `[…]` value.
 The same prefixes also name sizes and styles, as in `text-sm`, `ring-3`, `shadow-md`,
-`outline-none`, `border-0` and `text-right`, and those are not colors.
+`outline-none`, `border-0` and `text-right`, and those are not colors. An arbitrary value is a
+color only when it reads as one (`#…`, `oklch(…)`, `color-mix(…)` and the like), so `ring-[3px]`
+and `text-[0.8rem]` are sizes. Inside a `color-mix()`, each `var(--role)` is a usage of that role,
+at the percentage written beside it: the secondary button's hover,
+`bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]`, uses `secondary` and
+`foreground` at 5, and `DESIGN.md` declares that as the layer stack `secondary` then
+`foreground/5`. Composited in sRGB, that stack is within a rounding step of the oklch mix.
+A literal color in an arbitrary value names no role and fails.
 Each role and opacity the app uses must appear in a declared pairing, as a layer in one, or as
 decorative. Otherwise the check fails, naming the file and the utility. This is how the solid
 focus ring is enforced: once `ring` is declared only at full opacity, `ring-ring/50` fails until
