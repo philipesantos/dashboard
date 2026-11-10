@@ -471,7 +471,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
 
 **Purpose**: preview, npm audit and licenses, docs, walks, review and merge
 
-- [ ] T039 [P] Write `design/test/preview.test.ts`. The page contains no `<script`, no
+- [X] T039 [P] Write `design/test/preview.test.ts`. The page contains no `<script`, no
   `http://`, no `https://` and no `@import`. It shows both themes, each role with its pairings'
   ratios, the scales, the tones with their icon names, every variant, and a chrome, frame and
   dialog sketch.
