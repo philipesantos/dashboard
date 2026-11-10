@@ -65,26 +65,101 @@ fn listed(
     names
 }
 
-/// The permissions every file in capabilities/ grants, with the file that grants each.
-fn granted() -> Vec<(String, String)> {
-    let dir = crate_dir().join("capabilities");
-    let mut grants = Vec::new();
-    for entry in fs::read_dir(&dir).expect("capabilities/").flatten() {
+/// The permissions one capability grants, as JSON (a TOML capability is converted first).
+fn capability_permissions(
+    capability: &serde_json::Value,
+    source: &str,
+    grants: &mut Vec<(String, String)>,
+) {
+    for permission in capability["permissions"].as_array().into_iter().flatten() {
+        let id = permission
+            .as_str()
+            .or_else(|| permission["identifier"].as_str())
+            .unwrap_or_default();
+        grants.push((id.to_string(), source.to_string()));
+    }
+}
+
+/// The capabilities in one file, in every form Tauri accepts: one capability, a list, or
+/// `{ "capabilities": [...] }` (`tauri-utils-2.10.2/src/acl/capability.rs:250-265`).
+fn file_capabilities(value: &serde_json::Value) -> Vec<&serde_json::Value> {
+    if let Some(list) = value.as_array() {
+        list.iter().collect()
+    } else if let Some(list) = value["capabilities"].as_array() {
+        list.iter().collect()
+    } else {
+        vec![value]
+    }
+}
+
+fn capability_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().is_none_or(|ext| ext != "json") {
-            continue;
+        if path.is_dir() {
+            capability_files(&path, out);
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext == "json" || ext == "json5" || ext == "toml")
+        {
+            out.push(path);
         }
-        let file = format!("capabilities/{}", entry.file_name().to_string_lossy());
-        let capability = json_file(&path);
-        for permission in capability["permissions"].as_array().into_iter().flatten() {
-            let id = permission
-                .as_str()
-                .or_else(|| permission["identifier"].as_str())
-                .unwrap_or_default();
-            grants.push((id.to_string(), file.clone()));
+    }
+}
+
+/// Every permission granted, with where: each file under capabilities/, in any folder and format
+/// Tauri reads (`./capabilities/**/*`, JSON or TOML), and each capability written inline in a
+/// config file's `app.security.capabilities`.
+fn granted(configs: &[(String, serde_json::Value)]) -> Vec<(String, String)> {
+    let mut grants = Vec::new();
+    let mut files = Vec::new();
+    capability_files(&crate_dir().join("capabilities"), &mut files);
+    for path in files {
+        let source = path
+            .strip_prefix(crate_dir())
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        let value = if path.extension().is_some_and(|ext| ext == "toml") {
+            let table: toml::Table = read(&path)
+                .parse()
+                .unwrap_or_else(|error| panic!("{source}: {error}"));
+            serde_json::to_value(table).expect("toml to json")
+        } else {
+            json_file(&path)
+        };
+        for capability in file_capabilities(&value) {
+            capability_permissions(capability, &source, &mut grants);
+        }
+    }
+    for (file, config) in configs {
+        for capability in config["app"]["security"]["capabilities"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if capability.is_object() {
+                capability_permissions(capability, &format!("{file} (inline)"), &mut grants);
+            }
         }
     }
     grants
+}
+
+/// tauri.conf.json and the per-system files Tauri merges over it.
+fn config_files() -> Vec<(String, serde_json::Value)> {
+    [
+        "tauri.conf.json",
+        "tauri.windows.conf.json",
+        "tauri.macos.conf.json",
+        "tauri.linux.conf.json",
+    ]
+    .into_iter()
+    .filter(|name| crate_dir().join(name).exists())
+    .map(|name| (name.to_string(), json_file(&crate_dir().join(name))))
+    .collect()
 }
 
 /// Every dependency table of Cargo.toml, target-specific ones included.
@@ -113,8 +188,9 @@ fn the_window_surface_matches_the_reviewed_list() {
     let surface = toml_file("window-surface.toml");
 
     // Permissions: listed == granted
+    let configs = config_files();
     let permissions = listed(&surface, "permission", "id", &mut failures);
-    let grants = granted();
+    let grants = granted(&configs);
     for (id, file) in &grants {
         if !permissions.contains(id) {
             failures.push(format!(
@@ -197,27 +273,25 @@ fn the_window_surface_matches_the_reviewed_list() {
         }
     }
 
-    // No macOS entitlement that lets the system offer passwords for a web domain (research R7)
-    let config = json_file(&crate_dir().join("tauri.conf.json"));
-    if let Some(entitlements) = config["bundle"]["macOS"]["entitlements"].as_str() {
-        let plist = read(&crate_dir().join(entitlements));
-        for grant in ["com.apple.developer.associated-domains", "webcredentials"] {
-            if plist.contains(grant) {
-                failures.push(format!(
-                    "tauri.conf.json: the macOS entitlements grant \"{grant}\""
-                ));
+    for (file, config) in &configs {
+        // No macOS entitlement that lets the system offer passwords for a web domain (research R7)
+        if let Some(entitlements) = config["bundle"]["macOS"]["entitlements"].as_str() {
+            let plist = read(&crate_dir().join(entitlements));
+            for grant in ["com.apple.developer.associated-domains", "webcredentials"] {
+                if plist.contains(grant) {
+                    failures.push(format!("{file}: the macOS entitlements grant \"{grant}\""));
+                }
             }
         }
-    }
 
-    // Tauri's drag-and-drop handler stays on: it keeps a dropped file from navigating the
-    // window (FR-012). The probe cannot make a real drop, so this is the drop's breaking test.
-    for window in config["app"]["windows"].as_array().into_iter().flatten() {
-        if window["dragDropEnabled"] == serde_json::Value::Bool(false) {
-            failures.push(
-                "tauri.conf.json: the drag-and-drop handler is turned off (dragDropEnabled: false)"
-                    .to_string(),
-            );
+        // Tauri's drag-and-drop handler stays on: it keeps a dropped file from navigating the
+        // window (FR-012). The probe cannot make a real drop, so this is the drop's breaking test.
+        for window in config["app"]["windows"].as_array().into_iter().flatten() {
+            if window["dragDropEnabled"] == serde_json::Value::Bool(false) {
+                failures.push(format!(
+                    "{file}: the drag-and-drop handler is turned off (dragDropEnabled: false)"
+                ));
+            }
         }
     }
     if read(&crate_dir().join("src/window.rs")).contains("disable_drag_drop_handler") {

@@ -3,7 +3,7 @@
 // with the replaced value.
 // Part of the security core (constitution, Principle IX).
 
-import { type Case, type Context, type Verdict } from "./case";
+import { type Case, type Context, ON_WEBVIEW2, type Verdict } from "./case";
 
 /** `promise`, or "pending" if it has not settled after `ms`. */
 async function within<T>(promise: Promise<T>, ms: number): Promise<T | "pending"> {
@@ -36,7 +36,13 @@ const permissions: Case[] = [
           stream.getTracks().forEach((track) => track.stop());
           return "granted: the camera opened";
         } catch (error) {
-          return `refused: ${error instanceof Error ? error.name : String(error)}`;
+          const name = error instanceof Error ? error.name : String(error);
+          // CI gives WebView2 a fake camera, so a refusal there must be the permission's, not
+          // a missing device; elsewhere the runners have no camera (T028 review)
+          if (ON_WEBVIEW2 && name !== "NotAllowedError") {
+            return `not refused by permission: ${name}`;
+          }
+          return `refused: ${name}`;
         }
       }),
   },
@@ -135,4 +141,54 @@ const dialogs: Case[] = [
   replacedDialog("dialog-print", "print", undefined),
 ];
 
-export const engineCases: Case[] = [...permissions, download, ...dialogs];
+function isNative(value: unknown): boolean {
+  return typeof value === "function" && /\[native code\]/.test(Function.prototype.toString.call(value));
+}
+
+/** No file picker (FR-021): a click on a file input is cancelled, and no picker API is left. */
+const filePicker: Case = {
+  id: "file-picker",
+  async run() {
+    const input = document.createElement("input");
+    input.type = "file";
+    document.body.append(input);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    input.dispatchEvent(click);
+    input.remove();
+    const problems: string[] = [];
+    if (!click.defaultPrevented) problems.push("a click on a file input was not cancelled");
+    if (isNative(HTMLInputElement.prototype.click)) problems.push("input.click() is the engine's");
+    if (isNative(HTMLInputElement.prototype.showPicker)) problems.push("showPicker() is the engine's");
+    for (const name of ["showOpenFilePicker", "showSaveFilePicker", "showDirectoryPicker"]) {
+      if ((window as unknown as Record<string, unknown>)[name] !== undefined) problems.push(`${name} exists`);
+    }
+    return problems.length === 0
+      ? { held: true, detail: "file input clicks cancelled, no picker API" }
+      : { held: false, detail: problems.join("; ") };
+  },
+};
+
+/**
+ * A frame with no `src` is the page's own origin and the content policy allows it; the engine's
+ * dialogs must be replaced there too. Checked without calling them, since the engine's own would
+ * block the page.
+ */
+const frameDialogs: Case = {
+  id: "dialog-iframe",
+  async run(context) {
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    await context.wait(100);
+    const inner = frame.contentWindow as (Window & typeof globalThis) | null;
+    const native = inner
+      ? (["alert", "confirm", "prompt", "print"] as const).filter((name) => isNative(inner[name]))
+      : [];
+    frame.remove();
+    if (!inner) return { held: true, detail: "the frame has no window" };
+    return native.length === 0
+      ? { held: true, detail: "the frame's dialogs are replaced" }
+      : { held: false, detail: `the engine's own in the frame: ${native.join(", ")}` };
+  },
+};
+
+export const engineCases: Case[] = [...permissions, download, ...dialogs, filePicker, frameDialogs];

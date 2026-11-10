@@ -199,7 +199,8 @@ pnpm --filter ./app build                       # put the normal dist back
 
 It prints `probe: running <id>` before each case, one `held` or `broken` line per case, and a
 summary. A missing report after 60 s means a case unloaded or blocked the page: the last
-`running` line names it. Add a case under `app/src/probe/` whenever you add a protection.
+`running` line names it. Add a case under `app/src/probe/` whenever you add a protection, and
+its id to `PAGE_CASES` in `probe.rs`: a case missing from either breaks the run.
 
 **The reviewed list.** `app/src-tauri/window-surface.toml` lists every permission, command and
 Tauri plugin the window may use, each with its reason, and `tests/surface.rs` fails when the

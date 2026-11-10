@@ -92,7 +92,7 @@ newest version it saw.
 cargo test -p dashboard --test webkitgtk_register --locked
 ```
 
-**Expected**: passes, with the six entries of research R15.
+**Expected**: passes, with the seven entries of research R15.
 
 Then rename `WEBKITGTK-ONLY(ci-dmabuf)` in `ci.yml` to `WEBKITGTK-ONLY(ci-dmabuf2)` and run it
 again.

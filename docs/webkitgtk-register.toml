@@ -41,3 +41,9 @@ id = "cef-watch"
 files = [".github/workflows/audit.yml"]
 reason = "While Linux uses WebKitGTK, the weekly audit reports a stable tauri-runtime-cef release, which makes the next engine trial due (FR-017)."
 removal = "Replace with the weekly check that the embedded engine is current with Chromium's security releases (FR-017)."
+
+[[entry]]
+id = "window-close"
+files = ["app/src-tauri/src/window.rs", "app/src/probe/window.ts"]
+reason = "WebKitGTK destroys the webview when the page calls window.close(), which would blank the app, so the window's start-up script makes it do nothing."
+removal = "Delete the replacement, unless the embedded engine also closes the page."

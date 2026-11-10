@@ -21,15 +21,19 @@ const DEV_ADDITIONS: Record<string, string> = {
   "connect-src": "ws://localhost:1420",
 };
 
+function readCsp(file: string): Record<string, string> | undefined {
+  const config = JSON.parse(readFileSync(new URL(`./src-tauri/${file}`, import.meta.url), "utf8"));
+  return config?.app?.security?.csp;
+}
+
 function developmentPolicy(): string {
-  const config = JSON.parse(
-    readFileSync(new URL("./src-tauri/tauri.conf.json", import.meta.url), "utf8"),
-  );
-  const release: unknown = config?.app?.security?.csp;
+  const release = readCsp("tauri.conf.json");
   if (typeof release !== "object" || release === null) {
     throw new Error("tauri.conf.json has no app.security.csp object to build the development policy from");
   }
-  return Object.entries(release as Record<string, string>)
+  // On Windows, Tauri merges tauri.windows.conf.json over it: the IPC channel's http form
+  const merged = process.platform === "win32" ? { ...release, ...readCsp("tauri.windows.conf.json") } : release;
+  return Object.entries(merged)
     .map(([directive, sources]) =>
       DEV_ADDITIONS[directive] ? `${directive} ${sources} ${DEV_ADDITIONS[directive]}` : `${directive} ${sources}`,
     )

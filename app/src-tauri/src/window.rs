@@ -10,29 +10,62 @@ use tauri::{Url, WebviewUrl, WebviewWindowBuilder};
 /// The label of the app's only window.
 pub const MAIN: &str = "main";
 
-/// The origins the app's own page is served from: Tauri's protocol on macOS and Linux, and its
-/// `http` form on Windows.
-const APP_ORIGINS: &[&str] = &["tauri://localhost", "http://tauri.localhost"];
+/// The origin the app's own page is served from: Tauri's protocol on macOS and Linux, and its
+/// `http` form on Windows (`tauri-2.12.5/scripts/core.js:16-18`). Each system accepts only its
+/// own: elsewhere the other form is a real request to the machine's port 80, or the system's
+/// handler for an unknown scheme.
+#[cfg(windows)]
+const APP_ORIGIN: &str = "http://tauri.localhost";
+#[cfg(not(windows))]
+const APP_ORIGIN: &str = "tauri://localhost";
 
 /// The paths of the app's own page. Every other file of the bundle is a resource, never a page.
 /// The window first loads `tauri://localhost`, whose path is empty: `tauri` is not a scheme the
 /// URL standard knows, so no `/` is implied.
 const PAGE_PATHS: &[&str] = &["", "/", "/index.html"];
 
-/// Replaces the engine's own dialogs before any page script runs, in every frame (FR-021). They
-/// would draw outside the host frame, which Principles V and VII reserve to the host's dialogs.
-/// Each returns at once with what a dismissed dialog returns.
-const DIALOGS_SCRIPT: &str = r#"(() => {
-  const replace = (name, value) =>
-    Object.defineProperty(window, name, {
-      value: () => value,
-      writable: false,
-      configurable: false,
-    });
-  replace("alert", undefined);
-  replace("confirm", false);
-  replace("prompt", null);
-  replace("print", undefined);
+/// Runs before any page script, in every frame, and takes away what the engine would draw or
+/// open for the page, outside the host frame (FR-021; Principles V and VII reserve such UI to the
+/// host's dialogs), and what the content policy cannot cover. Each replacement is locked, so
+/// later page code cannot put the engine's back. Page code is only the bundle, by the content
+/// policy, so this guards against injected markup and mistakes in our own code.
+const ENGINE_UI_SCRIPT: &str = r#"(() => {
+  const lock = (target, name, value) =>
+    Object.defineProperty(target, name, { value, writable: false, configurable: false });
+
+  // The engine's dialogs return at once with what a dismissed dialog returns
+  lock(window, "alert", () => undefined);
+  lock(window, "confirm", () => false);
+  lock(window, "prompt", () => null);
+  lock(window, "print", () => undefined);
+
+  // No file picker: no click activates a file input, and no picker API is left
+  const click = HTMLInputElement.prototype.click;
+  lock(HTMLInputElement.prototype, "click", function () {
+    if (this.type !== "file") click.call(this);
+  });
+  lock(HTMLInputElement.prototype, "showPicker", () => undefined);
+  for (const name of ["showOpenFilePicker", "showSaveFilePicker", "showDirectoryPicker"]) {
+    if (name in window) lock(window, name, undefined);
+  }
+  window.addEventListener(
+    "click",
+    (event) => {
+      if (event.target instanceof HTMLInputElement && event.target.type === "file") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    },
+    true,
+  );
+
+  // No WebRTC: its connections are outside the content policy
+  for (const name of Object.getOwnPropertyNames(window)) {
+    if (/RTCPeerConnection$|^RTCDataChannel$/.test(name)) lock(window, name, undefined);
+  }
+
+  // WEBKITGTK-ONLY(window-close): WebKitGTK destroys the webview on window.close()
+  lock(window, "close", () => undefined);
 })();"#;
 
 /// Whether the window may load `url`: the app's own page, or the development server's page in a
@@ -44,7 +77,7 @@ fn may_load(url: &Url, dev_url: Option<&Url>) -> bool {
     }
     // Compared by parts: `Url::origin` is opaque for a scheme it does not know, such as `tauri`
     let origin = format!("{}://{}", url.scheme(), url.host_str().unwrap_or_default());
-    if url.port().is_none() && APP_ORIGINS.contains(&origin.as_str()) {
+    if url.port().is_none() && origin == APP_ORIGIN {
         return true;
     }
     tauri::is_dev() && dev_url.is_some_and(|dev| dev.origin() == url.origin())
@@ -83,7 +116,7 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
             }
             false
         })
-        .initialization_script_for_all_frames(DIALOGS_SCRIPT)
+        .initialization_script_for_all_frames(ENGINE_UI_SCRIPT)
         // No form data, password or cookie kept between runs, on any engine; the host keeps its
         // state in its own files (FR-016, HS-26)
         .incognito(true)
@@ -97,10 +130,14 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
     // - password saving, always off (FR-016, HS-26): `general_autofill_enabled` covers forms,
     //   not passwords;
     // - the engine's own context menu, off in release (FR-011). The macOS and Linux engines
-    //   have no such setting; main.tsx cancels `contextmenu` there.
+    //   have no such setting; main.tsx cancels `contextmenu` there;
+    // - the browser's own shortcut keys, off in release (FR-011, FR-021): reload, print, find,
+    //   and the like.
     #[cfg(windows)]
     window.with_webview(|webview| {
-        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2Settings3, ICoreWebView2Settings4,
+        };
         use windows_core::Interface;
 
         // SAFETY: the controller is Tauri's own, alive on this (main) thread
@@ -115,6 +152,9 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
                         .SetIsPasswordAutosaveEnabled(false)?;
                     if !tauri::is_dev() {
                         settings.SetAreDefaultContextMenusEnabled(false)?;
+                        settings
+                            .cast::<ICoreWebView2Settings3>()?
+                            .SetAreBrowserAcceleratorKeysEnabled(false)?;
                     }
                     Ok(())
                 })
@@ -136,32 +176,40 @@ mod tests {
         Url::parse(text).expect("url")
     }
 
+    /// The app's origin on this system, and the other system's form, which must be refused.
+    #[cfg(windows)]
+    const ORIGINS: (&str, &str) = ("http://tauri.localhost", "tauri://localhost");
+    #[cfg(not(windows))]
+    const ORIGINS: (&str, &str) = ("tauri://localhost", "http://tauri.localhost");
+
     #[test]
     fn only_the_apps_own_page_may_load() {
+        let (own, other) = ORIGINS;
         for allowed in [
-            "tauri://localhost",
-            "tauri://localhost/",
-            "tauri://localhost/index.html",
-            "http://tauri.localhost/",
-            "http://tauri.localhost/index.html?x=1#top",
+            own.to_string(),
+            format!("{own}/"),
+            format!("{own}/index.html"),
+            format!("{own}/index.html?x=1#top"),
         ] {
-            assert!(may_load(&url(allowed), None), "{allowed}");
+            assert!(may_load(&url(&allowed), None), "{allowed}");
         }
         for refused in [
-            "https://probe.invalid/",
-            "tauri://localhost/vite.svg",
-            "tauri://localhost/assets/index.js",
-            "https://tauri.localhost/",
-            "http://tauri.localhost.invalid/",
-            "http://tauri.localhost:8080/",
-            "tauri://localhost.invalid/",
-            "file:///etc/hostname",
-            "data:text/html,hi",
-            "javascript:alert(1)",
-            "blob:tauri://localhost/1234",
-            "about:blank",
+            format!("{other}/"),
+            format!("{other}/index.html"),
+            format!("{own}/vite.svg"),
+            format!("{own}/assets/index.js"),
+            "https://probe.invalid/".to_string(),
+            "https://tauri.localhost/".to_string(),
+            "http://tauri.localhost.invalid/".to_string(),
+            "http://tauri.localhost:8080/".to_string(),
+            "tauri://localhost.invalid/".to_string(),
+            "file:///etc/hostname".to_string(),
+            "data:text/html,hi".to_string(),
+            "javascript:alert(1)".to_string(),
+            format!("blob:{own}/1234"),
+            "about:blank".to_string(),
         ] {
-            assert!(!may_load(&url(refused), None), "{refused}");
+            assert!(!may_load(&url(&refused), None), "{refused}");
         }
     }
 

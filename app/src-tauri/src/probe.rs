@@ -20,6 +20,66 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::window::MAIN;
 
+/// Every case the page must report. A case or a module of cases that stops running breaks the
+/// run, instead of passing unnoticed (T028 review). The engine-setting cases are added by this
+/// side, per system.
+const PAGE_CASES: &[&str] = &[
+    "page-load-clean",
+    // The content policy (FR-001, FR-002)
+    "script-inline-element",
+    "script-inline-attribute",
+    "script-eval",
+    "script-function",
+    "prototype-frozen",
+    "script-timeout-string",
+    "load-script-remote",
+    "load-style-remote",
+    "load-style-import",
+    "load-image-remote",
+    "load-font-remote",
+    "load-media-remote",
+    "load-image-data",
+    "connect-fetch",
+    "connect-xhr",
+    "connect-websocket",
+    "connect-eventsource",
+    "connect-ipc-http-elsewhere",
+    "connect-webrtc",
+    "embed-iframe",
+    "embed-object",
+    "worker-blob",
+    "base-element",
+    "form-remote-submit",
+    "style-runtime-element",
+    // Host commands (FR-007)
+    "command-ungranted",
+    "command-opener",
+    "command-core",
+    // The window (FR-009 to FR-011)
+    "context-menu",
+    "navigate-location",
+    "navigate-assign",
+    "navigate-meta-refresh",
+    "navigate-link",
+    "navigate-own-asset",
+    "navigate-other-app-origin",
+    "navigate-file-scheme",
+    "window-open",
+    "window-target-blank",
+    "window-close",
+    // What the engine grants or draws (FR-021)
+    "permission-camera",
+    "permission-location",
+    "permission-notification",
+    "download-link",
+    "dialog-alert",
+    "dialog-confirm",
+    "dialog-prompt",
+    "dialog-print",
+    "file-picker",
+    "dialog-iframe",
+];
+
 /// How long the probe waits for the page's report.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -181,7 +241,8 @@ fn setting(id: &str, name: &str, actual: Result<bool, String>, release: bool) ->
 mod engine {
     use tauri::webview::PlatformWebview;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2_13, ICoreWebView2Profile, ICoreWebView2Settings, ICoreWebView2Settings4,
+        ICoreWebView2_13, ICoreWebView2Profile, ICoreWebView2Settings, ICoreWebView2Settings3,
+        ICoreWebView2Settings4,
     };
     use windows_core::{BOOL, Interface};
 
@@ -221,6 +282,15 @@ mod engine {
             &settings,
             ICoreWebView2Settings::AreDefaultContextMenusEnabled,
         );
+        let keys = settings
+            .cast::<ICoreWebView2Settings3>()
+            .map_err(|error| error.to_string())
+            .and_then(|settings| {
+                read_bool(
+                    &settings,
+                    ICoreWebView2Settings3::AreBrowserAcceleratorKeysEnabled,
+                )
+            });
         let settings4 = settings
             .cast::<ICoreWebView2Settings4>()
             .map_err(|error| error.to_string());
@@ -246,6 +316,12 @@ mod engine {
                 "context-menu-setting",
                 "AreDefaultContextMenusEnabled",
                 menus,
+                false,
+            ),
+            setting(
+                "browser-keys-setting",
+                "AreBrowserAcceleratorKeysEnabled",
+                keys,
                 false,
             ),
             setting(
@@ -330,6 +406,7 @@ fn finish(app: &AppHandle, receiver: &Receiver<Vec<Case>>) {
         exit(2);
     };
     let windows = app.webview_windows().len();
+    let reported: Vec<String> = cases.iter().map(|case| case.id.clone()).collect();
     let mut outcomes: Vec<Outcome> = cases
         .into_iter()
         .map(|case| {
@@ -348,6 +425,24 @@ fn finish(app: &AppHandle, receiver: &Receiver<Vec<Case>>) {
             }
         })
         .collect();
+    for id in PAGE_CASES {
+        if !reported.iter().any(|seen| seen == id) {
+            outcomes.push(Outcome {
+                id: (*id).to_string(),
+                held: false,
+                detail: "the page never reported this case".into(),
+            });
+        }
+    }
+    for id in &reported {
+        if !PAGE_CASES.contains(&id.as_str()) {
+            outcomes.push(Outcome {
+                id: id.clone(),
+                held: false,
+                detail: "not on the probe's list of cases: add it to PAGE_CASES".into(),
+            });
+        }
+    }
     outcomes.extend(settings(app));
 
     let mut held = 0;

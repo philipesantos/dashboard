@@ -92,7 +92,7 @@ protections is what Principle IX's line-by-line review covers.
 | `style-src` | `'self'` | Tauri adds the response's nonce, for the empty `<style>` of `index.html`. Run-time `<style>` elements carry that nonce (below). No `'unsafe-inline'` |
 | `font-src` | `'self'` | The `@fontsource` fonts are bundled (feature 007) |
 | `img-src` | `'self'` | Icons are inline SVG from `lucide-react`, not images |
-| `connect-src` | `ipc: http://ipc.localhost` | The host's channel only; the second form is how Windows spells it |
+| `connect-src` | `ipc:`, plus `http://ipc.localhost` on Windows only (`tauri.windows.conf.json`) | The host's channel only. Windows spells it in `http`; elsewhere that address is a real request to port 80 (T028) |
 | `object-src`, `frame-src`, `child-src`, `worker-src` | `'none'` | Nothing embedded, no workers |
 | `base-uri` | `'none'` | A `<base>` cannot redirect relative URLs |
 | `form-action` | `'none'` | No form submits anywhere; the declarative UI's form goes through a host command |
@@ -199,8 +199,9 @@ no public API for the resolved authority, so the test would depend on generated 
   - in development (`tauri::is_dev()`), `devUrl`.
 
   A URL the runtime cannot parse is allowed without calling the handler
-  (`tauri-runtime-wry-2.12.3/src/lib.rs:4821-4825`). The engine refuses such URLs itself, and
-  the probe's navigation cases check that the page stayed.
+  (`tauri-runtime-wry-2.12.3/src/lib.rs:4821-4825`), which the review of T028 also raised. The
+  engine refuses such URLs itself as far as known, and the probe's navigation cases check that
+  the page stayed. It is an accepted residual in Tauri, recorded in the threat model.
 
   Everything else is refused and counted for the probe: `http(s)`, `file:`, `javascript:`,
   `data:`, `blob:` and any other scheme.
@@ -483,6 +484,7 @@ The entries this feature starts with:
 | `probe-devtools-read` | `probe.rs`, and the `webkit2gtk` dependency in `app/src-tauri/Cargo.toml` | The `devtools-setting` case reads `enable-developer-extras` (T016) | Replace with the embedded engine's read |
 | `probe-ephemeral-read` | `probe.rs` | The `store-incognito` case reads the ephemeral session (T019) | Replace with the embedded engine's read |
 | `cef-watch` | `audit.yml` | While Linux uses WebKitGTK, the weekly job reports a stable `tauri-runtime-cef` (T022) | Replace with the weekly Chromium security check of FR-017 |
+| `window-close` | `window.rs`, `app/src/probe/window.ts` | WebKitGTK destroys the webview on `window.close()`; the start-up script makes it do nothing (R16) | Delete, unless the new engine also closes the page |
 | `probe-download-as-navigation` | `app/src/probe/engine.ts` | WebKitGTK turns a download link into a navigation, which `on_navigation` refuses first, so `download-link` also accepts that refusal (T018) | Require an `on_download` refusal, unless the new engine does the same |
 
 The register lists only what is specific to WebKitGTK. Code shared with WKWebView, such as the
@@ -502,3 +504,22 @@ for how WebKitGTK draws, still depends on CONTRIBUTING and review.
 - Only a section in decision record 0002. Rejected: nothing would check it against the code.
 - Keeping every WebKitGTK change under `cfg(target_os = "linux")`. Not enough: CI steps,
   dependencies and UI workarounds have no `cfg`, and `cfg` alone does not say why.
+
+## R16. The independent review (T028)
+
+A fresh agent with none of the feature's context read the security-core files against the spec,
+the contracts and the locked Tauri sources. Each finding was checked at the source before any
+change.
+
+| # | Finding | Checked | Outcome |
+| --- | --- | --- | --- |
+| 1 | `on_navigation` and `connect-src` allowed both systems' forms of the app's origin and IPC channel. On macOS and Linux, `http://tauri.localhost` and `http://ipc.localhost` are real requests to the machine's port 80 | `tauri-2.12.5/scripts/core.js:16-18` | Fixed. Each system accepts only its own origin (`APP_ORIGIN` by `cfg`); `http://ipc.localhost` moved to `tauri.windows.conf.json`, which Tauri merges on Windows only (`tauri-codegen-2.7.4/src/lib.rs:84-89`). Cases `navigate-other-app-origin`, `connect-ipc-http-elsewhere` |
+| 2 | Tauri's navigation wrapper allows a URL it cannot parse without calling the handler | `tauri-runtime-wry-2.12.3/src/lib.rs:4821-4826` (`unwrap_or(true)`) | Accepted residual, in Tauri, recorded in R5 and the threat model. No URL found that the engine loads and `url` rejects |
+| 3 | FR-021 names the file picker, and nothing blocked it | wry's macOS UI delegate opens `NSOpenPanel`; WebKitGTK's default `run-file-chooser` | Fixed in the start-up script: clicks on file inputs cancelled, `click()` and `showPicker()` replaced, the File System Access pickers removed. Case `file-picker`, which breaks without it |
+| 4 | `window-open` and `window-target-blank` could not fail: a window the handler let through is wry's, not Tauri's, so the host's count stays 1 | wry creates its own window on `Allow` | Fixed where it can be: on WebView2, which hands scripted popups to the app, the case now needs a handler refusal. The macOS and Linux engines refuse a popup without a user gesture before asking the app, so there the case shows only that no window opened |
+| 5 | `permission-camera` could not fail on CI: with no camera, `getUserMedia` fails before any permission step | runners have no camera | Partly fixed: CI gives WebView2 a fake camera (`--use-fake-device-for-media-stream`, wry's defaults kept), and on WebView2 the case needs `NotAllowedError`. Elsewhere it still shows only that nothing was granted (R14) |
+| 6 | The surface test read only top-level JSON single capabilities and only `tauri.conf.json` | `tauri-utils-2.10.2/src/acl/build.rs`, `acl/capability.rs:250-265` | Fixed: capabilities in any folder under `capabilities/`, JSON or TOML, in all three forms, and inline in any config; entitlements and the drop handler checked in every per-system config |
+| 7 | An `about:blank` frame might keep the engine's dialogs | | Checked: the start-up script runs in such a frame on WebKitGTK. Case `dialog-iframe` checks it on every system without calling the dialogs |
+| 8 | WebRTC and `dns-prefetch` are outside the content policy | | WebRTC removed by the start-up script, case `connect-webrtc`; this WebKitGTK has no WebRTC, so the case can break only on Windows and macOS. `dns-prefetch` needs injected markup and leaks only a lookup: accepted residual, in the threat model |
+| 9 | The probe had no expected list of cases, so a dropped case passed unnoticed | `probe.rs` | Fixed: `PAGE_CASES` lists every page case; one missing or unlisted breaks the run |
+| 10 | WebView2's browser shortcut keys stay on; on Linux `window.close()` destroys the webview | wry `lib.rs:1768`; `webkitgtk/mod.rs:466` | Fixed: shortcut keys off in release (`ICoreWebView2Settings3`), case `browser-keys-setting`; `window.close` replaced, case `window-close`, registered as WebKitGTK-only (`window-close`) |

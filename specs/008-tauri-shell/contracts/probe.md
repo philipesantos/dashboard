@@ -51,6 +51,8 @@ Each case has an id, the rule it breaks and how a refusal is detected:
 | `connect-xhr` | FR-001 | violation |
 | `connect-websocket` | FR-001 | violation |
 | `connect-eventsource` | FR-001 | violation |
+| `connect-ipc-http-elsewhere` | FR-001 | on macOS and Linux, a `connect-src` violation for `http://ipc.localhost`; on Windows it is the host's channel |
+| `connect-webrtc` | FR-001 | no `RTCPeerConnection` or `RTCDataChannel` left |
 | `embed-iframe` | FR-001 | violation |
 | `embed-object` | FR-001 | violation |
 | `base-element` | FR-001 | violation |
@@ -67,17 +69,22 @@ Each case has an id, the rule it breaks and how a refusal is detected:
 | `navigate-meta-refresh` | FR-009 | handler and stayed |
 | `navigate-link` | FR-009 | handler and stayed |
 | `navigate-own-asset` (another bundled file) | FR-009 | handler and stayed |
+| `navigate-other-app-origin` | FR-009 | handler and stayed: the other system's form of the app's origin |
 | `navigate-file-scheme` | FR-009, FR-012 | stayed |
-| `window-open` | FR-010 | stayed (no second window) |
-| `window-target-blank` | FR-010 | stayed (no second window) |
-| `permission-camera` (`getUserMedia`) | FR-021 | error, and the handler denied it where the engine asked |
+| `window-open` | FR-010 | stayed, one window, and on WebView2 a handler refusal |
+| `window-target-blank` | FR-010 | stayed, one window, and on WebView2 a handler refusal |
+| `window-close` | FR-009 | stayed after `window.close()` |
+| `permission-camera` (`getUserMedia`) | FR-021 | error; on WebView2, which CI gives a fake camera, `NotAllowedError` |
 | `permission-location` | FR-021 | error |
 | `permission-notification` | FR-021 | `denied` |
 | `download-link` (`a[download]`) | FR-021 | handler: `on_download`, or `on_navigation` where the engine treats the click as a navigation first (WebKitGTK), and stayed |
 | `dialog-alert`, `dialog-confirm`, `dialog-prompt`, `dialog-print` | FR-021 | the call returns at once with the replaced value (`undefined`, `false`, `null`) |
+| `dialog-iframe` | FR-021 | in a frame with no `src`, none of the four dialogs is the engine's own |
+| `file-picker` | FR-021 | a click on a file input is cancelled; `click()` and `showPicker()` replaced; no File System Access picker |
 | `devtools-setting` | FR-011 | setting |
 | `context-menu` | FR-011 | `contextmenu` event cancelled |
 | `context-menu-setting` (Windows) | FR-011 | setting: `AreDefaultContextMenusEnabled` false |
+| `browser-keys-setting` (Windows) | FR-011, FR-021 | setting: `AreBrowserAcceleratorKeysEnabled` false |
 | `autofill-general` (Windows) | FR-016 | setting |
 | `autofill-password` (Windows) | FR-016 | setting |
 | `store-incognito` | FR-016 | setting: InPrivate, non-persistent or ephemeral |
@@ -92,6 +99,9 @@ form with a field labelled "Senha" and named `password`, for the manual autofill
 
 All remote addresses use `.invalid` hosts, which never resolve, so the network can never be what
 refused them.
+
+The host holds the list of page cases (`PAGE_CASES` in `probe.rs`). A case the page never
+reports, or one not on the list, breaks the run.
 
 ## Report
 

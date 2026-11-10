@@ -16,7 +16,7 @@ Nothing beyond what is listed here may be added.
   "style-src": "'self'",
   "font-src": "'self'",
   "img-src": "'self'",
-  "connect-src": "ipc: http://ipc.localhost",
+  "connect-src": "ipc:",
   "object-src": "'none'",
   "frame-src": "'none'",
   "child-src": "'none'",
@@ -26,6 +26,12 @@ Nothing beyond what is listed here may be added.
   "frame-ancestors": "'none'"
 }
 ```
+
+On Windows, `app/src-tauri/tauri.windows.conf.json`, which Tauri merges over `tauri.conf.json`
+there, sets `connect-src` to `ipc: http://ipc.localhost`: Windows reaches the IPC channel by its
+`http` form. Elsewhere that address is a real request to the machine's port 80, so it is allowed
+on Windows only (review finding of T028). The development policy merges the same file when Vite
+runs on Windows.
 
 **Allowances** (each needs a reason here, and the probe must show it is needed): none. The two
 components that insert a `<style>` at run time, Radix's scroll lock and the Select's viewport,

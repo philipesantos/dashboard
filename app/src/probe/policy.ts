@@ -5,6 +5,7 @@
 import {
   type Case,
   type Context,
+  ON_WEBVIEW2,
   REMOTE,
   expectThrow,
   expectViolation,
@@ -205,6 +206,35 @@ const connections: Case[] = [
   },
 ];
 
+const otherChannels: Case[] = [
+  {
+    // http://ipc.localhost is the host's channel on Windows only; elsewhere it is a request to
+    // the machine's port 80 (T028 review)
+    id: "connect-ipc-http-elsewhere",
+    async run(context) {
+      if (ON_WEBVIEW2) {
+        return { held: true, detail: "the host's channel on Windows, allowed by tauri.windows.conf.json" };
+      }
+      await fetch("http://ipc.localhost/probe", { method: "POST", body: "probe" }).catch(() => undefined);
+      return expectViolation(context, ["connect-src"]);
+    },
+  },
+  {
+    // WebRTC connections are outside the content policy, so the page has no WebRTC at all
+    id: "connect-webrtc",
+    async run() {
+      const left = Object.getOwnPropertyNames(window).filter(
+        (name) =>
+          /RTCPeerConnection$|^RTCDataChannel$/.test(name) &&
+          (window as unknown as Record<string, unknown>)[name] !== undefined,
+      );
+      return left.length === 0
+        ? { held: true, detail: "no WebRTC constructor" }
+        : { held: false, detail: `still there: ${left.join(", ")}` };
+    },
+  },
+];
+
 const embedding: Case[] = [
   {
     id: "embed-iframe",
@@ -339,6 +369,7 @@ export const policyCases: Case[] = [
   ...injected,
   ...loads,
   ...connections,
+  ...otherChannels,
   ...embedding,
   runtimeStyle,
 ];

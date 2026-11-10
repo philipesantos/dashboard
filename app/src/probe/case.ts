@@ -40,6 +40,16 @@ export interface Case {
   run(context: Context): Promise<Verdict>;
 }
 
+/**
+ * Whether the page runs in WebView2: the app is served from `http://tauri.localhost` there, and
+ * from `tauri://localhost` on macOS and Linux. Engine behaviour that differs by system is
+ * decided by this, never by the browser's identity string.
+ */
+export const ON_WEBVIEW2 = location.protocol === "http:";
+
+/** The other system's form of the app's origin, which this system must refuse. */
+export const OTHER_APP_ORIGIN = ON_WEBVIEW2 ? "tauri://localhost" : "http://tauri.localhost";
+
 /** A host that never resolves, so the network can never be what refused a load. */
 export const REMOTE = "https://probe.invalid";
 

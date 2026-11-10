@@ -430,12 +430,17 @@ change in a register the move can empty.
   Record the probe's run time and the release build time in research R11.
 - [ ] T027 Walk `quickstart.md` §1–§4, §7 and §9 on Linux, including the two mutations of §3, and fix
   any drift between it and the code. §5 and §6 need each system's desktop, so they run in T030.
-- [ ] T028 Review the window's protections independently. A fresh agent with none of this
+- [X] T028 Review the window's protections independently. A fresh agent with none of this
   feature's context reads the security-core files of research R13 against spec FR-001 to FR-021,
   the contracts and the locked Tauri sources, and looks for any way content in the window could
   run script, load from outside, leave the page, open a window, reach a host command or an engine
   grant, or get a credential offer. Check each finding at the source before changing anything,
   and bring choices with real trade-offs to the maintainer.
+
+  Done: ten findings, no high one; each checked at the source and recorded with its outcome in
+  research R16. Eight fixed (origins per system, file pickers, WebRTC, `window.close`, browser
+  keys, stricter window and camera cases, the surface test's inputs, the expected case list),
+  two accepted as residuals in Tauri or the engine.
 - [ ] T029 Only once the maintainer has pushed and opened the pull request, as they ask:
   - confirm the probe passes on Windows, macOS and Linux in CI, and record each system's probe
     time;
