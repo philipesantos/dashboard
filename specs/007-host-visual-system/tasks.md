@@ -331,7 +331,7 @@ by name, and `design/widget-map.generated.json` holds no host-only role.
 
 ### Tests for User Story 3
 
-- [ ] T028 [P] [US3] Write `design/test/hostonly.test.ts`, with fixtures in
+- [X] T028 [P] [US3] Write `design/test/hostonly.test.ts`, with fixtures in
   `design/test/fixtures/hostonly/`:
   - **Prefix rule:** `hostOnly` entries cover their prefix, so `sidebar` covers
     `sidebar-border`.
