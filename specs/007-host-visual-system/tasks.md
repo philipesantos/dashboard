@@ -518,7 +518,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
   - It returns each claim that is wrong, unsupported or uncheckable, with file and line.
   - Check each finding at the source before changing anything, and bring choices with real
     trade-offs to the maintainer.
-- [ ] T048 Before the merge, and only when the maintainer asks, update the development guide.
+- [X] T048 Before the merge, and only when the maintainer asks, update the development guide.
   - Check the Phase 3 items "Sistema visual em `DESIGN.md`…" and "Spec de design da moldura e
     dos diálogos do host…".
   - In the first item, note that the `@theme` is generated, the contrast lint runs in CI and
@@ -528,7 +528,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
     every job on the three systems;
   - walk §10, downloading the `design-preview` artifact;
   - record both in `research.md` R9.
-- [ ] T050 Merge:
+- [X] T050 Merge:
   - The maintainer reviews the pull request.
   - CI is green on the three systems.
   - `grep -n '^- \[ \]' specs/007-host-visual-system/tasks.md` shows only this task.
