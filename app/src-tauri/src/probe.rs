@@ -131,9 +131,112 @@ pub fn shell_probe_ungranted() -> &'static str {
     "reached"
 }
 
-/// The engine settings read back, one case each. Filled by the US3 and US5 tasks.
-fn settings(_app: &AppHandle) -> Vec<Outcome> {
-    Vec::new()
+/// The engine settings read back on the main thread, one case each (research R6 and R7).
+fn settings(app: &AppHandle) -> Vec<Outcome> {
+    let broken = |detail: String| {
+        vec![Outcome {
+            id: "engine-settings".into(),
+            held: false,
+            detail,
+        }]
+    };
+    let Some(window) = app.get_webview_window(MAIN) else {
+        return broken("the main window is gone".into());
+    };
+    let (sender, receiver) = mpsc::channel();
+    if let Err(error) = window.with_webview(move |webview| {
+        let _ = sender.send(engine::read(&webview));
+    }) {
+        return broken(format!("the webview could not be reached: {error}"));
+    }
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap_or_else(|_| broken("the engine settings were not read within 10 s".into()))
+}
+
+/// Builds a setting case: held when `actual` is the release value.
+fn setting(id: &str, name: &str, actual: Result<bool, String>, release: bool) -> Outcome {
+    match actual {
+        Ok(value) => Outcome {
+            id: id.into(),
+            held: value == release,
+            detail: format!("{name} is {value}"),
+        },
+        Err(error) => Outcome {
+            id: id.into(),
+            held: false,
+            detail: format!("{name} could not be read: {error}"),
+        },
+    }
+}
+
+#[cfg(windows)]
+mod engine {
+    use tauri::webview::PlatformWebview;
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings;
+    use windows_core::BOOL;
+
+    use super::{Outcome, setting};
+
+    fn read_bool(
+        settings: &ICoreWebView2Settings,
+        get: unsafe fn(&ICoreWebView2Settings, *mut BOOL) -> windows_core::Result<()>,
+    ) -> Result<bool, String> {
+        let mut value = BOOL::default();
+        // SAFETY: a getter of a live settings object, writing into a local BOOL
+        unsafe { get(settings, &mut value) }.map_err(|error| error.to_string())?;
+        Ok(value.as_bool())
+    }
+
+    pub fn read(webview: &PlatformWebview) -> Vec<Outcome> {
+        // SAFETY: the controller is Tauri's own, alive on this (main) thread
+        let settings = unsafe { webview.controller().CoreWebView2().and_then(|core| core.Settings()) };
+        let settings = match settings {
+            Ok(settings) => settings,
+            Err(error) => {
+                return vec![setting("devtools-setting", "the WebView2 settings", Err(error.to_string()), false)];
+            }
+        };
+        let devtools = read_bool(&settings, ICoreWebView2Settings::AreDevToolsEnabled);
+        let menus = read_bool(&settings, ICoreWebView2Settings::AreDefaultContextMenusEnabled);
+        vec![
+            setting("devtools-setting", "AreDevToolsEnabled", devtools, false),
+            setting("context-menu-setting", "AreDefaultContextMenusEnabled", menus, false),
+        ]
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod engine {
+    use objc2_web_kit::WKWebView;
+    use tauri::webview::PlatformWebview;
+
+    use super::{Outcome, setting};
+
+    pub fn read(webview: &PlatformWebview) -> Vec<Outcome> {
+        // SAFETY: Tauri's pointer to its live WKWebView, used on the main thread
+        let view: &WKWebView = unsafe { &*webview.inner().cast::<WKWebView>() };
+        // SAFETY: a plain property read (macOS 13.3 and later, as on the CI runners)
+        let inspectable = unsafe { view.isInspectable() };
+        vec![setting("devtools-setting", "isInspectable", Ok(inspectable), false)]
+    }
+}
+
+// WEBKITGTK-ONLY(probe-devtools-read): the WebKitGTK settings, read through webkit2gtk
+#[cfg(target_os = "linux")]
+mod engine {
+    use tauri::webview::PlatformWebview;
+    use webkit2gtk::{SettingsExt, WebViewExt};
+
+    use super::{Outcome, setting};
+
+    pub fn read(webview: &PlatformWebview) -> Vec<Outcome> {
+        let view = webview.inner();
+        let devtools = WebViewExt::settings(&view)
+            .map(|settings| settings.enables_developer_extras())
+            .ok_or_else(|| "the webview has no settings".to_string());
+        vec![setting("devtools-setting", "enable-developer-extras", devtools, false)]
+    }
 }
 
 fn finish(app: &AppHandle, receiver: &Receiver<Vec<Case>>) {

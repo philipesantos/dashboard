@@ -23,6 +23,20 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# WebView2 settings that wry does not expose: the probe reads them, and window.rs sets some
+# (specs/008-tauri-shell/research.md, R6 and R7). The versions wry already locks.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39.1"
+windows-core = "0.62.2"
+
+# The probe's engine reads on macOS and Linux (research R6 and R7), only in the probe build
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-web-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "objc2-app-kit", "WKWebView"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# WEBKITGTK-ONLY(probe-devtools-read): the probe reads WebKitGTK's settings through it
+webkit2gtk = { version = "2.0.2", optional = true }
+
 [dev-dependencies]
 # The surface test reads window-surface.toml and Cargo.toml (specs/008-tauri-shell, T011)
 toml = "1.1.8"
@@ -30,4 +44,5 @@ toml = "1.1.8"
 [features]
 # The shell probe: the release build plus a report command and an ungranted one, for the
 # breaking tests of specs/008-tauri-shell/contracts/probe.md. Never shipped.
-shell-probe = []
+# WEBKITGTK-ONLY(probe-devtools-read): the Linux reads need webkit2gtk
+shell-probe = ["dep:objc2-web-kit", "dep:webkit2gtk"]

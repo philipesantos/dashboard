@@ -258,13 +258,19 @@ draws (FR-009 to FR-012, FR-021).
   - dialogs: `dialog-alert`, `dialog-confirm`, `dialog-prompt`, `dialog-print`.
 
   Each must return at once with the replaced value.
-- [ ] T016 [P] [US3] Add the `devtools-setting` case to `probe.rs`, reading through
+- [X] T016 [P] [US3] Add the `devtools-setting` case to `probe.rs`, reading through
   `with_webview`:
   - WebView2 `AreDevToolsEnabled` and `AreDefaultContextMenusEnabled`, through `webview2-com`
     0.39.1, a direct dependency for `cfg(windows)` at the version already locked;
   - WKWebView `isInspectable`, through `objc2-web-kit` 0.3.2 for `cfg(target_os = "macos")`;
   - WebKitGTK `enable-developer-extras`, through `webkit2gtk` 2.0.2 for `cfg(target_os = "linux")`.
     Mark the read and the dependency `WEBKITGTK-ONLY(probe-devtools-read)` (research R15).
+
+  The WebView2 context-menu read is its own case, `context-menu-setting`. `objc2-web-kit` and
+  `webkit2gtk` are optional, enabled only by `shell-probe`; `webview2-com` and `windows-core`
+  are plain Windows dependencies, since `window.rs` sets WebView2 settings in T017 and T020. The
+  Windows and macOS reads were checked with `cargo check --target` in a crate of their own, at
+  the locked versions, since the app's build scripts need each system's tools.
 
 ### Implementation for User Story 3
 

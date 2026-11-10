@@ -76,7 +76,8 @@ Each case has an id, the rule it breaks and how a refusal is detected:
 | `download-link` (`a[download]`) | FR-021 | handler (`on_download`) or no download started |
 | `dialog-alert`, `dialog-confirm`, `dialog-prompt`, `dialog-print` | FR-021 | the call returns at once with the replaced value (`undefined`, `false`, `null`) |
 | `devtools-setting` | FR-011 | setting |
-| `context-menu` | FR-011 | `contextmenu` event cancelled; WebView2 setting off |
+| `context-menu` | FR-011 | `contextmenu` event cancelled |
+| `context-menu-setting` (Windows) | FR-011 | setting: `AreDefaultContextMenusEnabled` false |
 | `autofill-general` (Windows) | FR-016 | setting |
 | `autofill-password` (Windows) | FR-016 | setting |
 | `store-incognito` | FR-016 | setting: InPrivate, non-persistent or ephemeral |
