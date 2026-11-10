@@ -14,7 +14,13 @@ Every command runs from the repository root, through the `design/` workspace pac
 `check` runs these, in order, and reports every failure before exiting:
 
 1. **Format**: `design.md lint DESIGN.md` at 0.4.0. Its errors fail, and its warnings print.
-2. **Project layer**: schema, `-dark` twins, bold rationale, duplicate keys.
+2. **Project layer**:
+   - the schema;
+   - the `-dark` twins;
+   - the bold rationale;
+   - duplicate `design-rules` keys;
+   - the format's section order and duplicate `##` headings, which the 0.4.0 checker only warns
+     about or misses (research R1).
 3. **Contrast**: every pairing, both themes.
 4. **Coverage**: every color role is in a pairing or decorative.
 5. **Usage**: every color utility in `app/src/**/*.tsx` matches a declared role and opacity.

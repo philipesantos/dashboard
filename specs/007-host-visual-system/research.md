@@ -84,10 +84,26 @@ and tested against reference values. No color library is added.
 - Running the checker with `npx` at an unpinned version. Rejected: FR-001 asks for a pinned
   version.
 
-The format's tool was read from its package contents during planning, not run. Its behavior on
-this `DESIGN.md` is first observed when the implementation adds it to the workspace (see
-[quickstart.md](quickstart.md), step 2). If it reports an error the format's text does not
-explain, that is brought to the maintainer before working around it.
+**Observed by running the 0.4.0 checker** (2026-11-10, on probe files shaped like
+[contracts/design-md.md](contracts/design-md.md)):
+
+- **Accepted with no error, exit 0:** `oklch()` values with and without alpha, `-dark` color
+  names and a `design-rules` block.
+- **Errors, exit 1:** a broken reference (`broken-ref`).
+- **Contrast in `components` is only a warning**, even at 1.52:1. The checker converts oklch to
+  sRGB for this (`textColor (#4886b8) on backgroundColor (#0068a7)`), but the project's own check
+  is still the guarantee (R4).
+- **Sections out of order are only a warning.** A duplicate `## Colors` heading drew no finding
+  at all, although the format's spec says a duplicate is an error. The project checker
+  therefore enforces the section order and rejects duplicate headings itself.
+- **Every `-dark` color draws an `orphaned-tokens` warning** unless a component references it.
+  Light roles that no component references drew none on the probe. These warnings print in CI
+  and do not fail it. Making each component's dark twin (`button-primary-dark`) reference the
+  dark roles would silence them and also make the format's own contrast warning cover dark;
+  the implementation does this where a component exists.
+
+If the checker reports an error on the real `DESIGN.md` that the format's text does not explain,
+it is brought to the maintainer before working around it.
 
 ## R3. What the app reads: one generated CSS file, committed
 
