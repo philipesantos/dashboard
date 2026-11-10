@@ -49,7 +49,8 @@ Edit one value in `app/src/theme.generated.css` by hand, then run
 
 1. Set `chart-2` back to oklch(0.68 0.1 200), then run `check`.
 
-   **Expected**: `DESIGN.md: pairing chart-2 on card (chart, light): 2.76 < 3.00`.
+   **Expected**: `DESIGN.md: pairing chart-2 on card (chart, light): 2.76 < 3.00`, and a drift
+   line for `--chart-2`, since `gen` was not run.
 
 2. Revert it. Then in `app/src/components/ui/button.tsx`, change one `ring-ring` back to
    `ring-ring/50` and run `check`.
@@ -62,7 +63,8 @@ In `DESIGN.md`'s Components `design-rules` block, map `button.secondary`'s `fill
 `frame-header`, then run `check`.
 
 **Expected**: `DESIGN.md: variant button.secondary maps fill to host-only role
-"frame-header"`. Revert. Then open `design/widget-map.generated.json` and confirm that no role in
+"frame-header"`, and a drift line for the widget map. `gen` refuses to write the map while the
+mapping stands. Revert. Then open `design/widget-map.generated.json` and confirm that no role in
 it is host-only.
 
 ## 7. A DESIGN.md-only change runs all of CI (SC-004)

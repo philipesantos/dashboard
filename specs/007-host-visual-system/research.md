@@ -398,6 +398,13 @@ app build 3.05 s, all exit 0. The plan's target for `check` and `test` was under
 Nothing under `runtime/`, `wit/`, `plugins/`, `runtime/tests/hostile*` or `plugins/hostile/`
 changed, so the Rust checks and the security suite run as before (FR-021).
 
+**Quickstart walked** (T046, 2026-11-10): §1 to §6, §8 and §9, each mutation failing with the
+expected line and reverted. In §3, a new `primary` hue, a 0.3rem spacing unit and a 0.375rem
+radius took 3 seconds from edit to build. In §9, the demo built from `master` and from this
+branch was captured in both themes by headless Chrome (with a time budget, so the theme's color
+transitions settle): the only differences were SC-006's list. §7 and the artifact half of §10
+need the pull request's CI (T049).
+
 **Rationale**: FR-006 and SC-004. The checks take seconds, so running them on the three systems
 costs little and catches line-ending issues on Windows.
 

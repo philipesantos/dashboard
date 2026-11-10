@@ -508,7 +508,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
   Nothing under `runtime/`, `wit/` or `plugins/` changed, so `git diff master --stat` confirms
   the Rust checks are unaffected. Confirm FR-021: no file under `runtime/tests/hostile*` or
   `plugins/hostile/` changed.
-- [ ] T046 Walk `specs/007-host-visual-system/quickstart.md` §1–§10, including each mutation, and
+- [X] T046 Walk `specs/007-host-visual-system/quickstart.md` §1–§10, including each mutation, and
   fix any drift between it and the tooling. §7 and §10 need the pull request's CI, so walk them
   in T049.
 - [ ] T047 Review `DESIGN.md` and `docs/design/host-surfaces.md` independently.
