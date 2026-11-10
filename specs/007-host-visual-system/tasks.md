@@ -232,7 +232,7 @@ fails `check`, naming the token.
   exists. Give each `components` entry a `-dark` twin that references the dark roles, such as
   `button-primary-dark` (research R1). Run `check`, and record the checker's remaining warnings
   and their count in `research.md` R1 (quickstart §2).
-- [ ] T020 [US1] Update `.github/workflows/ci.yml` (research R9).
+- [X] T020 [US1] Update `.github/workflows/ci.yml` (research R9).
   - **The filter:** the first `grep` becomes
     `^(design|docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$`. Update the
     comment above it to name the new paths and cite `specs/007-host-visual-system/research.md`,

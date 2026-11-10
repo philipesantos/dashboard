@@ -27,7 +27,10 @@ jobs:
   # The constitution (v2.4.1, Development Workflow) allows this skip; keep the documentation
   # paths below in sync with the ones it lists. Markdown the build uses as code is not
   # documentation for that rule: the docs checks read docs/authors/ and wit/, so a change there
-  # runs everything (specs/006-contract-v1-docs/research.md, R11).
+  # runs everything (specs/006-contract-v1-docs/research.md, R11). The design checks read
+  # DESIGN.md, design/ (whose test fixtures are Markdown), docs/design/ and
+  # docs/threat-model.md, so those run everything too
+  # (specs/007-host-visual-system/research.md, R9).
   changes:
     name: Detect code changes
     runs-on: ubuntu-24.04
@@ -59,8 +62,8 @@ jobs:
             changed=$(git diff --name-only --no-renames "$range")
             printf '%s\n' "$changed"
             # Documentation only: Markdown anywhere, specs/, docs/, .specify/ and LICENSE, except
-            # docs/authors/ and wit/, which the docs checks read
-            if grep -qE '^(docs/authors|wit)/' <<< "$changed"; then
+            # what the docs and design checks read
+            if grep -qE '^(design|docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$' <<< "$changed"; then
               code=true
             elif grep -qvE '\.md$|^(specs|docs|\.specify)/|^LICENSE$' <<< "$changed"; then
               code=true
@@ -116,6 +119,13 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - run: pnpm install --frozen-lockfile
+
+      # DESIGN.md is the only source of the theme: the format's checker, contrast, color usage,
+      # the host-only split, drift of the generated files and criteria coverage
+      # (specs/007-host-visual-system/contracts/outputs.md)
+      - run: pnpm --filter ./design check
+
+      - run: pnpm --filter ./design test
 
       # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time
       - run: pnpm --filter ./app build
