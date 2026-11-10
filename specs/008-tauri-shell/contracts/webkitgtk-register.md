@@ -36,18 +36,21 @@ apart from `specs/` and the register itself.
 
 A marker someone forgot cannot be matched against the register, so the test also looks for the
 plain signs of a WebKitGTK-only change. In the tracked files under `app/` (apart from
-`app/src-tauri/gen/`) and `.github/`, a line that matches one of these, ignoring case, needs a
-marker on the same line or within the three lines above it:
+`app/src-tauri/gen/` and the test itself, which holds the patterns) and `.github/`, a line that
+matches one of these, ignoring case, needs a marker on the same line or within the three lines
+above it:
 
 | Sign | Pattern |
 | --- | --- |
 | The engine or its crate | `webkit` (covers `webkit2gtk`, `WebKitGTK`, `libwebkit2gtk`) |
 | Its environment variables | `WEBKIT_` |
-| A Linux-only build condition in the app | `target_os = "linux"`, `cfg!(target_os` |
+| A Linux-only build condition in the app | `target_os = "linux"` (in `#[cfg]`, `cfg!` and Cargo target tables alike) |
 | Engine sniffing in the UI | `userAgent`, `navigator.platform` |
 
 A match that is not a WebKitGTK-only change, such as a Linux condition the embedded engine also
-needs, still gets an entry, with "Keep" as its removal and the reason it stays. The tripwire
+needs, still gets an entry, with "Keep" as its removal and the reason it stays. A comment about
+code the macOS engine shares names the engines by system ("the macOS and Linux engines"), not
+as "WebKit", since that code is not WebKitGTK-only and stays after the move. The tripwire
 catches what names the engine. It cannot catch a change that does not, such as a CSS value
 picked because WebKitGTK draws it differently, so review still asks about those.
 
@@ -63,5 +66,5 @@ docs/webkitgtk-register.toml: entry "x" has no reason
 docs/webkitgtk-register.toml: entry "x" has no removal
 docs/webkitgtk-register.toml: entry "x" is listed twice
 docs/webkitgtk-register.toml: entry "X_Y" is not kebab-case
-app/src/Widget.tsx:42: names the engine ("userAgent") with no WEBKITGTK-ONLY marker
+app/src/Widget.tsx:42: names the engine ("useragent") with no WEBKITGTK-ONLY marker
 ```

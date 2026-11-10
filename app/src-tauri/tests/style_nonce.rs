@@ -65,7 +65,10 @@ fn tsx_files(dir: &Path, out: &mut Vec<PathBuf>) {
 fn every_run_time_style_carries_the_nonce() {
     let mut failures = Vec::new();
 
-    let mut listed: Vec<String> = NONCE_PARTS.iter().map(|(package, _)| package.to_string()).collect();
+    let mut listed: Vec<String> = NONCE_PARTS
+        .iter()
+        .map(|(package, _)| package.to_string())
+        .collect();
     listed.sort();
     for package in radix_packages_with_nonce() {
         if !listed.contains(&package) {
@@ -82,7 +85,9 @@ fn every_run_time_style_carries_the_nonce() {
         for (_, part) in NONCE_PARTS {
             let opening = format!("<{part}");
             for (start, _) in source.match_indices(&opening) {
-                let tag_end = source[start..].find('>').map_or(source.len(), |end| start + end);
+                let tag_end = source[start..]
+                    .find('>')
+                    .map_or(source.len(), |end| start + end);
                 if !source[start..tag_end].contains("nonce=") {
                     let line = source[..start].lines().count() + 1;
                     failures.push(format!(

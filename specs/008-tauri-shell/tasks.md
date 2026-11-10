@@ -352,12 +352,13 @@ change in a register the move can empty.
   - **The options considered.**
 
   Link it from the threat model's assumption about the webview (T023).
-- [ ] T033 [US4] The WebKitGTK register (FR-022, research R15,
+- [X] T033 [US4] The WebKitGTK register (FR-022, research R15,
   [contracts/webkitgtk-register.md](contracts/webkitgtk-register.md)), after T006, T016 and T019:
   - write `app/src-tauri/tests/webkitgtk_register.rs` first, and see it fail with the contract's
     lines while the register is missing;
-  - write `docs/webkitgtk-register.toml` with the contract's comment and the four entries of
-    R15: `system-libs`, `ci-dmabuf`, `probe-devtools-read`, `probe-ephemeral-read`;
+  - write `docs/webkitgtk-register.toml` with the contract's comment and the entries of
+    R15: `system-libs`, `ci-dmabuf`, `probe-devtools-read`, `probe-ephemeral-read`, and
+    `probe-download-as-navigation`, which T018 added;
   - add the `system-libs` markers: `# WEBKITGTK-ONLY(system-libs)` above `ci.yml`'s apt step and
     `<!-- WEBKITGTK-ONLY(system-libs) -->` above `CONTRIBUTING.md`'s Linux prerequisites;
   - the test reads `git ls-files` from the repository root, leaving out `specs/` and the

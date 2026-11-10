@@ -199,21 +199,37 @@ mod engine {
 
     pub fn read(webview: &PlatformWebview) -> Vec<Outcome> {
         // SAFETY: the controller is Tauri's own, alive on this (main) thread
-        let settings = unsafe { webview.controller().CoreWebView2().and_then(|core| core.Settings()) };
+        let settings = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.Settings())
+        };
         let settings = match settings {
             Ok(settings) => settings,
             Err(error) => {
-                return vec![setting("devtools-setting", "the WebView2 settings", Err(error.to_string()), false)];
+                return vec![setting(
+                    "devtools-setting",
+                    "the WebView2 settings",
+                    Err(error.to_string()),
+                    false,
+                )];
             }
         };
         let devtools = read_bool(&settings, ICoreWebView2Settings::AreDevToolsEnabled);
-        let menus = read_bool(&settings, ICoreWebView2Settings::AreDefaultContextMenusEnabled);
-        let settings4 = settings.cast::<ICoreWebView2Settings4>().map_err(|error| error.to_string());
-        let autofill = settings4
-            .clone()
-            .and_then(|settings| read_bool(&settings, ICoreWebView2Settings4::IsGeneralAutofillEnabled));
-        let passwords = settings4
-            .and_then(|settings| read_bool(&settings, ICoreWebView2Settings4::IsPasswordAutosaveEnabled));
+        let menus = read_bool(
+            &settings,
+            ICoreWebView2Settings::AreDefaultContextMenusEnabled,
+        );
+        let settings4 = settings
+            .cast::<ICoreWebView2Settings4>()
+            .map_err(|error| error.to_string());
+        let autofill = settings4.clone().and_then(|settings| {
+            read_bool(&settings, ICoreWebView2Settings4::IsGeneralAutofillEnabled)
+        });
+        let passwords = settings4.and_then(|settings| {
+            read_bool(&settings, ICoreWebView2Settings4::IsPasswordAutosaveEnabled)
+        });
         // SAFETY: the controller is Tauri's own, alive on this (main) thread
         let in_private = unsafe {
             webview
@@ -226,10 +242,30 @@ mod engine {
         .and_then(|profile| read_bool(&profile, ICoreWebView2Profile::IsInPrivateModeEnabled));
         vec![
             setting("devtools-setting", "AreDevToolsEnabled", devtools, false),
-            setting("context-menu-setting", "AreDefaultContextMenusEnabled", menus, false),
-            setting("autofill-general", "IsGeneralAutofillEnabled", autofill, false),
-            setting("autofill-password", "IsPasswordAutosaveEnabled", passwords, false),
-            setting("store-incognito", "IsInPrivateModeEnabled", in_private, true),
+            setting(
+                "context-menu-setting",
+                "AreDefaultContextMenusEnabled",
+                menus,
+                false,
+            ),
+            setting(
+                "autofill-general",
+                "IsGeneralAutofillEnabled",
+                autofill,
+                false,
+            ),
+            setting(
+                "autofill-password",
+                "IsPasswordAutosaveEnabled",
+                passwords,
+                false,
+            ),
+            setting(
+                "store-incognito",
+                "IsInPrivateModeEnabled",
+                in_private,
+                true,
+            ),
         ]
     }
 }
@@ -249,7 +285,12 @@ mod engine {
         let persistent = unsafe { view.configuration().websiteDataStore().isPersistent() };
         vec![
             setting("devtools-setting", "isInspectable", Ok(inspectable), false),
-            setting("store-incognito", "websiteDataStore.isPersistent", Ok(persistent), false),
+            setting(
+                "store-incognito",
+                "websiteDataStore.isPersistent",
+                Ok(persistent),
+                false,
+            ),
         ]
     }
 }
@@ -258,7 +299,7 @@ mod engine {
 #[cfg(target_os = "linux")]
 mod engine {
     use tauri::webview::PlatformWebview;
-    use webkit2gtk::{SettingsExt, WebViewExt};
+    use webkit2gtk::{SettingsExt, WebViewExt}; // WEBKITGTK-ONLY(probe-devtools-read)
 
     use super::{Outcome, setting};
 
@@ -270,7 +311,12 @@ mod engine {
         // WEBKITGTK-ONLY(probe-ephemeral-read): the session WebKitGTK keeps no data in
         let ephemeral = WebViewExt::is_ephemeral(&view);
         vec![
-            setting("devtools-setting", "enable-developer-extras", devtools, false),
+            setting(
+                "devtools-setting",
+                "enable-developer-extras",
+                devtools,
+                false,
+            ),
             setting("store-incognito", "is-ephemeral", Ok(ephemeral), true),
         ]
     }
@@ -278,7 +324,9 @@ mod engine {
 
 fn finish(app: &AppHandle, receiver: &Receiver<Vec<Case>>) {
     let Ok(cases) = receiver.recv_timeout(TIMEOUT) else {
-        println!("probe: no report within 60 s: the page unloaded, which means a navigation succeeded, or it hung");
+        println!(
+            "probe: no report within 60 s: the page unloaded, which means a navigation succeeded, or it hung"
+        );
         exit(2);
     };
     let windows = app.webview_windows().len();

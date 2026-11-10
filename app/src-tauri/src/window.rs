@@ -96,8 +96,8 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
     // WebView2 settings that Tauri does not expose (research R6, R7):
     // - password saving, always off (FR-016, HS-26): `general_autofill_enabled` covers forms,
     //   not passwords;
-    // - the engine's own context menu, off in release (FR-011). WebKit engines have no such
-    //   setting; main.tsx cancels `contextmenu` there.
+    // - the engine's own context menu, off in release (FR-011). The macOS and Linux engines
+    //   have no such setting; main.tsx cancels `contextmenu` there.
     #[cfg(windows)]
     window.with_webview(|webview| {
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
@@ -105,13 +105,19 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
 
         // SAFETY: the controller is Tauri's own, alive on this (main) thread
         let result = unsafe {
-            webview.controller().CoreWebView2().and_then(|core| core.Settings()).and_then(|settings| {
-                settings.cast::<ICoreWebView2Settings4>()?.SetIsPasswordAutosaveEnabled(false)?;
-                if !tauri::is_dev() {
-                    settings.SetAreDefaultContextMenusEnabled(false)?;
-                }
-                Ok(())
-            })
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.Settings())
+                .and_then(|settings| {
+                    settings
+                        .cast::<ICoreWebView2Settings4>()?
+                        .SetIsPasswordAutosaveEnabled(false)?;
+                    if !tauri::is_dev() {
+                        settings.SetAreDefaultContextMenusEnabled(false)?;
+                    }
+                    Ok(())
+                })
         };
         if let Err(error) = result {
             eprintln!("window: could not apply the WebView2 settings: {error}");
@@ -165,7 +171,10 @@ mod tests {
         // Unit tests build without tauri/custom-protocol, so they are a development build
         assert!(tauri::is_dev());
         assert!(may_load(&url("http://localhost:1420/"), Some(&dev)));
-        assert!(!may_load(&url("http://localhost:1420/src/main.tsx"), Some(&dev)));
+        assert!(!may_load(
+            &url("http://localhost:1420/src/main.tsx"),
+            Some(&dev)
+        ));
         assert!(!may_load(&url("http://localhost:1421/"), Some(&dev)));
         assert!(!may_load(&url("http://localhost:1420/"), None));
     }

@@ -33,8 +33,8 @@ windows-core = "0.62.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-web-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "objc2-app-kit", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore"] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
 # WEBKITGTK-ONLY(probe-devtools-read): the probe reads WebKitGTK's settings through it
+[target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0.2", optional = true }
 
 [dev-dependencies]

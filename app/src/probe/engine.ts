@@ -91,8 +91,9 @@ const download: Case = {
     const end = await context.counters();
     const refusals = end.download - before;
     const navigations = end.navigation - start.navigation;
-    // WebKitGTK treats the click as a navigation first, which on_navigation refuses before any
-    // download starts; WKWebView hands it to on_download (research R14). Either refusal holds.
+    // WEBKITGTK-ONLY(probe-download-as-navigation): WebKitGTK treats the click as a navigation
+    // first, which on_navigation refuses before any download starts; WKWebView hands it to
+    // on_download (research R14). Either refusal holds.
     const by =
       refusals > 0
         ? `download handler refused ${refusals}`

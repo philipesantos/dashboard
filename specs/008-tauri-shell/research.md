@@ -472,6 +472,7 @@ The entries this feature starts with:
 | `ci-dmabuf` | `ci.yml`'s probe step | WebKitGTK's DMA-BUF renderer fails under `xvfb` (R8) | Delete |
 | `probe-devtools-read` | `probe.rs`, and the `webkit2gtk` dependency in `app/src-tauri/Cargo.toml` | The `devtools-setting` case reads `enable-developer-extras` (T016) | Replace with the embedded engine's read |
 | `probe-ephemeral-read` | `probe.rs` | The `store-incognito` case reads the ephemeral session (T019) | Replace with the embedded engine's read |
+| `probe-download-as-navigation` | `app/src/probe/engine.ts` | WebKitGTK turns a download link into a navigation, which `on_navigation` refuses first, so `download-link` also accepts that refusal (T018) | Require an `on_download` refusal, unless the new engine does the same |
 
 The register lists only what is specific to WebKitGTK. Code shared with WKWebView, such as the
 context-menu cancel in `main.tsx` (R6), stays after the move, so it is not listed.
@@ -481,8 +482,9 @@ after the move to the embedded engine. A marker at each place and one list make 
 walk through the list. The test keeps the two from drifting. A change made for WebKitGTK and
 never marked cannot be matched, so the test also trips on the plain signs of one in `app/` and
 `.github/`: the engine's name, its `WEBKIT_` variables, a Linux-only condition in the app, and
-engine sniffing in the UI, each needing a marker nearby. Today that finds one line, the apt
-step, which `system-libs` covers. A change that names none of these, such as a CSS value chosen
+engine sniffing in the UI, each needing a marker nearby. At T033 it found the apt step, the
+probe's reads and the download case, all listed, and two comments about code macOS shares,
+which now name the engines by system. A change that names none of these, such as a CSS value chosen
 for how WebKitGTK draws, still depends on CONTRIBUTING and review.
 
 **Alternatives considered**:

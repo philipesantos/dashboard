@@ -25,6 +25,8 @@ You need:
 - The [Tauri system prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
   On Debian or Ubuntu:
 
+  <!-- WEBKITGTK-ONLY(system-libs): the window's engine on Linux, see docs/webkitgtk-register.toml -->
+
   ```bash
   sudo apt-get install libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
     libayatana-appindicator3-dev librsvg2-dev

@@ -92,7 +92,7 @@ newest version it saw.
 cargo test -p dashboard --test webkitgtk_register --locked
 ```
 
-**Expected**: passes, with the four entries of research R15.
+**Expected**: passes, with the five entries of research R15.
 
 Then rename `WEBKITGTK-ONLY(ci-dmabuf)` in `ci.yml` to `WEBKITGTK-ONLY(ci-dmabuf2)` and run it
 again.
@@ -103,5 +103,5 @@ again.
 Then add a line `if (navigator.userAgent.includes("Linux")) {}` to `app/src/App.tsx` and run it
 again.
 
-**Expected**: it fails with `app/src/App.tsx:<line>: names the engine ("userAgent") with no
+**Expected**: it fails with `app/src/App.tsx:<line>: names the engine ("useragent") with no
 WEBKITGTK-ONLY marker`. Revert.

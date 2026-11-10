@@ -70,7 +70,7 @@ unchanged from today, measured in the quickstart.
 - 0 host commands and 0 permissions on the reviewed list;
 - about 48 probe cases;
 - 8 threat-model rows;
-- 4 entries in the WebKitGTK register.
+- 5 entries in the WebKitGTK register.
 
 ## Constitution Check
 

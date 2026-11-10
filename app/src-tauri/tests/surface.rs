@@ -30,20 +30,35 @@ fn json_file(path: &Path) -> serde_json::Value {
 }
 
 /// The entries of one kind in window-surface.toml: (name, reason).
-fn listed(surface: &toml::Table, kind: &str, key: &str, failures: &mut Vec<String>) -> BTreeSet<String> {
+fn listed(
+    surface: &toml::Table,
+    kind: &str,
+    key: &str,
+    failures: &mut Vec<String>,
+) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     let Some(entries) = surface.get(kind) else {
         return names;
     };
     for entry in entries.as_array().into_iter().flatten() {
-        let name = entry.get(key).and_then(|value| value.as_str()).unwrap_or_default();
+        let name = entry
+            .get(key)
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
         if name.is_empty() {
-            failures.push(format!("window-surface.toml: a [[{kind}]] entry has no {key}"));
+            failures.push(format!(
+                "window-surface.toml: a [[{kind}]] entry has no {key}"
+            ));
             continue;
         }
-        let reason = entry.get("reason").and_then(|value| value.as_str()).unwrap_or_default();
+        let reason = entry
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
         if reason.trim().is_empty() {
-            failures.push(format!("window-surface.toml: entry \"{name}\" has no reason"));
+            failures.push(format!(
+                "window-surface.toml: entry \"{name}\" has no reason"
+            ));
         }
         names.insert(name.to_string());
     }
@@ -117,13 +132,19 @@ fn the_window_surface_matches_the_reviewed_list() {
 
     // Commands: listed == registered (the const the commands! macro expands)
     let commands = listed(&surface, "command", "name", &mut failures);
-    let registered: BTreeSet<String> =
-        dashboard_lib::COMMANDS.iter().map(|name| name.to_string()).collect();
+    let registered: BTreeSet<String> = dashboard_lib::COMMANDS
+        .iter()
+        .map(|name| name.to_string())
+        .collect();
     for name in registered.difference(&commands) {
-        failures.push(format!("window-surface.toml: command \"{name}\" is registered but not listed"));
+        failures.push(format!(
+            "window-surface.toml: command \"{name}\" is registered but not listed"
+        ));
     }
     for name in commands.difference(&registered) {
-        failures.push(format!("window-surface.toml: command \"{name}\" is listed but not registered"));
+        failures.push(format!(
+            "window-surface.toml: command \"{name}\" is listed but not registered"
+        ));
     }
 
     // Plugins: every tauri-plugin-* dependency is listed, and nothing else
@@ -136,10 +157,14 @@ fn the_window_surface_matches_the_reviewed_list() {
         .cloned()
         .collect();
     for name in dependencies.difference(&plugins) {
-        failures.push(format!("window-surface.toml: plugin \"{name}\" is a dependency but not listed"));
+        failures.push(format!(
+            "window-surface.toml: plugin \"{name}\" is a dependency but not listed"
+        ));
     }
     for name in plugins.difference(&dependencies) {
-        failures.push(format!("window-surface.toml: plugin \"{name}\" is listed but not a dependency"));
+        failures.push(format!(
+            "window-surface.toml: plugin \"{name}\" is listed but not a dependency"
+        ));
     }
 
     // The app ACL manifest, for this very build (OUT_DIR is this feature set's build script, so a
@@ -165,7 +190,9 @@ fn the_window_surface_matches_the_reviewed_list() {
                 .flatten()
                 .any(|feature| feature.as_str() == Some("devtools"))
             {
-                failures.push(format!("Cargo.toml: the release build enables \"devtools\" ({name})"));
+                failures.push(format!(
+                    "Cargo.toml: the release build enables \"devtools\" ({name})"
+                ));
             }
         }
     }
@@ -176,7 +203,9 @@ fn the_window_surface_matches_the_reviewed_list() {
         let plist = read(&crate_dir().join(entitlements));
         for grant in ["com.apple.developer.associated-domains", "webcredentials"] {
             if plist.contains(grant) {
-                failures.push(format!("tauri.conf.json: the macOS entitlements grant \"{grant}\""));
+                failures.push(format!(
+                    "tauri.conf.json: the macOS entitlements grant \"{grant}\""
+                ));
             }
         }
     }
@@ -185,12 +214,16 @@ fn the_window_surface_matches_the_reviewed_list() {
     // window (FR-012). The probe cannot make a real drop, so this is the drop's breaking test.
     for window in config["app"]["windows"].as_array().into_iter().flatten() {
         if window["dragDropEnabled"] == serde_json::Value::Bool(false) {
-            failures.push("tauri.conf.json: the drag-and-drop handler is turned off (dragDropEnabled: false)".to_string());
+            failures.push(
+                "tauri.conf.json: the drag-and-drop handler is turned off (dragDropEnabled: false)"
+                    .to_string(),
+            );
         }
     }
     if read(&crate_dir().join("src/window.rs")).contains("disable_drag_drop_handler") {
         failures.push(
-            "src/window.rs: the drag-and-drop handler is turned off (disable_drag_drop_handler)".to_string(),
+            "src/window.rs: the drag-and-drop handler is turned off (disable_drag_drop_handler)"
+                .to_string(),
         );
     }
 
