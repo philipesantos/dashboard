@@ -62,8 +62,8 @@ jobs:
             changed=$(git diff --name-only --no-renames "$range")
             printf '%s\n' "$changed"
             # Documentation only: Markdown anywhere, specs/, docs/, .specify/ and LICENSE, except
-            # what the docs and design checks read
-            if grep -qE '^(design|docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$' <<< "$changed"; then
+            # what the docs and design checks read, and the WebKitGTK register, which a test reads
+            if grep -qE '^(design|docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$|^docs/webkitgtk-register\.toml$' <<< "$changed"; then
               code=true
             elif grep -qvE '\.md$|^(specs|docs|\.specify)/|^LICENSE$' <<< "$changed"; then
               code=true
