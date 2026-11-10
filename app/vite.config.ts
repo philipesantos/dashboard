@@ -1,13 +1,29 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
 
+// The shell probe (specs/008-tauri-shell/contracts/probe.md): in the `probe` mode only, the page
+// also loads src/probe/run.ts. No other mode bundles it.
+function shellProbe(): Plugin {
+  return {
+    name: "shell-probe",
+    transformIndexHtml: {
+      order: "pre",
+      handler: (html) =>
+        html.replace(
+          "</body>",
+          '  <script type="module" src="/src/probe/run.ts"></script>\n  </body>',
+        ),
+    },
+  };
+}
+
 // https://vite.dev/config/
-export default defineConfig(() => ({
-  plugins: [react(), tailwindcss()],
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), tailwindcss(), ...(mode === "probe" ? [shellProbe()] : [])],
 
   resolve: {
     alias: {

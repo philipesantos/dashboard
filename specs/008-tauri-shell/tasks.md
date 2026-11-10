@@ -98,7 +98,7 @@ probe step in `ci.yml`, is core (research R13). The pull request gets line-by-li
   first, and `.gitignore` lists it. Otherwise a normal build after a probe build would keep the
   probe's permissions in its ACL. The app manifest's key is `__app-acl__` (`tauri-utils`
   2.10.2, `acl/mod.rs:50`).
-- [ ] T005 Add the probe's page side. Create `app/src/probe/run.ts`:
+- [X] T005 Add the probe's page side. Create `app/src/probe/run.ts`:
   - a case runner that records `securitypolicyviolation` events per case;
   - a `stayed` check: after 1 s, `location.href` is the app's own page;
   - the report call through `invoke('shell_probe_report', …)`;
