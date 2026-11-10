@@ -432,7 +432,7 @@ them.
 **Independent Test**: from `docs/design/host-surfaces.md`, each property in FR-019 maps to a
 criterion with a test or hostile case and a feature, and each holds in forced-colors mode.
 
-- [ ] T036 [US5] Add the dialog-form criteria to `docs/design/host-surfaces.md`:
+- [X] T036 [US5] Add the dialog-form criteria to `docs/design/host-surfaces.md`:
   - a host dialog covers the chrome and every frame;
   - the rest of the window is inert for pointer, keyboard and assistive technology;
   - clicks and keys are ignored for a short moment after it appears;

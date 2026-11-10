@@ -126,3 +126,83 @@ not know draws as the default tone, and the host records the name in the plugin'
 Check: test: widget content carrying style fields draws exactly as without them, and an unknown
 tone draws as the default and adds one entry to the plugin's log.
 Feature: Biblioteca de UI declarativa
+
+## The form of a host dialog
+
+Every host dialog shares one form. Each property below is one that widget content cannot
+produce under HS-03 and HS-04, and none depends on color.
+
+### HS-10 A host dialog covers the chrome and every frame
+
+A host dialog is drawn in a layer above the chrome and every frame, in the host-only `dialog`
+roles at the `dialog` elevation, over the `scrim`.
+
+Check: test: with a dialog open, the topmost element at points over the chrome and over each
+frame belongs to the dialog or its scrim.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-11 The rest of the window is inert while a dialog is open
+
+Until the dialog closes, everything outside it ignores the pointer and the keyboard and is hidden
+from assistive technology.
+
+Check: test: with a dialog open, clicks and key presses aimed at the chrome and at a frame do
+nothing, and the accessibility tree holds only the dialog.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-12 A dialog ignores input for a short moment after it appears
+
+Clicks and keys are ignored for a short moment after the dialog appears, so input aimed at what
+was under the pointer or the caret cannot answer it. The dialog feature measures the length.
+
+Check: test: a click on the risky choice and an Enter press sent within the delay after opening
+do nothing; the same input after the delay is handled.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-13 A dialog names who is asking
+
+The dialog names the plugin or connector the decision is about, by its manifest name and its
+repository id (`github.com/owner/repo`), drawn by the host as escaped text with a length limit,
+as the frame does (HS-02).
+
+Check: test: plugins whose names hold markup, bidirectional overrides and 500 characters; the
+dialog shows each escaped and bounded, with the repository id in full.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-14 The safe choice is the default
+
+The safe choice (deny or cancel) is the dialog's default action, so pressing Enter without
+moving focus never approves.
+
+Check: test: opening a dialog and pressing Enter after the input delay takes the safe choice.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-15 Long content scrolls inside the dialog
+
+When a dialog's content is longer than the window, it scrolls inside the dialog, and who is
+asking and the safe choice stay reachable without leaving it.
+
+Check: test: a dialog with more permissions than fit in a small window; its body scrolls, and its
+title and safe choice stay in view.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-16 Widget content cannot produce the form of a host dialog
+
+Widget content cannot produce a layer above the chrome and the frames, a scrim, or an inert
+window. A picture of a dialog in a frame leaves the chrome and the other widgets visible and
+responding.
+
+Check: hostile case: the declarative UI's hostile widget, which uses every tone and variant to
+look like a dialog; the chrome stays uncovered, the other frames keep responding to the pointer
+and the keyboard, and its buttons trigger only its own declared actions.
+Feature: Biblioteca de UI declarativa
+
+### HS-17 The dialog's form holds in forced colors
+
+None of the properties that mark a host dialog depends on color, so each holds when the system
+replaces the theme's colors, as Windows high contrast does. The dialog keeps a visible edge
+there.
+
+Check: test: in forced-colors emulation, HS-10 and HS-11 still hold and the dialog has a visible
+border.
+Feature: Diálogo de instalação com permissões em linguagem clara
