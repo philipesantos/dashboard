@@ -43,7 +43,7 @@ probe step in `ci.yml`, is core (research R13). The pull request gets line-by-li
 
 **Purpose**: remove the template's leftovers
 
-- [ ] T001 Remove the template's opener plugin and sample command (research R4):
+- [X] T001 Remove the template's opener plugin and sample command (research R4):
   - `tauri-plugin-opener` from `app/src-tauri/Cargo.toml` and its `.plugin(...)` from
     `app/src-tauri/src/lib.rs`;
   - `@tauri-apps/plugin-opener` from `app/package.json`;
