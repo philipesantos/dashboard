@@ -136,7 +136,7 @@ Every story builds on these.
   - errors as `DESIGN.md: <what>` lines (`contracts/design-md.md`, "Errors").
 
   It accepts `\r\n`. Pass T005.
-- [ ] T008 Implement `design/src/cli.ts`, with the subcommands `gen`, `check`, `preview` and
+- [X] T008 Implement `design/src/cli.ts`, with the subcommands `gen`, `check`, `preview` and
   `licenses`.
   - Each check returns failure lines prefixed with their file. `check` runs them all, prints
     every line and exits 1 if any failed (`contracts/outputs.md`, "Commands").
