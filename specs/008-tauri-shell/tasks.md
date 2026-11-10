@@ -428,8 +428,16 @@ change in a register the move can empty.
   - `pnpm audit --audit-level high`.
 
   Record the probe's run time and the release build time in research R11.
-- [ ] T027 Walk `quickstart.md` §1–§4, §7 and §9 on Linux, including the two mutations of §3, and fix
+- [X] T027 Walk `quickstart.md` §1–§4, §7 and §9 on Linux, including the two mutations of §3, and fix
   any drift between it and the code. §5 and §6 need each system's desktop, so they run in T030.
+
+  Done on 2026-11-10: §1's two mutations fail with the contract's lines; §2 holds 52 cases in
+  about 20 s; §3's `img-src https:` breaks `load-image-remote` and an always-true
+  `on_navigation` gives exit 2, the last `running` line naming `navigate-location`; §4, the
+  development build under Vite's policy, captured on a virtual display: the demo renders with
+  its fonts and styles and no "Tauri" tab (hot reload's socket loads with no violation, from
+  T009); §7's script passes against crates.io and fails on a simulated stable release (T022);
+  §9's mutations fail as written (T033).
 - [X] T028 Review the window's protections independently. A fresh agent with none of this
   feature's context reads the security-core files of research R13 against spec FR-001 to FR-021,
   the contracts and the locked Tauri sources, and looks for any way content in the window could
