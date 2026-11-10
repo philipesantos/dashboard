@@ -1,0 +1,8 @@
+# Files the design checks read or write are compared byte for byte on every system, so they keep
+# LF line endings everywhere (specs/007-host-visual-system/research.md, R3).
+DESIGN.md                         text eol=lf
+app/src/theme.generated.css       text eol=lf
+design/widget-map.generated.json  text eol=lf
+docs/design/*.md                  text eol=lf
+docs/threat-model.md              text eol=lf
+design/test/fixtures/**           text eol=lf

@@ -1,0 +1,22 @@
+{
+  "name": "@dashboard/design",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Generates the app's theme and widget map from DESIGN.md, and checks them.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "gen": "node src/cli.ts gen",
+    "check": "node src/cli.ts check",
+    "preview": "node src/cli.ts preview",
+    "licenses": "node src/cli.ts licenses",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@google/design.md": "0.4.0",
+    "yaml": "2.9.1"
+  }
+}

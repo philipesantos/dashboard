@@ -1,0 +1,109 @@
+{
+  "generatedFrom": "DESIGN.md",
+  "unknownTone": "default",
+  "tones": {
+    "default": {
+      "text": "foreground"
+    },
+    "muted": {
+      "text": "muted-foreground"
+    },
+    "accent": {
+      "text": "primary"
+    },
+    "ok": {
+      "text": "ok",
+      "icon": "circle-check"
+    },
+    "warning": {
+      "text": "warning",
+      "icon": "triangle-alert"
+    },
+    "error": {
+      "text": "destructive",
+      "icon": "circle-x"
+    }
+  },
+  "variants": {
+    "text.default": {
+      "text": "foreground",
+      "typography": "body-sm"
+    },
+    "text.muted": {
+      "text": "muted-foreground",
+      "typography": "body-sm"
+    },
+    "text.heading": {
+      "text": "foreground",
+      "typography": "heading"
+    },
+    "list.default": {
+      "text": "foreground",
+      "border": "border",
+      "spacing": "control-gap",
+      "typography": "body-sm"
+    },
+    "table.header": {
+      "text": "muted-foreground",
+      "typography": "body-sm"
+    },
+    "table.row": {
+      "text": "foreground",
+      "border": "border",
+      "typography": "body-sm"
+    },
+    "chart.default": {
+      "text": "muted-foreground",
+      "typography": "body-xs"
+    },
+    "button.primary": {
+      "text": "primary-foreground",
+      "fill": "primary",
+      "rounded": "lg",
+      "spacing": "control-gap",
+      "typography": "body-sm"
+    },
+    "button.secondary": {
+      "text": "secondary-foreground",
+      "fill": "secondary",
+      "rounded": "lg",
+      "spacing": "control-gap",
+      "typography": "body-sm"
+    },
+    "button.outline": {
+      "text": "foreground",
+      "fill": "background",
+      "border": "input",
+      "rounded": "lg",
+      "spacing": "control-gap",
+      "typography": "body-sm"
+    },
+    "button.ghost": {
+      "text": "foreground",
+      "rounded": "lg",
+      "spacing": "control-gap",
+      "typography": "body-sm"
+    },
+    "button.destructive": {
+      "text": "destructive",
+      "fill": "destructive/10",
+      "rounded": "lg",
+      "spacing": "control-gap",
+      "typography": "body-sm"
+    },
+    "form.input": {
+      "text": "foreground",
+      "fill": "background",
+      "border": "input",
+      "rounded": "lg",
+      "typography": "body-sm"
+    },
+    "form.label": {
+      "text": "foreground",
+      "typography": "body-sm"
+    }
+  },
+  "elevation": [
+    "flat"
+  ]
+}

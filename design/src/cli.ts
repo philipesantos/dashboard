@@ -1,0 +1,116 @@
+// pnpm --filter ./design <gen | check | preview | licenses>
+// (specs/007-host-visual-system/contracts/outputs.md, "Commands").
+//
+// Paths resolve from the repository root, two levels above this file, never from the working
+// directory, so the scripts behave the same from any directory.
+
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseDesign, type Design } from './parse.ts';
+import { generateCss, THEME_FILE, WIDGET_MAP_FILE, widgetMapJson } from './generate.ts';
+import { checkContrast } from './checks/contrast.ts';
+import { checkCriteria } from './checks/criteria.ts';
+import { checkDrift } from './checks/drift.ts';
+import { checkFonts } from './checks/fonts.ts';
+import { checkFormat } from './checks/format.ts';
+import { checkHostOnly } from './checks/hostonly.ts';
+import { checkSchema } from './checks/schema.ts';
+import { checkUsage } from './checks/usage.ts';
+import { PREVIEW_FILE, previewHtml } from './preview.ts';
+import { licenseLines } from './licenses.ts';
+
+export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+
+export interface Context {
+  root: string;
+  /** DESIGN.md's text, as read. */
+  source: string;
+  design: Design;
+}
+
+/** A check returns its failure lines, each prefixed with the file it is about. */
+export type Check = (ctx: Context) => string[] | Promise<string[]>;
+
+/** Every check `check` runs, in order (contracts/outputs.md). */
+const CHECKS: [string, Check][] = [
+  ['format (design.md 0.4.0)', checkFormat],
+  ['project layer', (ctx) => [...ctx.design.errors, ...checkSchema(ctx)]],
+  ['contrast and coverage', checkContrast],
+  ['color usage in app/src', checkUsage],
+  ['host-only', checkHostOnly],
+  ['drift', checkDrift],
+  ['criteria coverage', checkCriteria],
+  ['font licenses', checkFonts],
+];
+
+export function load(root = ROOT): Context {
+  const source = readFileSync(join(root, 'DESIGN.md'), 'utf8');
+  return { root, source, design: parseDesign(source) };
+}
+
+async function runChecks(ctx: Context): Promise<number> {
+  let failures = 0;
+  for (const [name, check] of CHECKS) {
+    const lines = await check(ctx);
+    for (const line of lines) {
+      if (line.startsWith('info: ')) console.log(line);
+      else if (line.startsWith('warning: ')) console.warn(line);
+      else {
+        console.error(line);
+        failures++;
+      }
+    }
+    if (!lines.some((l) => !l.startsWith('warning: ') && !l.startsWith('info: '))) console.log(`ok: ${name}`);
+  }
+  return failures;
+}
+
+async function main(command: string | undefined): Promise<number> {
+  switch (command) {
+    case 'check': {
+      const failures = await runChecks(load());
+      if (failures > 0) console.error(`${failures} failure(s)`);
+      return failures > 0 ? 1 : 0;
+    }
+    case 'gen': {
+      const ctx = load();
+      // Never write what widget content could use to reach a host surface.
+      const errors = [...ctx.design.errors, ...checkSchema(ctx), ...checkHostOnly(ctx)];
+      if (errors.length > 0) {
+        for (const line of errors) console.error(line);
+        return 1;
+      }
+      writeFileSync(join(ctx.root, THEME_FILE), generateCss(ctx.design));
+      writeFileSync(join(ctx.root, WIDGET_MAP_FILE), widgetMapJson(ctx.design));
+      console.log(`wrote ${THEME_FILE} and ${WIDGET_MAP_FILE}`);
+      return 0;
+    }
+    case 'preview': {
+      const ctx = load();
+      const errors = [...ctx.design.errors, ...checkSchema(ctx)];
+      if (errors.length > 0) {
+        for (const line of errors) console.error(line);
+        return 1;
+      }
+      const out = join(ctx.root, PREVIEW_FILE);
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, previewHtml(ctx.design));
+      console.log(`wrote ${PREVIEW_FILE}`);
+      return 0;
+    }
+    case 'licenses': {
+      // One store holds the packages of every workspace package.
+      const lines = licenseLines(join(ROOT, 'node_modules', '.pnpm'));
+      for (const line of lines) console.error(line);
+      if (lines.length > 0) return 1;
+      console.log('ok: every installed npm package is under an allowed license or a named exception');
+      return 0;
+    }
+    default:
+      console.error('usage: cli.ts <gen | check | preview | licenses>');
+      return 2;
+  }
+}
+
+if (import.meta.main) process.exitCode = await main(process.argv[2]);
