@@ -43,6 +43,8 @@ export interface Pairing {
   fg: string;
   on: string[];
   kind: PairingKind;
+  /** Both when absent; one theme for a layer a component draws only there (`dark:bg-…/25`). */
+  themes?: ('light' | 'dark')[];
 }
 
 export interface ElevationLevel {

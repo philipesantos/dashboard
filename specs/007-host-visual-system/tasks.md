@@ -290,7 +290,7 @@ every color the app's code draws is declared.
   the prefix, without `/opacity`, is a role, a palette color, `black`, `white` or `[…]`;
   `transparent`, `current` and `inherit` are skipped (research R4). Wire it into `check`. Pass
   T022.
-- [ ] T025 [US2] Add the Colors section's `design-rules` `pairings` and `decorative` to
+- [X] T025 [US2] Add the Colors section's `design-rules` `pairings` and `decorative` to
   `DESIGN.md`, covering every role.
   - Include every layer the components use: `input`/30, /50 and /80 in dark, `muted`/50,
     `destructive`/10, /20 and /30, `primary`/80, `secondary`/80 and `foreground`/10.

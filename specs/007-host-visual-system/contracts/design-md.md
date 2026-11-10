@@ -77,6 +77,8 @@ hostOnly:
 decorative:
   - role: border
     reason: Card edges and dividers. Controls carry their own `input` edge.
+  - role: destructive/40     # one opacity only: a tint nothing is drawn on
+    reason: The aria-invalid halo; the field's error text carries the meaning.
 pairings:
   - { fg: foreground, on: [background], kind: text }
   - { fg: destructive, on: [card, destructive/10], kind: text }

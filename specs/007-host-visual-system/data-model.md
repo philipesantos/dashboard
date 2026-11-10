@@ -34,7 +34,7 @@ composited in order. For example: `card`, then `destructive/10`.
 | `fg` | A color role, optionally `role/opacity`. |
 | `on` | A layer stack whose base is opaque. |
 | `kind` | `text` 4.5, `large-text` 3, `boundary` 3, `focus` 3 or `chart` 3. The number is the minimum ratio. |
-| `themes` | Both, always. The check measures light with light values and dark with `-dark` values. |
+| `themes` | Both unless listed. The check measures light with light values and dark with `-dark` values. A pairing lists one theme only for a layer a component draws in that theme alone, such as `dark:hover:bg-destructive/25`. |
 
 **Validation**:
 - Each pairing's ratio, after compositing, is at least its kind's minimum in each theme (FR-010).
@@ -45,6 +45,10 @@ composited in order. For example: `card`, then `destructive/10`.
 
 A color role, with a reason, exempt from contrast under WCAG 1.4.11. For example, `border` for
 card edges and dividers. It may never be a pairing's `fg` of kind `boundary` or `focus`.
+
+An entry may also name one opacity of a role, as `destructive/40`, for a tint that nothing is
+drawn on and that carries no meaning alone: the `aria-invalid` halo beside the focus ring, whose
+error the field's text states. It covers that opacity only, and the role keeps its pairings.
 
 ## Usage
 

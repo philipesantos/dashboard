@@ -35,8 +35,10 @@ export function contrastLines(design: Design): string[] {
     }
   };
 
-  const decorative = new Set((design.rules.decorative ?? []).map((d) => d.role));
-  const covered = new Set<string>(decorative);
+  // A decorative entry is a whole role (`border`) or one opacity of it (`destructive/40`).
+  const entries = (design.rules.decorative ?? []).map((d) => String(d.role));
+  const decorative = new Set(entries.filter((e) => !e.includes('/')));
+  const covered = new Set<string>(entries.map((e) => splitLayer(e)?.role ?? e));
   for (const p of design.rules.pairings ?? []) {
     if (!Array.isArray(p.on)) continue;
     for (const ref of [p.fg, ...p.on]) {
@@ -52,7 +54,8 @@ export function contrastLines(design: Design): string[] {
     const min = MINIMUM[p.kind];
     if (min === undefined) continue; // the schema step names an unknown kind
     const ratios: string[] = [];
-    for (const theme of ['light', 'dark'] as const) {
+    const themes = Array.isArray(p.themes) ? p.themes : (['light', 'dark'] as const);
+    for (const theme of themes) {
       const fg = resolve(String(p.fg), theme);
       const layers = p.on.map((ref) => resolve(String(ref), theme));
       if (!fg || layers.some((l) => !l)) continue; // the schema step names what does not resolve
@@ -67,7 +70,7 @@ export function contrastLines(design: Design): string[] {
         out.push(`${label}: pairing ${name}, ${theme}): ${ratio.toFixed(2)} < ${min.toFixed(2)}`);
       }
     }
-    if (ratios.length === 2) out.push(`info: ${label}: ${name}): ${ratios.join(', ')}`);
+    if (ratios.length === themes.length) out.push(`info: ${label}: ${name}): ${ratios.join(', ')}`);
   }
 
   for (const c of design.colors) {

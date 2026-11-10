@@ -143,7 +143,13 @@ export function declaredOpacities(design: Design): { opacities: Map<string, Set<
     add(p.fg);
     if (Array.isArray(p.on)) p.on.forEach(add);
   }
-  return { opacities, decorative: new Set((design.rules.decorative ?? []).map((d) => d.role)) };
+  // A whole decorative role covers every opacity; `role/opacity` covers that one only.
+  const decorative = new Set<string>();
+  for (const d of design.rules.decorative ?? []) {
+    if (String(d.role).includes('/')) add(d.role);
+    else decorative.add(String(d.role));
+  }
+  return { opacities, decorative };
 }
 
 export function usageLines(root: string, design: Design): string[] {

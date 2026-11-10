@@ -69,7 +69,7 @@ export function schemaErrors(design: Design): string[] {
     }
   }
   for (const d of r.decorative ?? []) {
-    role(d?.role, 'a decorative entry');
+    layer(d?.role, 'a decorative entry');
     if (typeof d?.reason !== 'string' || d.reason.trim() === '') err(`decorative role "${d?.role}" has no reason`);
   }
   for (const [i, p] of (r.pairings ?? []).entries()) {
@@ -78,6 +78,9 @@ export function schemaErrors(design: Design): string[] {
     if (!Array.isArray(p?.on) || p.on.length === 0) err(`${where}: "on" must be a non-empty list`);
     else for (const ref of p.on) layer(ref, where);
     if (!(PAIRING_KINDS as readonly string[]).includes(p?.kind)) err(`${where}: kind "${p?.kind}" is not one of ${PAIRING_KINDS.join(', ')}`);
+    if (p?.themes !== undefined && (!Array.isArray(p.themes) || p.themes.length === 0 || p.themes.some((t) => t !== 'light' && t !== 'dark'))) {
+      err(`${where}: themes must list light, dark or both`);
+    }
   }
   for (const [level, e] of Object.entries(r.elevation ?? {})) {
     if (!isRecord(e) || typeof e.shadow !== 'string' || typeof e.dark !== 'string') {

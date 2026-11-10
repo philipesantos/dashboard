@@ -36,3 +36,12 @@ test('each undeclared or role-less color names the file and the utility', () => 
     'app/src/widget.tsx: hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] is not declared (foreground is declared at 100 only)',
   ]);
 });
+
+test('a decorative entry with an opacity covers that opacity only', () => {
+  const text = readFileSync(new URL('./fixtures/contrast/design.md', import.meta.url), 'utf8').replace(
+    '  - role: border\n',
+    '  - role: input/50\n    reason: A tint nothing is drawn on.\n  - role: border\n',
+  );
+  const lines = usageLines(root, parseDesign(text));
+  assert.ok(!lines.some((l) => l.includes('bg-input/50')), lines.join('\n'));
+});

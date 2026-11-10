@@ -46,3 +46,10 @@ test('a stack whose first layer is translucent fails', () => {
   const text = edit(fixture, '  - { fg: chart-2, on: [card], kind: chart }\n', '  - { fg: chart-2, on: [card], kind: chart }\n  - { fg: foreground, on: [input], kind: text }\n');
   assert.deepEqual(failures(text), ['DESIGN.md: pairing foreground on input (text, dark): the first layer "input" is not opaque']);
 });
+
+test('a pairing limited to one theme is measured in that theme only', () => {
+  const text = edit(fixture, '  - { fg: chart-2, on: [card], kind: chart }\n', '  - { fg: chart-2, on: [card], kind: chart }\n  - { fg: foreground, on: [card, input/80], kind: text, themes: [dark] }\n');
+  const lines = contrastLines(parseDesign(text));
+  assert.deepEqual(lines.filter((l) => !l.startsWith('info: ')), []);
+  assert.ok(lines.some((l) => /^info: DESIGN\.md: foreground on card \+ input\/80 \(text\): dark [\d.]+$/.test(l)), lines.join('\n'));
+});

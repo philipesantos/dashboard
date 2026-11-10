@@ -335,6 +335,101 @@ kept separate so the chrome can change without moving widget content.
 - **dialog-foreground**: text in a dialog.
 - **scrim**: the layer between a dialog and the rest of the window.
 
+### Pairings
+
+Every foreground is checked on what it is drawn on, in both themes, by
+`pnpm --filter ./design check`: text at 4.5:1, a control's edge, the focus indicator and a chart
+mark at 3:1 (WCAG 1.4.3 and 1.4.11). A pairing's `on` is a stack: a surface, then the translucent
+fills drawn over it, as a hover state or a soft badge. The app's components may draw a role only
+at an opacity declared here; the check scans them.
+
+```design-rules
+decorative:
+  - role: border
+    reason: Card edges and dividers. Their meaning is carried by spacing and by the surfaces they separate; every control has its own input edge.
+  - role: sidebar-border
+    reason: The chrome's dividers, like border.
+  - role: frame-border
+    reason: The frame's edge. The frame's header, drawn by the host with the plugin's name, is what identifies it.
+  - role: foreground/10
+    reason: The hairline ring that edges cards, menus and the demo dialog, like border.
+  - role: scrim
+    reason: What marks a host dialog is its form, covering the chrome and every frame with the rest of the window inert, not the scrim's contrast.
+  - role: destructive/40
+    reason: The aria-invalid halo and the focused destructive button's edge in dark. The field's error text, which is checked, carries the meaning.
+  - role: destructive/50
+    reason: The invalid field's edge in dark, beside the halo. The error text carries the meaning.
+pairings:
+  # Body text on every surface
+  - { fg: foreground, on: [background], kind: text }
+  - { fg: foreground, on: [card], kind: text }
+  - { fg: foreground, on: [popover], kind: text }
+  - { fg: foreground, on: [muted], kind: text }
+  - { fg: foreground, on: [card, muted/50], kind: text }
+  - { fg: foreground, on: [background, input/30], kind: text }
+  - { fg: foreground, on: [background, input/50], kind: text }
+  - { fg: foreground/60, on: [muted], kind: text }
+  - { fg: card-foreground, on: [card], kind: text }
+  - { fg: popover-foreground, on: [popover], kind: text }
+  # Secondary text
+  - { fg: muted-foreground, on: [background], kind: text }
+  - { fg: muted-foreground, on: [card], kind: text }
+  - { fg: muted-foreground, on: [popover], kind: text }
+  - { fg: muted-foreground, on: [muted], kind: text }
+  - { fg: muted-foreground, on: [card, muted/50], kind: text }
+  # Actions, at rest and on hover
+  - { fg: primary, on: [background], kind: text }
+  - { fg: primary, on: [card], kind: text }
+  - { fg: primary-foreground, on: [primary], kind: text }
+  - { fg: primary-foreground, on: [background, primary/90], kind: text }
+  - { fg: primary-foreground, on: [card, primary/90], kind: text }
+  - { fg: secondary-foreground, on: [secondary], kind: text }
+  - { fg: secondary-foreground, on: [background, secondary/80], kind: text }
+  - { fg: secondary-foreground, on: [secondary, foreground/5], kind: text }
+  - { fg: accent-foreground, on: [accent], kind: text }
+  # Status: text, and the soft fills of the destructive badge and button
+  - { fg: destructive, on: [background], kind: text }
+  - { fg: destructive, on: [card], kind: text }
+  - { fg: destructive, on: [background, destructive/10], kind: text, themes: [light] }
+  - { fg: destructive, on: [card, destructive/10], kind: text, themes: [light] }
+  - { fg: destructive, on: [background, destructive/20], kind: text }
+  - { fg: destructive, on: [card, destructive/20], kind: text }
+  - { fg: destructive, on: [background, destructive/25], kind: text, themes: [dark] }
+  - { fg: destructive, on: [card, destructive/25], kind: text, themes: [dark] }
+  - { fg: ok, on: [background], kind: text }
+  - { fg: ok, on: [card], kind: text }
+  - { fg: warning, on: [background], kind: text }
+  - { fg: warning, on: [card], kind: text }
+  # Control edges: fields, selects, checkboxes, the unchecked switch
+  - { fg: input, on: [background], kind: boundary }
+  - { fg: input, on: [card], kind: boundary }
+  - { fg: input, on: [popover], kind: boundary }
+  - { fg: input/80, on: [background], kind: boundary }
+  - { fg: primary, on: [card], kind: boundary }
+  - { fg: destructive, on: [card], kind: boundary }
+  - { fg: primary-foreground, on: [primary], kind: boundary }
+  # The focus ring
+  - { fg: ring, on: [background], kind: focus }
+  - { fg: ring, on: [card], kind: focus }
+  - { fg: ring, on: [popover], kind: focus }
+  # Chart marks
+  - { fg: chart-1, on: [card], kind: chart }
+  - { fg: chart-2, on: [card], kind: chart }
+  - { fg: chart-3, on: [card], kind: chart }
+  - { fg: chart-4, on: [card], kind: chart }
+  - { fg: chart-5, on: [card], kind: chart }
+  # The chrome
+  - { fg: sidebar-foreground, on: [sidebar], kind: text }
+  - { fg: sidebar-primary-foreground, on: [sidebar-primary], kind: text }
+  - { fg: sidebar-accent-foreground, on: [sidebar-accent], kind: text }
+  - { fg: sidebar-primary, on: [sidebar], kind: boundary }
+  - { fg: sidebar-ring, on: [sidebar], kind: focus }
+  # The frame and dialogs
+  - { fg: frame-foreground, on: [frame], kind: text }
+  - { fg: frame-header-foreground, on: [frame-header], kind: text }
+  - { fg: dialog-foreground, on: [dialog], kind: text }
+```
+
 ## Typography
 
 The three families are bundled with the app by `@fontsource` packages, so nothing loads from

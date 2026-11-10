@@ -178,6 +178,22 @@ edges and dividers whose meaning something else carries.
 | `destructive` text on `destructive`/10 over `card` (soft badge and button) | 4.42 | 4.58 | `destructive` light to oklch(0.54 0.2 27) |
 | `border` on `background` / `card` | 1.27 / 1.31 | 1.25 / 1.29 | none: marked `decorative` (card edges and dividers), since controls carry their own `input` boundary |
 
+**Found when the pairings were declared** (T025, 2026-11-10). Declaring every layer the
+components draw found three hover states below 4.5:1, which the first measurement had not
+listed:
+
+| Pairing | Light | Dark | Fix |
+| --- | --- | --- | --- |
+| `primary-foreground` on `primary`/80 (the primary button's and link badge's hover) | 3.80 | ok | hover at `primary`/90: 4.62 |
+| `destructive` on `destructive`/20 (the destructive button's hover in light, its rest in dark) | 3.77 | 4.58 | `destructive` light to oklch(0.50 0.19 27) instead of oklch(0.54 0.2 27): 4.66 on /20 and 5.58 on /10 |
+| `destructive` on `destructive`/30 (the destructive button's hover in dark) | — | 3.80 | hover at /25, and `destructive` dark to oklch(0.74 0.16 22): 4.61 |
+
+The destructive button draws /10 and /20 in light, and /20 and /25 in dark, so the pairings for
+/10 and /25 name their theme (`themes: [light]`, `themes: [dark]`). The invalid field's dark edge
+(`destructive`/50) and the `aria-invalid` halos (/20 in light, /40 in dark) have nothing drawn on
+them, and the field's error text carries the meaning. `/40` and `/50` are therefore decorative
+entries for that opacity only; `/20` is already a declared layer.
+
 `input` is also a fill: `bg-input` for the unchecked switch, and in dark mode `bg-input/30`,
 `/50` and `/80` for fields, selects, tabs and the switch. With the dark value at 35% white, those
 fills become a little lighter than today's. Text on them stays readable, for example
