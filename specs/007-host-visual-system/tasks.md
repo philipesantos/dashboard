@@ -193,7 +193,7 @@ fails `check`, naming the token.
   values reports one line for each, as
   `app/src/theme.generated.css: --<role> differs from DESIGN.md (run pnpm --filter ./design gen)`.
   A file that differs only in `\r\n` passes.
-- [ ] T012 [P] [US1] Write `design/test/format.test.ts`.
+- [X] T012 [P] [US1] Write `design/test/format.test.ts`.
   - The pinned checker's JSON report is mapped to lines: errors fail, warnings print with
     `warning:` and do not fail.
   - A fixture with a broken `{rounded.nope}` reference fails.
