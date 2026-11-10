@@ -449,11 +449,15 @@ change in a register the move can empty.
   research R16. Eight fixed (origins per system, file pickers, WebRTC, `window.close`, browser
   keys, stricter window and camera cases, the surface test's inputs, the expected case list),
   two accepted as residuals in Tauri or the engine.
-- [ ] T029 Only once the maintainer has pushed and opened the pull request, as they ask:
+- [X] T029 Only once the maintainer has pushed and opened the pull request, as they ask:
   - confirm the probe passes on Windows, macOS and Linux in CI, and record each system's probe
     time;
   - run `audit.yml`'s `cef-watch` by hand (quickstart §7);
   - record both in research R11.
+
+  Done: PR #20. The first run broke three cases on macOS and Windows, each a fault of the case
+  (R14 records them); the second run is green on the three systems, with the times in R11.
+  `cef-watch` passed by hand.
 - [ ] T030 The maintainer's part, before the merge:
   - the line-by-line review of the security core (Principle IX);
   - quickstart §5 and §6 on Windows and macOS, the macOS AutoFill check being the review step of

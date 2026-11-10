@@ -412,7 +412,16 @@ The comment at `.github/workflows/ci.yml:27` cites constitution v2.6.1.
   on the workspace and the probe build, `cargo deny`, `cargo audit`, `pnpm audit`, the design
   checks and the npm licenses.
 
-CI times per system are recorded with T029.
+**Measured on CI (T029, PR #20, second run, every job green):**
+
+| System | Probe release build | Probe step | Cases | Build job |
+| --- | --- | --- | --- | --- |
+| Windows | 4 min 45 s | 22 s | 56 held | 23.5 min |
+| macOS | 2 min 43 s | 23 s | 52 held | 13 min |
+| Linux | 1 min 20 s | 50 s, `xvfb` start-up included | 52 held | 13 min |
+
+The 40-minute job timeout leaves Windows room. The `cef-watch` job, run by hand, passed: newest
+published `3.0.0-alpha.7`, no stable release.
 
 ## R12. Decision 0001, where plugins run
 
