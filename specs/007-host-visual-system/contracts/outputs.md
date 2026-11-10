@@ -53,21 +53,24 @@ docs/design/host-surfaces.md: HS-07 has no "Feature:" line
     /* … one --color-<role> per color role, then --radius-sm … --radius-4xl from --radius */
     --spacing: 0.25rem;               /* DESIGN.md spacing.unit: every p-*, m-*, gap-* follows */
     --text-sm: 0.875rem;              /* … the type scale, with --text-*--line-height */
-    --shadow-frame: 0 1px 2px …;      /* … one per elevation level */
+    --shadow-frame: var(--elevation-frame);  /* … one per elevation level */
 }
 
 :root {
     --background: oklch(0.99 0.003 250);
-    /* … every role's light value, then --radius */
+    /* … every role's light value, then --radius, then each level's light shadow */
+    --elevation-frame: 0 1px 3px 0 rgb(0 0 0 / 0.1), …;
 }
 
 .dark {
     --background: oklch(0.17 0.012 255);
-    /* … every role's dark value */
+    /* … every role's dark value, then each level's dark shadow */
 }
 ```
 
 - The roles appear in `DESIGN.md`'s order.
+- A shadow differs by theme, so `--shadow-<level>` points at `--elevation-<level>`, which
+  `:root` and `.dark` set.
 - `DESIGN.md` has one radius token, `rounded.base`, so a contributor changes every corner in
   one place. The generator derives the steps `sm` to `4xl` with the multipliers `index.css` uses
   today (0.6, 0.8, 1, 1.4, 1.8, 2.2, 2.6). The Shapes section's prose documents them. They are

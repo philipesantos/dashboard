@@ -4,10 +4,11 @@
 // Paths resolve from the repository root, two levels above this file, never from the working
 // directory, so the scripts behave the same from any directory.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDesign, type Design } from './parse.ts';
+import { generateCss, THEME_FILE } from './generate.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -56,8 +57,9 @@ async function main(command: string | undefined): Promise<number> {
         for (const line of ctx.design.errors) console.error(line);
         return 1;
       }
-      console.error('gen: nothing to generate yet');
-      return 1;
+      writeFileSync(join(ctx.root, THEME_FILE), generateCss(ctx.design));
+      console.log(`wrote ${THEME_FILE}`);
+      return 0;
     }
     case 'preview':
     case 'licenses':

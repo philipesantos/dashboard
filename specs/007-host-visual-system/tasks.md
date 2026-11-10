@@ -204,7 +204,7 @@ fails `check`, naming the token.
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Implement `design/src/generate.ts`, writing `app/src/theme.generated.css` as in
+- [X] T014 [US1] Implement `design/src/generate.ts`, writing `app/src/theme.generated.css` as in
   `contracts/outputs.md`, with the "Generated from DESIGN.md … Do not edit." first line. Pass
   T010.
 - [ ] T015 [US1] Implement `design/src/checks/drift.ts`: generate in memory and compare with the
