@@ -445,9 +445,12 @@ context-menu cancel in `main.tsx` (R6), stays after the move, so it is not liste
 
 **Rationale**: the maintainer's concern is that WebKitGTK workarounds pile up and stay behind
 after the move to the embedded engine. A marker at each place and one list make the move a
-walk through the list. The test keeps the two from drifting. What the test cannot catch is a
-change made for WebKitGTK and never marked, so CONTRIBUTING asks for the marker and review
-checks it, as for the security core.
+walk through the list. The test keeps the two from drifting. A change made for WebKitGTK and
+never marked cannot be matched, so the test also trips on the plain signs of one in `app/` and
+`.github/`: the engine's name, its `WEBKIT_` variables, a Linux-only condition in the app, and
+engine sniffing in the UI, each needing a marker nearby. Today that finds one line, the apt
+step, which `system-libs` covers. A change that names none of these, such as a CSS value chosen
+for how WebKitGTK draws, still depends on CONTRIBUTING and review.
 
 **Alternatives considered**:
 - Only a section in decision record 0002. Rejected: nothing would check it against the code.

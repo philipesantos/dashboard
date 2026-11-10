@@ -331,7 +331,10 @@ reports when the shipped version is behind a security release.
   This covers code, configuration, dependencies, CI steps and UI workarounds. Each entry names
   the files, why the change exists, and what the move does with it. Each place the change is
   made MUST carry a marker naming its entry. A test MUST fail when a marker has no entry, when an
-  entry has no marker in a file it names, or when an entry has no reason or no removal.
+  entry has no marker in a file it names, or when an entry has no reason or no removal. The same
+  test MUST also fail when code or configuration names WebKitGTK, its environment variables, a
+  Linux-only build condition in the app, or the browser's identity string, with no marker
+  nearby, so a change that is plainly for WebKitGTK cannot go unlisted.
 
 #### Security tests and the threat model
 

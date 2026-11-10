@@ -330,8 +330,10 @@ change in a register the move can empty.
     `<!-- WEBKITGTK-ONLY(system-libs) -->` above `CONTRIBUTING.md`'s Linux prerequisites;
   - the test reads `git ls-files` from the repository root, leaving out `specs/` and the
     register, and parses the register with `toml`, already in the lock;
-  - check it breaks: rename one marker, then delete one entry's `removal`, and see each failure
-    line. Revert.
+  - the tripwire of the contract: in `app/` (not `app/src-tauri/gen/`) and `.github/`, a line
+    matching its patterns needs a marker on it or within the three lines above;
+  - check it breaks: rename one marker, then delete one entry's `removal`, then add
+    `// navigator.userAgent` to `app/src/main.tsx`, and see each failure line. Revert.
 
 ---
 

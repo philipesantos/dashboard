@@ -99,3 +99,9 @@ again.
 
 **Expected**: it fails with `marker "ci-dmabuf2" in .github/workflows/ci.yml has no entry` and
 `entry "ci-dmabuf" has no marker in .github/workflows/ci.yml`. Revert.
+
+Then add a line `if (navigator.userAgent.includes("Linux")) {}` to `app/src/App.tsx` and run it
+again.
+
+**Expected**: it fails with `app/src/App.tsx:<line>: names the engine ("userAgent") with no
+WEBKITGTK-ONLY marker`. Revert.
