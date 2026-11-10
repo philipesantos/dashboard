@@ -9,42 +9,13 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-/** The window handlers' refusals so far, as the host counts them. */
-export interface Counters {
-  navigation: number;
-  newWindow: number;
-  permission: number;
-  download: number;
-}
+import type { Case, Context, Counters, Verdict } from "./case";
+import { policyCases } from "./policy";
 
-/** A case's verdict, as sent to the host. */
-interface Verdict {
-  held: boolean;
-  detail: string;
-  /** The case holds only if the app still has exactly one window (checked by the host). */
-  singleWindow?: boolean;
-}
-
-/** What a case can observe while it runs. */
-export interface Context {
-  /** The `securitypolicyviolation` events since the case began, as "directive blocked-uri". */
-  violations(): string[];
-  /** The handlers' counters now. Diff two snapshots around the action. */
-  counters(): Promise<Counters>;
-  /** Waits, so late violations and handler calls arrive. */
-  wait(ms: number): Promise<void>;
-  /** Waits 1 s, then whether the page is still the app's own page. */
-  stayed(): Promise<boolean>;
-}
-
-/** One forbidden action and how its refusal is detected. */
-export interface Case {
-  id: string;
-  run(context: Context): Promise<Verdict>;
-}
-
-/** Every case. The story tasks add theirs here. */
-const cases: Case[] = [];
+/** Every case. The story tasks add theirs here. Cases that may unload the page run last. */
+const cases: Case[] = [...policyCases].sort(
+  (first, second) => Number(first.mayLeave ?? false) - Number(second.mayLeave ?? false),
+);
 
 const start = location.href;
 let seen: string[] = [];

@@ -134,7 +134,7 @@ proven by the probe.
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] Add the FR-001 cases to `app/src/probe/run.ts`, each with the detection
+- [X] T007 [P] [US1] Add the FR-001 cases to `app/src/probe/run.ts`, each with the detection
   [contracts/probe.md](contracts/probe.md) names, every remote address on a `.invalid` host:
   - injected script: `script-inline-element`, `script-inline-attribute`, `script-eval`,
     `script-function`, `script-timeout-string`;
