@@ -484,7 +484,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
 - [X] T042 Implement `design/src/licenses.ts` over the installed packages of every workspace
   package. Run it, and bring any package that fails to the maintainer before adding a license
   to the list. Pass T041.
-- [ ] T043 Update the CI workflows (research R8, R13).
+- [X] T043 Update the CI workflows (research R8, R13).
   - **The build job** in `.github/workflows/ci.yml`:
     - add `pnpm --filter ./design run licenses`;
     - on Linux only, add `pnpm --filter ./design preview`, then
