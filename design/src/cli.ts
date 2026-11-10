@@ -4,8 +4,8 @@
 // Paths resolve from the repository root, two levels above this file, never from the working
 // directory, so the scripts behave the same from any directory.
 
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDesign, type Design } from './parse.ts';
 import { generateCss, THEME_FILE, WIDGET_MAP_FILE, widgetMapJson } from './generate.ts';
@@ -17,6 +17,7 @@ import { checkFormat } from './checks/format.ts';
 import { checkHostOnly } from './checks/hostonly.ts';
 import { checkSchema } from './checks/schema.ts';
 import { checkUsage } from './checks/usage.ts';
+import { PREVIEW_FILE, previewHtml } from './preview.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -84,7 +85,19 @@ async function main(command: string | undefined): Promise<number> {
       console.log(`wrote ${THEME_FILE} and ${WIDGET_MAP_FILE}`);
       return 0;
     }
-    case 'preview':
+    case 'preview': {
+      const ctx = load();
+      const errors = [...ctx.design.errors, ...checkSchema(ctx)];
+      if (errors.length > 0) {
+        for (const line of errors) console.error(line);
+        return 1;
+      }
+      const out = join(ctx.root, PREVIEW_FILE);
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, previewHtml(ctx.design));
+      console.log(`wrote ${PREVIEW_FILE}`);
+      return 0;
+    }
     case 'licenses':
       console.error(`${command}: not implemented yet`);
       return 1;

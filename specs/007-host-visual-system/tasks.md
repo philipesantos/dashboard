@@ -475,7 +475,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
   `http://`, no `https://` and no `@import`. It shows both themes, each role with its pairings'
   ratios, the scales, the tones with their icon names, every variant, and a chrome, frame and
   dialog sketch.
-- [ ] T040 Implement `design/src/preview.ts`, writing `design/preview/index.html` (research R8).
+- [X] T040 Implement `design/src/preview.ts`, writing `design/preview/index.html` (research R8).
   Pass T039.
 - [ ] T041 [P] Write `design/test/licenses.test.ts`, with a fixture `node_modules` tree. A package
   whose `license` is outside the allowlist fails, naming it. The allowlist is `deny.toml`'s list
