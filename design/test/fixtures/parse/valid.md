@@ -21,7 +21,7 @@ spacing:
 
 ## Overview
 
-A small fixture.
+A fixture.
 
 ## Colors
 
@@ -67,4 +67,4 @@ unknownTone: default
 
 ## Do's and Don'ts
 
-- Do keep it small.
+- Do keep it short.
