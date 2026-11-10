@@ -88,9 +88,9 @@ probe step in `ci.yml`, is core (research R13). The pull request gets line-by-li
     line per case and the summary, then exits 0, 1 or 2. With `DASHBOARD_PROBE_HOLD=1` it stays
     open after printing.
 - [ ] T004 Make the probe's commands exist at build time. In `app/src-tauri/build.rs`, call
-  `tauri_build::try_build(Attributes::new().app_manifest(AppManifest::new().commands(COMMANDS)))`,
-  where `COMMANDS` holds the app's commands, none yet, plus `shell_probe_report` and
-  `shell_probe_ungranted` when `CARGO_FEATURE_SHELL_PROBE` is set. Run the probe build once, and
+  `tauri_build::try_build(Attributes::new().app_manifest(AppManifest::new().commands(…)))` with an
+  inline list: none for the app yet, plus `shell_probe_report` and `shell_probe_ungranted` when
+  `CARGO_FEATURE_SHELL_PROBE` is set. T013 replaces the app's part with the shared list. Run the probe build once, and
   confirm `add_capability` does not panic (research R8; `ipc/authority.rs:174-180`).
 - [ ] T005 Add the probe's page side. Create `app/src/probe/run.ts`:
   - a case runner that records `securitypolicyviolation` events per case;
@@ -151,9 +151,9 @@ proven by the probe.
 - [ ] T009 [US1] Send the development policy from Vite. In `app/vite.config.ts`, read
   `src-tauri/tauri.conf.json`'s `csp`, add `'unsafe-inline'` to `script-src` and
   `ws://localhost:1420` to `connect-src`, and set it as `server.headers['Content-Security-Policy']`.
-  `pnpm tauri dev` must still hot-reload. Then add a `<script>alert(1)</script>`-like inline
-  script through the console, and confirm the console names the refusing rule (FR-004). Remove it
-  afterwards.
+  `pnpm tauri dev` must still hot-reload. Then, in the console, add an `<img>` whose `src` is on a
+  `.invalid` host, and confirm the console reports the refusal naming `img-src` (FR-004). An
+  inline script would not do: the development policy allows it.
 - [ ] T010 [US1] Try `app.security.freezePrototype: true` (research R9). Keep it if the demo and the
   probe pass. If not, revert it and record in research R9 which dependency broke.
 
@@ -178,9 +178,12 @@ proven by the probe.
   - a `tauri-plugin-*` dependency is unlisted;
   - an entry has no reason;
   - `gen/schemas/acl-manifests.json` has no `__app__` key;
-  - `cargo metadata` shows `devtools` on `tauri`, `tauri-runtime-wry` or `wry` for the app's
-    normal build;
-  - `tauri.conf.json` sets macOS entitlements that grant `associated-domains` or `webcredentials`.
+  - `app/src-tauri/Cargo.toml` lists `devtools` among the features of `tauri`,
+    `tauri-runtime-wry` or `wry`;
+  - `tauri.conf.json` sets macOS entitlements that grant `associated-domains` or `webcredentials`;
+  - Tauri's drag-and-drop handler is turned off: `dragDropEnabled: false` in `tauri.conf.json`,
+    or `disable_drag_drop_handler` in `src/window.rs` (FR-012). The probe cannot make a real drop,
+    so this is the drop's breaking test.
 
   It fails now, because there is no list yet and no app manifest.
 - [ ] T012 [P] [US2] Add the FR-007 cases to `run.ts`:
@@ -189,7 +192,10 @@ proven by the probe.
   - `command-opener`: `plugin:opener|open_url`;
   - `command-core`: `plugin:event|listen`.
 
-  Before T013, `command-ungranted` reaches the command and fails.
+  `command-ungranted` proves the ACL refuses a registered command that nothing grants. It cannot
+  prove that the release build keeps the ACL on: the probe build always has an app manifest,
+  from its own two commands, so it holds even before T013. The surface test's `__app__` check
+  (T011) is what fails when the release build loses the manifest. FR-007 needs both.
 
 ### Implementation for User Story 2
 
@@ -377,7 +383,8 @@ draws (FR-009 to FR-012, FR-021).
 - [ ] T030 The maintainer's part, before the merge:
   - the line-by-line review of the security core (Principle IX);
   - quickstart §5 and §6 on Windows and macOS, the macOS AutoFill check being the review step of
-    research R7.
+    research R7;
+  - quickstart §8, the installers' engine edge cases.
 
   Record the outcome of the walks in research R7, and the start-up times in research R11.
 - [ ] T031 Before the merge, and only when the maintainer asks, update the development guide:

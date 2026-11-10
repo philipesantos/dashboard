@@ -175,7 +175,8 @@ no public API for the resolved authority, so the test would depend on generated 
   Everything else is refused and counted for the probe: `http(s)`, `file:`, `javascript:`,
   `data:`, `blob:` and any other scheme.
 - **New windows.** `on_new_window` returns `Deny` for every request.
-- **Dropped files and URLs.** Tauri's own drop handler stays on (`dragDropEnabled`, the
+- **Dropped files and URLs.** Tauri's own drop handler stays on, and the surface test fails if
+  `dragDropEnabled: false` or `disable_drag_drop_handler` appears (`dragDropEnabled`, the
   default). It takes the operating system's drop before the engine can act on it, and the host
   UI does not listen to its event, so a drop does nothing. If a drop still reached the engine,
   `on_navigation` would refuse the load.
@@ -190,7 +191,8 @@ browser's default navigation, so the probe tests navigation through the handler 
 - **Release builds** enable neither the `tauri` crate's `devtools` feature nor
   `tauri-runtime-wry/devtools` or `wry/devtools`. `devtools` is
   available only in debug builds unless that feature is on (`webview_window.rs:1222`). A test
-  reads `cargo metadata` and fails if a release build of the app enables it.
+  fails if `app/src-tauri/Cargo.toml` lists `devtools` among the features of `tauri`,
+  `tauri-runtime-wry` or `wry`. Only that file can turn it on for the app.
 - **The probe reads each engine's setting** through `with_webview`, in a build made with
   `tauri/custom-protocol`, as `tauri build` makes it (R8):
   - WebView2: `AreDevToolsEnabled` false;

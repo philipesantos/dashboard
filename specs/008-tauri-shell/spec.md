@@ -239,11 +239,12 @@ reports when the shipped version is behind a security release.
   Installing from a file is not supported (plugins install only from repositories).
 - **The engine itself is missing or broken** on Windows (no WebView2 runtime). The installer
   brings or requires it, as Tauri does today; the app explains the problem instead of opening an
-  empty window.
+  empty window. The maintainer's walk checks it (quickstart §8).
 - **A refused load in the release build.** It is refused silently, and the app keeps working.
   Nothing about it reaches the person as an error dialog.
-- **A Linux distribution without the libraries the embedded engine needs.** The installer
-  declares them, and the app does not start with a half-drawn window.
+- **A Linux distribution without the libraries the engine needs.** The installer declares them,
+  and the app does not start with a half-drawn window. The maintainer's walk checks the
+  dependencies the Linux packages declare (quickstart §8).
 
 ## Requirements *(mandatory)*
 

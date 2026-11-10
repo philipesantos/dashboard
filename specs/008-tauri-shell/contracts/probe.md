@@ -57,7 +57,7 @@ Each case has an id, the rule it breaks and how a refusal is detected:
 | `load-media-remote` | FR-001 | violation |
 | `load-image-data` | FR-001 | violation |
 | `style-runtime-element` | FR-002 | the demo's dialog and select open and close, with no violation unless the allowance is recorded |
-| `command-ungranted` (`shell_probe_ungranted`, registered, no grant) | FR-007 | error naming the ACL, not a missing command |
+| `command-ungranted` (`shell_probe_ungranted`, registered, no grant) | FR-007 | error naming the ACL, not a missing command. It proves the ACL refuses what nothing grants; the surface test proves the release build keeps the ACL on |
 | `command-opener` (`plugin:opener\|open_url`) | FR-007 | error |
 | `command-core` (`plugin:event\|listen`) | FR-007 | error |
 | `navigate-location` | FR-009 | handler and stayed |
@@ -97,7 +97,7 @@ The probe prints one line per case and a summary, then exits:
 ```text
 probe: held script-inline-element (violation script-src, side effect absent)
 probe: broken load-image-remote (no violation; the image request started)
-probe: 47 held, 1 broken
+probe: 47 held, 1 broken     (about 48 cases in all)
 ```
 
 | Exit | Meaning |

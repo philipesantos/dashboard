@@ -50,7 +50,7 @@ The engine-level protections applied when the window is built.
 | --- | --- |
 | `id` | Kebab-case, unique, such as `inline-script-attribute`. |
 | `rule` | The FR it breaks: FR-001, FR-007, FR-009 to FR-012 or FR-016. |
-| `expect` | `refused` (a policy violation, a refusal or an error) or `setting` (an engine setting reads as the release value). |
+| `detect` | One or more of the contract's kinds: `violation` (the engine reported a policy violation), `absent` (the side effect did not happen), `error` (the call rejected), `handler` (a window handler refused it), `stayed` (the page and the single window remained), `setting` (an engine setting reads as the release value). |
 | `result` | `held` or `broken`, with a detail. |
 
 **Validation**: the run passes only when every case is `held`, the report arrived within 60 s,

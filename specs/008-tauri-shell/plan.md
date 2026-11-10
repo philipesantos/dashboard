@@ -65,7 +65,7 @@ unchanged from today, measured in the quickstart.
 **Scale/Scope**:
 - 1 window;
 - 0 host commands and 0 permissions on the reviewed list;
-- about 45 probe cases;
+- about 48 probe cases;
 - 8 threat-model rows.
 
 ## Constitution Check

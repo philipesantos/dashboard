@@ -50,9 +50,12 @@ Tauri check app commands against the capabilities (research R4).
 The same test also fails when:
 - the generated `app/src-tauri/gen/schemas/acl-manifests.json` has no `__app__` key, because then
   Tauri skips the ACL for app commands;
-- a release build of the app crate enables `devtools` on `tauri`, `tauri-runtime-wry` or `wry`;
+- `app/src-tauri/Cargo.toml` lists `devtools` among the features of `tauri`, `tauri-runtime-wry`
+  or `wry`;
 - `tauri.conf.json` gives macOS an entitlements file that grants
-  `com.apple.developer.associated-domains` or `webcredentials` (research R7).
+  `com.apple.developer.associated-domains` or `webcredentials` (research R7);
+- Tauri's drag-and-drop handler is off: `dragDropEnabled: false` in `tauri.conf.json`, or
+  `disable_drag_drop_handler` in `src/window.rs` (FR-012).
 
 ## Failure lines
 
@@ -67,4 +70,5 @@ window-surface.toml: entry "list_widgets" has no reason
 gen/schemas/acl-manifests.json: no app manifest, so app commands skip the ACL (keep permissions/default.toml)
 Cargo.toml: the release build enables "devtools" (tauri)
 tauri.conf.json: the macOS entitlements grant "webcredentials"
+src/window.rs: the drag-and-drop handler is turned off (disable_drag_drop_handler)
 ```

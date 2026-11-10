@@ -75,3 +75,13 @@ Run the `audit.yml` job `cef-watch` by hand (`workflow_dispatch`).
 
 **Expected**: it passes while `tauri-runtime-cef` has only pre-releases. Its log names the
 newest version it saw.
+
+## 8. The engine edge cases of the installers
+
+1. On Windows, read the built installer's settings in `tauri.conf.json` (`bundle.windows.webviewInstallMode`),
+   then install on a machine or VM without the WebView2 runtime.
+
+   **Expected**: the installer brings or requires it, and the app never opens an empty window.
+2. On Linux, list what the `.deb` declares: `dpkg-deb -I` on the built package.
+
+   **Expected**: it depends on `libwebkit2gtk-4.1-0` and the other libraries the app links.
