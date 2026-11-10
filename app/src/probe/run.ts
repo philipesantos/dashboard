@@ -22,6 +22,9 @@ let seen: string[] = [];
 document.addEventListener("securitypolicyviolation", (event) => {
   seen.push(`${event.effectiveDirective} ${event.blockedURI}`);
 });
+const errors: string[] = [];
+window.addEventListener("error", (event) => errors.push(event.message));
+window.addEventListener("unhandledrejection", (event) => errors.push(String(event.reason)));
 
 const context: Context = {
   violations: () => [...seen],
@@ -34,14 +37,21 @@ const context: Context = {
 };
 
 async function runAll(): Promise<void> {
-  // The page's own load, fonts and styles included, must need nothing the policy refuses
-  // (FR-004, FR-020). The cases below start after it.
-  const atLoad = [...seen];
+  // The page's own load, fonts and styles included, must need nothing the policy refuses, throw
+  // nothing, and render the demo (FR-004, FR-020). The cases below start after it.
+  const problems = [
+    ...seen.map((entry) => `violation ${entry}`),
+    ...errors.map((message) => `error ${message}`),
+  ];
+  if (!document.getElementById("root")?.hasChildNodes()) problems.push("the demo did not render");
   const report: (Verdict & { id: string })[] = [
     {
       id: "page-load-clean",
-      held: atLoad.length === 0,
-      detail: atLoad.length === 0 ? "no violation while the page loaded" : `violations: ${atLoad.join(", ")}`,
+      held: problems.length === 0,
+      detail:
+        problems.length === 0
+          ? "the demo rendered, with no violation or error while the page loaded"
+          : problems.join("; ").slice(0, 300),
     },
   ];
   for (const probeCase of cases) {

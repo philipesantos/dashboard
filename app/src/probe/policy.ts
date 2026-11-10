@@ -66,6 +66,14 @@ const injected: Case[] = [
     },
   },
   {
+    // Tauri's freezePrototype (research R9): pollution of Object.prototype cannot reach the API
+    id: "prototype-frozen",
+    async run() {
+      const frozen = Object.isFrozen(Object.prototype);
+      return { held: frozen, detail: frozen ? "Object.prototype is frozen" : "Object.prototype is writable" };
+    },
+  },
+  {
     id: "script-timeout-string",
     async run(context) {
       setTimeout("window.__probeTimeoutString = 1;" as unknown as () => void, 0);

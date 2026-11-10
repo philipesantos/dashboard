@@ -343,6 +343,9 @@ If a dependency breaks, the setting stays off, and the plan records which depend
 **Rationale**: defence in depth against prototype pollution reaching the Tauri API, at no cost if
 the bundle tolerates it.
 
+**Outcome (T010)**: on. The demo renders with no uncaught error, its dialog and select open and
+close, and every probe case holds. The `prototype-frozen` case checks that it stays on.
+
 ## R10. The threat model
 
 **Decision**: `docs/threat-model.md` gains the following.

@@ -35,12 +35,13 @@ Each case has an id, the rule it breaks and how a refusal is detected:
 
 | Id | Rule | Detected by |
 | --- | --- | --- |
-| `page-load-clean` | FR-004, FR-020 | no violation before the first case: the page, its fonts and its styles load under the release policy |
+| `page-load-clean` | FR-004, FR-020 | before the first case, no violation and no uncaught error, and the demo rendered: the page, its fonts and its styles load under the release policy |
 | `script-inline-element` | FR-001 | violation and absent |
 | `script-inline-attribute` (`<img onerror>`) | FR-001 | violation and absent |
 | `script-eval` | FR-001 | error |
 | `script-function` | FR-001 | error |
 | `script-timeout-string` | FR-001 | violation and absent |
+| `prototype-frozen` | FR-001 (research R9) | `Object.prototype` is frozen |
 | `load-script-remote` | FR-001 | violation |
 | `load-style-remote` | FR-001 | violation |
 | `load-style-import` | FR-001 | violation |

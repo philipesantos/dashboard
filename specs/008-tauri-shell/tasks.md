@@ -171,7 +171,7 @@ proven by the probe.
   running the probe's page against the development server with the debug `shell-probe` binary:
   the page loads with no violation, hot reload's socket included, and every case holds,
   `load-image-remote` refused by `img-src`.
-- [ ] T010 [US1] Try `app.security.freezePrototype: true` (research R9). Keep it if the demo and the
+- [X] T010 [US1] Try `app.security.freezePrototype: true` (research R9). Keep it if the demo and the
   probe pass. If not, revert it and record in research R9 which dependency broke.
 
 **Checkpoint**: the window loads and runs only the bundle, on the three systems.
