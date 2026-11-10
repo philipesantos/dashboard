@@ -123,6 +123,111 @@ spacing:
   control-gap: 0.5rem
   frame-padding: 1rem
   grid-gap: 1rem
+components:
+  text-default:
+    textColor: "{colors.foreground}"
+    typography: "{typography.body-sm}"
+  text-default-dark:
+    textColor: "{colors.foreground-dark}"
+    typography: "{typography.body-sm}"
+  text-muted:
+    textColor: "{colors.muted-foreground}"
+    typography: "{typography.body-sm}"
+  text-muted-dark:
+    textColor: "{colors.muted-foreground-dark}"
+    typography: "{typography.body-sm}"
+  text-heading:
+    textColor: "{colors.foreground}"
+    typography: "{typography.heading}"
+  text-heading-dark:
+    textColor: "{colors.foreground-dark}"
+    typography: "{typography.heading}"
+  list-default:
+    textColor: "{colors.foreground}"
+    typography: "{typography.body-sm}"
+  list-default-dark:
+    textColor: "{colors.foreground-dark}"
+    typography: "{typography.body-sm}"
+  table-header:
+    textColor: "{colors.muted-foreground}"
+    typography: "{typography.body-sm}"
+  table-header-dark:
+    textColor: "{colors.muted-foreground-dark}"
+    typography: "{typography.body-sm}"
+  table-row:
+    textColor: "{colors.foreground}"
+    typography: "{typography.body-sm}"
+  table-row-dark:
+    textColor: "{colors.foreground-dark}"
+    typography: "{typography.body-sm}"
+  chart-default:
+    textColor: "{colors.muted-foreground}"
+    typography: "{typography.body-xs}"
+  chart-default-dark:
+    textColor: "{colors.muted-foreground-dark}"
+    typography: "{typography.body-xs}"
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.primary-foreground}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-primary-dark:
+    backgroundColor: "{colors.primary-dark}"
+    textColor: "{colors.primary-foreground-dark}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-secondary:
+    backgroundColor: "{colors.secondary}"
+    textColor: "{colors.secondary-foreground}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-secondary-dark:
+    backgroundColor: "{colors.secondary-dark}"
+    textColor: "{colors.secondary-foreground-dark}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-outline:
+    backgroundColor: "{colors.background}"
+    textColor: "{colors.foreground}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-outline-dark:
+    backgroundColor: "{colors.background-dark}"
+    textColor: "{colors.foreground-dark}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-ghost:
+    textColor: "{colors.foreground}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-ghost-dark:
+    textColor: "{colors.foreground-dark}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-destructive:
+    textColor: "{colors.destructive}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  button-destructive-dark:
+    textColor: "{colors.destructive-dark}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  form-input:
+    backgroundColor: "{colors.background}"
+    textColor: "{colors.foreground}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  form-input-dark:
+    backgroundColor: "{colors.background-dark}"
+    textColor: "{colors.foreground-dark}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.base}"
+  form-label:
+    textColor: "{colors.foreground}"
+    typography: "{typography.body-sm}"
+  form-label-dark:
+    textColor: "{colors.foreground-dark}"
+    typography: "{typography.body-sm}"
 ---
 
 ## Overview
@@ -271,7 +376,43 @@ Depth is mostly carried by surface lightness. Shadows are reserved for what floa
 ## Components
 
 Widget content is built from six components: text, list, table, chart, button and simple form.
-It selects a tone and a variant, never a color, a font, a size or a class.
+It selects a tone and a variant, never a color, a font, a size or a class. Each entry below has a
+`-dark` twin that references the dark roles, so the format's own checker sees both themes.
+
+### Text
+
+- **text-default**: body text in the widget, `foreground` at the default size.
+- **text-muted**: secondary text, `muted-foreground`.
+- **text-heading**: a title inside the widget, in the heading face. Smaller than the frame's
+  header, which the host draws.
+
+### List and table
+
+- **list-default**: list items, `foreground`, separated by `control-gap`.
+- **table-header**: column headers, `muted-foreground`, so the data reads first.
+- **table-row**: table cells, `foreground`.
+
+### Chart
+
+- **chart-default**: axes and labels, `muted-foreground` at the smallest size. Series take
+  `chart-1` to `chart-5` in order; a widget cannot pick a series color.
+
+### Button
+
+Every button shows the host's focus ring, which no variant can change.
+
+- **button-primary**: the one main action, cobalt.
+- **button-secondary**: other actions, a quiet slate fill.
+- **button-outline**: an action beside a primary one, outlined with `input`.
+- **button-ghost**: a low-emphasis action with no fill until hover.
+- **button-destructive**: an action that deletes or undoes, red text on a faint red fill.
+
+### Simple form
+
+The form has no password or masked field.
+
+- **form-input**: a text field, edged with `input` so it is found without its label.
+- **form-label**: a field's label.
 
 ## Do's and Don'ts
 

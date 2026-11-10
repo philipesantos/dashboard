@@ -24,7 +24,16 @@ interface Finding {
 /** Maps the checker's JSON report to failure lines and `warning:` lines. Infos are dropped. */
 export function formatLines(label: string, report: { findings?: Finding[] }): string[] {
   const lines: string[] = [];
+  // Every role that no format component references draws one orphaned-tokens warning. Host
+  // surfaces and status roles are used through design-rules instead, so these are expected and
+  // print as one line (research R1).
+  const orphans = (report.findings ?? []).filter((f) => f.severity === 'warning' && f.rule === 'orphaned-tokens');
+  if (orphans.length > 0) {
+    const names = orphans.map((f) => (f.path ?? '').replace(/^colors\./, '')).join(', ');
+    lines.push(`warning: ${label}: ${orphans.length} tokens no format component references: ${names} (format: orphaned-tokens)`);
+  }
   for (const f of report.findings ?? []) {
+    if (f.rule === 'orphaned-tokens') continue;
     const where = f.path ? `${f.path}: ` : '';
     const line = `${label}: ${where}${f.message} (format: ${f.rule ?? 'unknown'})`;
     if (f.severity === 'error') lines.push(line);

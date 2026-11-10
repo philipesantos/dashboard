@@ -228,7 +228,7 @@ fails `check`, naming the token.
     `@custom-variant` and the `@layer base` rules.
   - Confirm that `pnpm --filter ./app build` passes, and that the built CSS holds the same
     values as before for every unchanged role.
-- [ ] T019 [US1] Silence the format checker's `orphaned-tokens` warnings where a component
+- [X] T019 [US1] Silence the format checker's `orphaned-tokens` warnings where a component
   exists. Give each `components` entry a `-dark` twin that references the dark roles, such as
   `button-primary-dark` (research R1). Run `check`, and record the checker's remaining warnings
   and their count in `research.md` R1 (quickstart §2).

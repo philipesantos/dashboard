@@ -105,6 +105,14 @@ and tested against reference values. No color library is added.
 If the checker reports an error on the real `DESIGN.md` that the format's text does not explain,
 it is brought to the maintainer before working around it.
 
+**On the real `DESIGN.md`** (T019, 2026-11-10): zero errors, and one kind of warning,
+`orphaned-tokens`, for the 66 color names (33 roles, light and dark) that no format component
+references. Fourteen components with `-dark` twins reference the other 8 roles in both themes.
+The 66 are the surfaces (`card`, `popover`, `muted`, `accent`), the edges, the status and chart
+colors, the chrome, the frame, the dialog and the scrim. They are used through `design-rules`,
+which the format does not read, so the warnings are expected. The project checker prints them as
+one line. The format's contrast rule drew no warning.
+
 ## R3. What the app reads: one generated CSS file, committed
 
 **Decision**: `pnpm --filter ./design gen` writes `app/src/theme.generated.css`. The file opens
