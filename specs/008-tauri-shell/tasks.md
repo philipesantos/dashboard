@@ -318,7 +318,7 @@ draws (FR-009 to FR-012, FR-021).
 
 ### Implementation for User Story 5
 
-- [ ] T020 [US5] In `window.rs`:
+- [X] T020 [US5] In `window.rs`:
   - `incognito(true)`;
   - `general_autofill_enabled(false)`;
   - on Windows, through `with_webview`,

@@ -84,29 +84,39 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
             false
         })
         .initialization_script_for_all_frames(DIALOGS_SCRIPT)
+        // No form data, password or cookie kept between runs, on any engine; the host keeps its
+        // state in its own files (FR-016, HS-26)
+        .incognito(true)
+        .general_autofill_enabled(false)
         // Developer tools only in a development build (FR-011). Release builds also lack the
         // `devtools` feature, which the surface test checks.
         .devtools(tauri::is_dev())
         .build()?;
 
-    // The engine's own context menu, off in release (FR-011). WebKit engines have no such
-    // setting; main.tsx cancels `contextmenu` there.
+    // WebView2 settings that Tauri does not expose (research R6, R7):
+    // - password saving, always off (FR-016, HS-26): `general_autofill_enabled` covers forms,
+    //   not passwords;
+    // - the engine's own context menu, off in release (FR-011). WebKit engines have no such
+    //   setting; main.tsx cancels `contextmenu` there.
     #[cfg(windows)]
-    if !tauri::is_dev() {
-        window.with_webview(|webview| {
-            // SAFETY: the controller is Tauri's own, alive on this (main) thread
-            let result = unsafe {
-                webview
-                    .controller()
-                    .CoreWebView2()
-                    .and_then(|core| core.Settings())
-                    .and_then(|settings| settings.SetAreDefaultContextMenusEnabled(false))
-            };
-            if let Err(error) = result {
-                eprintln!("window: could not turn off WebView2's context menu: {error}");
-            }
-        })?;
-    }
+    window.with_webview(|webview| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
+        use windows_core::Interface;
+
+        // SAFETY: the controller is Tauri's own, alive on this (main) thread
+        let result = unsafe {
+            webview.controller().CoreWebView2().and_then(|core| core.Settings()).and_then(|settings| {
+                settings.cast::<ICoreWebView2Settings4>()?.SetIsPasswordAutosaveEnabled(false)?;
+                if !tauri::is_dev() {
+                    settings.SetAreDefaultContextMenusEnabled(false)?;
+                }
+                Ok(())
+            })
+        };
+        if let Err(error) = result {
+            eprintln!("window: could not apply the WebView2 settings: {error}");
+        }
+    })?;
     #[cfg(not(windows))]
     let _ = window;
     Ok(())
