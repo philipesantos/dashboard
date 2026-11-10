@@ -1,0 +1,10 @@
+# The app's default permission set: empty. It exists so that Tauri builds the app's ACL manifest
+# even with no command, which is what makes it check app commands against the capabilities
+# (specs/008-tauri-shell/research.md, R4). Without this file, a command added later would run
+# with no grant. The surface test fails if the manifest goes.
+#
+# Part of the security core (constitution, Principle IX).
+
+[default]
+description = "The window starts with no app command. Each one is granted in capabilities/."
+permissions = []

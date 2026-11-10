@@ -1,9 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "The main window's grants: none. Each one needs an entry in window-surface.toml.",
   "windows": ["main"],
-  "permissions": [
-    "core:default"
-  ]
+  "permissions": []
 }

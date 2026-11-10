@@ -219,7 +219,7 @@ proven by the probe.
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Make the ACL govern app commands and write the reviewed list (research R4):
+- [X] T013 [US2] Make the ACL govern app commands and write the reviewed list (research R4):
   - `app/src-tauri/permissions/default.toml` with the empty default set of the contract;
   - a `commands!` macro in `lib.rs` that expands both `generate_handler![…]` and
     `pub const COMMANDS: &[&str]`, with no commands;
