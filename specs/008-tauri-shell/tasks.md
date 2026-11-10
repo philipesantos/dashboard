@@ -338,7 +338,7 @@ change in a register the move can empty.
 **Independent Test**: read the decision record. The Linux probe passes in CI.
 `cargo test -p dashboard --test webkitgtk_register --locked` passes.
 
-- [ ] T021 [US4] Write `docs/decisions/0002-linux-window-engine.md`, in the format of 0001:
+- [X] T021 [US4] Write `docs/decisions/0002-linux-window-engine.md`, in the format of 0001:
   - **Status:** WebKitGTK under the v2.6.1 fallback.
   - **The trial:** the evidence of research R1: versions, issue numbers and dates, and the run of
     the runtime's own example on the maintainer's desktop (no keyboard input, a core held at
