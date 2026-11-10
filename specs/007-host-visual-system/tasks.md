@@ -453,7 +453,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
 **Independent Test**: each acceptance scenario of User Story 6 maps to a criterion whose
 `Check:` names a keyboard-only or screen-reader check on each of the three systems.
 
-- [ ] T038 [US6] Add the accessibility criteria to `docs/design/host-surfaces.md` (FR-018):
+- [X] T038 [US6] Add the accessibility criteria to `docs/design/host-surfaces.md` (FR-018):
   - focus moves into the dialog and is trapped;
   - Escape takes the safe choice and never approves;
   - focus returns to the opener, or to the window if the opener is gone;

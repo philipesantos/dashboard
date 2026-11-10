@@ -206,3 +206,63 @@ there.
 Check: test: in forced-colors emulation, HS-10 and HS-11 still hold and the dialog has a visible
 border.
 Feature: Diálogo de instalação com permissões em linguagem clara
+
+## Dialogs with the keyboard and a screen reader
+
+Trust decisions happen only in host dialogs, so a dialog someone cannot operate shuts them out of
+installing plugins and connecting accounts. Each check below runs with only a keyboard, and with
+the system's screen reader on each of the three systems: Narrator on Windows, VoiceOver on macOS
+and Orca on Linux.
+
+### HS-18 Focus moves into the dialog and stays there
+
+When a dialog opens, focus moves to its safe choice. Tab and Shift+Tab move only among the
+dialog's controls until it closes.
+
+Check: test: after opening, the focused element is the safe choice, and cycling Tab and
+Shift+Tab past both ends never leaves the dialog; the feature's review repeats it with a keyboard
+on each of the three systems.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-19 Escape takes the safe choice
+
+Escape takes the dialog's safe choice (deny or cancel) and closes it. Escape never approves.
+
+Check: test: Escape on every host dialog, with focus on each of its controls, takes the safe
+choice.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-20 Focus returns to where it was
+
+When a dialog closes, focus returns to the control that opened it, or to the window when that
+control is gone.
+
+Check: test: closing a dialog returns focus to its opener; when the opener was removed while the
+dialog was open, focus lands on the window.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-21 The dialog is announced with its name and description
+
+The dialog is exposed as a dialog, with an accessible name (its title) and description (who is
+asking and what is decided), so a screen reader announces all three on open.
+
+Check: test: the accessibility tree exposes the dialog's role, name and description; the
+feature's review hears the announcement with the screen reader on each of the three systems.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-22 Nothing behind the dialog is reachable by assistive technology
+
+While a dialog is open, a screen reader's virtual cursor and its lists of headings, links and
+landmarks reach nothing outside the dialog.
+
+Check: test: with a dialog open, the accessibility tree outside it is empty; the feature's review
+tries the screen reader's navigation keys on each of the three systems.
+Feature: Diálogo de instalação com permissões em linguagem clara
+
+### HS-23 Transitions follow reduced motion
+
+Dialog and frame transitions follow the system's reduced-motion setting: with it on, they
+appear and move without animation.
+
+Check: test: with reduced motion emulated, opening a dialog and moving a frame run no animation.
+Feature: Grade do dashboard
