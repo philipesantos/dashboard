@@ -79,7 +79,7 @@ Where the details live:
   - `design/test/fixtures/**`.
 
   Add `design/preview/` to `.gitignore` (research R3, R8).
-- [ ] T003 Clear the high npm advisory already on master (research R13). It is `body-parser`
+- [X] T003 Clear the high npm advisory already on master (research R13). It is `body-parser`
   <2.4.0, reached through `app` → `shadcn` → `@modelcontextprotocol/sdk` → `express`.
   - Update `shadcn` in `app/package.json` if a release pulls `body-parser` 2.4.0 or later.
   - Otherwise, add `"pnpm": { "overrides": { "body-parser": ">=2.4.0" } }` to the root

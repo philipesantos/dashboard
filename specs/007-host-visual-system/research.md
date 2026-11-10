@@ -469,6 +469,15 @@ pass, by updating `shadcn` or with a `pnpm.overrides` entry for `body-parser` `>
 fails only at high and above, so the moderate and low ones are left as they are. That is
 recorded with the job.
 
+**Done in T003** (2026-11-10): `pnpm update -r body-parser` moved it to 2.4.0 inside the
+existing ranges, with no override. Installing `@google/design.md` 0.4.0 then brought a new high
+advisory, `zod` <4.6.6 (GHSA-mrhx-c7xc-m3w5, memory exhaustion on oversized constrained
+collections). The checker's CLI bundles its own copy of `zod` 3.25.76 inside `dist/index.js`, so
+an override would silence the audit without changing the code that runs. That copy only reads
+this repository's `DESIGN.md` and fixtures at build time, and never ships in the app.
+`pnpm-workspace.yaml` therefore lists the advisory under `auditConfig.ignoreGhsas`, with this
+reason and the condition for dropping it: a design.md release on `zod` 4.6.6 or later.
+
 **Rationale**:
 - `cargo audit` and `cargo deny` see only Rust, while npm packages run in CI on three systems
   and on contributors' machines (threat T4).

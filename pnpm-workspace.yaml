@@ -2,3 +2,12 @@ packages:
   - app
   - design
   - plugins/examples/*
+
+auditConfig:
+  ignoreGhsas:
+    # zod <4.6.6 can exhaust memory validating an oversized constrained collection. The only
+    # copy that runs is the one bundled inside @google/design.md 0.4.0's CLI, which reads this
+    # repository's own DESIGN.md and test fixtures at build time and never ships in the app. An
+    # override cannot reach a bundled copy. Drop this line when design.md moves to zod 4.6.6 or
+    # later (specs/007-host-visual-system/research.md, R13).
+    - GHSA-mrhx-c7xc-m3w5
