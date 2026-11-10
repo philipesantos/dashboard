@@ -160,6 +160,8 @@ proven by the probe.
   Done without the allowance: the scroll lock and the Select's viewport insert `<style>`
   elements, and both now carry Tauri's per-response nonce, read from an empty `<style>` in
   `index.html` (research R3). `get-nonce` 1.0.1 is a direct dependency.
+  `app/src-tauri/tests/style_nonce.rs` keeps it that way for components the probe does not
+  open (R3).
 - [X] T009 [US1] Send the development policy from Vite. In `app/vite.config.ts`, read
   `src-tauri/tauri.conf.json`'s `csp`, add `'unsafe-inline'` to `script-src` and
   `ws://localhost:1420` to `connect-src`, and set it as `server.headers['Content-Security-Policy']`.
@@ -396,6 +398,9 @@ change in a register the move can empty.
   - **The probe:** a short "The window's protections" section: what the probe is, how to run it
     locally (contracts/probe.md's four commands), and that a new host command needs the three
     entries of `window-surface.toml`'s comment.
+  - **Run-time styles:** a Radix or shadcn component that draws a `<style>` takes
+    `nonce={getNonce()}`, and `shadcn add` must not drop it; `tests/style_nonce.rs` fails
+    otherwise (research R3).
   - **The WebKitGTK register:** a change made only because Linux uses WebKitGTK gets a
     `WEBKITGTK-ONLY(<id>)` marker and an entry in `docs/webkitgtk-register.toml`, and review
     checks for unmarked ones (research R15).

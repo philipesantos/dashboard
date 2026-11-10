@@ -140,6 +140,7 @@ app/
     │   └── probe.rs             # cfg(feature = "shell-probe"): report and ungranted commands, reads, exit
     └── tests/
         ├── surface.rs           # list vs capabilities, commands, plugins; app ACL present; no devtools; no macOS web-credential entitlements
+        ├── style_nonce.rs       # every run-time <style> carries the nonce (Radix parts, index.html, main.tsx)
         └── webkitgtk_register.rs   # WEBKITGTK-ONLY markers vs docs/webkitgtk-register.toml
 docs/
 ├── decisions/0002-linux-window-engine.md   # the trial and when to repeat it

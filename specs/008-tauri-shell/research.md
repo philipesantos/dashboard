@@ -116,6 +116,13 @@ protections is what Principle IX's line-by-line review covers.
     `react-style-singleton` already used.
   - With that, the policy needs no `'unsafe-inline'` for styles. A `<style>` that markup
     injection adds has no nonce and is refused, which `load-style-import` checks.
+  - The cost is a rule for later components: one that draws a `<style>` without the nonce is
+    refused and draws wrong. The probe opens only the demo's dialog and select, so
+    `app/src-tauri/tests/style_nonce.rs` checks the rest statically. It fails when an installed
+    Radix package takes a `nonce` and is not on its list (today `react-select` and
+    `react-scroll-area`), when a listed part is used in `app/src` without `nonce=` (which also
+    catches `shadcn add` overwriting `select.tsx`), or when the empty `<style>` or the
+    `setNonce` call goes.
   - Style cannot run script. Because `img-src` and `font-src` stay `'self'`, a style rule
     cannot send data to the internet either.
 - **Development.** On desktop, `tauri dev` loads the page straight from Vite's server. Tauri
@@ -410,8 +417,10 @@ Decision 0001 is revisited with the installation item, its stated trigger.
 - `tauri.conf.json`'s `app.security` and `bundle` blocks, and the `tauri` features in
   `app/src-tauri/Cargo.toml`;
 - `app/src/main.tsx`'s context-menu cancel and `app/vite.config.ts`'s development policy;
-- the tests that guard them: `app/src-tauri/tests/surface.rs`, `app/src/probe/` and the probe
-  step in `ci.yml`.
+- `app/index.html`'s empty `<style>`, `main.tsx`'s `setNonce`, and the `nonce` props in
+  `app/src/components/ui/` (R3);
+- the tests that guard them: `app/src-tauri/tests/surface.rs`, `tests/style_nonce.rs`,
+  `app/src/probe/` and the probe step in `ci.yml`.
 
 This feature's pull request is reviewed line by line.
 
