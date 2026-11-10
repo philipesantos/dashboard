@@ -393,7 +393,7 @@ a cited criterion checked only by review, each fails by name.
 
 ### Implementation for User Story 4
 
-- [ ] T033 [US4] Implement `design/src/checks/criteria.ts`, which reads
+- [X] T033 [US4] Implement `design/src/checks/criteria.ts`, which reads
   `docs/design/host-surfaces.md` and `docs/threat-model.md`'s threats table, and wire it into
   `check`. Pass T032.
 - [ ] T034 [US4] Write `docs/design/host-surfaces.md`, starting with what only the host draws and

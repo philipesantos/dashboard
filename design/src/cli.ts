@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { parseDesign, type Design } from './parse.ts';
 import { generateCss, THEME_FILE, WIDGET_MAP_FILE, widgetMapJson } from './generate.ts';
 import { checkContrast } from './checks/contrast.ts';
+import { checkCriteria } from './checks/criteria.ts';
 import { checkDrift } from './checks/drift.ts';
 import { checkFonts } from './checks/fonts.ts';
 import { checkFormat } from './checks/format.ts';
@@ -37,6 +38,7 @@ const CHECKS: [string, Check][] = [
   ['color usage in app/src', checkUsage],
   ['host-only', checkHostOnly],
   ['drift', checkDrift],
+  ['criteria coverage', checkCriteria],
   ['font licenses', checkFonts],
 ];
 
