@@ -28,7 +28,7 @@ probe step in `ci.yml`, is core (research R13). The pull request gets line-by-li
   - US2: the reviewed surface and the app ACL;
   - US3: navigation, windows, devtools, the context menu, and what the engine grants or draws;
   - US5: autofill and password saving;
-  - US4: the Linux engine's desk trial;
+  - US4: the Linux engine's trial, and the WebKitGTK register;
   - US6: the weekly runtime watch.
 - **Polish:** the threat model, CONTRIBUTING, checks, walks, review and merge.
 
@@ -107,7 +107,8 @@ probe step in `ci.yml`, is core (research R13). The pull request gets line-by-li
   - `pnpm --filter ./app build --mode probe`;
   - `cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked`;
   - run the binary with `DASHBOARD_PROBE=1`. On Linux, run it under `xvfb-run -a` with
-    `WEBKIT_DISABLE_DMABUF_RENDERER=1`, and add `xvfb` to the apt step;
+    `WEBKIT_DISABLE_DMABUF_RENDERER=1`, marked `# WEBKITGTK-ONLY(ci-dmabuf)`, and add `xvfb`
+    to the apt step;
   - `pnpm --filter ./app build`, to restore the normal `dist`;
   - `cargo clippy -p dashboard --features shell-probe --all-targets --locked -- -D warnings`.
 
@@ -243,6 +244,7 @@ draws (FR-009 to FR-012, FR-021).
     0.39.1, a direct dependency for `cfg(windows)` at the version already locked;
   - WKWebView `isInspectable`, through `objc2-web-kit` 0.3.2 for `cfg(target_os = "macos")`;
   - WebKitGTK `enable-developer-extras`, through `webkit2gtk` 2.0.2 for `cfg(target_os = "linux")`.
+    Mark the read and the dependency `WEBKITGTK-ONLY(probe-devtools-read)` (research R15).
 
 ### Implementation for User Story 3
 
@@ -277,7 +279,8 @@ draws (FR-009 to FR-012, FR-021).
 
 - [ ] T019 [P] [US5] Add the `setting` cases to `probe.rs`:
   - `store-incognito` on each engine: the WebView2 profile is InPrivate, the WKWebView
-    `websiteDataStore.isPersistent` is false, and the WebKitGTK session is ephemeral;
+    `websiteDataStore.isPersistent` is false, and the WebKitGTK session is ephemeral, its read
+    marked `WEBKITGTK-ONLY(probe-ephemeral-read)` (research R15);
   - `autofill-general` and `autofill-password` on Windows (`IsGeneralAutofillEnabled`,
     `IsPasswordAutosaveEnabled`).
 
@@ -297,14 +300,19 @@ draws (FR-009 to FR-012, FR-021).
 
 ## Phase 7: User Story 4 - On Linux, the app ships its own engine (Priority: P2)
 
-**Goal**: the desk trial recorded, and Linux on WebKitGTK with every protection.
+**Goal**: the trial recorded, Linux on WebKitGTK with every protection, and every WebKitGTK-only
+change in a register the move can empty.
 
 **Independent Test**: read the decision record. The Linux probe passes in CI.
+`cargo test -p dashboard --test webkitgtk_register --locked` passes.
 
 - [ ] T021 [US4] Write `docs/decisions/0002-linux-window-engine.md`, in the format of 0001:
   - **Status:** WebKitGTK under the v2.6.1 fallback.
-  - **The trial:** a desk trial, with the evidence of research R1: versions, issue numbers and
-    dates.
+  - **The trial:** the evidence of research R1: versions, issue numbers and dates, and the run of
+    the runtime's own example on the maintainer's desktop (no keyboard input, a core held at
+    100%, the download and binary sizes).
+  - **The way back out:** every WebKitGTK-only change is in `docs/webkitgtk-register.toml`
+    (T033), and the move to the embedded engine works through it until it is empty.
   - **The bar:** every window protection with a breaking test in CI.
   - **The last version tried:** `3.0.0-alpha.7`, on a machine-readable line
     `Last runtime version tried: 3.0.0-alpha.7` for the watch of T022.
@@ -312,6 +320,18 @@ draws (FR-009 to FR-012, FR-021).
   - **The options considered.**
 
   Link it from the threat model's assumption about the webview (T023).
+- [ ] T033 [US4] The WebKitGTK register (FR-022, research R15,
+  [contracts/webkitgtk-register.md](contracts/webkitgtk-register.md)), after T006, T016 and T019:
+  - write `app/src-tauri/tests/webkitgtk_register.rs` first, and see it fail with the contract's
+    lines while the register is missing;
+  - write `docs/webkitgtk-register.toml` with the contract's comment and the four entries of
+    R15: `system-libs`, `ci-dmabuf`, `probe-devtools-read`, `probe-ephemeral-read`;
+  - add the `system-libs` markers: `# WEBKITGTK-ONLY(system-libs)` above `ci.yml`'s apt step and
+    `<!-- WEBKITGTK-ONLY(system-libs) -->` above `CONTRIBUTING.md`'s Linux prerequisites;
+  - the test reads `git ls-files` from the repository root, leaving out `specs/` and the
+    register, and parses the register with `toml`, already in the lock;
+  - check it breaks: rename one marker, then delete one entry's `removal`, and see each failure
+    line. Revert.
 
 ---
 
@@ -358,6 +378,9 @@ draws (FR-009 to FR-012, FR-021).
   - **The probe:** a short "The window's protections" section: what the probe is, how to run it
     locally (contracts/probe.md's four commands), and that a new host command needs the three
     entries of `window-surface.toml`'s comment.
+  - **The WebKitGTK register:** a change made only because Linux uses WebKitGTK gets a
+    `WEBKITGTK-ONLY(<id>)` marker and an entry in `docs/webkitgtk-register.toml`, and review
+    checks for unmarked ones (research R15).
 - [ ] T026 Run every local check under the memory cap:
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`;
   - the clippy line of T006;
@@ -367,7 +390,7 @@ draws (FR-009 to FR-012, FR-021).
   - `pnpm audit --audit-level high`.
 
   Record the probe's run time and the release build time in research R11.
-- [ ] T027 Walk `quickstart.md` §1–§4 and §7 on Linux, including the two mutations of §3, and fix
+- [ ] T027 Walk `quickstart.md` §1–§4, §7 and §9 on Linux, including the two mutations of §3, and fix
   any drift between it and the code. §5 and §6 need each system's desktop, so they run in T030.
 - [ ] T028 Review the window's protections independently. A fresh agent with none of this
   feature's context reads the security-core files of research R13 against spec FR-001 to FR-021,
@@ -410,7 +433,7 @@ draws (FR-009 to FR-012, FR-021).
   cases and its own lines in `window.rs` or the configuration. They touch the same files, so one
   at a time.
 - **US4 and US6 (Phases 7, 8)**: depend only on Phase 1 and can run beside the others. T022 reads
-  T021's record.
+  T021's record. T033 waits for T006, T016 and T019, whose markers it lists.
 - **Polish (Phase 9)**:
   - T023 to T025 after the stories;
   - T026 to T028 after everything;

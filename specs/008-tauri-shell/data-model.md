@@ -67,3 +67,18 @@ Decision record 0002 records it.
 | `requirements` | For each of FR-001 to FR-012 and FR-016: met, not met or not reached, with evidence. |
 | `size`, `startup` | For a `build` trial only: installer size and cold start per system. |
 | `outcome` | `adopt` or `fallback`, and when the next trial is due. |
+
+## WebKitGTK register entry
+
+A change made only because Linux uses WebKitGTK (FR-022). Format in
+[contracts/webkitgtk-register.md](contracts/webkitgtk-register.md).
+
+| Field | Rule |
+| --- | --- |
+| `id` | Kebab-case, unique. The marker `WEBKITGTK-ONLY(<id>)` names it. |
+| `files` | Each exists and holds the marker. |
+| `reason` | Required, non-empty. |
+| `removal` | Required, non-empty: delete, or replace with what. |
+
+**Validation**: every marker has an entry, and every entry has a marker in each file it names.
+**Lifecycle**: added with the change; removed with it when Linux moves to the embedded engine.

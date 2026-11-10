@@ -41,6 +41,11 @@ mais tardar."
   trial records the failure with that evidence, and Linux ships the system WebKitGTK with every
   protection and test of this feature. The trial is repeated with each stable release of the
   runtime (constitution v2.6.1), and adopting it also takes the amendment to Tauri 3.
+- Q: (at implement) After running the runtime's own example on the maintainer's Linux desktop,
+  where typing reached no field and the main process held a core at 100%, does Linux stay on
+  WebKitGTK? → A: Yes, for now. Every change made only because Linux uses WebKitGTK is marked
+  where it is made and listed in a register, so the move to the embedded engine can remove each
+  one (FR-022).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -321,6 +326,12 @@ reports when the shipped version is behind a security release.
   embedded-engine runtime that carries it. While Linux uses the system WebKitGTK, the
   distribution patches it, and a weekly check instead reports a new stable release of the
   runtime, which makes the next trial due.
+- **FR-022**: While Linux uses the system WebKitGTK, every change made only because of it MUST
+  be listed in a register, so the move to the embedded engine can remove or replace each one.
+  This covers code, configuration, dependencies, CI steps and UI workarounds. Each entry names
+  the files, why the change exists, and what the move does with it. Each place the change is
+  made MUST carry a marker naming its entry. A test MUST fail when a marker has no entry, when an
+  entry has no marker in a file it names, or when an entry has no reason or no removal.
 
 #### Security tests and the threat model
 
@@ -350,6 +361,8 @@ reports when the shipped version is behind a security release.
   is current with Chromium's security releases.
 - **Engine trial report**: for the Linux engine, each requirement met or not, the installer size
   and the start-up time, compared with the other systems.
+- **WebKitGTK register**: each change made only because Linux uses WebKitGTK, with its files,
+  its reason, and what the move to the embedded engine does with it.
 
 ## Success Criteria *(mandatory)*
 

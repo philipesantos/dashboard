@@ -35,6 +35,18 @@ a new trial.
   each Chromium bump can break start-up.
 - **Other projects** that tried it keep Linux on WebKitGTK while using the embedded engine
   elsewhere, citing the same packaging gap.
+- **The runtime's own example, run on the maintainer's desktop** (2026-11-10; Ubuntu, GNOME on
+  Wayland; `tauri` branch `v3` at `6620118`, runtime `3.0.0-alpha.7`, CEF 154):
+  - the CLI built from source in 4 min 19 s; the first `tauri dev` downloaded 1.8 GB of CEF into
+    `~/.cache/tauri-cef`; the debug binary is 295 MB, and the app's processes held 833 MB;
+  - **typing reached no text field.** The runtime forces X11 (`--ozone-platform=x11`,
+    `GDK_BACKEND=x11`, `runtime.rs:3313-3337`), so on a Wayland session it runs through
+    XWayland, which matches #16251 and #16351;
+  - **the main process held one core at about 100%** over four 5 s samples, while the page and
+    GPU processes stayed near 0%, which matches #16189.
+
+  The maintainer stopped the trial there: either defect alone blocks a dashboard that stays
+  open all day.
 
 **Rationale**: a hands-on trial would mean porting the app to Tauri 3 alpha on a throwaway
 branch, and the open defects already decide it. The constitution's fallback exists for this
@@ -43,7 +55,8 @@ the weekly Chromium check and the 14-day rule) do not apply until an embedded en
 constitution says "while the app embeds the engine".
 
 **Alternatives considered**:
-- A hands-on trial on Tauri 3 alpha. Offered, and declined by the maintainer.
+- A hands-on trial of the app ported to Tauri 3 alpha. Not needed: the runtime's own example
+  failed on keyboard input and idle CPU first.
 - Moving the host to Tauri 3 alpha now. Declined: an alpha framework under the security core,
   with the defects above.
 
@@ -407,3 +420,36 @@ This feature's pull request is reviewed line by line.
 
 **Rationale**: FR-021. These are dialogs and grants drawn by the engine outside the host frame,
 which Principles V and VII reserve to the host.
+
+## R15. The WebKitGTK register
+
+**Decision**: every change made only because Linux uses the system WebKitGTK is listed in
+`docs/webkitgtk-register.toml` (FR-022, the maintainer's request of 2026-11-10). Each place the
+change is made carries the marker `WEBKITGTK-ONLY(<id>)` in a comment, in whatever syntax the
+file uses: `//` in Rust and TypeScript, `#` in YAML and TOML, `<!-- -->` in Markdown. A test,
+`app/src-tauri/tests/webkitgtk_register.rs`, compares the markers in the files git tracks with
+the register ([contracts/webkitgtk-register.md](contracts/webkitgtk-register.md)). Decision
+record 0002 links the register, and CONTRIBUTING states the rule.
+
+The entries this feature starts with:
+
+| Id | Where | Why | On the move |
+| --- | --- | --- | --- |
+| `system-libs` | `ci.yml`'s apt step, `CONTRIBUTING.md`'s Linux prerequisites | Tauri 2 on Linux builds against `libwebkit2gtk-4.1-dev` | Replace with the embedded engine's build dependencies |
+| `ci-dmabuf` | `ci.yml`'s probe step | WebKitGTK's DMA-BUF renderer fails under `xvfb` (R8) | Delete |
+| `probe-devtools-read` | `probe.rs`, and the `webkit2gtk` dependency in `app/src-tauri/Cargo.toml` | The `devtools-setting` case reads `enable-developer-extras` (T016) | Replace with the embedded engine's read |
+| `probe-ephemeral-read` | `probe.rs` | The `store-incognito` case reads the ephemeral session (T019) | Replace with the embedded engine's read |
+
+The register lists only what is specific to WebKitGTK. Code shared with WKWebView, such as the
+context-menu cancel in `main.tsx` (R6), stays after the move, so it is not listed.
+
+**Rationale**: the maintainer's concern is that WebKitGTK workarounds pile up and stay behind
+after the move to the embedded engine. A marker at each place and one list make the move a
+walk through the list. The test keeps the two from drifting. What the test cannot catch is a
+change made for WebKitGTK and never marked, so CONTRIBUTING asks for the marker and review
+checks it, as for the security core.
+
+**Alternatives considered**:
+- Only a section in decision record 0002. Rejected: nothing would check it against the code.
+- Keeping every WebKitGTK change under `cfg(target_os = "linux")`. Not enough: CI steps,
+  dependencies and UI workarounds have no `cfg`, and `cfg` alone does not say why.

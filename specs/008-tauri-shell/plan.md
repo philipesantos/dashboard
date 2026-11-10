@@ -20,8 +20,11 @@ The template's opener plugin and `greet` command go. A `shell-probe` build, the 
 plus one bundled script and one report command, tries every forbidden action inside the real
 page on Windows, macOS and Linux and fails CI if any succeeds.
 
-On Linux the engine stays the system WebKitGTK, after a desk trial of Tauri's embedded-Chromium
-runtime. That runtime exists only for Tauri 3 alpha and has open Linux defects. The trial is
+On Linux the engine stays the system WebKitGTK, after a trial of Tauri's embedded-Chromium
+runtime. That runtime exists only for Tauri 3 alpha and has open Linux defects; its own example,
+run on the maintainer's desktop, took no keyboard input and held a core at 100% (R1). Every change
+made only for WebKitGTK is marked where it is made and listed in a register that a test checks,
+so the move to the embedded engine can remove each one (R15). The trial is
 recorded as decision record 0002, and a weekly job reports when a stable runtime release makes
 the next trial due. The threat model gains the window as boundary B7, and its webview assumption
 and diagram are fixed.
@@ -66,7 +69,8 @@ unchanged from today, measured in the quickstart.
 - 1 window;
 - 0 host commands and 0 permissions on the reviewed list;
 - about 48 probe cases;
-- 8 threat-model rows.
+- 8 threat-model rows;
+- 4 entries in the WebKitGTK register.
 
 ## Constitution Check
 
@@ -85,7 +89,7 @@ constitution v2.6.1.
 | VIII. Every security rule has a breaking test | Pass, with one limit recorded | Each rule has a probe case or a test (R4, R6, R8, R14). The probe is built as `tauri build` builds, with `tauri/custom-protocol`. One limit: on macOS, whether the system offers password AutoFill has no automated test, because no API or WebDriver reaches it. Tests cover the incognito store and the absence of the entitlement that enables it, and a review step covers the offer itself (R7, Complexity Tracking). |
 | IX. Human review of the security core | Pass | The window's protections are core since v2.6.0. They live in the files R13 lists, the tests that guard them included, which CONTRIBUTING gains, and this pull request is reviewed line by line. |
 | Fixed decisions: Tauri 2 and React | Pass | Unchanged. |
-| Fixed decision: the window engine | Pass, through the fallback | WebView2 and WKWebView as decided. On Linux, WebKitGTK under the v2.6.1 fallback, after the desk trial (R1, decision record 0002). The weekly watch (R11) triggers the next trial at each stable release of the runtime. |
+| Fixed decision: the window engine | Pass, through the fallback | WebView2 and WKWebView as decided. On Linux, WebKitGTK under the v2.6.1 fallback, after the trial (R1, decision record 0002), with each WebKitGTK-only change in the register (R15). The weekly watch (R11) triggers the next trial at each stable release of the runtime. |
 | Engine security duties (14 days, weekly check, version in releases) | Not yet applicable | They apply "while the app embeds the engine", as the spec's FR-017 now says too. WebKitGTK is patched by the distribution (R1). |
 | CI on three systems, audit duties | Pass | The probe runs on all three. `cargo audit`, `cargo deny`, `pnpm audit` and the license check continue. |
 | Phase gates | Pass | Phases 1 and 2 have passed. |
@@ -99,13 +103,14 @@ constitution v2.6.1.
 ```text
 specs/008-tauri-shell/
 ├── plan.md              # This file
-├── research.md          # Phase 0: R1–R13
+├── research.md          # Phase 0: R1–R15
 ├── data-model.md        # Phase 1
 ├── quickstart.md        # Phase 1
 ├── contracts/
 │   ├── content-policy.md   # release and development policies, directive by directive
 │   ├── window-surface.md   # window-surface.toml and the check's error lines
-│   └── probe.md            # probe cases, report lines and exit codes
+│   ├── probe.md            # probe cases, report lines and exit codes
+│   └── webkitgtk-register.md  # the register of WebKitGTK-only changes and its markers
 ├── checklists/
 │   └── requirements.md
 └── tasks.md             # Phase 2 (/speckit-tasks)
@@ -133,9 +138,12 @@ app/
     │   ├── lib.rs               # builds the window in setup; commands! macro
     │   ├── window.rs            # every window protection (security core)
     │   └── probe.rs             # cfg(feature = "shell-probe"): report and ungranted commands, reads, exit
-    └── tests/surface.rs         # list vs capabilities, commands, plugins; app ACL present; no devtools; no macOS web-credential entitlements
+    └── tests/
+        ├── surface.rs           # list vs capabilities, commands, plugins; app ACL present; no devtools; no macOS web-credential entitlements
+        └── webkitgtk_register.rs   # WEBKITGTK-ONLY markers vs docs/webkitgtk-register.toml
 docs/
-├── decisions/0002-linux-window-engine.md   # the desk trial and when to repeat it
+├── decisions/0002-linux-window-engine.md   # the trial and when to repeat it
+├── webkitgtk-register.toml                 # every WebKitGTK-only change, removed on the move
 └── threat-model.md              # B7, rows, webview assumption, diagram, CSP question closed
 .github/workflows/ci.yml         # probe step on three systems; xvfb on Linux; comment cites v2.6.1
 .github/workflows/audit.yml      # weekly tauri-runtime-cef stable-release watch

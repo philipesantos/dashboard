@@ -85,3 +85,17 @@ newest version it saw.
 2. On Linux, list what the `.deb` declares: `dpkg-deb -I` on the built package.
 
    **Expected**: it depends on `libwebkit2gtk-4.1-0` and the other libraries the app links.
+
+## 9. The WebKitGTK register (FR-022)
+
+```sh
+cargo test -p dashboard --test webkitgtk_register --locked
+```
+
+**Expected**: passes, with the four entries of research R15.
+
+Then rename `WEBKITGTK-ONLY(ci-dmabuf)` in `ci.yml` to `WEBKITGTK-ONLY(ci-dmabuf2)` and run it
+again.
+
+**Expected**: it fails with `marker "ci-dmabuf2" in .github/workflows/ci.yml has no entry` and
+`entry "ci-dmabuf" has no marker in .github/workflows/ci.yml`. Revert.
