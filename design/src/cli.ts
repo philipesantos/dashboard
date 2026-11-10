@@ -9,6 +9,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDesign, type Design } from './parse.ts';
 import { generateCss, THEME_FILE } from './generate.ts';
+import { checkDrift } from './checks/drift.ts';
+import { checkFonts } from './checks/fonts.ts';
+import { checkFormat } from './checks/format.ts';
+import { checkSchema } from './checks/schema.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -23,7 +27,12 @@ export interface Context {
 export type Check = (ctx: Context) => string[] | Promise<string[]>;
 
 /** Every check `check` runs, in order (contracts/outputs.md). */
-const CHECKS: [string, Check][] = [['project layer', (ctx) => ctx.design.errors]];
+const CHECKS: [string, Check][] = [
+  ['format (design.md 0.4.0)', checkFormat],
+  ['project layer', (ctx) => [...ctx.design.errors, ...checkSchema(ctx)]],
+  ['drift', checkDrift],
+  ['font licenses', checkFonts],
+];
 
 export function load(root = ROOT): Context {
   const source = readFileSync(join(root, 'DESIGN.md'), 'utf8');
@@ -55,8 +64,9 @@ async function main(command: string | undefined): Promise<number> {
     }
     case 'gen': {
       const ctx = load();
-      if (ctx.design.errors.length > 0) {
-        for (const line of ctx.design.errors) console.error(line);
+      const errors = [...ctx.design.errors, ...checkSchema(ctx)];
+      if (errors.length > 0) {
+        for (const line of errors) console.error(line);
         return 1;
       }
       writeFileSync(join(ctx.root, THEME_FILE), generateCss(ctx.design));

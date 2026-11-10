@@ -221,7 +221,7 @@ fails `check`, naming the token.
 
   Implement `design/src/checks/fonts.ts`, which maps each typography family to its file. Pass
   T013. Confirm the files land in `app/dist/licenses/fonts/` after `pnpm --filter ./app build`.
-- [ ] T018 [US1] Wire the format, schema, drift and font checks into `check`.
+- [X] T018 [US1] Wire the format, schema, drift and font checks into `check`.
   - Run `pnpm --filter ./design gen`.
   - Replace the hand-written `@theme inline`, `:root` and `.dark` blocks of `app/src/index.css`
     with `@import "./theme.generated.css";`. Keep the Tailwind and font imports, the
