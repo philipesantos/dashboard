@@ -110,7 +110,7 @@ Every story builds on these.
     - `chart-2` oklch(0.68 0.1 200) on `card`: 2.76;
     - `ring` at 50% on `background`: 1.79 light.
   - **Layer stacks:** `destructive` on `[card, destructive/10]`: 4.42 with the starting value.
-- [ ] T005 [P] Write `design/test/parse.test.ts` with fixtures in `design/test/fixtures/parse/`:
+- [X] T005 [P] Write `design/test/parse.test.ts` with fixtures in `design/test/fixtures/parse/`:
   - **Front matter:** the colors with `-dark` twins, typography, rounded and spacing.
   - **`design-rules` blocks:** read per section. A key appearing in two blocks is an error.
   - **Rationale:** each token's bold-named rationale is found under its section. A token without
