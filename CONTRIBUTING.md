@@ -49,6 +49,10 @@ session bus of their own, as CI does:
 
 
 ```bash
+pnpm --filter ./design check                                   # the visual system (below)
+pnpm --filter ./design test
+pnpm --filter ./design run licenses                            # npm licenses
+pnpm audit --audit-level high                                  # npm advisories
 pnpm --filter ./app build                                      # UI type-check and build
 cargo xtask plugins --locked                                   # the plugins the tests load
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -104,6 +108,43 @@ to `wit/`, runs all of CI even when it touches only Markdown:
   dependency there, its lock file and the page together; the docs job pins Rust 1.99.1, the
   version the walkthrough names.
 - **How the contract changes** from now on is in [`wit/README.md`](wit/README.md#how-v1-changes-from-now-on).
+
+### The visual system
+
+[`DESIGN.md`](DESIGN.md) is the only source of the app's look, in Google's open `DESIGN.md`
+format at version 0.4.0 plus the project's `design-rules` blocks. Never edit a color, size or
+shadow anywhere else:
+
+1. Edit `DESIGN.md`, with the token's rationale in bold-named prose beside it.
+2. Run `pnpm --filter ./design gen`, which writes `app/src/theme.generated.css` and
+   `design/widget-map.generated.json`. Commit them with `DESIGN.md`.
+3. Run `pnpm --filter ./design check`. It fails, one line per problem, when:
+   - **format**: the pinned design.md checker reports an error (its warnings only print);
+   - **project layer**: a role lacks its `-dark` twin or its bold rationale, a section is out of
+     order, or a `design-rules` name does not resolve;
+   - **contrast and coverage**: a declared pairing is under WCAG AA in either theme (text 4.5:1;
+     large text, a control's edge, the focus ring and chart marks 3:1), or a color role is in no
+     pairing and not marked decorative;
+   - **color usage**: a component in `app/src` draws a color that is not a role, or a role at an
+     opacity no pairing declares;
+   - **host-only**: a tone or variant widget content can select reaches a role only the host may
+     draw (the chrome, the frame, dialogs, the scrim, the focus ring);
+   - **drift**: a generated file differs from what `DESIGN.md` generates;
+   - **criteria coverage**: a criterion in
+     [`docs/design/host-surfaces.md`](docs/design/host-surfaces.md) lacks its `Check:` or
+     `Feature:`, or a threat-model row on the plugin UI boundary in Phase 3 cites none, or cites
+     one checked only by review;
+   - **font licenses**: a font family has no license text in `app/public/licenses/fonts/`.
+
+`pnpm --filter ./design preview` writes `design/preview/index.html`, a static page with both
+themes, every pairing's ratio, the scales, the tones and variants and a sketch of the host's
+surfaces; open it in a browser. CI uploads it from the Linux build as the `design-preview`
+artifact. A change to `DESIGN.md`, `design/`, `docs/design/` or the threat model runs all of CI,
+even when it touches only Markdown.
+
+Work that draws the chrome, a widget frame or a host dialog must pass the criteria in
+[`docs/design/host-surfaces.md`](docs/design/host-surfaces.md) that name its feature, or change
+the criterion first.
 
 Performance is measured by hand, on the three systems: a maintainer adds the `bench` label to
 the pull request, which runs [`bench.yml`](.github/workflows/bench.yml). Compare its results

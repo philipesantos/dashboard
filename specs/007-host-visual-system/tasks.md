@@ -494,7 +494,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
     `pnpm audit --audit-level high`. Add it to the "CI result" job's `needs`.
   - **A weekly `pnpm audit` job** in `.github/workflows/audit.yml`.
   - The new actions are pinned to a commit SHA, like the rest.
-- [ ] T044 [P] Add a "The visual system" section to `CONTRIBUTING.md`:
+- [X] T044 [P] Add a "The visual system" section to `CONTRIBUTING.md`:
   - edit `DESIGN.md` only, then run `pnpm --filter ./design gen` and `check`;
   - what each check means;
   - how to open the preview;
