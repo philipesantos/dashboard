@@ -380,7 +380,7 @@ a cited criterion checked only by review, each fails by name.
 
 ### Tests for User Story 4
 
-- [ ] T032 [P] [US4] Write `design/test/criteria.test.ts`, with fixture criteria and threat-model
+- [X] T032 [P] [US4] Write `design/test/criteria.test.ts`, with fixture criteria and threat-model
   files in `design/test/fixtures/criteria/`. Each of these fails:
   - a criterion without `Check:` or `Feature:`;
   - a `Check:` that starts with something other than `test`, `hostile case` or `review`;
