@@ -108,15 +108,16 @@ probe step in `ci.yml`, is core (research R13). The pull request gets line-by-li
   `<script type="module" src="/src/probe/run.ts">` to `index.html` with a small
   `transformIndexHtml` plugin. In any other mode the module is not in the bundle: confirm with
   `grep -r probe app/dist` after a normal build.
-- [ ] T006 Add the probe step to `.github/workflows/ci.yml`'s build job, on the three systems,
-  after `pnpm --filter ./app build`:
+- [X] T006 Add the probe step to `.github/workflows/ci.yml`'s build job, on the three systems,
+  just before `pnpm --filter ./app build`, which then puts the normal `dist` back:
   - `pnpm --filter ./app build --mode probe`;
   - `cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked`;
   - run the binary with `DASHBOARD_PROBE=1`. On Linux, run it under `xvfb-run -a` with
     `WEBKIT_DISABLE_DMABUF_RENDERER=1`, marked `# WEBKITGTK-ONLY(ci-dmabuf)`, and add `xvfb`
     to the apt step;
-  - `pnpm --filter ./app build`, to restore the normal `dist`;
   - `cargo clippy -p dashboard --features shell-probe --all-targets --locked -- -D warnings`.
+
+  The job's timeout goes from 30 to 40 minutes for the release build (it took up to 16 before).
 
   With no case yet, the probe reports `0 held, 0 broken` and exits 0.
 
