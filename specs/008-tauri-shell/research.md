@@ -89,7 +89,7 @@ protections is what Principle IX's line-by-line review covers.
 | --- | --- | --- |
 | `default-src` | `'self'` | Everything else falls back to the bundle |
 | `script-src` | `'self'` | The bundled module scripts load by `'self'`. Tauri adds a hash only for inline `<script>` text, which the bundle does not have. No `'unsafe-inline'`, no `'unsafe-eval'` |
-| `style-src` | `'self'` | See below for the one allowance that may be needed, in `style-src-elem` |
+| `style-src` | `'self'` | Tauri adds the response's nonce, for the empty `<style>` of `index.html`. Run-time `<style>` elements carry that nonce (below). No `'unsafe-inline'` |
 | `font-src` | `'self'` | The `@fontsource` fonts are bundled (feature 007) |
 | `img-src` | `'self'` | Icons are inline SVG from `lucide-react`, not images |
 | `connect-src` | `ipc: http://ipc.localhost` | The host's channel only; the second form is how Windows spells it |
@@ -102,15 +102,20 @@ protections is what Principle IX's line-by-line review covers.
   sets `build.assetsInlineLimit: 0`. That keeps `font-src` and `img-src` at `'self'`.
 - **Inline styles.**
   - React sets `style={{…}}` through the CSSOM, which the policy does not block.
-  - Some Radix dependencies insert `<style>` elements at run time. One example is
-    `react-remove-scroll-bar`, through `react-style-singleton`, under the Select and Dialog. Such
-    an element needs `'unsafe-inline'` or a nonce. Tauri's nonce is generated per response and
-    covers only the `<style>` elements in the bundled HTML
-    (`tauri-2.12.5/src/manager/mod.rs:126-137`), and a browser ignores `'unsafe-inline'` in a
-    directive that also holds a nonce.
-  - The probe (R8) runs the demo's dialog and select under the policy above. If they break,
-    `'unsafe-inline'` is added to `style-src-elem` alone, a directive Tauri adds no nonce to,
-    with the component named in `contracts/content-policy.md`.
+  - Two Radix parts insert `<style>` elements at run time, and the probe's
+    `style-runtime-element` case found both (T008):
+    - the scroll lock of the Dialog and the Select, `react-remove-scroll-bar` through
+      `react-style-singleton`, which takes its nonce from `get-nonce`;
+    - the Select's viewport, which takes a `nonce` prop.
+  - Each needs `'unsafe-inline'` or a nonce. Tauri generates a nonce **per response**, in
+    `get_asset` (`tauri-2.12.5/src/manager/mod.rs:126-137`, called at `:429`), and puts it on
+    every `<style>` of the bundled HTML and in `style-src`. So `index.html` holds one empty
+    `<style>`, and `main.tsx` reads its `nonce` property (engines hide the attribute) and passes
+    it to `get-nonce`'s `setNonce`. The Select's viewport gets `getNonce()` in
+    `components/ui/select.tsx`. `get-nonce` 1.0.1 becomes a direct dependency, the copy
+    `react-style-singleton` already used.
+  - With that, the policy needs no `'unsafe-inline'` for styles. A `<style>` that markup
+    injection adds has no nonce and is refused, which `load-style-import` checks.
   - Style cannot run script. Because `img-src` and `font-src` stay `'self'`, a style rule
     cannot send data to the internet either.
 - **Development.** On desktop, `tauri dev` loads the page straight from Vite's server. Tauri
@@ -132,8 +137,10 @@ protections is what Principle IX's line-by-line review covers.
 **Rationale**: FR-001 to FR-004. These are the narrowest values that still load the demo.
 
 **Alternatives considered**:
-- Nonces for runtime styles through `get-nonce`. Rejected: Tauri's nonce is per build, not per
-  page load, so reusing it for runtime styles gains nothing over `'unsafe-inline'` for styles.
+- `'unsafe-inline'` in `style-src-elem`, the plan's first fallback. Not needed: the nonce
+  covers both components. It would also let injected markup add styles that could restyle a
+  host dialog. The plan first rejected the nonce on the belief that Tauri's nonce was fixed per
+  build; the source shows it is drawn per response.
 - Tauri's isolation pattern, which passes IPC through a sandboxed iframe. Rejected for now: the
   window has no host command (R4), so there is nothing for it to vet. It needs `frame-src`, and
   it can be revisited when commands arrive.

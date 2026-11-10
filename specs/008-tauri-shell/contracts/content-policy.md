@@ -3,8 +3,9 @@
 The release policy lives in `app/src-tauri/tauri.conf.json`, under `app.security.csp`. Tauri
 sends it as a response header with every page and asset it serves (`manager/mod.rs:422-439`).
 It adds a hash for inline `<script>` text and a per-response nonce for `<style>` elements in
-the bundled HTML. The bundle has neither, since its scripts and styles are files that load by
-`'self'`. Nothing beyond what is listed here may be added.
+the bundled HTML. The bundle has no inline script. It has one empty `<style>`, whose nonce
+`main.tsx` hands to the components that insert `<style>` elements at run time (research R3).
+Nothing beyond what is listed here may be added.
 
 ## Release (`csp`)
 
@@ -26,11 +27,9 @@ the bundled HTML. The bundle has neither, since its scripts and styles are files
 }
 ```
 
-**Allowances** (each needs a reason here, and the probe must show it is needed):
-
-| Directive | Added source | Reason |
-| --- | --- | --- |
-| `style-src-elem` (added only then, as `'self' 'unsafe-inline'`) | `'unsafe-inline'`, only if the probe shows a component needs it | Fill in at implementation: name the component that inserts a `<style>` element at run time. It goes in `style-src-elem`, because a browser ignores `'unsafe-inline'` in a directive that also holds a nonce. |
+**Allowances** (each needs a reason here, and the probe must show it is needed): none. The two
+components that insert a `<style>` at run time, Radix's scroll lock and the Select's viewport,
+carry the response's nonce instead (research R3).
 
 ## Development (Vite's `server.headers`)
 

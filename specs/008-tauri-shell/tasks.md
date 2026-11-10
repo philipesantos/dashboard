@@ -149,13 +149,17 @@ proven by the probe.
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Set `app.security.csp` in `app/src-tauri/tauri.conf.json` to the release policy of
+- [X] T008 [US1] Set `app.security.csp` in `app/src-tauri/tauri.conf.json` to the release policy of
   [contracts/content-policy.md](contracts/content-policy.md), and `build.assetsInlineLimit: 0` in
   `app/vite.config.ts`. Run the probe until every US1 case holds.
   - If `style-runtime-element` fails, add `style-src-elem: 'self' 'unsafe-inline'` and nothing
     else.
   - Fill the allowance row in `contracts/content-policy.md` with the component named, or remove
     the row if none was needed.
+
+  Done without the allowance: the scroll lock and the Select's viewport insert `<style>`
+  elements, and both now carry Tauri's per-response nonce, read from an empty `<style>` in
+  `index.html` (research R3). `get-nonce` 1.0.1 is a direct dependency.
 - [ ] T009 [US1] Send the development policy from Vite. In `app/vite.config.ts`, read
   `src-tauri/tauri.conf.json`'s `csp`, add `'unsafe-inline'` to `script-src` and
   `ws://localhost:1420` to `connect-src`, and set it as `server.headers['Content-Security-Policy']`.

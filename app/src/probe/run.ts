@@ -34,7 +34,16 @@ const context: Context = {
 };
 
 async function runAll(): Promise<void> {
-  const report: (Verdict & { id: string })[] = [];
+  // The page's own load, fonts and styles included, must need nothing the policy refuses
+  // (FR-004, FR-020). The cases below start after it.
+  const atLoad = [...seen];
+  const report: (Verdict & { id: string })[] = [
+    {
+      id: "page-load-clean",
+      held: atLoad.length === 0,
+      detail: atLoad.length === 0 ? "no violation while the page loaded" : `violations: ${atLoad.join(", ")}`,
+    },
+  ];
   for (const probeCase of cases) {
     seen = [];
     try {

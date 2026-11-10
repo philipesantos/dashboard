@@ -35,6 +35,7 @@ Each case has an id, the rule it breaks and how a refusal is detected:
 
 | Id | Rule | Detected by |
 | --- | --- | --- |
+| `page-load-clean` | FR-004, FR-020 | no violation before the first case: the page, its fonts and its styles load under the release policy |
 | `script-inline-element` | FR-001 | violation and absent |
 | `script-inline-attribute` (`<img onerror>`) | FR-001 | violation and absent |
 | `script-eval` | FR-001 | error |

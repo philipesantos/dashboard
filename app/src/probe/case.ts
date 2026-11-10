@@ -78,7 +78,8 @@ export function expectThrow(action: () => unknown): Verdict {
   try {
     action();
   } catch (error) {
-    return { held: true, detail: `refused: ${String(error)}` };
+    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return { held: true, detail: `refused: ${reason.split("\n")[0].slice(0, 120)}` };
   }
   return { held: false, detail: "the call ran" };
 }

@@ -25,6 +25,12 @@ function shellProbe(): Plugin {
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss(), ...(mode === "probe" ? [shellProbe()] : [])],
 
+  // Fonts and images stay files, never data: URLs, which the content policy refuses
+  // (specs/008-tauri-shell/contracts/content-policy.md)
+  build: {
+    assetsInlineLimit: 0,
+  },
+
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
