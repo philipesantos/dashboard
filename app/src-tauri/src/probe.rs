@@ -180,18 +180,20 @@ fn setting(id: &str, name: &str, actual: Result<bool, String>, release: bool) ->
 #[cfg(windows)]
 mod engine {
     use tauri::webview::PlatformWebview;
-    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings;
-    use windows_core::BOOL;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2_13, ICoreWebView2Profile, ICoreWebView2Settings, ICoreWebView2Settings4,
+    };
+    use windows_core::{BOOL, Interface};
 
     use super::{Outcome, setting};
 
-    fn read_bool(
-        settings: &ICoreWebView2Settings,
-        get: unsafe fn(&ICoreWebView2Settings, *mut BOOL) -> windows_core::Result<()>,
+    fn read_bool<T>(
+        object: &T,
+        get: unsafe fn(&T, *mut BOOL) -> windows_core::Result<()>,
     ) -> Result<bool, String> {
         let mut value = BOOL::default();
-        // SAFETY: a getter of a live settings object, writing into a local BOOL
-        unsafe { get(settings, &mut value) }.map_err(|error| error.to_string())?;
+        // SAFETY: a getter of a live COM object, writing into a local BOOL
+        unsafe { get(object, &mut value) }.map_err(|error| error.to_string())?;
         Ok(value.as_bool())
     }
 
@@ -206,9 +208,28 @@ mod engine {
         };
         let devtools = read_bool(&settings, ICoreWebView2Settings::AreDevToolsEnabled);
         let menus = read_bool(&settings, ICoreWebView2Settings::AreDefaultContextMenusEnabled);
+        let settings4 = settings.cast::<ICoreWebView2Settings4>().map_err(|error| error.to_string());
+        let autofill = settings4
+            .clone()
+            .and_then(|settings| read_bool(&settings, ICoreWebView2Settings4::IsGeneralAutofillEnabled));
+        let passwords = settings4
+            .and_then(|settings| read_bool(&settings, ICoreWebView2Settings4::IsPasswordAutosaveEnabled));
+        // SAFETY: the controller is Tauri's own, alive on this (main) thread
+        let in_private = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.cast::<ICoreWebView2_13>())
+                .and_then(|core| core.Profile())
+        }
+        .map_err(|error| error.to_string())
+        .and_then(|profile| read_bool(&profile, ICoreWebView2Profile::IsInPrivateModeEnabled));
         vec![
             setting("devtools-setting", "AreDevToolsEnabled", devtools, false),
             setting("context-menu-setting", "AreDefaultContextMenusEnabled", menus, false),
+            setting("autofill-general", "IsGeneralAutofillEnabled", autofill, false),
+            setting("autofill-password", "IsPasswordAutosaveEnabled", passwords, false),
+            setting("store-incognito", "IsInPrivateModeEnabled", in_private, true),
         ]
     }
 }
@@ -223,9 +244,13 @@ mod engine {
     pub fn read(webview: &PlatformWebview) -> Vec<Outcome> {
         // SAFETY: Tauri's pointer to its live WKWebView, used on the main thread
         let view: &WKWebView = unsafe { &*webview.inner().cast::<WKWebView>() };
-        // SAFETY: a plain property read (macOS 13.3 and later, as on the CI runners)
+        // SAFETY: plain property reads (isInspectable: macOS 13.3 and later, as on the CI runners)
         let inspectable = unsafe { view.isInspectable() };
-        vec![setting("devtools-setting", "isInspectable", Ok(inspectable), false)]
+        let persistent = unsafe { view.configuration().websiteDataStore().isPersistent() };
+        vec![
+            setting("devtools-setting", "isInspectable", Ok(inspectable), false),
+            setting("store-incognito", "websiteDataStore.isPersistent", Ok(persistent), false),
+        ]
     }
 }
 
@@ -242,7 +267,12 @@ mod engine {
         let devtools = WebViewExt::settings(&view)
             .map(|settings| settings.enables_developer_extras())
             .ok_or_else(|| "the webview has no settings".to_string());
-        vec![setting("devtools-setting", "enable-developer-extras", devtools, false)]
+        // WEBKITGTK-ONLY(probe-ephemeral-read): the session WebKitGTK keeps no data in
+        let ephemeral = WebViewExt::is_ephemeral(&view);
+        vec![
+            setting("devtools-setting", "enable-developer-extras", devtools, false),
+            setting("store-incognito", "is-ephemeral", Ok(ephemeral), true),
+        ]
     }
 }
 

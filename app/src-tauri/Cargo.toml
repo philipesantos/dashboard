@@ -31,7 +31,7 @@ windows-core = "0.62.2"
 
 # The probe's engine reads on macOS and Linux (research R6 and R7), only in the probe build
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-web-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "objc2-app-kit", "WKWebView"] }
+objc2-web-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "objc2-app-kit", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # WEBKITGTK-ONLY(probe-devtools-read): the probe reads WebKitGTK's settings through it

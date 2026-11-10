@@ -309,7 +309,7 @@ draws (FR-009 to FR-012, FR-021).
 
 ### Tests for User Story 5
 
-- [ ] T019 [P] [US5] Add the `setting` cases to `probe.rs`:
+- [X] T019 [P] [US5] Add the `setting` cases to `probe.rs`:
   - `store-incognito` on each engine: the WebView2 profile is InPrivate, the WKWebView
     `websiteDataStore.isPersistent` is false, and the WebKitGTK session is ephemeral, its read
     marked `WEBKITGTK-ONLY(probe-ephemeral-read)` (research R15);
