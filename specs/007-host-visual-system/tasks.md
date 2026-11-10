@@ -299,7 +299,7 @@ every color the app's code draws is declared.
     (research R4).
   - Run `check`. It must fail exactly on research R4's list. Record any other failure in
     `research.md` R4 before fixing it.
-- [ ] T026 [US2] Fix the values in `DESIGN.md` (research R4), each with its rationale in the
+- [X] T026 [US2] Fix the values in `DESIGN.md` (research R4), each with its rationale in the
   prose:
   - `input` oklch(0.60 0.02 250), and `input-dark` oklch(1 0 0 / 35%);
   - `chart-2` oklch(0.58 0.10 200) and `chart-3` oklch(0.60 0.13 70);

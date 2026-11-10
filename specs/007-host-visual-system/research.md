@@ -194,6 +194,10 @@ The destructive button draws /10 and /20 in light, and /20 and /25 in dark, so t
 them, and the field's error text carries the meaning. `/40` and `/50` are therefore decorative
 entries for that opacity only; `/20` is already a declared layer.
 
+With `input` fixed, the unchecked switch's dark track at `input`/80 measured 2.46 against
+`background`. It draws `input` at full strength instead, 3.19. `input`/80 remains only as a
+disabled field's dark fill, which WCAG exempts, so it is decorative for that opacity.
+
 `input` is also a fill: `bg-input` for the unchecked switch, and in dark mode `bg-input/30`,
 `/50` and `/80` for fields, selects, tabs and the switch. With the dark value at 35% white, those
 fills become a little lighter than today's. Text on them stays readable, for example

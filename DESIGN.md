@@ -31,23 +31,23 @@ colors:
   accent-dark: "oklch(0.3 0.045 240)"
   accent-foreground: "oklch(0.36 0.1 245)"
   accent-foreground-dark: "oklch(0.92 0.04 235)"
-  destructive: "oklch(0.56 0.2 27)"
-  destructive-dark: "oklch(0.7 0.18 22)"
+  destructive: "oklch(0.5 0.19 27)"
+  destructive-dark: "oklch(0.74 0.16 22)"
   ok: "oklch(0.5 0.12 150)"
   ok-dark: "oklch(0.76 0.14 150)"
   warning: "oklch(0.52 0.12 65)"
   warning-dark: "oklch(0.8 0.14 80)"
   border: "oklch(0.91 0.01 250)"
   border-dark: "oklch(1 0 0 / 9%)"
-  input: "oklch(0.88 0.012 250)"
-  input-dark: "oklch(1 0 0 / 14%)"
+  input: "oklch(0.6 0.02 250)"
+  input-dark: "oklch(1 0 0 / 35%)"
   ring: "oklch(0.62 0.12 240)"
   ring-dark: "oklch(0.6 0.1 235)"
   chart-1: "oklch(0.52 0.13 245)"
   chart-1-dark: "oklch(0.72 0.12 240)"
-  chart-2: "oklch(0.68 0.1 200)"
+  chart-2: "oklch(0.58 0.1 200)"
   chart-2-dark: "oklch(0.76 0.1 195)"
-  chart-3: "oklch(0.74 0.13 80)"
+  chart-3: "oklch(0.6 0.13 70)"
   chart-3-dark: "oklch(0.82 0.12 85)"
   chart-4: "oklch(0.58 0.14 300)"
   chart-4-dark: "oklch(0.7 0.13 300)"
@@ -288,21 +288,32 @@ chroma; the accent is cobalt at hue 235 to 245.
 
 Status is never shown by color alone: the host draws an icon beside each status tone.
 
-- **destructive**: errors and destructive actions, a warm red.
+- **destructive**: errors and destructive actions, a warm red. Darker than the starting
+  theme's oklch(0.56 0.2 27) in light and lighter than its oklch(0.7 0.18 22) in dark, so its
+  text holds 4.5:1 on the destructive button's soft fill and hover (`/20` in light, `/25` in
+  dark), where the starting values measured 3.77 and 3.80.
 - **ok**: success, a green at hue 150 that holds 4.5:1 as text in both themes.
 - **warning**: caution, an amber at hue 65 to 80 dark enough to read as text in light.
 
 ### Edges
 
 - **border**: card edges and dividers. Light by design.
-- **input**: the edge of text fields, selects and switches, and in dark mode their fill.
-- **ring**: the host's focus style, drawn on every control including widget content's.
+- **input**: the edge of text fields, selects and switches, and in dark mode their fill. It is
+  the only thing that marks a field, so it holds 3:1 against every surface (WCAG 1.4.11): 3.94
+  on `card` in light. The starting theme's near-white edge measured 1.43. In dark it stays
+  translucent, at 35% white instead of 14%, so field fills built from it (`input`/30, /50) also
+  lighten a little.
+- **ring**: the host's focus style, drawn on every control including widget content's. Drawn
+  solid: at shadcn's 50% it measured 1.79 on `background`, below the 3:1 a focus indicator
+  needs.
 
 ### Data
 
 - **chart-1**: the first data series, the accent's hue.
-- **chart-2**: the second series, a teal.
-- **chart-3**: the third series, an amber.
+- **chart-2**: the second series, a teal. Darker in light than the starting oklch(0.68 0.1 200),
+  which measured 2.76 on `card`; a mark that carries data needs 3:1.
+- **chart-3**: the third series, an amber, moved toward orange and darkened from
+  oklch(0.74 0.13 80), which measured 2.34 on `card`.
 - **chart-4**: the fourth series, a violet.
 - **chart-5**: the fifth series, a coral.
 
@@ -359,6 +370,8 @@ decorative:
     reason: The aria-invalid halo and the focused destructive button's edge in dark. The field's error text, which is checked, carries the meaning.
   - role: destructive/50
     reason: The invalid field's edge in dark, beside the halo. The error text carries the meaning.
+  - role: input/80
+    reason: A disabled field's fill in dark. WCAG exempts inactive controls from contrast.
 pairings:
   # Body text on every surface
   - { fg: foreground, on: [background], kind: text }
@@ -404,7 +417,6 @@ pairings:
   - { fg: input, on: [background], kind: boundary }
   - { fg: input, on: [card], kind: boundary }
   - { fg: input, on: [popover], kind: boundary }
-  - { fg: input/80, on: [background], kind: boundary }
   - { fg: primary, on: [card], kind: boundary }
   - { fg: destructive, on: [card], kind: boundary }
   - { fg: primary-foreground, on: [primary], kind: boundary }
