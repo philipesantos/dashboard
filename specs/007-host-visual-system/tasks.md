@@ -363,7 +363,7 @@ by name, and `design/widget-map.generated.json` holds no host-only role.
 - [X] T030 [US3] Implement `design/src/checks/hostonly.ts`, and extend `design/src/generate.ts`
   to write `design/widget-map.generated.json` (`contracts/outputs.md`). Extend the drift check
   to cover it. Pass T028.
-- [ ] T031 [US3] Run `gen` and `check`, and confirm the map lists every tone and variant and no
+- [X] T031 [US3] Run `gen` and `check`, and confirm the map lists every tone and variant and no
   host-only role (SC-003).
 
 **Checkpoint**: the host-only split is enforced on what widget content can select.
