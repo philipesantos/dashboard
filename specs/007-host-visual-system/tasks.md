@@ -441,7 +441,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
   - long content scrolls inside the dialog;
   - widget content cannot produce a layer above the frames, a scrim or an inert window;
   - none of these depends on color alone, so each holds in forced-colors mode.
-- [ ] T037 [US5] Cite the dialog-form criteria from the threat model's B4 rows on fake logins and
+- [X] T037 [US5] Cite the dialog-form criteria from the threat model's B4 rows on fake logins and
   on widgets opening dialogs. Run `check`.
 
 ---
