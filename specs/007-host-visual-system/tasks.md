@@ -56,7 +56,7 @@ Where the details live:
 
 **Purpose**: the tooling package, line endings, and a clean `pnpm audit` to build on
 
-- [ ] T001 Create the `design/` workspace package:
+- [X] T001 Create the `design/` workspace package:
   - `design/package.json`: private, `"type": "module"`, `"engines": { "node": ">=24" }`.
   - Scripts:
     - `gen`: `node src/cli.ts gen`;
