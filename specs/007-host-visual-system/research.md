@@ -1,0 +1,351 @@
+# Research: Host Visual System and the Design of the Host Frame and Dialogs
+
+All measurements below were taken on 2026-11-10, against `app/src/index.css` as merged in PR #16.
+Contrast is WCAG 2.2 relative luminance on sRGB. Translucent colors are composited over the
+surface beneath before measuring.
+
+## R1. The DESIGN.md format: version, and how the project fits in it
+
+**Decision**: pin the format at version `0.4.0` of `google-labs-code/design.md`. That is tag
+`0.4.0`, commit `9bf8eae67128b6cc55ad9bf86665767deb4c11cd` (2026-07-27, Apache-2.0), published
+to npm as `@google/design.md@0.4.0`, whose CLI is the format's own checker. `DESIGN.md` has two
+layers:
+
+1. **The format layer**: the YAML front matter the format defines (`version: alpha`, `name`,
+   `description`, `colors`, `typography`, `rounded`, `spacing`, `components`), and the `##`
+   sections in the format's order:
+   1. Overview
+   2. Colors
+   3. Typography
+   4. Layout
+   5. Elevation & Depth
+   6. Shapes
+   7. Components
+   8. Do's and Don'ts
+
+   Color values stay in `oklch()`, which 0.4.0 accepts. Each light value is named by its role,
+   such as `primary`, and each dark value takes the same name with a `-dark` suffix, such as
+   `primary-dark`. The format accepts unknown color names, so every tool reading `DESIGN.md`
+   sees both themes.
+2. **The project layer**: fenced blocks with the info string `design-rules`, placed in the
+   section they belong to. They hold what the format has no place for:
+   - the host-only marks;
+   - the pairings and their kinds;
+   - the tones and component variants that widget content can select;
+   - the elevation levels;
+   - the decorative marks.
+
+   Their schema is in [contracts/design-md.md](contracts/design-md.md).
+
+The rationale for each token is prose. Each token's name appears in bold in its section's prose,
+followed by why it exists. The project's checker fails when a token is not named that way.
+
+**Rationale**:
+- 0.4.0 is the latest release and is about 3½ months old.
+- The format's spec says that unknown section headings are kept, unknown color names are
+  accepted and unknown component properties only warn. So the two layers coexist without errors.
+- The fenced blocks use their own info string, so that a future version of the format that reads
+  ` ```yaml ` blocks as tokens will not read them twice.
+- Rationale as bold-named prose is what agents and people already read. A rationale field in
+  YAML would repeat it away from the text.
+
+**Alternatives considered**:
+- Converting to hex, the format's recommended default. Rejected: it loses the OKLCH hue and
+  lightness that the design reasons in, and 0.4.0 does not require it.
+- Unknown top-level keys in the front matter. Rejected: the tool's `unknown-key` rule warns on
+  them, and a later version may reject them.
+- A second file beside `DESIGN.md`. Rejected: FR-001 asks for one source.
+
+## R2. Tooling language: Node.js in the pnpm workspace
+
+**Decision**: the generator and checks are TypeScript in a new workspace package, `design/`, run
+directly by Node.js 24 with its built-in type stripping, so there is no compile step. The tests
+use `node --test`. Its development dependencies are pinned to exact versions in
+`design/package.json` and locked in `pnpm-lock.yaml`:
+
+- `@google/design.md` `0.4.0`, the format checker;
+- `yaml` `2.9.1` (ISC, 2026-09-11), which parses the front matter and the `design-rules` blocks.
+
+The OKLCH to sRGB conversion and the WCAG math are written in the project, in about 40 lines,
+and tested against reference values. No color library is added.
+
+**Rationale**:
+- CI already sets up Node.js 24 and pnpm in the build job, to build the app, so this adds no
+  toolchain.
+- The output is CSS for the app, and the format's checker is an npm package. A Rust generator
+  would still need Node.js for the checker.
+- Type stripping keeps the source typed without a build step. The code avoids enums and other
+  syntax that stripping cannot erase.
+
+**Alternatives considered**:
+- A Rust `cargo xtask design`. Rejected: it would add a YAML crate to `deny.toml`'s scope and
+  still need Node.js for the checker.
+- `culori` for color math. Rejected: one more dependency for one conversion.
+- Running the checker with `npx` at an unpinned version. Rejected: FR-001 asks for a pinned
+  version.
+
+The format's tool was read from its package contents during planning, not run. Its behavior on
+this `DESIGN.md` is first observed when the implementation adds it to the workspace (see
+[quickstart.md](quickstart.md), step 2). If it reports an error the format's text does not
+explain, that is brought to the maintainer before working around it.
+
+## R3. What the app reads: one generated CSS file, committed
+
+**Decision**: `pnpm --filter ./design gen` writes `app/src/theme.generated.css`. The file opens
+with a "generated from DESIGN.md, do not edit" line and holds three blocks:
+
+- `@theme inline`, mapping Tailwind's color, radius and font variables to the roles;
+- `:root`, with the light values;
+- `.dark`, with the dark values.
+
+`app/src/index.css` keeps the Tailwind and font imports and the `@layer base` rules, and imports
+the generated file in place of today's hand-written blocks. `pnpm --filter ./design check`
+generates in memory and compares with the committed file, naming the first token that differs
+(FR-005). `.gitattributes` sets `eol=lf` on `DESIGN.md` and the generated files, so the
+comparison holds on Windows.
+
+**Rationale**:
+- A committed file shows token changes in review, and the app builds without running the
+  generator.
+- The drift check keeps the file honest on all three systems.
+- shadcn/ui components read the same CSS variable names they read today, so no component
+  changes for the colors.
+
+**Alternatives considered**:
+- A Vite plugin that generates at build time. Rejected: it hides the values from review and puts
+  YAML parsing in every build.
+- The format tool's own `export --format tailwind`. Rejected: it knows nothing of dark values,
+  host-only marks or shadcn's variable names.
+
+## R4. Contrast: what is checked, and what the starting theme fails
+
+**Decision**: the check measures every pairing declared in `design-rules`, in both themes. A
+pairing is a foreground role drawn on a stack of layers: a base surface, then translucent fills
+composited in order. For example, `destructive` text on `card` with `destructive` at 10% on top.
+Each pairing has a kind:
+
+| Kind | Minimum | WCAG |
+| --- | --- | --- |
+| `text` | 4.5:1 | 1.4.3 |
+| `large-text` (at least 24 px, or 18.66 px bold) | 3:1 | 1.4.3 |
+| `boundary` (a control's edge that identifies it) | 3:1 | 1.4.11 |
+| `focus` | 3:1 | 1.4.11, 2.4.13 |
+| `chart` (a mark that carries data) | 3:1 | 1.4.11 |
+
+A role may instead be marked `decorative`, with a reason, when WCAG's exemptions apply: card
+edges and dividers whose meaning something else carries.
+
+**Measured on the starting theme** (fails only, ratio found → required):
+
+| Pairing | Light | Dark | Fix in `DESIGN.md` |
+| --- | --- | --- | --- |
+| `input` boundary on `background` / `card` | 1.39 / 1.43 | 1.47 / 1.52 | `input` to oklch(0.60 0.02 250) light (3.83 / 3.94) and oklch(0.52 0.02 255) dark (3.48 / 3.22) |
+| `ring` at 50% (`ring-ring/50`) on `background` | 1.79 | 2.10 | draw the focus ring solid: `ring` alone reaches 3.58 light, 4.57 dark on `card` |
+| `chart-2` on `card` | 2.76 | ok | oklch(0.58 0.10 200), 4.08 |
+| `chart-3` on `card` | 2.34 | ok | oklch(0.60 0.13 70), 4.06 |
+| `destructive` text on `destructive`/10 over `card` (soft badge and button) | 4.42 | 4.58 | `destructive` light to oklch(0.54 0.2 27) |
+| `border` on `background` / `card` | 1.27 / 1.31 | 1.25 / 1.29 | none: marked `decorative` (card edges and dividers), since controls carry their own `input` boundary |
+
+Every other declared pairing passes. For example, `foreground` on `background` is 17.94 light
+and 17.03 dark, and `muted-foreground` on `muted` is 4.83 light and 5.65 dark.
+
+**The usage scan.** A pairing only proves contrast for what is declared. The check also scans
+`app/src/**/*.tsx` for Tailwind color utilities, such as `text-destructive` or `ring-ring/50`.
+Each role and opacity the app uses must appear in a declared pairing, as a layer in one, or as
+decorative. Otherwise the check fails, naming the file and the utility. This is how the solid
+focus ring is enforced: once `ring` is declared only at full opacity, `ring-ring/50` fails until
+the seven components that use it are changed. The same goes for the `aria-invalid` rings at
+`destructive`/20 and /40.
+
+**Rationale**: the measurements show the default shadcn look fails WCAG 1.4.11 in both themes
+(input edges, focus ring). The lint has to run on what the components really draw, opacity
+included, not only on the token table.
+
+**Alternatives considered**:
+- The format tool's contrast rule. Rejected: it only checks `components` with a background and
+  a text color, and only warns.
+- APCA. Rejected: it is not yet a WCAG requirement.
+- Rewriting the components to drop opacity. Rejected: that is a larger change than declaring
+  what they use.
+
+## R5. New roles: status tones, frame and dialog surfaces
+
+**Decision**: `DESIGN.md` adds the following roles, each with a `-dark` value:
+
+- `ok` and `warning`, as text and icon colors. Measured:
+  - `ok` oklch(0.50 0.12 150): 5.52 on `background` light;
+  - `warning` oklch(0.52 0.12 65): 5.53 light;
+  - dark values oklch(0.76 0.14 150) and oklch(0.80 0.14 80): 9.40 and 10.09.
+- `error`, which the tones map to the existing `destructive` (no new value).
+- `frame`, `frame-foreground`, `frame-border`, `frame-header` and `frame-header-foreground`, for
+  the widget frame.
+- `dialog`, `dialog-foreground` and `scrim`, for host dialogs.
+
+The app's chrome uses shadcn's existing `sidebar-*` roles.
+
+**Rationale**:
+- The kit needs ok and warning tones (FR-012), and shadcn has only `destructive`.
+- The frame and dialog get roles of their own, so that they can be host-only without making
+  `card` and `popover` host-only. The demo's cards and menus use those.
+
+**Alternatives considered**: reusing `card` for the frame. Rejected: `card` must stay shared for
+widget content's own panels.
+
+## R6. Host-only tokens and the widget map
+
+**Decision**: the `design-rules` block in the Colors section lists the host-only roles:
+
+- `sidebar` and every `sidebar-*` role (the chrome);
+- the five `frame*` roles;
+- `dialog`, `dialog-foreground` and `scrim`;
+- `ring` (the host's focus style).
+
+The elevation levels above `frame` are also host-only. The Components section declares the tones
+(default, muted, accent, ok, warning, error) and each declarative UI component's variants (text,
+list, table, chart, button, simple form). Each tone or variant is a set of roles for its text,
+fill and border.
+
+The generator writes `design/widget-map.generated.json`, holding the tones and variants resolved
+to role names, and never a host-only one. The future kit reads only this file. The check fails
+when a tone or variant resolves to a host-only role, naming both (FR-015).
+
+**The focus ring is not part of any variant.** The host draws its focus style on every control,
+including the controls in widget content. Widget content cannot choose it, and cannot draw it
+anywhere else. That is why `ring` is host-only while widget buttons still show focus.
+
+**Rationale**: the boundary is the only path from widget content to styling. The declarative UI
+has no field for a color, class or style (FR-014), so the map is the whole surface the kit can
+reach. This check is an ordinary test (FR-021). The security rule it supports, the dialog's form,
+is tested with the features that draw dialogs.
+
+**Alternatives considered**:
+- A separate CSS file for host-only variables. Rejected: in a single webview, CSS variables are
+  global, so splitting files would prove nothing. The boundary that matters is what widget
+  content can select, and that is the map.
+
+## R7. Fonts
+
+**Decision**: keep the three `@fontsource` packages added in PR #16, all OFL-1.1 by their
+`package.json`. `DESIGN.md`'s typography tokens name the families as the packages declare them:
+`Figtree Variable`, `Bricolage Grotesque Variable` and `IBM Plex Mono`. Each has a fallback
+stack. The packages bundle the font files into `app/dist`, so nothing is fetched at run time and
+the coming CSP needs no font origin (FR-007). `DESIGN.md`'s Typography section records the
+license of each.
+
+**Rationale**: OFL-1.1 allows bundling in an Apache-2.0 app as long as the fonts keep their own
+license. The files are already bundled.
+
+**Alternatives considered**: system fonts only. Rejected: they lose the chosen identity, and the
+look would vary by system.
+
+## R8. The preview page
+
+**Decision**: `pnpm --filter ./design preview` writes `design/preview/index.html`, which is not
+committed (`.gitignore`). It is a static page with no script and inline CSS, rendering:
+
+- both themes side by side;
+- the color roles with their pairings and ratios;
+- the type scale;
+- the spacing and radius scales;
+- the tones with their status icons;
+- each declarative UI component's variants;
+- sketches of the chrome, a widget frame and a host dialog over its scrim.
+
+The Linux build job uploads it with `actions/upload-artifact` v7.0.2, pinned to commit
+`cf430e030ddbb5b0abf93d22962f4752f3646cd9` like the workflow's other actions, as the
+`design-preview` artifact (SC-007).
+
+**Rationale**: the maintainer reviews the visual system without building the app, as with the
+theme comparison page in the conversation that preceded this feature.
+
+**Alternatives considered**:
+- Committing the preview. Rejected: generated noise in every diff.
+- Screenshots of the app. Rejected: they need a display and a browser in CI.
+
+## R9. CI
+
+**Decision**: in `.github/workflows/ci.yml`:
+
+1. The filter treats as code:
+   - `DESIGN.md`;
+   - `docs/design/`, where the criteria live (R10);
+   - `docs/threat-model.md`, which the criteria coverage check reads.
+
+   The first `grep` becomes `^(docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$`,
+   and the comment above it names the new paths.
+2. The build job runs `pnpm --filter ./design check` and `pnpm --filter ./design test` after
+   `pnpm install`, on all three systems. The `check` script covers:
+   - the format checker at 0.4.0, failing on its errors and printing its warnings;
+   - the project-layer schema and the bold-named rationale;
+   - contrast;
+   - the usage scan;
+   - the host-only map;
+   - drift of the generated files;
+   - criteria coverage.
+3. On Linux, the job runs `pnpm --filter ./design preview` and uploads the page.
+
+The constitution needs no change: its rule already says Markdown the build uses as code is not
+documentation.
+
+**Rationale**: FR-006 and SC-004. The checks take seconds, so running them on the three systems
+costs little and catches line-ending issues on Windows.
+
+**Alternatives considered**: a separate workflow. Rejected: the required "CI result" check
+aggregates the jobs of `ci.yml`.
+
+## R10. Where the criteria live and how coverage is checked
+
+**Decision**: the frame and dialog design is written as `docs/design/host-surfaces.md`, outside
+`specs/`, because later features cite it as a standing reference. Each criterion has:
+
+- an id (`HS-01`, `HS-02` and so on);
+- a statement;
+- `Check:` (automated test, hostile case or review step);
+- `Feature:` (the later Phase 3 item that runs it, named as in the development guide).
+
+The check parses the file and fails when a criterion lacks either field. It also fails when a
+Phase 3 row of `docs/threat-model.md` about the frame, a dialog or imitation cites no criterion,
+or cites an id that does not exist (SC-005). Those rows are the ones whose threat names a frame,
+a dialog, a window or the host's look. They gain a `HS-` reference in their mitigation cell.
+
+**Rationale**: a durable document that later specs link to. The coverage check turns the threat
+model's promise into something CI can verify.
+
+**Alternatives considered**: keeping the criteria in this feature's `contracts/`. Rejected: specs
+are history, and the criteria are a standing rule.
+
+## R11. Dialog structure: what the later features build on
+
+**Decision**: the criteria fix the following, implementation-neutral, for the dialog feature:
+
+- **The dialog covers everything.** A host dialog is drawn in a layer above the app's own chrome
+  and every frame. Today that chrome is the in-webview header and sidebar, since the window
+  title bar belongs to the operating system.
+- **The rest is inert.** Everything else becomes inert for pointer, keyboard and assistive
+  technology until the dialog closes.
+- **Focus.** Focus moves to the dialog's safe choice on open and returns to the opener on close.
+- **Escape** triggers the safe choice.
+- **Announcement.** The dialog has an accessible name and description.
+
+Radix Dialog, already used by the demo's `dialog.tsx`, provides the inert background (by hiding
+its siblings from assistive technology and blocking pointer events), the focus trap and Escape
+handling, in all three webviews (WebKitGTK, WKWebView and WebView2). The criteria name the
+behavior, not the library.
+
+For the frame, the criteria require that the frame body be a containing block for everything in
+it, with paint containment and clipping. Then even a positioned element in widget content cannot
+leave the frame. Widget content has no style field, so this is defense in depth.
+
+**Rationale**: FR-017 to FR-019 describe what a host dialog does. These are the web mechanisms
+that make it true, recorded so that the later features do not rediscover them.
+
+## R12. Light or dark by default
+
+**Decision**: the demo app starts in the theme the system prefers
+(`prefers-color-scheme`), and its switch still toggles it. This is a two-line change in
+`App.tsx`.
+
+**Rationale**: the spec's assumption, "the host follows the system setting by default".
+
+**Alternatives considered**: no change. Rejected: the demo starts in light whatever the system
+says.
