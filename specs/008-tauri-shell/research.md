@@ -393,13 +393,23 @@ The comment at `.github/workflows/ci.yml:27` cites constitution v2.6.1.
   On Linux, the apt step adds `xvfb`. `libwebkit2gtk-4.1-dev` stays, since WebKitGTK is the
   engine.
 - **`audit.yml`'s weekly run** gains a job that queries crates.io for `tauri-runtime-cef`.
-  Decision record 0002 records the last version tried (none so far, since the trial was a desk
-  trial on alphas). The job fails, so it shows red, when a stable version newer than that one
+  Decision record 0002 records the last version tried, `3.0.0-alpha.7`. The job fails, so it shows red, when a stable version newer than that one
   exists. That tells the maintainer the trial is due again (constitution v2.6.1). Recording the
   new trial updates the version and turns the job green.
 - **Cost.** The probe adds a release build of the app crate per system. That build reuses the
   workspace's cached dependencies, and the probe is expected to run in under a minute.
   `quickstart.md` records the measured times.
+
+**Measured locally (T026, Linux, 8 cores, 2026-11-10):**
+- the probe's release build: 2 min 22 s from a cold release cache, 1 min 35 s once the
+  dependencies are built;
+- the probe's run under `xvfb-run`: 19 s for 46 cases, most of it the navigation, window and
+  download cases, which each wait 1 s to see that the page stayed;
+- the rest of the local checks all pass: `cargo test --workspace` (649 tests, 15 min), clippy
+  on the workspace and the probe build, `cargo deny`, `cargo audit`, `pnpm audit`, the design
+  checks and the npm licenses.
+
+CI times per system are recorded with T029.
 
 ## R12. Decision 0001, where plugins run
 

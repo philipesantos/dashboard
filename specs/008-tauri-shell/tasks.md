@@ -419,7 +419,7 @@ change in a register the move can empty.
   - **The WebKitGTK register:** a change made only because Linux uses WebKitGTK gets a
     `WEBKITGTK-ONLY(<id>)` marker and an entry in `docs/webkitgtk-register.toml`, and review
     checks for unmarked ones (research R15).
-- [ ] T026 Run every local check under the memory cap:
+- [X] T026 Run every local check under the memory cap:
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`;
   - the clippy line of T006;
   - `cargo test --workspace --locked`;
