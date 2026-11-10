@@ -70,7 +70,7 @@ Where the details live:
   - The scripts run from the repository root through `pnpm --filter ./design <script>`, so
     `cli.ts` resolves paths from the repository root (two levels up from `src/`), never from
     the working directory.
-- [ ] T002 [P] Add `.gitattributes` entries with `eol=lf` for:
+- [X] T002 [P] Add `.gitattributes` entries with `eol=lf` for:
   - `DESIGN.md`;
   - `app/src/theme.generated.css`;
   - `design/widget-map.generated.json`;
