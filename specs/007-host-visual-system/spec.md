@@ -17,7 +17,7 @@ nele não roda o lint nem os testes. O ponto de partida é o tema Ardósia + Mus
 app/src/index.css (PR #16): neutros frios (matiz 250) e destaque cobalto, Bricolage Grotesque nos
 títulos, Figtree no texto, IBM Plex Mono para ids e domínios, raio 0.625rem. (2) Design da
 moldura e dos diálogos do host: o que só o host desenha, tokens reservados ao host que a UI dos
-plugins não pode usar, o segredo visual, acessibilidade dos diálogos (teclado e leitor de tela) e
+plugins não pode usar, acessibilidade dos diálogos (teclado e leitor de tela) e
 critérios testáveis de que um widget não consegue imitar o host. A stack continua Tauri 2 + React
 na webview."
 
@@ -25,14 +25,14 @@ na webview."
 
 ### Session 2026-11-10
 
-- Q: What does the person choose as the visual secret? → A: Nothing. The visual secret is
-  dropped. The host is recognized by structure that widget content cannot produce:
+- Q: How does the person tell a real host dialog from widget content that imitates one? → A: By
+  structure that widget content cannot produce:
   - a host dialog covers the app's chrome and every frame, where no widget content can draw;
   - while a dialog is open, the rest of the window is inert;
   - the dialog holds keyboard focus and is all that assistive technology sees.
 
   Trust decisions happen only in host dialogs (Principle VII), so a picture of a dialog inside a
-  frame can take no decision. The threat model's plugin UI boundary (B4) changes to match.
+  frame can take no decision. The threat model's plugin UI boundary (B4) names this form.
 - Q: Is the Ardósia cobalt accent reserved for the host? → A: No, it is shared. Widget content
   can use the accent tone. Host-only tokens are those of the host's surfaces: chrome, frame,
   dialog, scrim, elevation above a frame and the host's focus style.
@@ -369,13 +369,12 @@ keyboard, and with a screen reader on each of the three systems.
   - focus returns to the control that opened the dialog;
   - the dialog is announced with its name and its description;
   - everything behind the dialog is hidden from assistive technology while it is open.
-- **FR-019**: The host MUST have no visual secret. A host dialog MUST be recognizable by
+- **FR-019**: A host dialog MUST be recognizable by
   properties that widget content cannot produce: covering the chrome and every frame, making the
   rest of the window inert, holding keyboard focus, and being all that assistive technology
   sees. None of these properties MAY depend on color alone, so they hold in forced-colors mode.
-- **FR-020**: The threat model MUST change to match:
-  - The plugin UI boundary (B4) drops "personal visual secret on every host dialog" and names
-    the dialog form in FR-019 instead.
+- **FR-020**: The threat model MUST cover this design:
+  - The plugin UI boundary (B4) names the dialog form in FR-019.
   - It gains a Phase 3 row for widget content that imitates the host's styling. The mitigation
     is the host-only tokens (FR-013–FR-015) and the dialog form (FR-017, FR-019).
   - The existing Phase 3 rows on fake logins and on widgets opening dialogs point to the criteria
@@ -436,7 +435,4 @@ keyboard, and with a screen reader on each of the three systems.
 - **Fonts and licenses.** Bricolage Grotesque, Figtree and IBM Plex Mono are under the SIL Open
   Font License 1.1, which allows shipping them in an Apache-2.0 app.
 - **Constitution.** No amendment is expected. Principle V and the rule on Markdown used as code
-  already cover this feature, and the stack stays Tauri 2 + React as fixed in v2.4.1. The
-  constitution never named the visual secret. Only the threat model (B4) and the development
-  guide's Phase 3 item "Segredo visual pessoal escolhido no primeiro uso e exibido em todo
-  diálogo do host" did, and both follow this decision.
+  already cover this feature, and the stack stays Tauri 2 + React as fixed in v2.4.1.

@@ -36,5 +36,5 @@
   and not choices that leak from a plan. The success criteria name none of them, except
   `DESIGN.md` as the single source the contributor edits.
 - Both clarifications were answered on 2026-11-10 and are recorded in the spec's Clarifications
-  section. The visual secret is dropped in favor of the dialog's structure (FR-019), and the
-  accent is shared with widget content (FR-013).
+  section. A host dialog is told apart by its structure (FR-019), and the accent is shared
+  with widget content (FR-013).
