@@ -396,7 +396,7 @@ a cited criterion checked only by review, each fails by name.
 - [X] T033 [US4] Implement `design/src/checks/criteria.ts`, which reads
   `docs/design/host-surfaces.md` and `docs/threat-model.md`'s threats table, and wire it into
   `check`. Pass T032.
-- [ ] T034 [US4] Write `docs/design/host-surfaces.md`, starting with what only the host draws and
+- [X] T034 [US4] Write `docs/design/host-surfaces.md`, starting with what only the host draws and
   why. Write the chrome and frame criteria in the format of `contracts/outputs.md`, each with
   `Check:` and `Feature:` lines. Cover:
   - the frame's header and its actions belong to the host;
