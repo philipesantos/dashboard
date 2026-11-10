@@ -188,7 +188,7 @@ proven by the probe.
 
 ### Tests for User Story 2
 
-- [ ] T011 [P] [US2] Write `app/src-tauri/tests/surface.rs` ([contracts/window-surface.md](contracts/window-surface.md)).
+- [X] T011 [P] [US2] Write `app/src-tauri/tests/surface.rs` ([contracts/window-surface.md](contracts/window-surface.md)).
   It parses `window-surface.toml`, `capabilities/*.json`, `Cargo.toml` and `tauri.conf.json`
   with `toml` and `serde_json`, which are already in the lock. It fails, with the contract's
   lines, when:
@@ -196,7 +196,8 @@ proven by the probe.
   - a command is listed but missing from `dashboard_lib::COMMANDS`, or the reverse;
   - a `tauri-plugin-*` dependency is unlisted;
   - an entry has no reason;
-  - `gen/schemas/acl-manifests.json` has no `__app-acl__` key;
+  - the build's `acl-manifests.json` has no `__app-acl__` key, read from `OUT_DIR`, since a probe
+    build overwrites `gen/schemas/` with a manifest that always has it;
   - `app/src-tauri/Cargo.toml` lists `devtools` among the features of `tauri`,
     `tauri-runtime-wry` or `wry`;
   - `tauri.conf.json` sets macOS entitlements that grant `associated-domains` or `webcredentials`;
