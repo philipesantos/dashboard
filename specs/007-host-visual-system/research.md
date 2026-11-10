@@ -405,8 +405,8 @@ are history, and the criteria are a standing rule.
 
 Radix Dialog, already used by the demo's `dialog.tsx`, provides the inert background (by hiding
 its siblings from assistive technology and blocking pointer events), the focus trap and Escape
-handling, in all three webviews (WebKitGTK, WKWebView and WebView2). The criteria name the
-behavior, not the library.
+handling, in every engine the app ships: WebView2 on Windows, WKWebView on macOS and an
+embedded Chromium on Linux. The criteria name the behavior, not the library.
 
 For the frame, the criteria require that the frame body be a containing block for everything in
 it, with paint containment and clipping. Then even a positioned element in widget content cannot
