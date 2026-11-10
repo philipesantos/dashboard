@@ -21,7 +21,7 @@ spacing:
 
 ## Overview
 
-A fixture.
+A small fixture.
 
 ## Colors
 

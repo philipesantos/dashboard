@@ -240,7 +240,7 @@ WCAG AA, or when widget content could reach a surface only the host draws.
 
 The direction is **Ardósia + Musgo**: cool slate neutrals around hue 250, one cobalt accent,
 Bricolage Grotesque for headings, Figtree for text and IBM Plex Mono for ids and domains. It is
-quiet on purpose. The dashboard shows other people's data from plugins, so the host stays quiet
+calm on purpose. The dashboard shows other people's data from plugins, so the host stays quiet
 and lets content carry the color.
 
 Two kinds of things are drawn:
