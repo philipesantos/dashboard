@@ -244,13 +244,14 @@ draws (FR-009 to FR-012, FR-021).
 
 ### Tests for User Story 3
 
-- [ ] T014 [P] [US3] Add the navigation and window cases to `run.ts`:
+- [X] T014 [P] [US3] Add the navigation and window cases to `run.ts`:
   - `navigate-location`, `navigate-assign`, `navigate-meta-refresh`, `navigate-link`,
     `navigate-own-asset` and `navigate-file-scheme`;
   - `window-open` and `window-target-blank`;
   - `context-menu`: a dispatched `contextmenu` must come back `defaultPrevented`.
 
-  In `probe.rs`, add the `stayed` window count: exactly one webview window.
+  In `probe.rs`, add the `stayed` window count: exactly one webview window. (Already there since T003: a
+  case with `singleWindow` breaks when more than one window is open at report time.)
 - [ ] T015 [P] [US3] Add the FR-021 cases to `run.ts`:
   - permissions: `permission-camera`, `permission-location`, `permission-notification`;
   - `download-link`;

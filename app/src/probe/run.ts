@@ -12,9 +12,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Case, Context, Counters, Verdict } from "./case";
 import { commandCases } from "./commands";
 import { policyCases } from "./policy";
+import { windowCases } from "./window";
 
 /** Every case. The story tasks add theirs here. Cases that may unload the page run last. */
-const cases: Case[] = [...policyCases, ...commandCases].sort(
+const cases: Case[] = [...policyCases, ...commandCases, ...windowCases].sort(
   (first, second) => Number(first.mayLeave ?? false) - Number(second.mayLeave ?? false),
 );
 
