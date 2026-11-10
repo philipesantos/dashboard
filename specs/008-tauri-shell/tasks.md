@@ -70,7 +70,7 @@ probe step in `ci.yml`, is core (research R13). The pull request gets line-by-li
   - call it from `setup` in `lib.rs`.
 
   `pnpm tauri dev` shows the demo as before.
-- [ ] T003 Add the probe's Rust side, `app/src-tauri/src/probe.rs`, compiled only with a new
+- [X] T003 Add the probe's Rust side, `app/src-tauri/src/probe.rs`, compiled only with a new
   feature `shell-probe = []` in `app/src-tauri/Cargo.toml` ([contracts/probe.md](contracts/probe.md)):
   - **Gate:** without `DASHBOARD_PROBE=1` in the environment, the binary prints why and exits
     with status 3.
