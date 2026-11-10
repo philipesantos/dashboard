@@ -48,7 +48,7 @@ Tauri check app commands against the capabilities (research R4).
 | `[[plugin]].crate` | The `tauri-plugin-*` dependencies of `app/src-tauri/Cargo.toml` |
 
 The same test also fails when:
-- the generated `app/src-tauri/gen/schemas/acl-manifests.json` has no `__app__` key, because then
+- the generated `app/src-tauri/gen/schemas/acl-manifests.json` has no `__app-acl__` key, because then
   Tauri skips the ACL for app commands;
 - `app/src-tauri/Cargo.toml` lists `devtools` among the features of `tauri`, `tauri-runtime-wry`
   or `wry`;
