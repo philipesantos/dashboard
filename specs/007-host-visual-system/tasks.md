@@ -198,7 +198,7 @@ fails `check`, naming the token.
     `warning:` and do not fail.
   - A fixture with a broken `{rounded.nope}` reference fails.
   - The fixture of research R1's probe passes with warnings only.
-- [ ] T013 [P] [US1] Write `design/test/fonts.test.ts`. It fails when a family in a fixture's
+- [X] T013 [P] [US1] Write `design/test/fonts.test.ts`. It fails when a family in a fixture's
   typography has no license file in a fixture `licenses/fonts/` directory, naming the family
   (research R7).
 
