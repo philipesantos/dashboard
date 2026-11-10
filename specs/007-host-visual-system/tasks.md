@@ -121,7 +121,7 @@ Every story builds on these.
 
 ### Implementation for the foundation
 
-- [ ] T006 [P] Implement `design/src/color.ts`:
+- [X] T006 [P] Implement `design/src/color.ts`:
   - OKLCH to linear sRGB to sRGB, clamped;
   - compositing a `role/opacity` layer over an opaque color;
   - WCAG 2.2 relative luminance and ratio.
