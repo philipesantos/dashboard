@@ -305,7 +305,7 @@ draws (FR-009 to FR-012, FR-021).
   - **Revisit when:** a stable runtime release appears, together with the amendment to Tauri 3.
   - **The options considered.**
 
-  Add it to `docs/decisions/README.md`'s index.
+  Link it from the threat model's assumption about the webview (T023).
 
 ---
 
