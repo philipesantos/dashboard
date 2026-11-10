@@ -175,7 +175,7 @@ edges and dividers whose meaning something else carries.
 | `ring` at 50% (`ring-ring/50`) on `background` | 1.79 | 2.10 | draw the focus ring solid: `ring` alone reaches 3.58 light, 4.57 dark on `card` |
 | `chart-2` on `card` | 2.76 | ok | oklch(0.58 0.10 200), 4.08 |
 | `chart-3` on `card` | 2.34 | ok | oklch(0.60 0.13 70), 4.06 |
-| `destructive` text on `destructive`/10 over `card` (soft badge and button) | 4.42 | 4.58 | `destructive` light to oklch(0.54 0.2 27) |
+| `destructive` text on `destructive`/10 over `card` (soft badge and button) | 4.42 | ok | `destructive` light to oklch(0.54 0.2 27) |
 | `border` on `background` / `card` | 1.27 / 1.31 | 1.25 / 1.29 | none: marked `decorative` (card edges and dividers), since controls carry their own `input` boundary |
 
 **Found when the pairings were declared** (T025, 2026-11-10). Declaring every layer the
@@ -465,8 +465,12 @@ are history, and the criteria are a standing rule.
   criteria require that no plugin string reach the opener or any call that opens a link, a file
   or another app.
 - **Forms.** The form component has no password or masked field. Its inputs set
-  `autocomplete="off"` and are never marked as credentials, so no webview offers to fill or save
-  them.
+  `autocomplete="off"` and are never marked as credentials. Engines may still offer to fill or
+  save a field that looks like a login despite the attribute, so the shell also turns off each
+  engine's own autofill and password saving (HS-26).
+- **Overlays and strings.** Paint containment does not hold portaled layers or native browser UI
+  (select lists, `title` tooltips, validation bubbles, date pickers), so widget content's
+  components open none of them (HS-25). Every string a plugin returns is drawn as text (HS-24).
 
 Radix Dialog, already used by the demo's `dialog.tsx`, provides the inert background (by hiding
 its siblings from assistive technology and blocking pointer events), the focus trap and Escape
@@ -476,6 +480,25 @@ embedded Chromium on Linux. The criteria name the behavior, not the library.
 For the frame, the criteria require that the frame body be a containing block for everything in
 it, with paint containment and clipping. Then even a positioned element in widget content cannot
 leave the frame. Widget content has no style field, so this is defense in depth.
+
+**Independent review** (T047, 2026-11-10): a reviewer with none of this feature's context read
+`DESIGN.md` and the criteria against the spec, Principles V, VII and VIII and the threat model,
+and recomputed every quoted ratio with `color.ts`. It found no high-severity problem; each of
+its 15 findings was checked at the source and fixed:
+- **New criteria:** HS-24 (strings drawn as text), HS-25 (no portaled or native overlay outside
+  the frame) and HS-26 (each engine's autofill and password saving off), because
+  `autocomplete="off"` alone does not stop an engine.
+- **Pairings:** `frame`, `frame-header` and `dialog`, where widget content and the host draw
+  tones, edges, the focus ring and chart marks.
+- **Prose:** the destructive and primary hover changes, the submenu's shadow, the `muted`
+  pairing, and the frame header, which is the host's by place, not by color.
+- **Criteria wording:** HS-13 for `local/` plugins and catalog connectors, and HS-02's check.
+  HS-07, HS-16 and HS-23 were moved to the features that first have what they need. HS-19 and
+  HS-20 gained the walks on the three systems.
+- **Threat model:** B4 names all four properties of FR-019.
+
+One residual remains: a plain text field that widget content labels "password" cannot be told
+apart from any other field. It is raised for the declarative UI's spec.
 
 **Rationale**: FR-017 to FR-019 describe what a host dialog does. These are the web mechanisms
 that make it true, recorded so that the later features do not rediscover them.

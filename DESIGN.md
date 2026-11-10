@@ -274,13 +274,15 @@ chroma; the accent is cobalt at hue 235 to 245.
 ### Actions and emphasis
 
 - **primary**: the cobalt accent: the main button, the selected item, links. Shared, so widget
-  content can use the accent tone.
+  content can use the accent tone. The primary button's hover draws it at 90% rather than
+  shadcn's 80%, where `primary-foreground` measured 3.80 on `background`; at 90% it holds
+  4.62.
 - **primary-foreground**: text and icons on `primary`.
 - **secondary**: the quiet button's fill, a light slate.
 - **secondary-foreground**: text on `secondary`.
 - **muted**: quiet fills such as a table's hover row.
-- **muted-foreground**: secondary text such as descriptions and captions. The lightest text the
-  host draws, so it sets the floor for contrast.
+- **muted-foreground**: secondary text such as descriptions and captions, 4.83:1 on `muted` in
+  light, its closest pairing.
 - **accent**: the hover and focus fill of menu items, a pale cobalt.
 - **accent-foreground**: text on `accent`, a dark cobalt.
 
@@ -288,10 +290,11 @@ chroma; the accent is cobalt at hue 235 to 245.
 
 Status is never shown by color alone: the host draws an icon beside each status tone.
 
-- **destructive**: errors and destructive actions, a warm red. Darker than the starting
-  theme's oklch(0.56 0.2 27) in light and lighter than its oklch(0.7 0.18 22) in dark, so its
-  text holds 4.5:1 on the destructive button's soft fill and hover (`/20` in light, `/25` in
-  dark), where the starting values measured 3.77 and 3.80.
+- **destructive**: errors and destructive actions, a warm red. The destructive button draws it
+  as text on a soft fill of itself: /10 at rest and /20 on hover in light, /20 and /25 in dark.
+  The starting theme's oklch(0.56 0.2 27) measured 3.67 on the light hover over `background`,
+  so light is darker now. In dark, the hover moved from shadcn's /30, where the starting
+  oklch(0.7 0.18 22) measured 3.80, to /25, and the value is lighter, holding 4.61.
 - **ok**: success, a green at hue 150 that holds 4.5:1 as text in both themes.
 - **warning**: caution, an amber at hue 65 to 80 dark enough to read as text in light.
 
@@ -336,8 +339,10 @@ kept separate so the chrome can change without moving widget content.
 - **frame**: the frame's body, where widget content is drawn.
 - **frame-foreground**: text the host draws in the body, such as an error.
 - **frame-border**: the frame's edge.
-- **frame-header**: the frame's header, which holds the plugin's name and icon. A step darker
-  than `frame` in light and lighter in dark, so the header reads as the host's.
+- **frame-header**: the frame's header, which holds the plugin's name and icon, a step away from
+  `frame`. What makes the header the host's is its place, above the body that widget content
+  cannot leave and always showing the manifest's name, not this color, which shared roles come
+  close to.
 - **frame-header-foreground**: the plugin's name in the header.
 
 ### Host dialogs
@@ -420,8 +425,8 @@ pairings:
   # Status: text, and the soft fills of the destructive badge and button
   - { fg: destructive, on: [background], kind: text }
   - { fg: destructive, on: [card], kind: text }
-  - { fg: destructive, on: [background, destructive/10], kind: text, themes: [light] }
-  - { fg: destructive, on: [card, destructive/10], kind: text, themes: [light] }
+  - { fg: destructive, on: [background, destructive/10], kind: text }
+  - { fg: destructive, on: [card, destructive/10], kind: text }
   - { fg: destructive, on: [background, destructive/20], kind: text }
   - { fg: destructive, on: [card, destructive/20], kind: text }
   - { fg: destructive, on: [background, destructive/25], kind: text, themes: [dark] }
@@ -453,10 +458,33 @@ pairings:
   - { fg: sidebar-accent-foreground, on: [sidebar-accent], kind: text }
   - { fg: sidebar-primary, on: [sidebar], kind: boundary }
   - { fg: sidebar-ring, on: [sidebar], kind: focus }
-  # The frame and dialogs
+  # The frame: widget content is drawn on its body, with every tone and control
   - { fg: frame-foreground, on: [frame], kind: text }
+  - { fg: foreground, on: [frame], kind: text }
+  - { fg: muted-foreground, on: [frame], kind: text }
+  - { fg: primary, on: [frame], kind: text }
+  - { fg: destructive, on: [frame], kind: text }
+  - { fg: destructive, on: [frame, destructive/10], kind: text }
+  - { fg: ok, on: [frame], kind: text }
+  - { fg: warning, on: [frame], kind: text }
+  - { fg: input, on: [frame], kind: boundary }
+  - { fg: ring, on: [frame], kind: focus }
+  - { fg: chart-1, on: [frame], kind: chart }
+  - { fg: chart-2, on: [frame], kind: chart }
+  - { fg: chart-3, on: [frame], kind: chart }
+  - { fg: chart-4, on: [frame], kind: chart }
+  - { fg: chart-5, on: [frame], kind: chart }
+  # The frame's header, with the plugin's name, its id and the frame's actions
   - { fg: frame-header-foreground, on: [frame-header], kind: text }
+  - { fg: muted-foreground, on: [frame-header], kind: text }
+  - { fg: ring, on: [frame-header], kind: focus }
+  # Host dialogs
   - { fg: dialog-foreground, on: [dialog], kind: text }
+  - { fg: muted-foreground, on: [dialog], kind: text }
+  - { fg: primary, on: [dialog], kind: text }
+  - { fg: destructive, on: [dialog], kind: text }
+  - { fg: input, on: [dialog], kind: boundary }
+  - { fg: ring, on: [dialog], kind: focus }
 ```
 
 ## Typography
@@ -496,7 +524,8 @@ level above `flat` is the host's: widget content cannot raise anything above its
 - **flat**: widget content and everything inside a frame. No shadow.
 - **frame**: the widget frame on the dashboard grid, Tailwind's `shadow-sm`, just enough to lift
   it off `background`.
-- **raised**: the host's menus, selects and popovers, Tailwind's `shadow-md`.
+- **raised**: the host's menus, selects and popovers, Tailwind's `shadow-md`. The demo's submenu
+  used `shadow-lg`; it now draws this level, like the menu it opens from.
 - **dialog**: host dialogs above the scrim, Tailwind's `shadow-lg`, the deepest level.
 
 The levels start at Tailwind's values so moving them here changed nothing on screen. The active
@@ -534,8 +563,7 @@ It selects a tone and a variant, never a color, a font, a size or a class. Each 
 
 - **text-default**: body text in the widget, `foreground` at the default size.
 - **text-muted**: secondary text, `muted-foreground`.
-- **text-heading**: a title inside the widget, in the heading face. Smaller than the frame's
-  header, which the host draws.
+- **text-heading**: a title inside the widget, in the heading face.
 
 ### List and table
 

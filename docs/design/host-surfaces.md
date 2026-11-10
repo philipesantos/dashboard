@@ -46,10 +46,12 @@ never by review alone (Principle VIII). `pnpm --filter ./design check` enforces 
 
 The host draws each frame's header, with the plugin's name, its icon and the frame's actions, in
 the host-only `frame-header` roles. Widget content is never drawn in the header, and no part of
-widget content can add to, replace or restyle it.
+widget content can add to, replace or restyle it. Content shaped like a header can only appear
+below the real one, which always shows the name from the manifest.
 
 Check: hostile case: a widget that asks for every tone and variant and returns content shaped
-like a header; the frame's header is unchanged, and its actions are the host's.
+like a header with another plugin's name; the frame's header is unchanged, still above it with
+the manifest's name, and its actions are the host's.
 Feature: Moldura do host em cada widget com nome e ícone do plugin
 
 ### HS-02 The plugin's name and icon come from its manifest, escaped and bounded
@@ -59,8 +61,10 @@ name is drawn as escaped text, with control and bidirectional override character
 length limit, and a host-drawn placeholder stands in when it is empty. The icon is drawn as an
 image in a fixed box, never as markup.
 
-Check: test: names holding markup, bidirectional overrides, 500 characters and nothing; each is
-drawn escaped, cut at the limit, or replaced by the placeholder.
+Check: test: names holding markup, control characters, bidirectional overrides, 500 characters
+and nothing; each is drawn escaped, stripped, cut at the limit, or replaced by the placeholder.
+An SVG icon holding a script and an external reference is drawn as an image, running nothing and
+fetching nothing.
 Feature: Moldura do host em cada widget com nome e ícone do plugin
 
 ### HS-03 Widget content is clipped to the frame's body
@@ -92,13 +96,14 @@ Check: hostile case: a widget whose buttons name host commands and other widgets
 host refuses each, and nothing is granted, installed or connected.
 Feature: Biblioteca de UI declarativa
 
-### HS-06 The form has no password field and is never offered for autofill
+### HS-06 The form has no password field and no credential hint
 
-The simple form has no password or masked field. Its inputs set `autocomplete="off"` and are
-never marked as credentials, so no webview offers to fill or save what they hold.
+The simple form has no password or masked field. Its inputs set `autocomplete="off"` and carry
+no credential type, name or hint. The attribute alone does not stop an engine from offering to
+fill or save a field that looks like a login; HS-26 turns that off in the engine.
 
 Check: test: the form component accepts no password or masked field, and every input it draws
-has `autocomplete="off"` and no credential type or hint.
+has `autocomplete="off"` and no credential type, name or hint.
 Feature: Biblioteca de UI declarativa
 
 ### HS-07 No plugin string opens a link, a file or another app
@@ -108,7 +113,7 @@ app. The declarative UI has no link component.
 
 Check: hostile case: a widget whose every string is a URL, a file path or a custom scheme; nothing
 is opened, and the opener is never called.
-Feature: Shell Tauri com capabilities mínimas e CSP restritiva
+Feature: Biblioteca de UI declarativa
 
 ### HS-08 Status is never shown by color alone
 
@@ -126,6 +131,37 @@ not know draws as the default tone, and the host records the name in the plugin'
 Check: test: widget content carrying style fields draws exactly as without them, and an unknown
 tone draws as the default and adds one entry to the plugin's log.
 Feature: Biblioteca de UI declarativa
+
+### HS-24 Every string in widget content is drawn as text
+
+Every string a plugin returns is drawn as text, never parsed as markup, and bidirectional
+overrides are isolated so they cannot reorder the text around them.
+
+Check: hostile case: a widget whose strings hold HTML, a script, an image tag and bidirectional
+overrides, in every component; each shows as the literal characters, and nothing runs, loads or
+moves outside the string.
+Feature: Biblioteca de UI declarativa
+
+### HS-25 Widget content opens nothing outside its frame
+
+No component of widget content opens a layer outside the frame's body: no portaled popover,
+select list or tooltip, and no native browser UI that draws outside the page's layout, such as a
+`title` tooltip, a validation bubble or a date picker. A select in widget content lists its
+options inside the frame.
+
+Check: hostile case: a widget with a select of many long options, strings in every place a
+tooltip could come from, and an invalid form submitted; nothing is drawn outside the frame's
+body.
+Feature: Biblioteca de UI declarativa
+
+### HS-26 The engine never offers to fill or save credentials
+
+Each webview engine the app ships has its own form autofill and password saving turned off, so
+no field in the window, whatever it is labelled, is offered a saved password or saved as one.
+
+Check: test: on each system, the engine's autofill and password-save settings read as off, and a
+form with a field named and labelled as a password draws no autofill offer.
+Feature: Shell Tauri com capabilities mínimas e CSP restritiva
 
 ## The form of a host dialog
 
@@ -162,11 +198,13 @@ Feature: Diálogo de instalação com permissões em linguagem clara
 ### HS-13 A dialog names who is asking
 
 The dialog names the plugin or connector the decision is about, by its manifest name and its
-repository id (`github.com/owner/repo`), drawn by the host as escaped text with a length limit,
-as the frame does (HS-02).
+id, drawn by the host as escaped text with a length limit, as the frame does (HS-02). The id is
+the repository (`github.com/owner/repo`) for an installed plugin, `local/<name>` for a
+development one, and the catalog id for a connector from the official catalog.
 
-Check: test: plugins whose names hold markup, bidirectional overrides and 500 characters; the
-dialog shows each escaped and bounded, with the repository id in full.
+Check: test: plugins and connectors of each kind, with names that hold markup, bidirectional
+overrides and 500 characters; the dialog shows each name escaped and bounded, and the id in
+full.
 Feature: Diálogo de instalação com permissões em linguagem clara
 
 ### HS-14 The safe choice is the default
@@ -193,9 +231,10 @@ window. A picture of a dialog in a frame leaves the chrome and the other widgets
 responding.
 
 Check: hostile case: the declarative UI's hostile widget, which uses every tone and variant to
-look like a dialog; the chrome stays uncovered, the other frames keep responding to the pointer
-and the keyboard, and its buttons trigger only its own declared actions.
-Feature: Biblioteca de UI declarativa
+look like a dialog, placed among other widgets; the chrome stays uncovered, the other frames
+keep responding to the pointer and the keyboard, and its buttons trigger only its own declared
+actions.
+Feature: Moldura do host em cada widget com nome e ícone do plugin
 
 ### HS-17 The dialog's form holds in forced colors
 
@@ -229,7 +268,7 @@ Feature: Diálogo de instalação com permissões em linguagem clara
 Escape takes the dialog's safe choice (deny or cancel) and closes it. Escape never approves.
 
 Check: test: Escape on every host dialog, with focus on each of its controls, takes the safe
-choice.
+choice; the feature's review repeats it with a keyboard on each of the three systems.
 Feature: Diálogo de instalação com permissões em linguagem clara
 
 ### HS-20 Focus returns to where it was
@@ -238,7 +277,8 @@ When a dialog closes, focus returns to the control that opened it, or to the win
 control is gone.
 
 Check: test: closing a dialog returns focus to its opener; when the opener was removed while the
-dialog was open, focus lands on the window.
+dialog was open, focus lands on the window. The feature's review repeats it with a keyboard and
+with the screen reader on each of the three systems.
 Feature: Diálogo de instalação com permissões em linguagem clara
 
 ### HS-21 The dialog is announced with its name and description
@@ -265,4 +305,4 @@ Dialog and frame transitions follow the system's reduced-motion setting: with it
 appear and move without animation.
 
 Check: test: with reduced motion emulated, opening a dialog and moving a frame run no animation.
-Feature: Grade do dashboard
+Feature: Diálogo de instalação com permissões em linguagem clara

@@ -511,7 +511,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
 - [X] T046 Walk `specs/007-host-visual-system/quickstart.md` §1–§10, including each mutation, and
   fix any drift between it and the tooling. §7 and §10 need the pull request's CI, so walk them
   in T049.
-- [ ] T047 Review `DESIGN.md` and `docs/design/host-surfaces.md` independently.
+- [X] T047 Review `DESIGN.md` and `docs/design/host-surfaces.md` independently.
   - A fresh agent with none of this feature's context reads both against the spec's FRs and the
     constitution's Principles V, VII and VIII. It also checks the WCAG claims against
     `design/src/color.ts`'s output.
