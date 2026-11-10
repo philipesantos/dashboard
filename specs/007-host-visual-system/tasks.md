@@ -189,8 +189,8 @@ fails `check`, naming the token.
     - `.dark`.
   - The radius steps use the multipliers 0.6, 0.8, 1, 1.4, 1.8, 2.2 and 2.6 of `--radius`.
   - Changing `rounded.base` in a fixture changes only `--radius`.
-- [ ] T011 [P] [US1] Write `design/test/drift.test.ts`. A committed file that differs in one
-  value reports
+- [ ] T011 [P] [US1] Write `design/test/drift.test.ts`. A committed file that differs in two
+  values reports one line for each, as
   `app/src/theme.generated.css: --<role> differs from DESIGN.md (run pnpm --filter ./design gen)`.
   A file that differs only in `\r\n` passes.
 - [ ] T012 [P] [US1] Write `design/test/format.test.ts`.
@@ -208,7 +208,8 @@ fails `check`, naming the token.
   `contracts/outputs.md`, with the "Generated from DESIGN.md … Do not edit." first line. Pass
   T010.
 - [ ] T015 [US1] Implement `design/src/checks/drift.ts`: generate in memory and compare with the
-  committed file after normalizing `\r\n`. Report the first differing variable. Pass T011.
+  committed file after normalizing `\r\n`. Report every differing variable, one line each
+  (FR-005). Pass T011.
 - [ ] T016 [US1] Implement `design/src/checks/format.ts`.
   - Run the pinned checker as `node node_modules/@google/design.md/dist/index.js lint DESIGN.md`,
     resolved from the `design` package with `import.meta.resolve`, never `npx`.
@@ -273,6 +274,9 @@ every color the app's code draws is declared.
   - `bg-black/10` fails as a color that names no role.
   - `dark:hover:bg-input/50` is read as role `input` at 50.
   - `disabled:opacity-50` is ignored.
+  - `bg-transparent`, `border-transparent` and `text-current` are ignored.
+  - `text-sm`, `ring-3`, `shadow-md`, `outline-none`, `border-0` and `text-right` are not colors.
+  - `text-red-500` and `bg-[#fff]` fail as colors that name no role.
   - Each failure line names the file and the utility.
 
 ### Implementation for User Story 2
@@ -282,7 +286,10 @@ every color the app's code draws is declared.
 - [ ] T024 [US2] Implement `design/src/checks/usage.ts`. It scans `app/src/**/*.tsx` and the
   `@apply` lines of `app/src/*.css` for Tailwind color utilities: `bg`, `text`, `border`,
   `ring`, `outline`, `fill`, `stroke`, `divide`, `placeholder`, `caret`, `accent`, `shadow`,
-  `from`, `via` and `to`, with any variant prefix. Wire it into `check`. Pass T022.
+  `from`, `via` and `to`, with any variant prefix. A utility is a color only when what follows
+  the prefix, without `/opacity`, is a role, a palette color, `black`, `white` or `[…]`;
+  `transparent`, `current` and `inherit` are skipped (research R4). Wire it into `check`. Pass
+  T022.
 - [ ] T025 [US2] Add the Colors section's `design-rules` `pairings` and `decorative` to
   `DESIGN.md`, covering every role.
   - Include every layer the components use: `input`/30, /50 and /80 in dark, `muted`/50,
@@ -303,7 +310,9 @@ every color the app's code draws is declared.
   - in `badge.tsx`, `button.tsx`, `checkbox.tsx`, `input.tsx`, `select.tsx`, `switch.tsx` and
     `tabs.tsx`, under `app/src/components/ui/`, change `ring-ring/50` to `ring-ring`;
   - in `app/src/index.css`, change `outline-ring/50` to `outline-ring`;
-  - in `app/src/components/ui/dialog.tsx`, change the overlay's `bg-black/10` to `bg-scrim`.
+  - in `app/src/components/ui/dialog.tsx`, change the overlay's `bg-black/10` to `bg-scrim`;
+  - in `select.tsx` and `dropdown-menu.tsx`, change `shadow-md` and `shadow-lg` to
+    `shadow-raised` (research R5, "Elevation").
 
   Run `check` until it passes with zero failures (SC-002).
 
@@ -340,7 +349,8 @@ by name, and `design/widget-map.generated.json` holds no host-only role.
 - [ ] T029 [US3] Add the remaining `design-rules` blocks to `DESIGN.md`:
   - **Colors:** `hostOnly`, listing `sidebar`, `frame`, `dialog`, `scrim` and `ring`, with the
     reason in the prose. The prose says the split is by role, not color (research R6).
-  - **Elevation & Depth:** `flat`, then `frame`, `raised` and `dialog`, the last three host-only.
+  - **Elevation & Depth:** `flat`, then `frame`, `raised` and `dialog`, the last three host-only,
+    at Tailwind's `shadow-sm`, `shadow-md` and `shadow-lg` values (research R5).
   - **Components:**
     - the tones `default`, `muted`, `accent`, `ok`, `warning` and `error`, with icons
       `circle-check`, `triangle-alert` and `circle-x` for the three statuses;
@@ -393,6 +403,9 @@ a cited criterion checked only by review, each fails by name.
     (research R11);
   - widget content cannot cover the header;
   - a control in widget content triggers only that widget's declared actions;
+  - widget content has no field for a color, font, size, class or style, and an unknown tone
+    draws as the default tone and is recorded in the plugin's log (FR-014), with
+    `Feature: Biblioteca de UI declarativa`;
   - the form has no password or masked field, and its inputs are never offered for autofill;
   - no plugin string reaches the opener or anything that opens a link, a file or another app;
   - status is never shown by color alone.

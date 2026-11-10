@@ -280,8 +280,8 @@ keyboard, and with a screen reader on each of the three systems.
 - **FR-001**: The repository MUST hold the visual system in one `DESIGN.md` at its root, in
   Google's open `DESIGN.md` format. CI MUST check the file with the format's own checker, pinned
   to one version.
-- **FR-002**: `DESIGN.md` MUST declare each of the following for light and dark, each with its
-  rationale:
+- **FR-002**: `DESIGN.md` MUST declare each of the following, each with its rationale. Colors
+  and elevation have a value for light and one for dark; the others hold in both themes:
   - the color roles;
   - the status tones ok, warning and error;
   - the typography: families, a type scale and weights;
@@ -411,8 +411,8 @@ keyboard, and with a screen reader on each of the three systems.
 
 ### Key Entities
 
-- **Token**: a named value with a group (color, type, space, radius or elevation), a value per
-  theme, a host-only or shared mark, and a rationale.
+- **Token**: a named value with a group (color, typography, spacing, rounded or elevation), a
+  value per theme for colors and elevation, a host-only or shared mark, and a rationale.
 - **Color pairing**: a foreground role on a background role, with a kind (normal text, large
   text, component boundary, focus indicator or chart mark) and the minimum ratio that kind
   requires.
@@ -445,7 +445,8 @@ keyboard, and with a screen reader on each of the three systems.
   - darker input edges, and in dark mode the field and switch fills that use the same role;
   - a solid focus ring;
   - two darker chart colors in light;
-  - a slightly darker red in light.
+  - a slightly darker red in light;
+  - the submenu's shadow matching the menu's.
 - **SC-007**: Every CI run that builds publishes the preview page, and the maintainer can review
   the visual system in a browser without building the app.
 

@@ -136,6 +136,8 @@ Feature: Moldura do host em cada widget com nome e ícone do plugin
   - nothing behind it is reachable by assistive technology.
 - widget controls:
   - a control in widget content triggers only that widget's declared actions;
+  - widget content has no field for a color, font, size, class or style, and a tone the host
+    does not know draws as the default tone and is recorded in the plugin's log (FR-014);
   - the form has no password or masked field, and its inputs are never offered for autofill;
   - no plugin string reaches the opener or anything that opens a link, a file or another app;
   - widget content cannot produce a layer above the frames, a scrim or an inert window;

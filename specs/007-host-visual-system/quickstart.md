@@ -91,7 +91,8 @@ dark.
 - darker input edges, and in dark mode slightly lighter field and switch fills;
 - the solid focus ring;
 - `chart-2` and `chart-3` darker in light;
-- `destructive` slightly darker in light.
+- `destructive` slightly darker in light;
+- the submenu's shadow matching the menu's.
 
 ## 10. The preview (SC-007)
 

@@ -57,6 +57,10 @@ A color utility found in `app/src/**/*.tsx` or in an `@apply` of `app/src/*.css`
 - A color utility that names no role (Tailwind's palette, `black`, `white`) fails.
 - The scan reports the file and utility of each failure.
 - `opacity-*` on disabled controls is not a color usage. WCAG exempts inactive components.
+- `transparent`, `current` and `inherit` are not color usages. They add no color of their own.
+- A utility is a color usage only when what follows its prefix, without `/opacity`, is a role, a
+  Tailwind palette color, `black`, `white` or an arbitrary `[…]` value. `text-sm`, `ring-3` and
+  `shadow-md` are sizes.
 
 ## Tone
 

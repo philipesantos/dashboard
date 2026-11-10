@@ -119,8 +119,8 @@ with a "generated from DESIGN.md, do not edit" line and holds three blocks:
 
 `app/src/index.css` keeps the Tailwind and font imports and the `@layer base` rules, and imports
 the generated file in place of today's hand-written blocks. `pnpm --filter ./design check`
-generates in memory and compares with the committed file, naming the first token that differs
-(FR-005). `.gitattributes` sets `eol=lf` on every file the checks read or write:
+generates in memory and compares with the committed file, naming every token that differs,
+one line each (FR-005). `.gitattributes` sets `eol=lf` on every file the checks read or write:
 - `DESIGN.md`;
 - the generated files;
 - `docs/design/*.md` and `docs/threat-model.md`;
@@ -186,6 +186,15 @@ utility that names no role, such as Tailwind's palette, `black` or `white`, fail
 it is declared as a layer or pairing in its own right. For example, the demo dialog's
 `bg-black/10` overlay becomes the `scrim` role. `opacity-*` on disabled controls is not scanned:
 WCAG exempts inactive components from contrast, and the spec makes no promise for them.
+`transparent`, `current` and `inherit` are not scanned either. They add no color of their own:
+`transparent` shows the layer beneath, and `current` and `inherit` repeat a text color that is
+already checked. The components use them 15 times today, as in `bg-transparent` and
+`border-transparent`.
+
+A utility counts as a color only when what follows its prefix, without the `/opacity`, is a
+color role, a Tailwind palette color (`red-500`), `black`, `white` or an arbitrary `[…]` value.
+The same prefixes also name sizes and styles, as in `text-sm`, `ring-3`, `shadow-md`,
+`outline-none`, `border-0` and `text-right`, and those are not colors.
 Each role and opacity the app uses must appear in a declared pairing, as a layer in one, or as
 decorative. Otherwise the check fails, naming the file and the utility. This is how the solid
 focus ring is enforced: once `ring` is declared only at full opacity, `ring-ring/50` fails until
@@ -219,6 +228,14 @@ included, not only on the token table.
 - `dialog`, `dialog-foreground` and `scrim`, for host dialogs.
 
 The app's chrome uses shadcn's existing `sidebar-*` roles.
+
+**Elevation.** The levels `frame`, `raised` and `dialog` start at Tailwind's `shadow-sm`,
+`shadow-md` and `shadow-lg` values, so nothing moves. The generator writes them as
+`--shadow-frame`, `--shadow-raised` and `--shadow-dialog`. The demo's menus (`select.tsx` and
+`dropdown-menu.tsx`) draw `shadow-raised` in place of `shadow-md` and `shadow-lg`, so the
+elevation `DESIGN.md` documents is the one the app draws. The submenu's shadow becomes the
+menu's, a little smaller than today. The active tab's `shadow-sm` is a control's detail, not a
+level, and stays.
 
 **Rationale**:
 - The kit needs ok and warning tones (FR-012), and shadcn has only `destructive`.
