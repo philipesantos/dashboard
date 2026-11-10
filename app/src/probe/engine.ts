@@ -79,7 +79,8 @@ const download: Case = {
   id: "download-link",
   mayLeave: true,
   async run(context) {
-    const before = (await context.counters()).download;
+    const start = await context.counters();
+    const before = start.download;
     const link = document.createElement("a");
     link.href = new URL("/vite.svg", location.href).href;
     link.download = "probe.svg";
@@ -87,10 +88,20 @@ const download: Case = {
     link.click();
     link.remove();
     const stayed = await context.stayed();
-    const refusals = (await context.counters()).download - before;
+    const end = await context.counters();
+    const refusals = end.download - before;
+    const navigations = end.navigation - start.navigation;
+    // WebKitGTK treats the click as a navigation first, which on_navigation refuses before any
+    // download starts; WKWebView hands it to on_download (research R14). Either refusal holds.
+    const by =
+      refusals > 0
+        ? `download handler refused ${refusals}`
+        : navigations > 0
+          ? `navigation handler refused ${navigations}, before any download`
+          : "neither handler refused it";
     return {
-      held: refusals > 0 && stayed,
-      detail: `${refusals > 0 ? `download handler refused ${refusals}` : "no download refusal"}, ${stayed ? "the page stayed" : "the page left"}`,
+      held: (refusals > 0 || navigations > 0) && stayed,
+      detail: `${by}, ${stayed ? "the page stayed" : "the page left"}`,
     };
   },
 };

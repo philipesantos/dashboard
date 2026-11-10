@@ -289,7 +289,7 @@ draws (FR-009 to FR-012, FR-021).
   and accepts the empty path; its unit tests cover both. The page now names each case to the
   host before running it (`probe: running <id>`), so a case that unloads or blocks the page is
   named in the log.
-- [ ] T018 [US3] In `window.rs` (research R14):
+- [X] T018 [US3] In `window.rs` (research R14):
   - `on_permission_request` denies every request;
   - `on_download` returns `false`;
   - an `initialization_script` replaces `alert`, `confirm` (`false`), `prompt` (`null`) and

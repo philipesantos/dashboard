@@ -25,7 +25,6 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A refusal by one of the window's handlers.
 #[derive(Clone, Copy)]
-#[expect(dead_code, reason = "window.rs's permission and download handlers report from T018")]
 pub enum Refusal {
     Navigation,
     NewWindow,

@@ -73,7 +73,7 @@ Each case has an id, the rule it breaks and how a refusal is detected:
 | `permission-camera` (`getUserMedia`) | FR-021 | error, and the handler denied it where the engine asked |
 | `permission-location` | FR-021 | error |
 | `permission-notification` | FR-021 | `denied` |
-| `download-link` (`a[download]`) | FR-021 | handler (`on_download`) or no download started |
+| `download-link` (`a[download]`) | FR-021 | handler: `on_download`, or `on_navigation` where the engine treats the click as a navigation first (WebKitGTK), and stayed |
 | `dialog-alert`, `dialog-confirm`, `dialog-prompt`, `dialog-print` | FR-021 | the call returns at once with the replaced value (`undefined`, `false`, `null`) |
 | `devtools-setting` | FR-011 | setting |
 | `context-menu` | FR-011 | `contextmenu` event cancelled |

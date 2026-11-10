@@ -1,10 +1,10 @@
 //! The app's single window and every protection attached to it
-//! (specs/008-tauri-shell/research.md, R2, R5, R6).
+//! (specs/008-tauri-shell/research.md, R2, R5, R6, R14).
 //!
 //! This module is part of the security core (constitution, Principle IX): every change to it
 //! gets line-by-line review.
 
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{DownloadEvent, NewWindowResponse, PermissionResponse};
 use tauri::{Url, WebviewUrl, WebviewWindowBuilder};
 
 /// The label of the app's only window.
@@ -18,6 +18,22 @@ const APP_ORIGINS: &[&str] = &["tauri://localhost", "http://tauri.localhost"];
 /// The window first loads `tauri://localhost`, whose path is empty: `tauri` is not a scheme the
 /// URL standard knows, so no `/` is implied.
 const PAGE_PATHS: &[&str] = &["", "/", "/index.html"];
+
+/// Replaces the engine's own dialogs before any page script runs, in every frame (FR-021). They
+/// would draw outside the host frame, which Principles V and VII reserve to the host's dialogs.
+/// Each returns at once with what a dismissed dialog returns.
+const DIALOGS_SCRIPT: &str = r#"(() => {
+  const replace = (name, value) =>
+    Object.defineProperty(window, name, {
+      value: () => value,
+      writable: false,
+      configurable: false,
+    });
+  replace("alert", undefined);
+  replace("confirm", false);
+  replace("prompt", null);
+  replace("print", undefined);
+})();"#;
 
 /// Whether the window may load `url`: the app's own page, or the development server's page in a
 /// development build. Everything else is refused: other origins, other files of the bundle,
@@ -53,6 +69,21 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
             crate::probe::refused(crate::probe::Refusal::NewWindow);
             NewWindowResponse::Deny
         })
+        // Every web permission (camera, microphone, location, notifications…) is denied (FR-021)
+        .on_permission_request(|_webview, _kind| {
+            #[cfg(feature = "shell-probe")]
+            crate::probe::refused(crate::probe::Refusal::Permission);
+            PermissionResponse::Deny
+        })
+        // No download is ever saved (FR-021)
+        .on_download(|_webview, event| {
+            if matches!(event, DownloadEvent::Requested { .. }) {
+                #[cfg(feature = "shell-probe")]
+                crate::probe::refused(crate::probe::Refusal::Download);
+            }
+            false
+        })
+        .initialization_script_for_all_frames(DIALOGS_SCRIPT)
         // Developer tools only in a development build (FR-011). Release builds also lack the
         // `devtools` feature, which the surface test checks.
         .devtools(tauri::is_dev())

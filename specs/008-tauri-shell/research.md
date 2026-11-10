@@ -450,6 +450,10 @@ on Linux they prove that nothing is granted, not that the handler runs; each det
 handler's refusals when there are any. The case that breaks without the handler is macOS, where
 wry grants camera and microphone by default.
 
+The same holds for `download-link` on WebKitGTK: the click reaches `on_navigation` as a
+navigation to another file of the bundle, which is refused before any download starts. On macOS
+it reaches `on_download`, since downloads there bypass the navigation handler.
+
 ## R15. The WebKitGTK register
 
 **Decision**: every change made only because Linux uses the system WebKitGTK is listed in
