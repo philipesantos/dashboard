@@ -480,14 +480,25 @@ its switch toggles it. That matches the spec's assumption.
 - **Advisories.** `pnpm audit --audit-level high` runs:
   - in `ci.yml`, as its own job gated on code changes, beside `cargo audit`;
   - in `audit.yml`, every week, so new advisories surface without a change.
-- **Licenses.** `pnpm --filter ./design licenses` reads the `license` field of every installed
+- **Licenses.** `pnpm --filter ./design run licenses` reads the `license` field of every installed
   package and fails on one outside an allowlist. The allowlist is `deny.toml`'s list plus the
   licenses common in npm and compatible with an Apache-2.0 client:
   - `BSD-2-Clause`, `0BSD`, `BlueOak-1.0.0` and `CC0-1.0`;
   - `OFL-1.1`, for the fonts, which ship under their own license (R7).
 
   It runs in CI with `check`. `pnpm licenses` printed nothing on pnpm 12.14.0, so the package
-  reads `package.json` files itself.
+  reads `package.json` files itself. That built-in command also shadows the script's name, so
+  it runs as `pnpm --filter ./design run licenses`.
+
+  **Run on the store** (T042, 2026-11-10): 505 packages, 2 outside the list, both brought to the
+  maintainer, who chose named exceptions over widening the list:
+  - `@google/design.md` 0.4.0 declares no license, but ships the Apache-2.0 text, as its
+    repository does;
+  - `caniuse-lite` is under CC-BY-4.0. It is browser support data that `browserslist` reads at
+    build time, through the `shadcn` CLI and Babel, and never ships in `app/dist`.
+
+  Each exception in `design/src/licenses.ts` names the package and what it declares, so a change
+  of license fails again. Any other CC-BY-4.0 package still fails.
 
 **Measured on master today**, before this feature: `pnpm audit` reports 1 high, 1 moderate and 1
 low advisory, all reached through the `shadcn` CLI package in `app/`'s dependencies:

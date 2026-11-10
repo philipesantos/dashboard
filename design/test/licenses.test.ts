@@ -43,3 +43,14 @@ test('each package outside the allowlist is named with its license', () => {
     'node_modules: g@1.0.0 is under "MIT AND CC-BY-4.0", which is not on the allowlist',
   ]);
 });
+
+test('a named exception holds only while the package declares exactly what it names', () => {
+  const exceptions = [
+    { name: 'f', declared: undefined, reason: 'fixture' },
+    { name: 'g', declared: 'MIT AND CC-BY-4.0', reason: 'fixture' },
+    { name: 'd', declared: 'GPL-2.0-only', reason: 'a different license than d declares' },
+  ];
+  assert.deepEqual(licenseLines(store, exceptions), [
+    'node_modules: d@1.0.0 is under "GPL-3.0-only", which is not on the allowlist',
+  ]);
+});

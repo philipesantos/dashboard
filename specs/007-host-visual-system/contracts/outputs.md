@@ -10,7 +10,7 @@ Every command runs from the repository root, through the `design/` workspace pac
 | `pnpm --filter ./design check` | Runs every check below without writing. | 0 when all pass, 1 otherwise |
 | `pnpm --filter ./design preview` | Writes `design/preview/index.html` (not committed). | 0, or 1 as `gen` |
 | `pnpm --filter ./design test` | Runs `node --test` on the package's tests. | `node --test`'s |
-| `pnpm --filter ./design licenses` | Checks the `license` of every installed npm package against the allowlist (research R13). | 0, or 1 naming each package and license |
+| `pnpm --filter ./design run licenses` | Checks the `license` of every installed npm package against the allowlist (research R13). | 0, or 1 naming each package and license |
 
 `check` runs these, in order, and reports every failure before exiting:
 

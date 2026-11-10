@@ -18,6 +18,7 @@ import { checkHostOnly } from './checks/hostonly.ts';
 import { checkSchema } from './checks/schema.ts';
 import { checkUsage } from './checks/usage.ts';
 import { PREVIEW_FILE, previewHtml } from './preview.ts';
+import { licenseLines } from './licenses.ts';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -98,9 +99,14 @@ async function main(command: string | undefined): Promise<number> {
       console.log(`wrote ${PREVIEW_FILE}`);
       return 0;
     }
-    case 'licenses':
-      console.error(`${command}: not implemented yet`);
-      return 1;
+    case 'licenses': {
+      // One store holds the packages of every workspace package.
+      const lines = licenseLines(join(ROOT, 'node_modules', '.pnpm'));
+      for (const line of lines) console.error(line);
+      if (lines.length > 0) return 1;
+      console.log('ok: every installed npm package is under an allowed license or a named exception');
+      return 0;
+    }
     default:
       console.error('usage: cli.ts <gen | check | preview | licenses>');
       return 2;

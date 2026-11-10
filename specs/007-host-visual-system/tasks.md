@@ -481,12 +481,12 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
   whose `license` is outside the allowlist fails, naming it. The allowlist is `deny.toml`'s list
   plus `BSD-2-Clause`, `0BSD`, `BlueOak-1.0.0`, `CC0-1.0` and `OFL-1.1` (research R13). SPDX
   `OR` expressions pass when one side is allowed.
-- [ ] T042 Implement `design/src/licenses.ts` over the installed packages of every workspace
+- [X] T042 Implement `design/src/licenses.ts` over the installed packages of every workspace
   package. Run it, and bring any package that fails to the maintainer before adding a license
   to the list. Pass T041.
 - [ ] T043 Update the CI workflows (research R8, R13).
   - **The build job** in `.github/workflows/ci.yml`:
-    - add `pnpm --filter ./design licenses`;
+    - add `pnpm --filter ./design run licenses`;
     - on Linux only, add `pnpm --filter ./design preview`, then
       `actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2`, with name
       `design-preview` and path `design/preview/`.
