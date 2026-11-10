@@ -127,7 +127,7 @@ Every story builds on these.
   - WCAG 2.2 relative luminance and ratio.
 
   No dependency. Pass T004.
-- [ ] T007 Implement `design/src/parse.ts`. It uses `yaml` 2.9.1 for the front matter and for the
+- [X] T007 Implement `design/src/parse.ts`. It uses `yaml` 2.9.1 for the front matter and for the
   ` ```design-rules ` blocks, and splits the body into the format's `##` sections. It returns:
   - the tokens by group;
   - each color's light and dark value;
