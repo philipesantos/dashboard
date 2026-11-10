@@ -5,6 +5,9 @@
 //!
 //! Each component ends with the crate's `manifest.json`, the file beside its `Cargo.toml`, as a
 //! custom section named `dashboard-manifest` (`specs/002-plugin-permissions/contracts/package.md`).
+//!
+//! `cargo xtask clean-space` frees the disk that builds and tests leave behind, without forcing a
+//! full rebuild (`clean_space`).
 //! A crate's `Cargo.toml` can set two keys under `[package.metadata.dashboard]`:
 //!
 //! - `target`: `"wasm32-unknown-unknown"` (the default) or `"wasm32-wasip2"`, for hostile
@@ -23,6 +26,8 @@ use std::{env, fs};
 use serde_json::Value;
 use wasm_encoder::{ComponentSection, CustomSection};
 use wit_component::ComponentEncoder;
+
+mod clean_space;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -51,8 +56,9 @@ fn main() -> ExitCode {
     let result = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["plugins"] => plugins(false),
         ["plugins", "--locked"] => plugins(true),
+        ["clean-space"] => root().and_then(clean_space::run),
         _ => {
-            eprintln!("usage: cargo xtask plugins [--locked]");
+            eprintln!("usage: cargo xtask plugins [--locked] | cargo xtask clean-space");
             return ExitCode::from(2);
         }
     };
@@ -65,10 +71,15 @@ fn main() -> ExitCode {
     }
 }
 
-fn plugins(locked: bool) -> Result<()> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+/// The repository's root, the parent of the xtask crate.
+fn root() -> Result<&'static Path> {
+    Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .ok_or("the xtask crate has no parent directory")?;
+        .ok_or("the xtask crate has no parent directory")?)
+}
+
+fn plugins(locked: bool) -> Result<()> {
+    let root = root()?;
     let manifest = root.join("plugins").join("Cargo.toml");
     let build_dir = root.join("target").join("plugins-build");
     let out_dir = root.join("target").join("plugins");

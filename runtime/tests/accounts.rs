@@ -3,7 +3,7 @@
 //! disconnecting. Every test reaches only the test service, through the seam, with the mock
 //! vault, and ends with the scan for leaked secrets (research R15).
 
-mod common;
+use crate::common;
 
 use common::servers::TestPki;
 use common::signin::{self, SignInService};
@@ -744,7 +744,7 @@ fn accounts_record() {
         .args([
             "--ignored",
             "--exact",
-            "accounts_record_child_process",
+            "accounts::accounts_record_child_process",
             "--nocapture",
         ])
         .env("ACCOUNTS_DATA", dir)

@@ -1420,7 +1420,7 @@ fn system_proxy() {
     let mut child = std::process::Command::new(std::env::current_exe().unwrap());
     child.args([
         "--exact",
-        "connectors::system_proxy_child_process",
+        "hostile::connectors::system_proxy_child_process",
         "--ignored",
         "--nocapture",
     ]);

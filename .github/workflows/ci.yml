@@ -198,20 +198,20 @@ jobs:
       # The guides start from the examples
       - run: cargo xtask plugins --locked
 
-      - run: cargo test -p runtime --test docs_reference --locked
+      - run: 'cargo test -p runtime --test it --locked docs_reference::'
 
       - name: The docs run as written
         if: runner.os != 'Linux'
         env:
           DASHBOARD_DOCS_TARGET_DIR: ${{ github.workspace }}/target
-        run: cargo test -p runtime --test docs_walk --locked -- --ignored
+        run: 'cargo test -p runtime --test it --locked -- --ignored docs_walk::'
 
       - name: The docs run as written (in a session with GNOME Keyring)
         if: runner.os == 'Linux'
         env:
           DASHBOARD_DOCS_TARGET_DIR: ${{ github.workspace }}/target
         run: |
-          dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'ci' && cargo test -p runtime --test docs_walk --locked -- --ignored"
+          dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'ci' && cargo test -p runtime --test it --locked -- --ignored docs_walk::"
 
   audit:
     name: cargo audit

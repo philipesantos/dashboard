@@ -2,7 +2,7 @@
 //! 3): the example widget through the catalog's GitHub connector, routed by the test seam to a
 //! test service, and `net-probe` for what the rules refuse. Nothing reaches the internet.
 
-mod common;
+use crate::common;
 
 use common::servers::{Reply, Server, TestPki};
 use common::{World, answers, calls, connected_manifest, fixture, probe};

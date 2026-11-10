@@ -13,7 +13,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rcgen::{
     BasicConstraints, CertificateParams, CertifiedIssuer, CrlDistributionPoint, CustomExtension,
@@ -31,7 +31,6 @@ pub struct Received {
     pub query: Option<String>,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
-    pub at: Instant,
 }
 
 impl Received {
@@ -474,7 +473,6 @@ fn exchange(
         query,
         headers,
         body,
-        at: Instant::now(),
     };
     received
         .lock()

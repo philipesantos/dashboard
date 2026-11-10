@@ -14,7 +14,7 @@ How to check feature 006 end to end. Formats follow
 ## 1. The contract
 
 ```sh
-cargo test -p runtime --test contract_v1   # 1.0.0–1.3.0 pinned; v1 equals its frozen copy
+cargo test -p runtime --test it contract_v1::   # 1.0.0–1.3.0 pinned; v1 equals its frozen copy
 ```
 
 Expected: passes; editing one byte of any `wit/history/*/widget.wit`, or of `wit/v1/widget.wit`,
@@ -23,7 +23,7 @@ makes it fail, naming the version. `review.md` lists every finding with an outco
 ## 2. The reference
 
 ```sh
-cargo test -p runtime --test docs_reference
+cargo test -p runtime --test it docs_reference::
 ```
 
 Expected: passes. Delete one marker from `docs/authors/reference/contract.md`, or add
@@ -34,7 +34,7 @@ naming the item.
 
 ```sh
 cargo xtask plugins --locked
-DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 cargo test -p runtime --test docs_walk --locked -- --ignored
+DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 cargo test -p runtime --test it --locked -- --ignored docs_walk::
 ```
 
 Commit first: the walkthrough's clone gets the committed `HEAD`. The variable is required

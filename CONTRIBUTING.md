@@ -67,6 +67,13 @@ Install `cargo audit` and `cargo deny` with `cargo install --locked cargo-audit 
 `cargo test` fails, never skips, when a plugin it loads was not built: run
 `cargo xtask plugins` first.
 
+The runtime's integration tests build as one executable, `runtime/tests/it.rs`, since each
+executable links the whole runtime (about 100 MB in a debug build). Each file in `runtime/tests/`
+is a module of it: a new file goes in with `mod <name>;` there, and a test fails until it does.
+Run one file's tests with `cargo test -p runtime --test it <file>::`. When the disk fills up,
+`cargo xtask clean-space` removes the incremental caches, the executables a newer build replaced
+and `plugins/target/`, without a full rebuild.
+
 ### The docs for authors
 
 The docs under [`docs/authors/`](docs/authors/) are checked like code, so a change to them, or
@@ -75,8 +82,8 @@ to `wit/`, runs all of CI even when it touches only Markdown:
 - **The reference stays in step.** A change to the contract, the manifest or connector schema, a
   limit, an error kind or a command or option of the CLI updates
   [`docs/authors/reference/`](docs/authors/reference/) in the same pull request: every entry
-  carries a marker `<!-- ref: <kind> <id> -->`, and `cargo test -p runtime --test
-  docs_reference` names each item the reference lacks or names wrongly, and each limit whose
+  carries a marker `<!-- ref: <kind> <id> -->`, and `cargo test -p runtime --test it
+  docs_reference::` names each item the reference lacks or names wrongly, and each limit whose
   default differs from the host's. The format is in
   [`contracts/docs-format.md`](specs/006-contract-v1-docs/contracts/docs-format.md).
 - **The commands run as written.** Every block marked `check` in the walkthrough, the guides and
@@ -86,9 +93,9 @@ to `wit/`, runs all of CI even when it touches only Markdown:
   first; on Linux it needs a Secret Service, as the tests do:
 
   ```bash
-  DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 cargo test -p runtime --test docs_walk --locked -- --ignored
+  DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 cargo test -p runtime --test it --locked -- --ignored docs_walk::
   DASHBOARD_DOCS_WALK_PAGES=getting-started.md DASHBOARD_DOCS_WALK_CLEARS_DEVELOPMENT_DATA=1 \
-    cargo test -p runtime --test docs_walk --locked -- --ignored  # one page
+    cargo test -p runtime --test it --locked -- --ignored docs_walk::  # one page
   ```
 
 - **The walkthrough's crate moves with its page.** `docs/authors/getting-started/` is the crate

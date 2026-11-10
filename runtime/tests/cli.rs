@@ -3,7 +3,7 @@
 //! Every test passes `--grants` with a record in a temporary directory, so none touches the
 //! user's own record.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
