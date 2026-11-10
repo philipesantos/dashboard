@@ -443,6 +443,13 @@ This feature's pull request is reviewed line by line.
 **Rationale**: FR-021. These are dialogs and grants drawn by the engine outside the host frame,
 which Principles V and VII reserve to the host.
 
+**What the permission cases can show (T015)**: on WebKitGTK the three permission cases hold even
+before `on_permission_request` exists. The engine denies location and notifications on its own,
+and with no camera the request fails with `OverconstrainedError` before any permission step. So
+on Linux they prove that nothing is granted, not that the handler runs; each detail names the
+handler's refusals when there are any. The case that breaks without the handler is macOS, where
+wry grants camera and microphone by default.
+
 ## R15. The WebKitGTK register
 
 **Decision**: every change made only because Linux uses the system WebKitGTK is listed in

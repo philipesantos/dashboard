@@ -32,7 +32,10 @@ export interface Context {
 /** One forbidden action and how its refusal is detected. */
 export interface Case {
   id: string;
-  /** The action may unload the page if it is not refused, so it runs after the others. */
+  /**
+   * The action may unload or block the page if it is not refused, so it runs after the others.
+   * Either way the report never arrives, and the host fails the run.
+   */
   mayLeave?: boolean;
   run(context: Context): Promise<Verdict>;
 }

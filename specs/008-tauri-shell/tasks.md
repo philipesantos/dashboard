@@ -252,7 +252,7 @@ draws (FR-009 to FR-012, FR-021).
 
   In `probe.rs`, add the `stayed` window count: exactly one webview window. (Already there since T003: a
   case with `singleWindow` breaks when more than one window is open at report time.)
-- [ ] T015 [P] [US3] Add the FR-021 cases to `run.ts`:
+- [X] T015 [P] [US3] Add the FR-021 cases to `run.ts`:
   - permissions: `permission-camera`, `permission-location`, `permission-notification`;
   - `download-link`;
   - dialogs: `dialog-alert`, `dialog-confirm`, `dialog-prompt`, `dialog-print`.
