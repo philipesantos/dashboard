@@ -255,7 +255,7 @@ every color the app's code draws is declared.
 
 ### Tests for User Story 2
 
-- [ ] T021 [P] [US2] Write `design/test/contrast.test.ts`, with fixtures in
+- [X] T021 [P] [US2] Write `design/test/contrast.test.ts`, with fixtures in
   `design/test/fixtures/contrast/`. For each kind of `data-model.md`'s Pairing, check that "the
   number is the minimum ratio":
   - `text` 4.5, `large-text` 3, `boundary` 3, `focus` 3, `chart` 3.
