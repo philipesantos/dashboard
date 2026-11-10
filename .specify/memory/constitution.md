@@ -120,11 +120,16 @@ Rationale: a rule without a test erodes silently.
 ### IX. Human Review of the Security Core
 
 Every change to the security core (plugin runtime, permission engine, connector engine and
-network proxy, secrets vault, and the official connector catalog) MUST receive line-by-line
-human review before it is merged.
+network proxy, secrets vault, the official connector catalog, and the host window's
+protections) MUST receive line-by-line human review before it is merged. The window's
+protections are its content policy, the list of capabilities and host commands it may use, and
+the engine settings that block navigation, new windows, developer tools and autofill. An update
+of the engine itself is not part of the core; the window's breaking tests check it.
 
 Rationale: these components enforce every other principle, and the catalog decides which
-destinations every user trusts; a bug there breaks them all.
+destinations every user trusts; a bug there breaks them all. The window draws untrusted content
+beside the host's dialogs, so its protections decide whether that content can act as the host
+(Principles V and VII).
 
 ## Fixed Technical Decisions
 
@@ -132,7 +137,7 @@ destinations every user trusts; a bug there breaks them all.
 | --- | --- | --- |
 | Host app | Rust + Tauri 2 | Light installers on Windows and macOS; permissions denied by default |
 | UI | TypeScript + React | Familiar to many contributors; runs in the window's engine below |
-| Window engine | WebView2 on Windows, WKWebView on macOS; on Linux, an embedded Chromium (Tauri's CEF runtime) that the app ships | The system webviews of Windows and macOS are kept current by their vendors. On Linux the system's WebKitGTK is not reliable enough for the host's window, so the app ships its own engine, at the cost of a larger installer and of shipping its security fixes |
+| Window engine | WebView2 on Windows, WKWebView on macOS; on Linux, an embedded Chromium (Tauri's CEF runtime) that the app ships, once it passes the trial below | The system webviews of Windows and macOS are kept current by their vendors. On Linux the system's WebKitGTK is not reliable enough for the host's window, so the app ships its own engine, at the cost of a larger installer and of shipping its security fixes |
 | Plugin runtime | Wasmtime + Component Model (WIT), WASI 0.3 | Mature sandbox, typed multi-language contract |
 | JS/TS plugins | jco / componentize-js | Most accessible language for authors and for AI generation |
 | Rust plugins | cargo + wit-bindgen on `wasm32-unknown-unknown`, componentized with wit-component | Actively maintained; components import only what their WIT world declares |
@@ -144,10 +149,13 @@ destinations every user trusts; a bug there breaks them all.
 
 Changing any of these decisions requires an amendment (see Governance).
 
-On Linux, until the embedded engine passes a trial showing that it enforces every protection the
-host's window requires, in CI, the app MAY use the system's WebKitGTK with the same protections
-and tests. That is temporary: the trial MUST be repeated with each release of Tauri's CEF
-runtime, and the window engine above holds once one passes.
+On Linux, until the embedded engine passes a trial showing that it enforces every window
+protection that has a breaking test in CI, the app MAY use the system's WebKitGTK with the same
+protections and tests. That is temporary: the trial MUST be repeated with each release of
+Tauri's CEF runtime, and the window engine above holds once one passes. If a later release of
+that runtime, needed for a security fix, breaks one of those protections, the Linux app MUST
+return to WebKitGTK for that release, rather than ship a broken protection or the unfixed
+engine.
 
 ## Development Workflow and Quality Gates
 
@@ -164,11 +172,14 @@ runtime, and the window engine above holds once one passes.
   `.specify/` and `LICENSE`. A Markdown file that the build uses as code, such as a README
   included as crate documentation (its examples run as tests), is not documentation for this
   rule.
-- The project ships the security fixes of the engine it embeds. From the first public release, a
-  critical or high Chromium security fix MUST ship in a release within 14 days of the release of
-  Tauri's CEF runtime that carries it, and any other fix with the next regular release. A
-  scheduled check MUST report, at least weekly, when the embedded engine is behind a Chromium
-  security release, and every release MUST name the engine version it embeds.
+- The project ships the security fixes of the engine it embeds. From the first public release,
+  the first whose installers are published for people outside the project, a fix that Chromium's
+  release notes rate critical or high MUST ship in a release within 14 days of the release of
+  Tauri's CEF runtime that carries it, and any other fix in the next release. The clock starts at
+  Tauri's release, a dependency the project accepts; the weekly check shows how long a Chromium
+  fix has waited for it. While the app embeds the engine, a scheduled check MUST report, at least
+  weekly, when the embedded engine is behind a Chromium security release and with what severity,
+  and every release that embeds it MUST name its version.
 
 ## Governance
 
@@ -184,4 +195,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.5.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10
+**Version**: 2.6.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10

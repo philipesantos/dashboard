@@ -263,7 +263,9 @@ reports when the shipped version is behind a security release.
   The template's sample command and its right to open links and files in other apps MUST be
   removed.
 - **FR-006**: The repository MUST hold a reviewed list of the window's capabilities and host
-  commands, each with its reason. CI MUST fail when the built app and the list disagree, naming
+  commands, each with its reason. The list, the content policy and the engine settings of
+  FR-009 to FR-012 and FR-016 are part of the security core, so every change to them gets
+  line-by-line human review (constitution v2.6.0, Principle IX). CI MUST fail when the built app and the list disagree, naming
   each difference.
 - **FR-007**: A request from the window for a capability or command not on the list MUST be
   refused.
@@ -292,7 +294,8 @@ reports when the shipped version is behind a security release.
 - **FR-015**: The constitution MUST be amended before this feature's plan passes its Constitution
   Check. The amendment updates the fixed decisions to name each system's engine, states why, and
   records the project's duty to ship the embedded engine's security fixes within the deadline
-  of User Story 6. It goes through the independent review that follows every amendment.
+  of User Story 6. It goes through the independent review that follows every amendment. Done:
+  constitution v2.5.0, then v2.6.0 after that review.
 - **FR-016**: Each engine's form autofill and password saving MUST be off, on every system
   (criterion HS-26 in `docs/design/host-surfaces.md`).
 - **FR-017**: Each Linux release MUST name the embedded engine's version in its notes. A
@@ -308,7 +311,13 @@ reports when the shipped version is behind a security release.
 - **FR-019**: The threat model MUST close its open question about the content policy, describe
   the window as a boundary in its own right, and gain a row for each attack these rules stop:
   injected script, loads from the internet, navigation away, new windows, misuse of host
-  commands, developer tools, and engine autofill. Each row cites its breaking test.
+  commands, developer tools, and engine autofill. Each row cites its breaking test. Its
+  assumption that the webview is trusted and kept current by "pinned versions, `cargo audit` and
+  fast updates" MUST say how each engine is patched: by its vendor on Windows and macOS, by the
+  distribution under the WebKitGTK fallback, and by the project's own releases for the embedded
+  engine, with the weekly check and the 14-day duty. Its diagram MUST name the window's engine
+  per system, and every comment that cites the constitution's version, such as the one in
+  `ci.yml`, MUST cite the version in force.
 - **FR-020**: The demo UI MUST keep working as it does today on all three systems, with its
   bundled fonts and their licenses.
 
