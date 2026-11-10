@@ -98,7 +98,7 @@ Every story builds on these.
 
 ### Tests for the foundation
 
-- [ ] T004 [P] Write `design/test/color.test.ts`.
+- [X] T004 [P] Write `design/test/color.test.ts`.
   - **Conversion:** `oklch()` to sRGB against reference values:
     - `oklch(1 0 0)` → white;
     - `oklch(0 0 0)` → black;
