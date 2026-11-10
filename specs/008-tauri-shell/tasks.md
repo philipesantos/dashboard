@@ -1,0 +1,449 @@
+---
+
+description: "Task list for the desktop shell, with minimal capabilities and a restrictive CSP (feature 008)"
+---
+
+# Tasks: The Desktop Shell, with Minimal Capabilities and a Restrictive CSP
+
+**Input**: Design documents from `specs/008-tauri-shell/`
+
+**Prerequisites**: plan.md, spec.md, research.md (R1–R14), data-model.md, contracts/,
+quickstart.md
+
+**Tests**: Required (FR-018, Principle VIII). Every rule gets a probe case or a test case before
+the code that enforces it, and that case fails until the code lands. The probe is the
+release build plus one bundled script and two app commands ([contracts/probe.md](contracts/probe.md)).
+
+**Security core** (constitution v2.6.1, Principle IX): every file this feature touches under
+`app/src-tauri/`, plus `app/src/main.tsx`, `app/vite.config.ts`, `app/src/probe/` and the
+probe step in `ci.yml`, is core (research R13). The pull request gets line-by-line human review.
+
+**Heavy builds**: run `cargo build` and `cargo test` of the app crate locally inside
+`systemd-run --user --scope -p MemoryMax=8G` (the VM has crashed on memory before).
+
+**Organization**:
+- **Foundation:** the window built in Rust, and the probe harness, with no case yet.
+- **The stories:**
+  - US1: the content policy;
+  - US2: the reviewed surface and the app ACL;
+  - US3: navigation, windows, devtools, the context menu, and what the engine grants or draws;
+  - US5: autofill and password saving;
+  - US4: the Linux engine's desk trial;
+  - US6: the weekly runtime watch.
+- **Polish:** the threat model, CONTRIBUTING, checks, walks, review and merge.
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies on incomplete tasks)
+- **[Story]**: Which user story this task belongs to (US1–US6)
+
+---
+
+## Phase 1: Setup (Shared Infrastructure)
+
+**Purpose**: remove the template's leftovers
+
+- [ ] T001 Remove the template's opener plugin and sample command (research R4):
+  - `tauri-plugin-opener` from `app/src-tauri/Cargo.toml` and its `.plugin(...)` from
+    `app/src-tauri/src/lib.rs`;
+  - `@tauri-apps/plugin-opener` from `app/package.json`;
+  - `"opener:default"` from `app/src-tauri/capabilities/default.json`;
+  - the `greet` command from `lib.rs`;
+  - the demo's "Tauri" tab and its `greet()` call from `app/src/App.tsx`.
+
+  Then run `pnpm install`, `pnpm --filter ./app build` and `cargo build -p dashboard --locked`,
+  and commit `Cargo.lock` and `pnpm-lock.yaml`.
+
+---
+
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**Purpose**: one place for the window, and a probe that can run with no case yet
+
+**⚠️ CRITICAL**: no story can begin until this phase is complete
+
+- [ ] T002 Build the window in Rust (research R2):
+  - set `app.windows` to `[]` in `app/src-tauri/tauri.conf.json`;
+  - create `app/src-tauri/src/window.rs` with `pub fn build(app: &tauri::App)`, which builds the
+    `main` window with `WebviewWindowBuilder` (`WebviewUrl::App("index.html".into())`, the
+    title, 800×600);
+  - call it from `setup` in `lib.rs`.
+
+  `pnpm tauri dev` shows the demo as before.
+- [ ] T003 Add the probe's Rust side, `app/src-tauri/src/probe.rs`, compiled only with a new
+  feature `shell-probe = []` in `app/src-tauri/Cargo.toml` ([contracts/probe.md](contracts/probe.md)):
+  - **Gate:** without `DASHBOARD_PROBE=1` in the environment, the binary prints why and exits
+    with status 3.
+  - **Commands:**
+    - `shell_probe_report(cases)`, which receives the cases;
+    - `shell_probe_ungranted()`, which returns `"reached"`.
+  - **Grant:** a run-time capability, added through `app.add_capability(...)` in `setup`, grants
+    `allow-shell-probe-report` to `main`.
+  - **Counters:** each refusal of `on_navigation`, `on_new_window`, `on_permission_request` and
+    `on_download` increments a counter. `window.rs` reports to them through a
+    `#[cfg(feature = "shell-probe")]` hook, and the protections themselves never depend on the
+    feature.
+  - **Settings:** a list of `setting` cases that later tasks fill.
+  - **Report:** after the report arrives, or 60 s, it prints one `probe: held|broken <id> (<detail>)`
+    line per case and the summary, then exits 0, 1 or 2. With `DASHBOARD_PROBE_HOLD=1` it stays
+    open after printing.
+- [ ] T004 Make the probe's commands exist at build time. In `app/src-tauri/build.rs`, call
+  `tauri_build::try_build(Attributes::new().app_manifest(AppManifest::new().commands(COMMANDS)))`,
+  where `COMMANDS` holds the app's commands, none yet, plus `shell_probe_report` and
+  `shell_probe_ungranted` when `CARGO_FEATURE_SHELL_PROBE` is set. Run the probe build once, and
+  confirm `add_capability` does not panic (research R8; `ipc/authority.rs:174-180`).
+- [ ] T005 Add the probe's page side. Create `app/src/probe/run.ts`:
+  - a case runner that records `securitypolicyviolation` events per case;
+  - a `stayed` check: after 1 s, `location.href` is the app's own page;
+  - the report call through `invoke('shell_probe_report', …)`;
+  - the hold form: a field labelled "Senha" named `password`, and a button that removes the form.
+
+  In `app/vite.config.ts`, the `probe` mode (`--mode probe`) adds
+  `<script type="module" src="/src/probe/run.ts">` to `index.html` with a small
+  `transformIndexHtml` plugin. In any other mode the module is not in the bundle: confirm with
+  `grep -r probe app/dist` after a normal build.
+- [ ] T006 Add the probe step to `.github/workflows/ci.yml`'s build job, on the three systems,
+  after `pnpm --filter ./app build`:
+  - `pnpm --filter ./app build --mode probe`;
+  - `cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked`;
+  - run the binary with `DASHBOARD_PROBE=1`. On Linux, run it under `xvfb-run -a` with
+    `WEBKIT_DISABLE_DMABUF_RENDERER=1`, and add `xvfb` to the apt step;
+  - `pnpm --filter ./app build`, to restore the normal `dist`;
+  - `cargo clippy -p dashboard --features shell-probe --all-targets --locked -- -D warnings`.
+
+  With no case yet, the probe reports `0 held, 0 broken` and exits 0.
+
+**Checkpoint**: the probe builds as `tauri build` builds, runs on the three systems, and reports.
+
+---
+
+## Phase 3: User Story 1 - The window runs only what the app shipped (Priority: P1) 🎯 MVP
+
+**Goal**: the release content policy of [contracts/content-policy.md](contracts/content-policy.md),
+proven by the probe.
+
+**Independent Test**: quickstart §2 and §3.1.
+
+### Tests for User Story 1
+
+- [ ] T007 [P] [US1] Add the FR-001 cases to `app/src/probe/run.ts`, each with the detection
+  [contracts/probe.md](contracts/probe.md) names, every remote address on a `.invalid` host:
+  - injected script: `script-inline-element`, `script-inline-attribute`, `script-eval`,
+    `script-function`, `script-timeout-string`;
+  - remote loads: `load-script-remote`, `load-style-remote`, `load-style-import`,
+    `load-image-remote`, `load-font-remote`, `load-media-remote`, `load-image-data`;
+  - connections: `connect-fetch`, `connect-xhr`, `connect-websocket`, `connect-eventsource`;
+  - embedding and workers: `embed-iframe`, `embed-object`, `worker-blob`;
+  - `base-element`, and `form-remote-submit` (violation and stayed);
+  - `style-runtime-element`, which opens and closes the demo's dialog and select.
+
+  Run the probe: these cases fail while `csp` is `null`.
+
+### Implementation for User Story 1
+
+- [ ] T008 [US1] Set `app.security.csp` in `app/src-tauri/tauri.conf.json` to the release policy of
+  [contracts/content-policy.md](contracts/content-policy.md), and `build.assetsInlineLimit: 0` in
+  `app/vite.config.ts`. Run the probe until every US1 case holds.
+  - If `style-runtime-element` fails, add `style-src-elem: 'self' 'unsafe-inline'` and nothing
+    else.
+  - Fill the allowance row in `contracts/content-policy.md` with the component named, or remove
+    the row if none was needed.
+- [ ] T009 [US1] Send the development policy from Vite. In `app/vite.config.ts`, read
+  `src-tauri/tauri.conf.json`'s `csp`, add `'unsafe-inline'` to `script-src` and
+  `ws://localhost:1420` to `connect-src`, and set it as `server.headers['Content-Security-Policy']`.
+  `pnpm tauri dev` must still hot-reload. Then add a `<script>alert(1)</script>`-like inline
+  script through the console, and confirm the console names the refusing rule (FR-004). Remove it
+  afterwards.
+- [ ] T010 [US1] Try `app.security.freezePrototype: true` (research R9). Keep it if the demo and the
+  probe pass. If not, revert it and record in research R9 which dependency broke.
+
+**Checkpoint**: the window loads and runs only the bundle, on the three systems.
+
+---
+
+## Phase 4: User Story 2 - The window reaches only the host functions it needs (Priority: P1)
+
+**Goal**: an empty reviewed surface, with the app ACL always on.
+
+**Independent Test**: quickstart §1.
+
+### Tests for User Story 2
+
+- [ ] T011 [P] [US2] Write `app/src-tauri/tests/surface.rs` ([contracts/window-surface.md](contracts/window-surface.md)).
+  It parses `window-surface.toml`, `capabilities/*.json`, `Cargo.toml` and `tauri.conf.json`
+  with `toml` and `serde_json`, which are already in the lock. It fails, with the contract's
+  lines, when:
+  - a permission is listed but not granted, or granted but not listed;
+  - a command is listed but missing from `dashboard_lib::COMMANDS`, or the reverse;
+  - a `tauri-plugin-*` dependency is unlisted;
+  - an entry has no reason;
+  - `gen/schemas/acl-manifests.json` has no `__app__` key;
+  - `cargo metadata` shows `devtools` on `tauri`, `tauri-runtime-wry` or `wry` for the app's
+    normal build;
+  - `tauri.conf.json` sets macOS entitlements that grant `associated-domains` or `webcredentials`.
+
+  It fails now, because there is no list yet and no app manifest.
+- [ ] T012 [P] [US2] Add the FR-007 cases to `run.ts`:
+  - `command-ungranted`: `shell_probe_ungranted` must reject with an ACL error, not a missing
+    command;
+  - `command-opener`: `plugin:opener|open_url`;
+  - `command-core`: `plugin:event|listen`.
+
+  Before T013, `command-ungranted` reaches the command and fails.
+
+### Implementation for User Story 2
+
+- [ ] T013 [US2] Make the ACL govern app commands and write the reviewed list (research R4):
+  - `app/src-tauri/permissions/default.toml` with the empty default set of the contract;
+  - a `commands!` macro in `lib.rs` that expands both `generate_handler![…]` and
+    `pub const COMMANDS: &[&str]`, with no commands;
+  - `build.rs` reads the same list. Share it through a small `commands.rs` that both
+    `include!`;
+  - `capabilities/default.json` with `"permissions": []`;
+  - `app/src-tauri/window-surface.toml` with the comment and no entries.
+
+  Run the surface test and the probe until both pass.
+
+**Checkpoint**: nothing in the window can call the host, and widening that needs a listed,
+reviewed entry.
+
+---
+
+## Phase 5: User Story 3 - The window stays the dashboard (Priority: P1)
+
+**Goal**: no navigation, no window, no devtools, no engine menu, and nothing the engine grants or
+draws (FR-009 to FR-012, FR-021).
+
+**Independent Test**: quickstart §3.2 and §5.
+
+### Tests for User Story 3
+
+- [ ] T014 [P] [US3] Add the navigation and window cases to `run.ts`:
+  - `navigate-location`, `navigate-assign`, `navigate-meta-refresh`, `navigate-link`,
+    `navigate-own-asset` and `navigate-file-scheme`;
+  - `window-open` and `window-target-blank`;
+  - `context-menu`: a dispatched `contextmenu` must come back `defaultPrevented`.
+
+  In `probe.rs`, add the `stayed` window count: exactly one webview window.
+- [ ] T015 [P] [US3] Add the FR-021 cases to `run.ts`:
+  - permissions: `permission-camera`, `permission-location`, `permission-notification`;
+  - `download-link`;
+  - dialogs: `dialog-alert`, `dialog-confirm`, `dialog-prompt`, `dialog-print`.
+
+  Each must return at once with the replaced value.
+- [ ] T016 [P] [US3] Add the `devtools-setting` case to `probe.rs`, reading through
+  `with_webview`:
+  - WebView2 `AreDevToolsEnabled` and `AreDefaultContextMenusEnabled`, through `webview2-com`
+    0.39.1, a direct dependency for `cfg(windows)` at the version already locked;
+  - WKWebView `isInspectable`, through `objc2-web-kit` 0.3.2 for `cfg(target_os = "macos")`;
+  - WebKitGTK `enable-developer-extras`, through `webkit2gtk` 2.0.2 for `cfg(target_os = "linux")`.
+
+### Implementation for User Story 3
+
+- [ ] T017 [US3] In `window.rs` (research R5, R6):
+  - `on_navigation` allows only `/` and `/index.html` of the app's origin, and `devUrl` when
+    `tauri::is_dev()`;
+  - `on_new_window` returns `NewWindowResponse::Deny`;
+  - `devtools(tauri::is_dev())`;
+  - on Windows, through `with_webview`, `AreDefaultContextMenusEnabled` false in release;
+  - Tauri's drag-and-drop handler stays on.
+
+  In `app/src/main.tsx`, when `import.meta.env.PROD`, cancel `contextmenu` on `document`.
+- [ ] T018 [US3] In `window.rs` (research R14):
+  - `on_permission_request` denies every request;
+  - `on_download` returns `false`;
+  - an `initialization_script` replaces `alert`, `confirm` (`false`), `prompt` (`null`) and
+    `print` before any page script.
+
+  Run the probe until every US3 case holds on the three systems (CI).
+
+**Checkpoint**: content cannot leave the page, open anything, or reach the engine's own UI.
+
+---
+
+## Phase 6: User Story 5 - No engine offers to fill or save a password (Priority: P2)
+
+**Goal**: HS-26 on each engine, with the macOS limit recorded.
+
+**Independent Test**: quickstart §6.
+
+### Tests for User Story 5
+
+- [ ] T019 [P] [US5] Add the `setting` cases to `probe.rs`:
+  - `store-incognito` on each engine: the WebView2 profile is InPrivate, the WKWebView
+    `websiteDataStore.isPersistent` is false, and the WebKitGTK session is ephemeral;
+  - `autofill-general` and `autofill-password` on Windows (`IsGeneralAutofillEnabled`,
+    `IsPasswordAutosaveEnabled`).
+
+### Implementation for User Story 5
+
+- [ ] T020 [US5] In `window.rs`:
+  - `incognito(true)`;
+  - `general_autofill_enabled(false)`;
+  - on Windows, through `with_webview`,
+    `ICoreWebView2Settings4::SetIsPasswordAutosaveEnabled(false)` (research R7).
+
+  Run the probe until the US5 cases hold.
+
+**Checkpoint**: no engine keeps or offers credentials, as far as each engine can be checked.
+
+---
+
+## Phase 7: User Story 4 - On Linux, the app ships its own engine (Priority: P2)
+
+**Goal**: the desk trial recorded, and Linux on WebKitGTK with every protection.
+
+**Independent Test**: read the decision record. The Linux probe passes in CI.
+
+- [ ] T021 [US4] Write `docs/decisions/0002-linux-window-engine.md`, in the format of 0001:
+  - **Status:** WebKitGTK under the v2.6.1 fallback.
+  - **The trial:** a desk trial, with the evidence of research R1: versions, issue numbers and
+    dates.
+  - **The bar:** every window protection with a breaking test in CI.
+  - **The last version tried:** `3.0.0-alpha.7`, on a machine-readable line
+    `Last runtime version tried: 3.0.0-alpha.7` for the watch of T022.
+  - **Revisit when:** a stable runtime release appears, together with the amendment to Tauri 3.
+  - **The options considered.**
+
+  Add it to `docs/decisions/README.md`'s index.
+
+---
+
+## Phase 8: User Story 6 - The maintainer knows the engine is current (Priority: P3)
+
+**Goal**: while Linux uses WebKitGTK, a stable runtime release is reported within a week
+(FR-017).
+
+- [ ] T022 [US6] Add a `cef-watch` job to `.github/workflows/audit.yml`, with no checkout of
+  secrets:
+  - it reads the last version tried from `docs/decisions/0002-linux-window-engine.md`;
+  - it queries `https://crates.io/api/v1/crates/tauri-runtime-cef` with a generic user agent;
+  - it fails, naming the version, when a non-pre-release version newer than the last one tried
+    exists;
+  - its log names the newest version it saw;
+  - it also runs on `workflow_dispatch`.
+
+  Walk quickstart §7 once the PR is open (T029).
+
+---
+
+## Phase 9: Polish & Cross-Cutting Concerns
+
+- [ ] T023 Update `docs/threat-model.md` (research R10, FR-019):
+  - **Boundary:** add B7 "Host window ↔ host core".
+  - **Rows:** 8 rows on B7 in Phase 3, each citing its probe case or test:
+    - injected script;
+    - remote loads;
+    - navigation away;
+    - new windows;
+    - an unlisted host command;
+    - devtools in a release build;
+    - engine autofill and password saving, with the macOS limit;
+    - engine permissions, downloads and dialogs.
+  - **Open question:** close the one on the content policy.
+  - **Assumption:** rewrite the webview assumption to say how each engine is patched.
+  - **Diagram:** fix the label.
+
+  Run `pnpm --filter ./design check`. Its criteria step reads only B4 rows, so B7 rows do not
+  need `HS-` ids; confirm it passes.
+- [ ] T024 [P] Update the comment at `.github/workflows/ci.yml:27` to cite constitution v2.6.1.
+- [ ] T025 [P] Update `CONTRIBUTING.md`:
+  - **Security core:** the list gains the window's protections (research R13).
+  - **The probe:** a short "The window's protections" section: what the probe is, how to run it
+    locally (contracts/probe.md's four commands), and that a new host command needs the three
+    entries of `window-surface.toml`'s comment.
+- [ ] T026 Run every local check under the memory cap:
+  - `cargo clippy --workspace --all-targets --locked -- -D warnings`;
+  - the clippy line of T006;
+  - `cargo test --workspace --locked`;
+  - the probe on Linux under `xvfb-run`;
+  - `pnpm --filter ./design check`;
+  - `pnpm audit --audit-level high`.
+
+  Record the probe's run time and the release build time in research R11.
+- [ ] T027 Walk `quickstart.md` §1–§4 and §7 on Linux, including the two mutations of §3, and fix
+  any drift between it and the code. §5 and §6 need each system's desktop, so they run in T030.
+- [ ] T028 Review the window's protections independently. A fresh agent with none of this
+  feature's context reads the security-core files of research R13 against spec FR-001 to FR-021,
+  the contracts and the locked Tauri sources, and looks for any way content in the window could
+  run script, load from outside, leave the page, open a window, reach a host command or an engine
+  grant, or get a credential offer. Check each finding at the source before changing anything,
+  and bring choices with real trade-offs to the maintainer.
+- [ ] T029 Only once the maintainer has pushed and opened the pull request, as they ask:
+  - confirm the probe passes on Windows, macOS and Linux in CI, and record each system's probe
+    time;
+  - run `audit.yml`'s `cef-watch` by hand (quickstart §7);
+  - record both in research R11.
+- [ ] T030 The maintainer's part, before the merge:
+  - the line-by-line review of the security core (Principle IX);
+  - quickstart §5 and §6 on Windows and macOS, the macOS AutoFill check being the review step of
+    research R7.
+
+  Record the outcome of the walks in research R7, and the start-up times in research R11.
+- [ ] T031 Before the merge, and only when the maintainer asks, update the development guide:
+  tick the Phase 3 item "Shell Tauri com capabilities mínimas e CSP restritiva", noting the
+  WebKitGTK fallback and the decision record 0002.
+- [ ] T032 Merge:
+  - The maintainer reviewed the pull request line by line.
+  - CI is green on the three systems.
+  - `grep -n '^- \[ \]' specs/008-tauri-shell/tasks.md` shows only this task.
+  - Tick this box in the pull request's last commit, wait for green CI on that head, and merge
+    with `gh pr merge --merge --match-head-commit <sha>`.
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Setup (Phase 1)**: none.
+- **Foundational (Phase 2)**: depends on T001. T002 first; T003 to T005 after it; T006 last.
+  Blocks every story.
+- **US1 (Phase 3)** is the MVP. US2, US3 and US5 can follow in any order, since each adds probe
+  cases and its own lines in `window.rs` or the configuration. They touch the same files, so one
+  at a time.
+- **US4 and US6 (Phases 7, 8)**: depend only on Phase 1 and can run beside the others. T022 reads
+  T021's record.
+- **Polish (Phase 9)**:
+  - T023 to T025 after the stories;
+  - T026 to T028 after everything;
+  - T029 after the PR opens;
+  - T030 and T031 at the maintainer's hand;
+  - T032 last.
+
+### Within Each Story
+
+- The probe or test cases first, failing.
+- Then the code or configuration that makes them hold.
+- Then the probe on the three systems, through CI.
+
+### Parallel Opportunities
+
+- The test tasks marked [P] in each story touch `run.ts`, `probe.rs` or `tests/surface.rs`, apart
+  from the implementation files.
+- T021 and T022 beside US1 to US5.
+- T024 and T025 together.
+
+## Parallel Example: User Story 3
+
+```text
+Task: "T014 [P] [US3] navigation and window cases in app/src/probe/run.ts"
+Task: "T016 [P] [US3] devtools-setting reads in app/src-tauri/src/probe.rs"
+```
+
+## Implementation Strategy
+
+### MVP First (User Story 1 Only)
+
+1. Phase 1 and Phase 2: the probe runs on the three systems.
+2. Phase 3 (US1): the content policy holds.
+3. **Stop and validate**: quickstart §2 and §3.1.
+
+### Incremental Delivery
+
+1. US1, then US2: the window loads only the bundle and reaches no host function.
+2. US3, then US5: no navigation, windows, devtools, engine UI or credentials.
+3. US4 and US6: the Linux decision and its watch.
+4. Polish: the threat model, docs, checks, walks, reviews and merge.
+
+Each task is committed on `008-tauri-shell`, and pushed only when the maintainer asks.
