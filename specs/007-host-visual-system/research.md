@@ -110,15 +110,23 @@ it is brought to the maintainer before working around it.
 **Decision**: `pnpm --filter ./design gen` writes `app/src/theme.generated.css`. The file opens
 with a "generated from DESIGN.md, do not edit" line and holds three blocks:
 
-- `@theme inline`, mapping Tailwind's color, radius and font variables to the roles;
+- `@theme inline`, mapping Tailwind's color, radius and font variables to the roles, and
+  setting the spacing unit (`--spacing`), the type scale (`--text-*`) and the elevation shadows
+  (`--shadow-*`). This is how a spacing or size change in `DESIGN.md` reaches every Tailwind
+  utility;
 - `:root`, with the light values;
 - `.dark`, with the dark values.
 
 `app/src/index.css` keeps the Tailwind and font imports and the `@layer base` rules, and imports
 the generated file in place of today's hand-written blocks. `pnpm --filter ./design check`
 generates in memory and compares with the committed file, naming the first token that differs
-(FR-005). `.gitattributes` sets `eol=lf` on `DESIGN.md` and the generated files, so the
-comparison holds on Windows.
+(FR-005). `.gitattributes` sets `eol=lf` on every file the checks read or write:
+- `DESIGN.md`;
+- the generated files;
+- `docs/design/*.md` and `docs/threat-model.md`;
+- `design/test/fixtures/**`.
+
+Every parser also accepts `\r\n`, so the comparison holds on Windows.
 
 **Rationale**:
 - A committed file shows token changes in review, and the app builds without running the
@@ -145,7 +153,7 @@ Each pairing has a kind:
 | `text` | 4.5:1 | 1.4.3 |
 | `large-text` (at least 24 px, or 18.66 px bold) | 3:1 | 1.4.3 |
 | `boundary` (a control's edge that identifies it) | 3:1 | 1.4.11 |
-| `focus` | 3:1 | 1.4.11, 2.4.13 |
+| `focus` | 3:1 | 1.4.11 |
 | `chart` (a mark that carries data) | 3:1 | 1.4.11 |
 
 A role may instead be marked `decorative`, with a reason, when WCAG's exemptions apply: card
@@ -155,23 +163,36 @@ edges and dividers whose meaning something else carries.
 
 | Pairing | Light | Dark | Fix in `DESIGN.md` |
 | --- | --- | --- | --- |
-| `input` boundary on `background` / `card` | 1.39 / 1.43 | 1.47 / 1.52 | `input` to oklch(0.60 0.02 250) light (3.83 / 3.94) and oklch(0.52 0.02 255) dark (3.48 / 3.22) |
+| `input` boundary on `background` / `card` | 1.39 / 1.43 | 1.47 / 1.52 | `input` to oklch(0.60 0.02 250) light (3.83 / 3.94), and to oklch(1 0 0 / 35%) dark (3.19 / 3.22), which stays translucent like today's 14% |
 | `ring` at 50% (`ring-ring/50`) on `background` | 1.79 | 2.10 | draw the focus ring solid: `ring` alone reaches 3.58 light, 4.57 dark on `card` |
 | `chart-2` on `card` | 2.76 | ok | oklch(0.58 0.10 200), 4.08 |
 | `chart-3` on `card` | 2.34 | ok | oklch(0.60 0.13 70), 4.06 |
 | `destructive` text on `destructive`/10 over `card` (soft badge and button) | 4.42 | 4.58 | `destructive` light to oklch(0.54 0.2 27) |
 | `border` on `background` / `card` | 1.27 / 1.31 | 1.25 / 1.29 | none: marked `decorative` (card edges and dividers), since controls carry their own `input` boundary |
 
+`input` is also a fill: `bg-input` for the unchecked switch, and in dark mode `bg-input/30`,
+`/50` and `/80` for fields, selects, tabs and the switch. With the dark value at 35% white, those
+fills become a little lighter than today's. Text on them stays readable, for example
+`foreground` on `input`/30 over `background` at 13.05. They are declared as layers in pairings,
+and SC-006 lists the change.
+
 Every other declared pairing passes. For example, `foreground` on `background` is 17.94 light
 and 17.03 dark, and `muted-foreground` on `muted` is 4.83 light and 5.65 dark.
 
 **The usage scan.** A pairing only proves contrast for what is declared. The check also scans
-`app/src/**/*.tsx` for Tailwind color utilities, such as `text-destructive` or `ring-ring/50`.
+`app/src/**/*.tsx` and the `@apply` rules of `app/src/*.css` for Tailwind color utilities, such
+as `text-destructive`, `ring-ring/50` and `outline-ring/50` in `index.css`'s base layer. A color
+utility that names no role, such as Tailwind's palette, `black` or `white`, fails the scan, unless
+it is declared as a layer or pairing in its own right. For example, the demo dialog's
+`bg-black/10` overlay becomes the `scrim` role. `opacity-*` on disabled controls is not scanned:
+WCAG exempts inactive components from contrast, and the spec makes no promise for them.
 Each role and opacity the app uses must appear in a declared pairing, as a layer in one, or as
 decorative. Otherwise the check fails, naming the file and the utility. This is how the solid
 focus ring is enforced: once `ring` is declared only at full opacity, `ring-ring/50` fails until
-the seven components that use it are changed. The same goes for the `aria-invalid` rings at
-`destructive`/20 and /40.
+the seven components that use it are changed. The `aria-invalid` rings at `destructive`/20 and
+/40 sit beside the solid focus ring and mark an error that the field's text also states. They are
+declared as layers (decorative tint), not as `focus` pairings. The components keep every other
+opacity they use, and `DESIGN.md` declares each one.
 
 **Rationale**: the measurements show the default shadcn look fails WCAG 1.4.11 in both themes
 (input edges, focus ring). The lint has to run on what the components really draw, opacity
@@ -234,6 +255,13 @@ has no field for a color, class or style (FR-014), so the map is the whole surfa
 reach. This check is an ordinary test (FR-021). The security rule it supports, the dialog's form,
 is tested with the features that draw dialogs.
 
+**The split is by role, not by color.** Today `sidebar-primary`, `sidebar-accent` and the other
+`sidebar-*` roles hold the same values as `primary`, `accent` and so on. Widget content can
+therefore reach identical colors through shared roles. That is intended: the spec's clarification
+shares the accent, and FR-019 makes the dialog's form, never a color, what tells the host apart.
+The split keeps the host's surfaces, elevation and focus style out of what widget content can
+select. It is not a color-distance control, and the plan does not claim one.
+
 **Alternatives considered**:
 - A separate CSS file for host-only variables. Rejected: in a single webview, CSS variables are
   global, so splitting files would prove nothing. The boundary that matters is what widget
@@ -247,6 +275,12 @@ is tested with the features that draw dialogs.
 stack. The packages bundle the font files into `app/dist`, so nothing is fetched at run time and
 the coming CSP needs no font origin (FR-007). `DESIGN.md`'s Typography section records the
 license of each.
+
+OFL-1.1 requires every distributed copy to carry the copyright notice and the license text, and
+Vite bundles only the font files. So the license texts are copied from the three packages into
+`app/public/licenses/fonts/` and land in `app/dist`, which the Tauri crate embeds in every
+installer. `check` fails when a family named in `DESIGN.md`'s typography has no license file
+there.
 
 **Rationale**: OFL-1.1 allows bundling in an Apache-2.0 app as long as the fonts keep their own
 license. The files are already bundled.
@@ -287,8 +321,11 @@ theme comparison page in the conversation that preceded this feature.
    - `docs/design/`, where the criteria live (R10);
    - `docs/threat-model.md`, which the criteria coverage check reads.
 
-   The first `grep` becomes `^(docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$`,
-   and the comment above it names the new paths.
+   - `design/`, whose test fixtures are Markdown files the tests read as code.
+
+   The first `grep` becomes
+   `^(design|docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$`, and the comment
+   above it names the new paths.
 2. The build job runs `pnpm --filter ./design check` and `pnpm --filter ./design test` after
    `pnpm install`, on all three systems. The `check` script covers:
    - the format checker at 0.4.0, failing on its errors and printing its warnings;
@@ -319,10 +356,20 @@ aggregates the jobs of `ci.yml`.
 - `Check:` (automated test, hostile case or review step);
 - `Feature:` (the later Phase 3 item that runs it, named as in the development guide).
 
-The check parses the file and fails when a criterion lacks either field. It also fails when a
-Phase 3 row of `docs/threat-model.md` about the frame, a dialog or imitation cites no criterion,
-or cites an id that does not exist (SC-005). Those rows are the ones whose threat names a frame,
-a dialog, a window or the host's look. They gain a `HS-` reference in their mitigation cell.
+The check parses the file and fails in each of these cases:
+- a criterion lacks either field;
+- a threat-model row selected below cites no criterion, or cites an id that does not exist
+  (SC-005);
+- a criterion that some row cites has a `Check:` of `review` (Principle VIII: the threat model's
+  rows are cases that "must fail in CI").
+
+The selected rows are every row of `docs/threat-model.md` whose boundary column includes B4 and
+whose phase is Phase 3. Selecting by boundary and phase is mechanical, so no row is missed by
+wording. Each gains `HS-` references in its mitigation cell.
+
+The `Feature:` line names an item of the development guide, which lives outside the repository.
+So CI can check that the line exists, not that the item does. The review of each later feature
+checks that its criteria were run.
 
 **Rationale**: a durable document that later specs link to. The coverage check turns the threat
 model's promise into something CI can verify.
@@ -342,6 +389,19 @@ are history, and the criteria are a standing rule.
 - **Focus.** Focus moves to the dialog's safe choice on open and returns to the opener on close.
 - **Escape** triggers the safe choice.
 - **Announcement.** The dialog has an accessible name and description.
+- **Input delay.** Clicks and keys are ignored for a short moment after the dialog appears, so
+  input aimed at what was under the pointer or the caret cannot answer it. The dialog feature
+  measures the length.
+- **Who is asking.** The dialog names the plugin by its manifest name and its repository id
+  (`github.com/owner/repo`), drawn by the host as escaped text with a length limit, as the frame
+  does.
+- **Links.** Today the app holds the `opener:default` capability
+  (`app/src-tauri/capabilities/default.json`). The declarative UI has no link component. The
+  criteria require that no plugin string reach the opener or any call that opens a link, a file
+  or another app.
+- **Forms.** The form component has no password or masked field. Its inputs set
+  `autocomplete="off"` and are never marked as credentials, so no webview offers to fill or save
+  them.
 
 Radix Dialog, already used by the demo's `dialog.tsx`, provides the inert background (by hiding
 its siblings from assistive technology and blocking pointer events), the focus trap and Escape
@@ -357,11 +417,48 @@ that make it true, recorded so that the later features do not rediscover them.
 
 ## R12. Light or dark by default
 
-**Decision**: the demo app starts in the theme the system prefers
-(`prefers-color-scheme`), and its switch still toggles it. This is a two-line change in
-`App.tsx`.
+**Decision**: no change. The demo already starts in the theme the system prefers
+(`app/src/App.tsx`, `useState(() => matchMedia("(prefers-color-scheme: dark)").matches)`), and
+its switch toggles it. That matches the spec's assumption.
 
-**Rationale**: the spec's assumption, "the host follows the system setting by default".
+## R13. npm dependencies: advisories and licenses
 
-**Alternatives considered**: no change. Rejected: the demo starts in light whatever the system
-says.
+**Decision** (the maintainer's choice, 2026-11-10): npm gets the same treatment as Rust.
+
+- **Advisories.** `pnpm audit --audit-level high` runs:
+  - in `ci.yml`, as its own job gated on code changes, beside `cargo audit`;
+  - in `audit.yml`, every week, so new advisories surface without a change.
+- **Licenses.** `pnpm --filter ./design licenses` reads the `license` field of every installed
+  package and fails on one outside an allowlist. The allowlist is `deny.toml`'s list plus the
+  licenses common in npm and compatible with an Apache-2.0 client:
+  - `BSD-2-Clause`, `0BSD`, `BlueOak-1.0.0` and `CC0-1.0`;
+  - `OFL-1.1`, for the fonts, which ship under their own license (R7).
+
+  It runs in CI with `check`. `pnpm licenses` printed nothing on pnpm 12.14.0, so the package
+  reads `package.json` files itself.
+
+**Measured on master today**, before this feature: `pnpm audit` reports 1 high, 1 moderate and 1
+low advisory, all reached through the `shadcn` CLI package in `app/`'s dependencies:
+
+| Severity | Package | Path | Fixed in |
+| --- | --- | --- | --- |
+| high | `body-parser` <2.4.0 (denial of service) | `shadcn` → `@modelcontextprotocol/sdk` → `express` | 2.4.0 |
+| moderate | `minimatch` <11.0.1 | `shadcn` → `ts-morph` | 11.0.1 |
+| low | `deepmerge` ≤4.3.1 | `shadcn` | none |
+
+None of them runs in the app: the `shadcn` package is a CLI, and the app only imports its
+`tailwind.css`. The implementation still has to clear the high one before the audit job can
+pass, by updating `shadcn` or with a `pnpm.overrides` entry for `body-parser` `>=2.4.0`. The audit
+fails only at high and above, so the moderate and low ones are left as they are. That is
+recorded with the job.
+
+**Rationale**:
+- `cargo audit` and `cargo deny` see only Rust, while npm packages run in CI on three systems
+  and on contributors' machines (threat T4).
+- The constitution's MUST names the cargo tools. This extends the same intent to npm without an
+  amendment.
+- The weekly run matches how `audit.yml` already handles Rust.
+
+**Alternatives considered**:
+- Weekly only, which never blocks a pull request.
+- Recording the gap. Rejected by the maintainer.

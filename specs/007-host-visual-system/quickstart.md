@@ -67,10 +67,11 @@ it is host-only.
 
 ## 7. A DESIGN.md-only change runs all of CI (SC-004)
 
-Push a commit that touches only `DESIGN.md`, for example a word of prose.
+Push a commit that touches only `DESIGN.md`, for example a word of prose. Then push another that
+touches only a fixture under `design/test/fixtures/`.
 
-**Expected**: "Detect code changes" outputs `code=true`, and the build jobs run on Windows, macOS
-and Linux.
+**Expected**: in both cases "Detect code changes" outputs `code=true`, and the build jobs run on
+Windows, macOS and Linux.
 
 ## 8. Criteria coverage (SC-005, User Stories 4–6)
 
@@ -87,7 +88,7 @@ Run `pnpm --filter ./app dev` on this branch and on `master`, and compare the de
 dark.
 
 **Expected**: the only differences are the ones research R4 lists:
-- darker input edges;
+- darker input edges, and in dark mode slightly lighter field and switch fills;
 - the solid focus ring;
 - `chart-2` and `chart-3` darker in light;
 - `destructive` slightly darker in light.

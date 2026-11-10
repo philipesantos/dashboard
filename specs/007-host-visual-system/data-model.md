@@ -48,12 +48,15 @@ card edges and dividers. It may never be a pairing's `fg` of kind `boundary` or 
 
 ## Usage
 
-A color utility found in `app/src/**/*.tsx`, such as `ring-ring/50`. It is identified by role
-and opacity (100 when none is written).
+A color utility found in `app/src/**/*.tsx` or in an `@apply` of `app/src/*.css`, such as
+`ring-ring/50`. It is identified by role and opacity (100 when none is written).
 
-**Validation**: every usage must match a pairing's `fg`, a layer in some pairing's `on`, or a
-decorative role, at the same opacity. The scan reports the file and utility of each one that
-doesn't.
+**Validation**:
+- Every usage must match a pairing's `fg`, a layer in some pairing's `on`, or a decorative role,
+  at the same opacity.
+- A color utility that names no role (Tailwind's palette, `black`, `white`) fails.
+- The scan reports the file and utility of each failure.
+- `opacity-*` on disabled controls is not a color usage. WCAG exempts inactive components.
 
 ## Tone
 
@@ -99,8 +102,8 @@ A rule of the frame or dialog design, in `docs/design/host-surfaces.md`.
 
 **Validation** (SC-005):
 - Every criterion has `check` and `feature`.
-- Every Phase 3 threat-model row about the frame, a dialog, a window or the host's look cites at
-  least one existing `HS-` id.
+- Every threat-model row on boundary B4 in Phase 3 cites at least one existing `HS-` id.
+- A cited criterion's `check` is `test` or `hostile case`, never `review` (Principle VIII).
 
 ## Relationships
 

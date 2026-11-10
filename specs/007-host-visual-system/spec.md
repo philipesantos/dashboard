@@ -92,7 +92,8 @@ passes. Then hand-edit one generated value and confirm that CI fails naming it.
 ### User Story 2 - Text stays readable in both themes (Priority: P1)
 
 The person uses the dashboard in light or dark mode and can read everything the host draws. That
-includes muted text, a disabled control's label, an input's border and the focus ring. A
+includes muted text, an input's border, a filled field and the focus ring. Disabled controls are
+exempt, as WCAG exempts inactive components. A
 contributor who picks a color that fails WCAG AA learns it from CI before the change merges.
 
 **Why this priority**: the starting theme was picked by eye. A muted gray or a border that fails
@@ -295,17 +296,31 @@ keyboard, and with a screen reader on each of the three systems.
 
   A value MAY change only where a check of this feature fails, and `DESIGN.md` MUST record each
   change and its reason.
-- **FR-004**: One command MUST generate the app's theme from `DESIGN.md`: the Tailwind `@theme`
-  and the light and dark token values. After this feature, no token value is written by hand in
-  the app.
+- **FR-004**: One command MUST generate the app's theme from `DESIGN.md`. The theme covers:
+  - the Tailwind `@theme`;
+  - the light and dark color values;
+  - the fonts;
+  - the radius;
+  - the spacing unit;
+  - the type scale;
+  - the elevation shadows.
+
+  After this feature, no token value is written by hand in the app.
 - **FR-005**: CI MUST fail when the generated theme differs from what `DESIGN.md` produces, and
   MUST name each token that differs.
-- **FR-006**: CI's filter for documentation-only changes MUST treat `DESIGN.md` as code. A change
-  to it alone runs every job on Windows, macOS and Linux, as the constitution's rule for
-  Markdown used as code requires.
+- **FR-006**: CI's filter for documentation-only changes MUST treat as code every Markdown file
+  this feature's checks read:
+  - `DESIGN.md`;
+  - the tooling's test fixtures;
+  - the criteria document;
+  - the threat model.
+
+  A change to any of them alone runs every job on Windows, macOS and Linux, as the constitution's
+  rule for Markdown used as code requires.
 - **FR-007**: The fonts MUST ship inside the app, with nothing loaded from the network, so the
   restrictive CSP of the coming Tauri shell needs no font origin. Each font's license MUST allow
-  shipping it in an Apache-2.0 app, and is recorded.
+  shipping it in an Apache-2.0 app, and its text MUST ship with the app, as the license
+  requires.
 - **FR-008**: The generator MUST also produce a static preview page from `DESIGN.md`, with no
   script, for review. It shows both themes, the scales, the declarative UI's components, the
   status tones with their icons, and sketches of the frame and a dialog. CI MUST publish it with
@@ -337,7 +352,9 @@ keyboard, and with a screen reader on each of the three systems.
   - any elevation above a frame;
   - the host's focus style.
 
-  The accent color is shared, so widget content can use the accent tone.
+  The accent color is shared, so widget content can use the accent tone. The split is by role,
+  not by color value: a host-only role may hold the same value as a shared one. What tells the
+  host apart is the dialog's form (FR-019), never a color.
 - **FR-014**: Widget content MUST select styling only through a closed set of tones and of
   component variants. It MUST NOT carry a color, font, size, class or style value. A tone the
   host does not know MUST resolve to the default tone, and the host MUST record the name in the
@@ -350,7 +367,9 @@ keyboard, and with a screen reader on each of the three systems.
 
 - **FR-016**: The feature MUST write the design of the app's chrome, the widget frame and the
   host dialogs as numbered criteria. Each criterion MUST state how it is checked (an automated
-  test, a hostile case or a review step) and which later Phase 3 feature runs it.
+  test, a hostile case or a review step) and which later Phase 3 feature runs it. A criterion
+  that a threat-model row cites as a mitigation MUST be checked by a test or a hostile case,
+  never by review alone (Principle VIII).
 - **FR-017**: The criteria MUST cover at least the following:
   - widget content is drawn only inside its frame's body and cannot cover the frame's header or
     reach outside the frame;
@@ -362,7 +381,14 @@ keyboard, and with a screen reader on each of the three systems.
     decision is about;
   - a control inside widget content can trigger only that widget's own declared actions, never
     a trust decision;
-  - the safe choice is every dialog's default.
+  - the safe choice is every dialog's default;
+  - a dialog ignores clicks and keys for a short moment after it appears, so input aimed at what
+    was there before cannot answer it;
+  - a dialog names the plugin by its name and its repository id, drawn by the host as escaped
+    text with a length limit;
+  - the form component has no password or masked field, and the webview never offers to fill or
+    save what it holds;
+  - no plugin string reaches anything that opens a link, a file or another app.
 - **FR-018**: The criteria MUST state the keyboard and screen-reader behavior of host dialogs:
   - focus moves into the dialog and is kept inside it;
   - Escape takes the safe choice;
@@ -376,9 +402,9 @@ keyboard, and with a screen reader on each of the three systems.
 - **FR-020**: The threat model MUST cover this design:
   - The plugin UI boundary (B4) names the dialog form in FR-019.
   - It gains a Phase 3 row for widget content that imitates the host's styling. The mitigation
-    is the host-only tokens (FR-013–FR-015) and the dialog form (FR-017, FR-019).
-  - The existing Phase 3 rows on fake logins and on widgets opening dialogs point to the criteria
-    that cover them.
+    is the dialog form (FR-017, FR-019). The breaking test is a hostile widget that the
+    declarative UI feature adds, which uses every tone and variant to look like a dialog.
+  - Every Phase 3 row on the plugin UI boundary (B4) cites the criteria that cover it.
 - **FR-021**: This feature adds no hostile case to the security suite. The check in FR-015 is an
   ordinary test. Hostile cases that need a drawn frame or dialog arrive with the features that
   draw them, and those features must pass these criteria.
@@ -415,7 +441,11 @@ keyboard, and with a screen reader on each of the three systems.
   Phase 3 threat-model row about host imitation, dialogs or the frame maps to at least one
   criterion.
 - **SC-006**: Apart from the contrast fixes `DESIGN.md` records, the app built from the generated
-  theme looks the same as after PR #16, in light and dark.
+  theme looks the same as after PR #16, in light and dark. The expected fixes are:
+  - darker input edges, and in dark mode the field and switch fills that use the same role;
+  - a solid focus ring;
+  - two darker chart colors in light;
+  - a slightly darker red in light.
 - **SC-007**: Every CI run that builds publishes the preview page, and the maintainer can review
   the visual system in a browser without building the app.
 

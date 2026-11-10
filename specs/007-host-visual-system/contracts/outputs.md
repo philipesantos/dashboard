@@ -10,6 +10,7 @@ Every command runs from the repository root, through the `design/` workspace pac
 | `pnpm --filter ./design check` | Runs every check below without writing. | 0 when all pass, 1 otherwise |
 | `pnpm --filter ./design preview` | Writes `design/preview/index.html` (not committed). | 0, or 1 as `gen` |
 | `pnpm --filter ./design test` | Runs `node --test` on the package's tests. | `node --test`'s |
+| `pnpm --filter ./design licenses` | Checks the `license` of every installed npm package against the allowlist (research R13). | 0, or 1 naming each package and license |
 
 `check` runs these, in order, and reports every failure before exiting:
 
@@ -26,7 +27,9 @@ Every command runs from the repository root, through the `design/` workspace pac
 5. **Usage**: every color utility in `app/src/**/*.tsx` matches a declared role and opacity.
 6. **Host-only**: no tone or variant reaches a host-only role.
 7. **Drift**: both generated files equal what `DESIGN.md` produces now.
-8. **Criteria**: `docs/design/host-surfaces.md` and the threat model's Phase 3 rows.
+8. **Criteria**: `docs/design/host-surfaces.md` and the threat model's B4 rows in Phase 3.
+9. **Font licenses**: each family in `DESIGN.md`'s typography has its license text in
+   `app/public/licenses/fonts/`.
 
 Each failure is one line, prefixed with its file:
 
@@ -48,6 +51,9 @@ docs/design/host-surfaces.md: HS-07 has no "Feature:" line
     --font-mono: 'IBM Plex Mono', <fallback stack>;
     --color-background: var(--background);
     /* … one --color-<role> per color role, then --radius-sm … --radius-4xl from --radius */
+    --spacing: 0.25rem;               /* DESIGN.md spacing.unit: every p-*, m-*, gap-* follows */
+    --text-sm: 0.875rem;              /* … the type scale, with --text-*--line-height */
+    --shadow-frame: 0 1px 2px …;      /* … one per elevation level */
 }
 
 :root {
@@ -62,8 +68,10 @@ docs/design/host-surfaces.md: HS-07 has no "Feature:" line
 ```
 
 - The roles appear in `DESIGN.md`'s order.
-- The radius multipliers are the ones `index.css` uses today (0.6, 0.8, 1, 1.4, 1.8, 2.2, 2.6),
-  written in `DESIGN.md`'s Shapes section as tokens `sm` to `4xl`.
+- `DESIGN.md` has one radius token, `rounded.base`, so a contributor changes every corner in
+  one place. The generator derives the steps `sm` to `4xl` with the multipliers `index.css` uses
+  today (0.6, 0.8, 1, 1.4, 1.8, 2.2, 2.6). The Shapes section's prose documents them. They are
+  not separate tokens. The widget map names these derived steps.
 - `app/src/index.css` imports this file and holds no token value.
 
 ## `design/widget-map.generated.json`
@@ -114,6 +122,8 @@ Feature: Moldura do host em cada widget com nome e ícone do plugin
   - content cannot cover the header.
 - dialogs:
   - a dialog covers the chrome and every frame;
+  - clicks and keys are ignored for a short moment after it appears;
+  - it names the plugin by name and repository id, escaped, with a length limit;
   - the rest of the window is inert for pointer, keyboard and assistive technology;
   - the dialog names the plugin or connector the decision is about;
   - the safe choice is the default;
@@ -126,10 +136,12 @@ Feature: Moldura do host em cada widget com nome e ícone do plugin
   - nothing behind it is reachable by assistive technology.
 - widget controls:
   - a control in widget content triggers only that widget's declared actions;
+  - the form has no password or masked field, and its inputs are never offered for autofill;
+  - no plugin string reaches the opener or anything that opens a link, a file or another app;
   - widget content cannot produce a layer above the frames, a scrim or an inert window;
   - status is never shown by color alone.
 - forced colors:
   - every property that marks a dialog still holds when the system replaces colors.
 
-**Threat model citation.** The mitigation cell of each Phase 3 row about the frame, a dialog, a
-window or the host's look ends with `(HS-NN, …)`.
+**Threat model citation.** The mitigation cell of every row on boundary B4 in Phase 3 ends with
+`(HS-NN, …)`. Each criterion cited there has a `Check:` of `test` or `hostile case`.

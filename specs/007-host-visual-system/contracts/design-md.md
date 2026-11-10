@@ -25,7 +25,8 @@ typography:
 rounded:
   base: 0.625rem        # the shadcn --radius; sm, md, lg, xl… derive from it
 spacing:
-  # … the spacing scale
+  unit: 0.25rem         # Tailwind's --spacing: every p-*, m-*, gap-* is a multiple of it
+  # … named steps for the layout prose (frame padding, grid gap)
 components:
   # The declarative UI's components, one entry per variant, in the format's own properties
   # (backgroundColor, textColor, typography, rounded, padding). They reference tokens:

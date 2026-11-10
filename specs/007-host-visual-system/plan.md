@@ -33,6 +33,8 @@ v4) and React 19 in `app/`, unchanged.
 - `@google/design.md` 0.4.0, the format checker;
 - `yaml` 2.9.1.
 
+`pnpm audit` and a license allowlist cover these and the app's npm packages (R13).
+
 Both are development dependencies pinned to exact versions. The fonts `@fontsource-variable/figtree`,
 `@fontsource-variable/bricolage-grotesque` and `@fontsource/ibm-plex-mono`, all OFL-1.1, are
 already in `app/`.
@@ -64,7 +66,7 @@ noticeable to the build job.
 - no change to `runtime/`, `wit/`, `plugins/` or the Tauri crate.
 
 **Scale/Scope**:
-- about 50 color roles × 2 themes;
+- 41 color roles × 2 themes;
 - about 60 pairings;
 - 6 tones and about 20 component variants;
 - about 25 criteria.
@@ -79,13 +81,14 @@ noticeable to the build job.
 | II. Zero capabilities by default | Pass | No capability added. |
 | III. External data only through connectors | Pass | Nothing fetched at run time; fonts bundled (R7). |
 | IV. Plugins never see secrets | Pass | Not touched. |
-| V. Plugins stay inside the host frame | Pass, strengthened | The criteria make "inside the frame, no dialogs" checkable (HS- criteria, R10, R11). The host-only split keeps the frame's and dialogs' roles out of widget content (R6). |
+| V. Plugins stay inside the host frame | Pass | The criteria make "inside the frame, no password fields, no dialogs" checkable (HS- criteria, R10, R11). The host-only split keeps the frame's and dialogs' roles out of what widget content can select (R6). It splits roles, not colors, and is not a security control by itself. |
 | VI. Human confirmation for AI actions | Pass | Not touched. |
 | VII. Trust decisions only in host dialogs | Pass, strengthened | The dialog's structure is specified so a widget's picture of one cannot pass for it and its controls cannot reach a trust decision (R11). |
-| VIII. Every security rule has a breaking test | Pass | The host-only map check fails the build on a violation (FR-015). The dialog and frame rules are written as criteria now. Their breaking tests, named in each criterion's `Check:` line, land with the features that draw the frame and dialogs, since nothing draws them yet. |
+| VIII. Every security rule has a breaking test | Pass | No security rule is enforced in code by this feature, so none ships without its test. The frame and dialog rules are written as criteria. Any criterion a threat-model row cites must name a test or hostile case, never review alone, and `check` fails otherwise (R10). Those tests land with the features that draw the frame, the dialogs and the declarative UI. The new imitation row's breaking test is a hostile widget added by the declarative UI feature (FR-020). The rows stay at Phase 3, whose gate needs them. |
 | IX. Human review of the security core | Pass | No security-core file changes. |
 | Fixed decisions (Tauri 2 + React, licenses) | Pass | Unchanged. Node.js tooling is build-time only. The fonts are OFL-1.1, bundled beside Apache-2.0 code under their own license. |
-| CI on three systems; docs-only skip | Pass | `DESIGN.md`, `docs/design/` and `docs/threat-model.md` become code paths (R9), as the constitution's "Markdown the build uses as code" rule requires. |
+| CI on three systems; docs-only skip | Pass | `DESIGN.md`, `design/` (its Markdown fixtures), `docs/design/` and `docs/threat-model.md` become code paths (R9), as the constitution's "Markdown the build uses as code" rule requires. |
+| CI's `cargo audit` and `cargo deny` | Pass | The rule names the cargo tools, and they keep running. npm gets the same: `pnpm audit` at high on every code change and weekly, and a license allowlist (R13). The high advisory already on master, through the `shadcn` CLI, is cleared first. |
 | Phase gates | Pass | Phases 1 and 2 have passed (the guide, rev 147), so Phase 3 UI work may start. |
 
 **Re-check after Phase 1 design**: unchanged, all pass. No complexity to justify.
@@ -97,7 +100,7 @@ noticeable to the build job.
 ```text
 specs/007-host-visual-system/
 ├── plan.md              # This file
-├── research.md          # Phase 0: R1–R12
+├── research.md          # Phase 0: R1–R13
 ├── data-model.md        # Phase 1
 ├── quickstart.md        # Phase 1
 ├── contracts/
@@ -122,19 +125,22 @@ design/                            # new workspace package (private)
 │   ├── checks/                    # format, schema, contrast, coverage, usage, host-only, drift, criteria
 │   ├── generate.ts                # theme.generated.css, widget-map.generated.json
 │   ├── preview.ts                 # preview/index.html
-│   └── cli.ts                     # gen | check | preview
+│   ├── licenses.ts                # npm license allowlist (R13)
+│   └── cli.ts                     # gen | check | preview | licenses
 ├── test/                          # node --test; fixtures/ with failing DESIGN.md files
 ├── widget-map.generated.json      # generated, committed
 └── preview/                       # generated, ignored
 app/
-├── src/index.css                  # imports + @layer base only; imports theme.generated.css
+├── src/index.css                  # imports + @layer base only (outline-ring/50 → outline-ring); imports theme.generated.css
 ├── src/theme.generated.css        # generated, committed
-├── src/App.tsx                    # starts in the system's theme (R12)
-└── src/components/ui/*.tsx        # ring-ring/50 → ring-ring, other undeclared opacities fixed
+├── src/components/ui/*.tsx        # ring-ring/50 → ring-ring; dialog overlay bg-black/10 → bg-scrim
+└── public/licenses/fonts/         # the three OFL-1.1 texts, shipped in app/dist (R7)
 docs/
 ├── design/host-surfaces.md        # new: HS- criteria
 └── threat-model.md                # Phase 3 rows cite HS- criteria; new imitation row
-.github/workflows/ci.yml           # filter paths; design check + test; preview artifact
+.github/workflows/ci.yml           # filter paths; design check + test + licenses; pnpm audit job; preview artifact
+.github/workflows/audit.yml        # + weekly pnpm audit
+package.json                       # pnpm.overrides for body-parser if shadcn has no fix (R13)
 ```
 
 **Structure Decision**: the tooling is its own pnpm workspace package beside `app/`, so its
