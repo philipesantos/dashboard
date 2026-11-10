@@ -35,6 +35,12 @@ mais tardar."
 - Q: How fast must a release follow a Chromium security fix? → A: Critical and high fixes ship
   within 14 days of the release of Tauri's embedded-engine runtime that carries them; other fixes
   ship with the next regular release. This applies from the first public release.
+- Q: (at plan) Tauri's embedded-engine runtime exists only for Tauri 3, in alpha, with open Linux
+  bugs (keyboard input lost, the main thread spinning when idle, broken AppImage packaging,
+  shortcuts that cannot be intercepted). How does this feature treat the Linux engine? → A: A desk
+  trial records the failure with that evidence, and Linux ships the system WebKitGTK with every
+  protection and test of this feature. The trial is repeated with each stable release of the
+  runtime (constitution v2.6.1), and adopting it also takes the amendment to Tauri 3.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -149,14 +155,14 @@ makes the project responsible for the engine's security updates on Linux. It com
 Stories 1 to 3 because those protections are needed on every system whichever engine draws the
 window.
 
-**Independent Test**: install the Linux build on a system without WebKitGTK and open it. The
-dashboard works, and Stories 1, 2, 3 and 5 hold. The trial's report shows each requirement met
-by the embedded engine, with the installer size and start-up time beside the other systems'.
+**Independent Test**: read the trial's report: for each requirement, whether the embedded engine
+meets it, and on what evidence. Then install the Linux build and open it. The dashboard works on
+the engine the report chose, and Stories 1, 2, 3 and 5 hold.
 
 **Acceptance Scenarios**:
 
-1. **Given** the Linux build, **When** it is installed on a system without WebKitGTK, **Then** it
-   starts and shows the dashboard.
+1. **Given** an embedded engine that passed its trial, **When** the Linux build is installed on a
+   system without WebKitGTK, **Then** it starts and shows the dashboard.
 2. **Given** the trial of the embedded engine, **When** it ends, **Then** its report states, for
    each requirement of this feature, whether the engine meets it, and the installer size and
    start-up time on Linux compared with Windows and macOS.
@@ -284,13 +290,17 @@ reports when the shipped version is behind a security release.
 
 #### The engine on each system
 
-- **FR-013**: The window MUST be drawn by WebView2 on Windows and WKWebView on macOS, and by an
-  embedded Chromium that the app ships on Linux. The Linux app MUST NOT need WebKitGTK.
+- **FR-013**: The window MUST be drawn by WebView2 on Windows and WKWebView on macOS. On Linux it
+  is drawn by an embedded Chromium that the app ships once that engine passes the trial of
+  FR-014; until then, by the system WebKitGTK with every protection of this feature
+  (constitution v2.6.1). Every protection and test MUST hold on whichever engine Linux uses.
 - **FR-014**: Before the Linux engine is fixed, a trial MUST check that the embedded engine meets
-  FR-001 to FR-012 and FR-016 on Linux, and builds and passes the security tests in CI. The trial
-  MUST record the installer size and start-up time beside Windows and macOS. If the engine
-  fails a requirement, Linux keeps the system WebKitGTK with every protection of this feature,
-  recorded as temporary, until the embedded engine passes a later trial.
+  FR-001 to FR-012 and FR-016 on Linux, and builds and passes the security tests in CI. When the
+  runtime cannot yet be built against the host's framework, or has open defects that block
+  those requirements or basic use, the trial MAY be decided from that evidence alone, and it
+  records each source. A trial that builds MUST record the installer size and start-up time
+  beside Windows and macOS. If the engine fails, Linux keeps the system WebKitGTK with every
+  protection of this feature, recorded as temporary, until a later trial passes.
 - **FR-015**: The constitution MUST be amended before this feature's plan passes its Constitution
   Check. The amendment updates the fixed decisions to name each system's engine, states why, and
   records the project's duty to ship the embedded engine's security fixes within the deadline
@@ -340,9 +350,11 @@ reports when the shipped version is behind a security release.
   FR-012 are refused in the built app, in CI, and the demo still works afterwards.
 - **SC-002**: The window can reach zero capabilities and host commands outside the reviewed list.
   Adding one without listing it fails CI by name.
-- **SC-003**: The Linux build starts and shows the dashboard on a system without WebKitGTK.
-- **SC-004**: The trial report gives the installer size and the cold start-up time of each system,
-  and states whether the embedded engine meets each requirement.
+- **SC-003**: On Linux, the engine in use passes every breaking test of this feature, and the
+  trial report states which engine that is and why.
+- **SC-004**: The trial report states, for each requirement, whether the embedded engine meets it
+  and on what evidence, and, for a trial that builds, the installer size and cold start-up time
+  of each system.
 - **SC-005**: Every release's notes name the embedded engine's version. A security release newer
   than it is reported within one week of its publication, and from the first public release no
   critical or high fix waits more than 14 days after Tauri's runtime carries it.

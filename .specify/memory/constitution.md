@@ -151,8 +151,10 @@ Changing any of these decisions requires an amendment (see Governance).
 
 On Linux, until the embedded engine passes a trial showing that it enforces every window
 protection that has a breaking test in CI, the app MAY use the system's WebKitGTK with the same
-protections and tests. That is temporary: the trial MUST be repeated with each release of
-Tauri's CEF runtime, and the window engine above holds once one passes. If a later release of
+protections and tests. That is temporary: the trial MUST be repeated with each stable release
+of Tauri's CEF runtime, and the window engine above holds once one passes. That runtime exists
+only for Tauri 3, so adopting it also takes the amendment that moves the host app to Tauri 3.
+If a later release of
 that runtime, needed for a security fix, breaks one of those protections, the Linux app MUST
 return to WebKitGTK for that release, rather than ship a broken protection or the unfixed
 engine.
@@ -195,4 +197,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.6.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10
+**Version**: 2.6.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10
