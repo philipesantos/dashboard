@@ -206,7 +206,7 @@ proven by the probe.
     so this is the drop's breaking test.
 
   It fails now, because there is no list yet and no app manifest.
-- [ ] T012 [P] [US2] Add the FR-007 cases to `run.ts`:
+- [X] T012 [P] [US2] Add the FR-007 cases to `run.ts`:
   - `command-ungranted`: `shell_probe_ungranted` must reject with an ACL error, not a missing
     command;
   - `command-opener`: `plugin:opener|open_url`;

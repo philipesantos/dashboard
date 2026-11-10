@@ -10,10 +10,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { Case, Context, Counters, Verdict } from "./case";
+import { commandCases } from "./commands";
 import { policyCases } from "./policy";
 
 /** Every case. The story tasks add theirs here. Cases that may unload the page run last. */
-const cases: Case[] = [...policyCases].sort(
+const cases: Case[] = [...policyCases, ...commandCases].sort(
   (first, second) => Number(first.mayLeave ?? false) - Number(second.mayLeave ?? false),
 );
 
@@ -38,12 +39,17 @@ const context: Context = {
 
 async function runAll(): Promise<void> {
   // The page's own load, fonts and styles included, must need nothing the policy refuses, throw
-  // nothing, and render the demo (FR-004, FR-020). The cases below start after it.
+  // nothing, and render the demo (FR-004, FR-020). React commits its first render in a task of
+  // its own, which can come after `load`, so the render gets up to 5 s. The cases start after.
+  const root = document.getElementById("root");
+  for (let waited = 0; waited < 5000 && !root?.hasChildNodes(); waited += 50) {
+    await context.wait(50);
+  }
   const problems = [
     ...seen.map((entry) => `violation ${entry}`),
     ...errors.map((message) => `error ${message}`),
   ];
-  if (!document.getElementById("root")?.hasChildNodes()) problems.push("the demo did not render");
+  if (!root?.hasChildNodes()) problems.push("the demo did not render within 5 s");
   const report: (Verdict & { id: string })[] = [
     {
       id: "page-load-clean",
