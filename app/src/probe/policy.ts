@@ -185,23 +185,32 @@ const connections: Case[] = [
   {
     id: "connect-websocket",
     async run(context) {
+      // Closed only after the check: Chromium checks the policy when the connection starts, which
+      // an immediate close() would cancel
+      let socket: WebSocket | undefined;
       try {
-        new WebSocket("wss://probe.invalid/").close();
+        socket = new WebSocket("wss://probe.invalid/");
       } catch {
         // A refusal may throw; the violation decides.
       }
-      return expectViolation(context, ["connect-src"]);
+      const verdict = await expectViolation(context, ["connect-src"]);
+      socket?.close();
+      return verdict;
     },
   },
   {
     id: "connect-eventsource",
     async run(context) {
+      // Closed only after the check, as for the WebSocket
+      let source: EventSource | undefined;
       try {
-        new EventSource(`${REMOTE}/`).close();
+        source = new EventSource(`${REMOTE}/`);
       } catch {
         // A refusal may throw; the violation decides.
       }
-      return expectViolation(context, ["connect-src"]);
+      const verdict = await expectViolation(context, ["connect-src"]);
+      source?.close();
+      return verdict;
     },
   },
 ];

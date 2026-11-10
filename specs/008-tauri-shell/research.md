@@ -290,6 +290,8 @@ submission, because `form-action 'none'` blocks a real submit.
     build already has an app manifest (R4).
   - The binary refuses to start unless `DASHBOARD_PROBE=1` is set, so a build that shipped with
     the feature by mistake would not run.
+  - On Windows, WebView2 gets a fake camera (`--use-fake-device-for-media-stream`, with wry's
+    default arguments kept), so the camera case meets the permission handler (R16).
 - **What the probe module tries** inside the real page, recording each outcome:
   - injected script: an `innerHTML` with an `onerror` handler, a `<script>` element with inline
     text, `eval`, `new Function` and `setTimeout` with a string;
@@ -462,8 +464,10 @@ handler's refusals when there are any. The case that breaks without the handler 
 wry grants camera and microphone by default.
 
 The same holds for `download-link` on WebKitGTK: the click reaches `on_navigation` as a
-navigation to another file of the bundle, which is refused before any download starts. On macOS
-it reaches `on_download`, since downloads there bypass the navigation handler.
+navigation to a `blob:` URL, which is refused before any download starts. The link is a
+same-origin `blob:` with a file name, how a page saves a file: on the first CI run a link to a
+bundled file did nothing at all on WKWebView, which ignores `download` on a `tauri:` link, so the
+case could not reach `on_download` there. WebView2 hands it to `on_download`.
 
 ## R15. The WebKitGTK register
 
@@ -517,9 +521,24 @@ change.
 | 2 | Tauri's navigation wrapper allows a URL it cannot parse without calling the handler | `tauri-runtime-wry-2.12.3/src/lib.rs:4821-4826` (`unwrap_or(true)`) | Accepted residual, in Tauri, recorded in R5 and the threat model. No URL found that the engine loads and `url` rejects |
 | 3 | FR-021 names the file picker, and nothing blocked it | wry's macOS UI delegate opens `NSOpenPanel`; WebKitGTK's default `run-file-chooser` | Fixed in the start-up script: clicks on file inputs cancelled, `click()` and `showPicker()` replaced, the File System Access pickers removed. Case `file-picker`, which breaks without it |
 | 4 | `window-open` and `window-target-blank` could not fail: a window the handler let through is wry's, not Tauri's, so the host's count stays 1 | wry creates its own window on `Allow` | Fixed where it can be: on WebView2, which hands scripted popups to the app, the case now needs a handler refusal. The macOS and Linux engines refuse a popup without a user gesture before asking the app, so there the case shows only that no window opened |
-| 5 | `permission-camera` could not fail on CI: with no camera, `getUserMedia` fails before any permission step | runners have no camera | Partly fixed: CI gives WebView2 a fake camera (`--use-fake-device-for-media-stream`, wry's defaults kept), and on WebView2 the case needs `NotAllowedError`. Elsewhere it still shows only that nothing was granted (R14) |
+| 5 | `permission-camera` could not fail on CI: with no camera, `getUserMedia` fails before any permission step | runners have no camera | Partly fixed: the probe build gives WebView2 a fake camera (`--use-fake-device-for-media-stream` through `additional_browser_args`, wry's defaults kept; the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` variable, tried first, had no effect on CI), and on WebView2 the case needs `NotAllowedError`. Elsewhere it still shows only that nothing was granted (R14) |
 | 6 | The surface test read only top-level JSON single capabilities and only `tauri.conf.json` | `tauri-utils-2.10.2/src/acl/build.rs`, `acl/capability.rs:250-265` | Fixed: capabilities in any folder under `capabilities/`, JSON or TOML, in all three forms, and inline in any config; entitlements and the drop handler checked in every per-system config |
 | 7 | An `about:blank` frame might keep the engine's dialogs | | Checked: the start-up script runs in such a frame on WebKitGTK. Case `dialog-iframe` checks it on every system without calling the dialogs |
 | 8 | WebRTC and `dns-prefetch` are outside the content policy | | WebRTC removed by the start-up script, case `connect-webrtc`; this WebKitGTK has no WebRTC, so the case can break only on Windows and macOS. `dns-prefetch` needs injected markup and leaks only a lookup: accepted residual, in the threat model |
 | 9 | The probe had no expected list of cases, so a dropped case passed unnoticed | `probe.rs` | Fixed: `PAGE_CASES` lists every page case; one missing or unlisted breaks the run |
 | 10 | WebView2's browser shortcut keys stay on; on Linux `window.close()` destroys the webview | wry `lib.rs:1768`; `webkitgtk/mod.rs:466` | Fixed: shortcut keys off in release (`ICoreWebView2Settings3`), case `browser-keys-setting`; `window.close` replaced, case `window-close`, registered as WebKitGTK-only (`window-close`) |
+
+**The first CI run (T029, PR #20).** Linux held every case. macOS held 51 of 52 and Windows 54
+of 56; the three that broke were faults of the cases, not of the window, and are fixed:
+- `download-link` on macOS: neither handler was reached, because WKWebView ignored `download` on
+  a link to a bundled `tauri:` file. The case now uses a same-origin `blob:` link.
+- `connect-eventsource` on Windows: no violation, because the case closed the connection at once
+  and Chromium checks the policy when the connection starts. It now closes after the check, and
+  so does `connect-websocket`.
+- `permission-camera` on Windows: `NotFoundError`, because the environment variable that was to
+  give WebView2 a fake camera had no effect. The probe build now passes the argument itself.
+
+Everything else held on both, including every engine setting: WebView2's devtools, context
+menu, browser keys, general autofill and password saving off, the profile InPrivate; WKWebView
+not inspectable and its data store non-persistent; and on both, the new-window handler refused
+`window.open`.

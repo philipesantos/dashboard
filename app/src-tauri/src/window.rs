@@ -86,7 +86,7 @@ fn may_load(url: &Url, dev_url: Option<&Url>) -> bool {
 /// Builds the `main` window with its protections.
 pub fn build(app: &tauri::App) -> tauri::Result<()> {
     let dev_url = app.config().build.dev_url.clone();
-    let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("dashboard")
         .inner_size(800.0, 600.0)
         .on_navigation(move |url| {
@@ -123,8 +123,15 @@ pub fn build(app: &tauri::App) -> tauri::Result<()> {
         .general_autofill_enabled(false)
         // Developer tools only in a development build (FR-011). Release builds also lack the
         // `devtools` feature, which the surface test checks.
-        .devtools(tauri::is_dev())
-        .build()?;
+        .devtools(tauri::is_dev());
+    // The probe build only: WebView2 gets a fake camera, so the probe's camera case meets the
+    // permission handler instead of a missing device on CI runners. wry's default arguments are
+    // kept (wry-0.57.0, webview2/mod.rs:303). The release build passes nothing here.
+    #[cfg(all(windows, feature = "shell-probe"))]
+    let builder = builder.additional_browser_args(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --use-fake-device-for-media-stream",
+    );
+    let window = builder.build()?;
 
     // WebView2 settings that Tauri does not expose (research R6, R7):
     // - password saving, always off (FR-016, HS-26): `general_autofill_enabled` covers forms,

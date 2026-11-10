@@ -87,13 +87,17 @@ const download: Case = {
   async run(context) {
     const start = await context.counters();
     const before = start.download;
+    // A same-origin blob with a file name: how a page saves a file, and what every engine treats
+    // as a download (WKWebView ignores `download` on a link to a `tauri:` file)
+    const url = URL.createObjectURL(new Blob(["probe"], { type: "application/octet-stream" }));
     const link = document.createElement("a");
-    link.href = new URL("/vite.svg", location.href).href;
-    link.download = "probe.svg";
+    link.href = url;
+    link.download = "probe.bin";
     document.body.append(link);
     link.click();
     link.remove();
     const stayed = await context.stayed();
+    URL.revokeObjectURL(url);
     const end = await context.counters();
     const refusals = end.download - before;
     const navigations = end.navigation - start.navigation;

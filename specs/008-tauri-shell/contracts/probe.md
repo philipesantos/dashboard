@@ -77,7 +77,7 @@ Each case has an id, the rule it breaks and how a refusal is detected:
 | `permission-camera` (`getUserMedia`) | FR-021 | error; on WebView2, which CI gives a fake camera, `NotAllowedError` |
 | `permission-location` | FR-021 | error |
 | `permission-notification` | FR-021 | `denied` |
-| `download-link` (`a[download]`) | FR-021 | handler: `on_download`, or `on_navigation` where the engine treats the click as a navigation first (WebKitGTK), and stayed |
+| `download-link` (`a[download]` on a same-origin `blob:`) | FR-021 | handler: `on_download`, or `on_navigation` where the engine treats the click as a navigation first (WebKitGTK), and stayed |
 | `dialog-alert`, `dialog-confirm`, `dialog-prompt`, `dialog-print` | FR-021 | the call returns at once with the replaced value (`undefined`, `false`, `null`) |
 | `dialog-iframe` | FR-021 | in a frame with no `src`, none of the four dialogs is the engine's own |
 | `file-picker` | FR-021 | a click on a file input is cancelled; `click()` and `showPicker()` replaced; no File System Access picker |
