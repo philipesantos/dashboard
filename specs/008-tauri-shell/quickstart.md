@@ -17,6 +17,10 @@ Then add `"core:event:default"` to the capability and run the test again.
 **Expected**: it fails with
 `window-surface.toml: permission "core:event:default" is granted … but not listed`. Revert.
 
+Then move `permissions/default.toml` aside and run the test again.
+
+**Expected**: it fails with `gen/schemas/acl-manifests.json: no app manifest …`. Restore it.
+
 ## 2. The probe holds on this system (FR-001, FR-007, FR-009 to FR-012, FR-016)
 
 Run [contracts/probe.md](contracts/probe.md)'s four commands.
@@ -57,9 +61,10 @@ Record the cold start time beside today's build.
 
 ## 6. No password offer (HS-26, the macOS review step)
 
-On each system, run the probe build with `DASHBOARD_PROBE_HOLD=1`. It keeps the window open after
-the report, showing the probe's form with a field labelled "Senha" and named `password`. Type
-into it and submit.
+On each system, run the probe build with `DASHBOARD_PROBE=1 DASHBOARD_PROBE_HOLD=1`. It keeps
+the window open after the report, showing the probe's form with a field labelled "Senha" and
+named `password`. Focus it, type, and press the form's button, which removes the form, the
+submission engines watch for.
 
 **Expected**: no autofill or save offer appears. On macOS, this walk is the review step that
 covers the residual in research R7.

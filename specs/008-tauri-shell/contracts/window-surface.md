@@ -28,6 +28,17 @@ reason = "…"
 
 At the end of this feature, the file holds no entries, only the comment.
 
+`app/src-tauri/permissions/default.toml` declares the app's default permission set, empty:
+
+```toml
+[default]
+description = "The window starts with no app command. Each one is granted in capabilities/."
+permissions = []
+```
+
+It exists so that Tauri builds the app's ACL manifest even with no commands, which is what makes
+Tauri check app commands against the capabilities (research R4).
+
 ## What the test compares
 
 | Listed | Compared with |
@@ -36,8 +47,12 @@ At the end of this feature, the file holds no entries, only the comment.
 | `[[command]].name` | `COMMANDS`, the `const` that the `commands!` macro in `src/lib.rs` expands beside `generate_handler!`, and the `AppManifest` command list in `build.rs` |
 | `[[plugin]].crate` | The `tauri-plugin-*` dependencies of `app/src-tauri/Cargo.toml` |
 
-The same test also fails when a release build of the app crate enables the `tauri` crate's
-`devtools` feature.
+The same test also fails when:
+- the generated `app/src-tauri/gen/schemas/acl-manifests.json` has no `__app__` key, because then
+  Tauri skips the ACL for app commands;
+- a release build of the app crate enables `devtools` on `tauri`, `tauri-runtime-wry` or `wry`;
+- `tauri.conf.json` gives macOS an entitlements file that grants
+  `com.apple.developer.associated-domains` or `webcredentials` (research R7).
 
 ## Failure lines
 
@@ -49,5 +64,7 @@ window-surface.toml: command "greet" is registered but not listed
 window-surface.toml: command "list_widgets" is listed but not registered
 window-surface.toml: plugin "tauri-plugin-opener" is a dependency but not listed
 window-surface.toml: entry "list_widgets" has no reason
-Cargo.toml: the release build enables tauri's "devtools" feature
+gen/schemas/acl-manifests.json: no app manifest, so app commands skip the ACL (keep permissions/default.toml)
+Cargo.toml: the release build enables "devtools" (tauri)
+tauri.conf.json: the macOS entitlements grant "webcredentials"
 ```

@@ -54,9 +54,11 @@ window with `WebviewWindowBuilder`, attaching every protection in one place,
 `app/src-tauri/src/window.rs`:
 - `on_navigation`;
 - `on_new_window` returning `NewWindowResponse::Deny`;
+- `on_permission_request` denying every request, and `on_download` returning `false` (R14);
 - `incognito(true)`;
 - `general_autofill_enabled(false)`;
-- `devtools(cfg!(debug_assertions))`;
+- `devtools(tauri::is_dev())`;
+- an initialization script that replaces `alert`, `confirm`, `prompt` and `print` (R14);
 - the per-engine settings applied through `with_webview` (R6, R7).
 
 **Rationale**: the navigation and new-window handlers exist only on the builder
@@ -73,8 +75,8 @@ protections is what Principle IX's line-by-line review covers.
 | Directive | Value | Why |
 | --- | --- | --- |
 | `default-src` | `'self'` | Everything else falls back to the bundle |
-| `script-src` | `'self'` | Tauri adds hashes for the bundled scripts at build time. No `'unsafe-inline'`, no `'unsafe-eval'` |
-| `style-src` | `'self'`, plus `'unsafe-inline'` only if the probe shows a component needs it | See below |
+| `script-src` | `'self'` | The bundled module scripts load by `'self'`. Tauri adds a hash only for inline `<script>` text, which the bundle does not have. No `'unsafe-inline'`, no `'unsafe-eval'` |
+| `style-src` | `'self'` | See below for the one allowance that may be needed, in `style-src-elem` |
 | `font-src` | `'self'` | The `@fontsource` fonts are bundled (feature 007) |
 | `img-src` | `'self'` | Icons are inline SVG from `lucide-react`, not images |
 | `connect-src` | `ipc: http://ipc.localhost` | The host's channel only; the second form is how Windows spells it |
@@ -89,20 +91,28 @@ protections is what Principle IX's line-by-line review covers.
   - React sets `style={{…}}` through the CSSOM, which the policy does not block.
   - Some Radix dependencies insert `<style>` elements at run time. One example is
     `react-remove-scroll-bar`, through `react-style-singleton`, under the Select and Dialog. Such
-    an element needs `'unsafe-inline'` or a nonce, and Tauri's nonce covers only the bundled
-    files.
-  - The probe (R8) runs the demo's dialog and select under `style-src 'self'`. If they break,
-    `'unsafe-inline'` is added to `style-src` alone, with the component named in
-    `contracts/content-policy.md`.
+    an element needs `'unsafe-inline'` or a nonce. Tauri's nonce is generated per response and
+    covers only the `<style>` elements in the bundled HTML
+    (`tauri-2.12.5/src/manager/mod.rs:126-137`), and a browser ignores `'unsafe-inline'` in a
+    directive that also holds a nonce.
+  - The probe (R8) runs the demo's dialog and select under the policy above. If they break,
+    `'unsafe-inline'` is added to `style-src-elem` alone, a directive Tauri adds no nonce to,
+    with the component named in `contracts/content-policy.md`.
   - Style cannot run script. Because `img-src` and `font-src` stay `'self'`, a style rule
     cannot send data to the internet either.
-- **Development.** `devCsp` relaxes the policy only where Vite's server needs it:
+- **Development.** On desktop, `tauri dev` loads the page straight from Vite's server. Tauri
+  proxies it only on mobile (`PROXY_DEV_SERVER = cfg!(all(dev, mobile))`,
+  `tauri-2.12.5/src/manager/webview.rs:43`), and it attaches its policy only to what it serves
+  through its own protocol. So `devCsp` would do nothing here, and it is not set. Instead, Vite's
+  `server.headers` sends the development policy: the release policy with two changes.
   - `script-src` gains `'unsafe-inline'` for the React refresh preamble that
-    `@vitejs/plugin-react` writes into the page;
-  - `connect-src` gains `ws://localhost:1421` for hot reload;
-  - `'self'` is then the development server's origin.
+    `@vitejs/plugin-react` writes into the page.
+  - `connect-src` gains `ws://localhost:1420` for hot reload. With `TAURI_DEV_HOST` unset, Vite
+    uses its own port, and `'self'` is the server's origin.
 
-  The probe runs only on release builds, so the tests check the release policy (FR-003).
+  `vite.config.ts` builds that header from `tauri.conf.json`'s `csp`, so the two cannot drift. A
+  refusal in development then shows in the console, with the rule that refused it (FR-004).
+  The probe tests only the release policy (FR-003).
 - **`dangerousDisableAssetCspModification`** stays unset: Tauri's hashes and nonces are the
   protection (`tauri-utils` `SecurityConfig`).
 
@@ -119,11 +129,17 @@ protections is what Principle IX's line-by-line review covers.
 
 **Decision**:
 
-- `build.rs` declares an `AppManifest` with an empty command list
-  (`tauri-build-2.7.4/src/acl.rs:91,104`). Every app command then needs an explicit `allow-`
-  permission in a capability. Without the manifest, Tauri allows every app command to every
-  window.
-- `capabilities/default.json` grants no permission (`"permissions": []`). The host UI calls no
+- **App commands are checked against the ACL.** Tauri checks app commands from the app's own
+  page only when the build produced an app ACL manifest (`tauri-2.12.5/src/webview/mod.rs:2080`).
+  That manifest exists only when the app has a default permission, a permission set or a
+  permission (`tauri-build-2.7.4/src/acl.rs:421-426`). An `AppManifest` with an empty command
+  list produces none. So `app/src-tauri/permissions/default.toml` declares an empty default set,
+  which makes the manifest exist with no commands. `build.rs` lists the app's commands in
+  `AppManifest::commands`, which generates an `allow-` and a `deny-` permission for each. Every
+  app command then needs its `allow-` permission in a capability. The surface test fails when
+  the generated `gen/schemas/acl-manifests.json` lacks the app's key, so the check cannot
+  silently switch off.
+- **No permissions.** `capabilities/default.json` grants none (`"permissions": []`). The host UI calls no
   host command once `greet` goes, and it uses no Tauri API beyond `invoke`.
 - The opener plugin goes from `Cargo.toml`, `lib.rs`, `app/package.json` and the capability.
 - `greet` goes from `lib.rs`, and the demo's "Tauri" tab, which only called it, goes too.
@@ -148,9 +164,13 @@ no public API for the resolved authority, so the test would depend on generated 
 
 **Decision**:
 
-- **Navigation.** `on_navigation` allows only the app's own origin:
+- **Navigation.** `on_navigation` allows only the app's own page: `/` and `/index.html` of
   - `tauri://localhost` on macOS and Linux, `http://tauri.localhost` on Windows;
-  - in debug builds, also `devUrl`.
+  - in development (`tauri::is_dev()`), `devUrl`.
+
+  A URL the runtime cannot parse is allowed without calling the handler
+  (`tauri-runtime-wry-2.12.3/src/lib.rs:4821-4825`). The engine refuses such URLs itself, and
+  the probe's navigation cases check that the page stayed.
 
   Everything else is refused and counted for the probe: `http(s)`, `file:`, `javascript:`,
   `data:`, `blob:` and any other scheme.
@@ -167,10 +187,12 @@ browser's default navigation, so the probe tests navigation through the handler 
 
 **Decision**:
 
-- **Release builds** do not enable the `tauri` crate's `devtools` feature. `devtools` is
+- **Release builds** enable neither the `tauri` crate's `devtools` feature nor
+  `tauri-runtime-wry/devtools` or `wry/devtools`. `devtools` is
   available only in debug builds unless that feature is on (`webview_window.rs:1222`). A test
   reads `cargo metadata` and fails if a release build of the app enables it.
-- **The probe reads each engine's setting** through `with_webview`:
+- **The probe reads each engine's setting** through `with_webview`, in a build made with
+  `tauri/custom-protocol`, as `tauri build` makes it (R8):
   - WebView2: `AreDevToolsEnabled` false;
   - WKWebView: `isInspectable` false;
   - WebKitGTK: `enable-developer-extras` false.
@@ -196,10 +218,20 @@ per engine:
 | WKWebView | The data store is non-persistent (incognito). The app has no `com.apple.developer.associated-domains` / `webcredentials` entitlement, without which WKWebView offers no saved password | `websiteDataStore.isPersistent` is false; the built app's entitlements carry no associated domains |
 | WebKitGTK | Ephemeral network session (incognito). WebKitGTK has no password manager or form autofill of its own; browsers built on it add their own | The session reads as ephemeral |
 
-**Residual**: on macOS, no public WKWebView setting turns password AutoFill off for one app. A
-developer forum reply says macOS 26 autofills in web views. The probe checks the settings
-above. The macOS walk in `quickstart.md` also opens a field labelled "password" and confirms
-that no AutoFill appears. That walk is a review step, recorded in the threat model's row.
+**Limit on macOS (Principle VIII)**: no public WKWebView API turns password AutoFill off for one
+app or reports whether it would offer. Apple ships no WebDriver for WKWebView to drive the
+system's AutoFill UI. A developer forum reply also says macOS 26 autofills in web views. The
+automated tests cover what the project controls:
+- the incognito store, read back by the probe;
+- the configuration: the surface test fails if `tauri.conf.json` sets macOS entitlements or an
+  entitlements file that grants `com.apple.developer.associated-domains` or `webcredentials`.
+
+An unsigned probe binary carries no entitlements, so it proves nothing about the bundle.
+
+Whether AutoFill itself appears has no automated breaking test on macOS. The macOS walk in
+`quickstart.md` covers it as a review step, and the plan's Complexity Tracking and the threat
+model's row record the gap. The walk's form submits by removing itself, which engines treat as a
+submission, because `form-action 'none'` blocks a real submit.
 
 **Rationale**: FR-016 and criterion HS-26 of feature 007.
 
@@ -207,15 +239,24 @@ that no AutoFill appears. That walk is a review step, recorded in the threat mod
 
 **Decision**: a `shell-probe` Cargo feature of the app crate, and a `probe` Vite mode.
 
-- **What differs from a release build.** The probe build is a release-profile build. Its
-  content policy, capability list and window settings are those of a release build. It differs
-  in only two ways:
+- **What differs from a release build.** The probe is built with
+  `--release --features shell-probe,tauri/custom-protocol`. The second feature is the one
+  `tauri build` turns on. Without it Tauri builds in dev mode: it loads `devUrl`, embeds no
+  assets and serves no policy (`tauri-2.12.5/build.rs:252-255`). Its content policy, capability
+  list, ACL mode and window settings are those of a release build. It differs in four ways:
   - Vite's `probe` mode adds one module, `src/probe/run.ts`, to `index.html`. It is bundled, so
     the policy allows it.
-  - The feature adds, at run time through `Manager::add_capability`
-    (`tauri-2.12.5/src/lib.rs:841`), one capability and one command, `shell_probe_report`.
-    Neither is in `capabilities/` or `window-surface.toml`, so the release list stays as
-    reviewed.
+  - `build.rs` adds two commands to `AppManifest::commands` when the feature is on:
+    - `shell_probe_report`, which the probe calls to report;
+    - `shell_probe_ungranted`, which no capability grants and which the probe must be refused.
+  - At run time, the feature adds through `Manager::add_capability`
+    (`tauri-2.12.5/src/lib.rs:841`) one capability granting `allow-shell-probe-report`. It
+    resolves against the build-time ACL, which now holds that permission
+    (`ipc/authority.rs:174-180`). Neither command is in `capabilities/` or
+    `window-surface.toml`, and the release ACL is checked as strictly, because the release
+    build already has an app manifest (R4).
+  - The binary refuses to start unless `DASHBOARD_PROBE=1` is set, so a build that shipped with
+    the feature by mistake would not run.
 - **What the probe module tries** inside the real page, recording each outcome:
   - injected script: an `innerHTML` with an `onerror` handler, a `<script>` element with inline
     text, `eval`, `new Function` and `setTimeout` with a string;
@@ -225,8 +266,14 @@ that no AutoFill appears. That walk is a review step, recorded in the threat mod
   - a `<base>` element and a form submitted to another origin;
   - navigation: `location.href`, `location.assign`, a meta refresh and a link click;
   - `window.open`, and a link with `target=_blank`;
-  - host commands: `invoke('greet')`, `plugin:opener|open_url` and `plugin:event|listen`, each
-    expected to fail;
+  - host commands: `invoke('shell_probe_ungranted')`, a registered command with no grant,
+    plus `plugin:opener|open_url` and `plugin:event|listen`, each expected to be refused by the
+    ACL rather than missing;
+  - a web permission request (`getUserMedia`, `geolocation`, `Notification.requestPermission`),
+    a download by an `a[download]` click, `alert`, `confirm`, `prompt` and `print`, each expected
+    to be denied or to return without an engine dialog (R14);
+  - a worker from a `blob:` URL, a remote `<audio>` and a `data:` image, each expected to be
+    refused by the policy;
   - a `contextmenu` event, expected to be cancelled;
   - the demo's dialog and select opened and closed, so the policy's effect on styles shows.
 
@@ -234,7 +281,10 @@ that no AutoFill appears. That walk is a review step, recorded in the threat mod
   `securitypolicyviolation` event fired, or the side effect is absent, never just because the
   network failed.
 - **What the Rust side does**:
-  - counts `on_navigation` and `on_new_window` refusals;
+  - counts `on_navigation`, `on_new_window`, `on_permission_request` and `on_download` refusals;
+  - checks that the app still has exactly one webview window. On WKWebView and WebKitGTK, a
+    scripted `window.open` without a user gesture is refused before `on_new_window` is called,
+    so a window case holds when no second window exists, whether or not the handler ran;
   - reads the engine settings of R6 and R7 through `with_webview`;
   - waits for the report, at most 60 s;
   - prints one line per case and exits 0 only when every case holds.
@@ -242,8 +292,9 @@ that no AutoFill appears. That walk is a review step, recorded in the threat mod
   A navigation that succeeded would unload the probe, so a missing report also fails.
 - **CI.** The build job runs, on each system:
   - `pnpm --filter ./app build --mode probe`;
-  - `cargo build -p dashboard --release --features shell-probe --locked`;
-  - the binary, under `xvfb-run` on Linux.
+  - `cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked`;
+  - the binary with `DASHBOARD_PROBE=1`, under `xvfb-run` on Linux with
+    `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
 
   After that, `pnpm --filter ./app build` runs again, so the normal `dist` is what the rest of
   the job embeds.
@@ -280,7 +331,8 @@ the bundle tolerates it.
   - new windows;
   - a host command that is not listed;
   - developer tools in a release build;
-  - engine autofill and password saving.
+  - engine autofill and password saving, with the macOS limit of R7 stated;
+  - engine permissions, downloads and dialogs (R14).
 - **The open question on the content policy** is closed with this feature's answer.
 - **The assumption about the webview** says how each engine is patched:
   - WebView2 and WKWebView by their vendors;
@@ -305,9 +357,11 @@ The comment at `.github/workflows/ci.yml:27` cites constitution v2.6.1.
 
   On Linux, the apt step adds `xvfb`. `libwebkit2gtk-4.1-dev` stays, since WebKitGTK is the
   engine.
-- **`audit.yml`'s weekly run** gains a job that queries crates.io for `tauri-runtime-cef`. The job
-  fails, so it shows red, when a version without a pre-release tag exists. That tells the
-  maintainer the trial is due again (constitution v2.6.1).
+- **`audit.yml`'s weekly run** gains a job that queries crates.io for `tauri-runtime-cef`.
+  Decision record 0002 records the last version tried (none so far, since the trial was a desk
+  trial on alphas). The job fails, so it shows red, when a stable version newer than that one
+  exists. That tells the maintainer the trial is due again (constitution v2.6.1). Recording the
+  new trial updates the version and turns the job green.
 - **Cost.** The probe adds a release build of the app crate per system. That build reuses the
   workspace's cached dependencies, and the probe is expected to run in under a minute.
   `quickstart.md` records the measured times.
@@ -321,10 +375,33 @@ Decision 0001 is revisited with the installation item, its stated trigger.
 
 **Decision**: CONTRIBUTING's list of the security core gains the window's protections
 (constitution v2.6.1, Principle IX):
-- `app/src-tauri/src/window.rs`;
-- `app/src-tauri/capabilities/`;
+- `app/src-tauri/src/window.rs`, `lib.rs` (the `commands!` macro and the invoke handler) and
+  `probe.rs`;
+- `app/src-tauri/build.rs`, `permissions/` and `capabilities/`;
 - `app/src-tauri/window-surface.toml`;
-- the `app.security` block of `tauri.conf.json`;
-- `app/src-tauri/build.rs`'s app manifest.
+- `tauri.conf.json`'s `app.security` and `bundle` blocks, and the `tauri` features in
+  `app/src-tauri/Cargo.toml`;
+- `app/src/main.tsx`'s context-menu cancel and `app/vite.config.ts`'s development policy;
+- the tests that guard them: `app/src-tauri/tests/surface.rs`, `app/src/probe/` and the probe
+  step in `ci.yml`.
 
 This feature's pull request is reviewed line by line.
+
+## R14. What the engine itself grants or draws
+
+**Decision**:
+- **Permission requests.** `on_permission_request` (`webview_window.rs:475`) denies every one.
+  Without a handler, wry grants camera and microphone on macOS
+  (`wry-0.57.0/src/wkwebview/class/wry_web_view_ui_delegate.rs:164-166`), and WebView2 shows its
+  own prompt.
+- **Downloads.** `on_download` (`webview_window.rs:384`) returns `false`. wry allows downloads by
+  default, and on macOS they bypass the navigation handler.
+- **Engine dialogs.** An initialization script, run before any page script on every engine,
+  replaces `alert`, `confirm`, `prompt` and `print` with functions that do nothing:
+  - `confirm` returns `false`;
+  - `prompt` returns `null`.
+
+  The host UI renders no `<input type=file>`, and the declarative UI has no file component.
+
+**Rationale**: FR-021. These are dialogs and grants drawn by the engine outside the host frame,
+which Principles V and VII reserve to the host.

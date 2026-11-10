@@ -199,8 +199,8 @@ engine's settings read as off.
 
 ### User Story 6 - The maintainer knows the engine is current (Priority: P3)
 
-The maintainer can see which engine version each release ships on Linux, and learns when a
-security update for it is due. From the first public release, critical and high Chromium
+While the app embeds an engine on Linux, the maintainer can see which engine version each
+release ships, and learns when a security update for it is due. From the first public release, critical and high Chromium
 security fixes ship within 14 days of the release of Tauri's embedded-engine runtime that
 carries them; other fixes ship with the next regular release.
 
@@ -287,6 +287,11 @@ reports when the shipped version is behind a security release.
 - **FR-011**: Developer tools MUST be unavailable in release builds, by shortcut, by context menu
   and by any other means. Development builds keep them.
 - **FR-012**: Dropping a file or URL on the window MUST NOT open, load or read it.
+- **FR-021**: Content MUST NOT obtain anything the engine itself would grant or draw: every web
+  permission request (camera, microphone, location, notifications, clipboard and the rest) is
+  denied, no download starts, and no engine-drawn dialog appears: no `alert`, `confirm`,
+  `prompt`, print dialog or file picker. Such a dialog is drawn outside the host frame and is not
+  a host dialog (Principles V and VII).
 
 #### The engine on each system
 
@@ -308,14 +313,17 @@ reports when the shipped version is behind a security release.
   constitution v2.5.0, then v2.6.0 after that review.
 - **FR-016**: Each engine's form autofill and password saving MUST be off, on every system
   (criterion HS-26 in `docs/design/host-surfaces.md`).
-- **FR-017**: Each Linux release MUST name the embedded engine's version in its notes. A
-  scheduled check, at least weekly, MUST report when that version is behind a Chromium security
-  release, with its severity. From the first public release, a critical or high fix MUST ship
-  within 14 days of the release of Tauri's embedded-engine runtime that carries it.
+- **FR-017**: While the app embeds an engine on Linux, each Linux release MUST name the embedded
+  engine's version in its notes, and a scheduled check, at least weekly, MUST report when that
+  version is behind a Chromium security release, with its severity. From the first public
+  release, a critical or high fix MUST ship within 14 days of the release of Tauri's
+  embedded-engine runtime that carries it. While Linux uses the system WebKitGTK, the
+  distribution patches it, and a weekly check instead reports a new stable release of the
+  runtime, which makes the next trial due.
 
 #### Security tests and the threat model
 
-- **FR-018**: Every rule in FR-001, FR-005 to FR-012 and FR-016 MUST have a breaking test that
+- **FR-018**: Every rule in FR-001, FR-005 to FR-012, FR-016 and FR-021 MUST have a breaking test that
   runs against the built app on Windows, macOS and Linux in CI and fails if the rule is broken
   (Principle VIII).
 - **FR-019**: The threat model MUST close its open question about the content policy, describe
@@ -355,9 +363,10 @@ reports when the shipped version is behind a security release.
 - **SC-004**: The trial report states, for each requirement, whether the embedded engine meets it
   and on what evidence, and, for a trial that builds, the installer size and cold start-up time
   of each system.
-- **SC-005**: Every release's notes name the embedded engine's version. A security release newer
-  than it is reported within one week of its publication, and from the first public release no
-  critical or high fix waits more than 14 days after Tauri's runtime carries it.
+- **SC-005**: While an engine is embedded, every release's notes name its version, a security
+  release newer than it is reported within one week of its publication, and from the first
+  public release no critical or high fix waits more than 14 days after Tauri's runtime carries
+  it. While WebKitGTK is used, a stable runtime release is reported within one week.
 - **SC-006**: On each system, a password-shaped field draws no autofill offer and no offer to
   save.
 - **SC-007**: The threat model has no open question about the content policy, and each new row

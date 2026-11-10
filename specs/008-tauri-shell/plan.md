@@ -8,11 +8,13 @@
 
 The app's single window gets every protection in one reviewed place:
 - a release content policy that allows only the bundle and the host's channel;
-- an empty, reviewed list of capabilities and host commands, enforced by Tauri's ACL through an
-  app manifest and checked by a test;
+- an empty, reviewed list of capabilities and host commands. Tauri's ACL enforces it, through an
+  app manifest kept present by an empty default permission set, and a test checks it;
 - navigation and new windows refused;
 - developer tools and the engine's context menu off in release builds;
-- each engine's autofill and password saving off, with an incognito data store (HS-26).
+- each engine's autofill and password saving off, with an incognito data store (HS-26);
+- every web permission request denied, downloads refused, and engine dialogs (`alert`,
+  `confirm`, `prompt`, `print`) replaced.
 
 The template's opener plugin and `greet` command go. A `shell-probe` build, the release build
 plus one bundled script and one report command, tries every forbidden action inside the real
@@ -63,8 +65,8 @@ unchanged from today, measured in the quickstart.
 **Scale/Scope**:
 - 1 window;
 - 0 host commands and 0 permissions on the reviewed list;
-- about 30 probe cases;
-- 7 threat-model rows.
+- about 45 probe cases;
+- 8 threat-model rows.
 
 ## Constitution Check
 
@@ -74,17 +76,17 @@ constitution v2.6.1.
 | Principle or rule | Status | How |
 | --- | --- | --- |
 | I. WebAssembly-only plugins | Pass | No plugin code involved. |
-| II. Zero capabilities by default | Pass | The same rule applied to the window: an app manifest makes every host command need an explicit grant, and the window starts with none (R4). |
+| II. Zero capabilities by default | Pass | The same rule applied to the window. An empty default permission set keeps the app ACL manifest present, so every app command needs an explicit grant, and the surface test fails if the manifest disappears. The window starts with no grant (R4). |
 | III. External data only through connectors | Pass | The window can load nothing from the internet (R3). |
 | IV. Plugins never see secrets | Pass | Not touched. The engine keeps no credential (R7). |
 | V. Plugins stay inside the host frame | Pass, strengthened | No window, popup or navigation can come from content (R5), and no engine offers a password (R7, HS-26). |
 | VI. Human confirmation for AI actions | Pass | Not touched. |
 | VII. Trust decisions only in host dialogs | Pass, strengthened | Injected script, which could operate a host dialog, is refused by the policy (R3). The window can reach no host command (R4). |
-| VIII. Every security rule has a breaking test | Pass | Each rule has a probe case or a test (R4, R6, R8). The macOS AutoFill residual has an automated settings check plus a recorded review step (R7). |
-| IX. Human review of the security core | Pass | The window's protections are core since v2.6.0. They live in the files R13 lists, which CONTRIBUTING gains, and this pull request is reviewed line by line. |
+| VIII. Every security rule has a breaking test | Pass, with one limit recorded | Each rule has a probe case or a test (R4, R6, R8, R14). The probe is built as `tauri build` builds, with `tauri/custom-protocol`. One limit: on macOS, whether the system offers password AutoFill has no automated test, because no API or WebDriver reaches it. Tests cover the incognito store and the absence of the entitlement that enables it, and a review step covers the offer itself (R7, Complexity Tracking). |
+| IX. Human review of the security core | Pass | The window's protections are core since v2.6.0. They live in the files R13 lists, the tests that guard them included, which CONTRIBUTING gains, and this pull request is reviewed line by line. |
 | Fixed decisions: Tauri 2 and React | Pass | Unchanged. |
 | Fixed decision: the window engine | Pass, through the fallback | WebView2 and WKWebView as decided. On Linux, WebKitGTK under the v2.6.1 fallback, after the desk trial (R1, decision record 0002). The weekly watch (R11) triggers the next trial at each stable release of the runtime. |
-| Engine security duties (14 days, weekly check, version in releases) | Not yet applicable | They apply "while the app embeds the engine". WebKitGTK is patched by the distribution (R1). |
+| Engine security duties (14 days, weekly check, version in releases) | Not yet applicable | They apply "while the app embeds the engine", as the spec's FR-017 now says too. WebKitGTK is patched by the distribution (R1). |
 | CI on three systems, audit duties | Pass | The probe runs on all three. `cargo audit`, `cargo deny`, `pnpm audit` and the license check continue. |
 | Phase gates | Pass | Phases 1 and 2 have passed. |
 
@@ -114,7 +116,7 @@ specs/008-tauri-shell/
 ```text
 app/
 ├── package.json                 # − @tauri-apps/plugin-opener
-├── vite.config.ts               # assetsInlineLimit 0; `probe` mode adds src/probe/run.ts
+├── vite.config.ts               # assetsInlineLimit 0; development policy in server.headers; `probe` mode adds src/probe/run.ts
 ├── index.html
 ├── src/
 │   ├── main.tsx                 # cancels the engine's context menu in release
@@ -122,15 +124,16 @@ app/
 │   └── probe/run.ts             # probe cases (bundled only in `probe` mode)
 └── src-tauri/
     ├── Cargo.toml               # − tauri-plugin-opener; + feature shell-probe
-    ├── build.rs                 # AppManifest with no commands
-    ├── tauri.conf.json          # app.windows []; app.security: csp, devCsp, freezePrototype
+    ├── build.rs                 # AppManifest: the app's commands (+ the probe's, with the feature)
+    ├── permissions/default.toml # an empty default set, so the app ACL manifest exists
+    ├── tauri.conf.json          # app.windows []; app.security: csp, freezePrototype
     ├── capabilities/default.json   # "permissions": []
     ├── window-surface.toml      # the reviewed list (empty, with how to add)
     ├── src/
     │   ├── lib.rs               # builds the window in setup; commands! macro
     │   ├── window.rs            # every window protection (security core)
-    │   └── probe.rs             # cfg(feature = "shell-probe"): report command, settings reads, exit
-    └── tests/surface.rs         # list vs capabilities, commands, plugins; release has no devtools
+    │   └── probe.rs             # cfg(feature = "shell-probe"): report and ungranted commands, reads, exit
+    └── tests/surface.rs         # list vs capabilities, commands, plugins; app ACL present; no devtools; no macOS web-credential entitlements
 docs/
 ├── decisions/0002-linux-window-engine.md   # the desk trial and when to repeat it
 └── threat-model.md              # B7, rows, webview assumption, diagram, CSP question closed
@@ -145,4 +148,6 @@ place to read. The probe is a feature of the same crate, so it builds the same c
 
 ## Complexity Tracking
 
-No violations to justify.
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| macOS password AutoFill has no end-to-end breaking test (Principle VIII) | WKWebView has no public API to turn it off or read it, and Apple ships no WebDriver for WKWebView to observe the system's AutoFill UI | A paid or unproven third-party macOS driver would put the security test on code outside the project's review. The project controls the incognito store and the entitlement, and tests both. The offer itself is a review step in the quickstart, and the threat model records the gap. |
