@@ -142,7 +142,7 @@ Every story builds on these.
     every line and exits 1 if any failed (`contracts/outputs.md`, "Commands").
   - `gen` writes nothing when the project checker reports an error.
   - Wire only the parser for now. Later tasks add their checks to the list.
-- [ ] T009 Write the first `DESIGN.md` at the root, in format 0.4.0 (`contracts/design-md.md`):
+- [X] T009 Write the first `DESIGN.md` at the root, in format 0.4.0 (`contracts/design-md.md`):
   - **Front matter:** `version: alpha`, `name: Dashboard`, `description`, and the colors.
     - Every role in `app/src/index.css` today, with today's light value and its dark value as
       `<role>-dark`. Values are not fixed yet: US2 fixes them.
