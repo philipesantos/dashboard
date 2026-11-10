@@ -375,7 +375,7 @@ change in a register the move can empty.
 **Goal**: while Linux uses WebKitGTK, a stable runtime release is reported within a week
 (FR-017).
 
-- [ ] T022 [US6] Add a `cef-watch` job to `.github/workflows/audit.yml`, with no checkout of
+- [X] T022 [US6] Add a `cef-watch` job to `.github/workflows/audit.yml`, with no checkout of
   secrets:
   - it reads the last version tried from `docs/decisions/0002-linux-window-engine.md`;
   - it queries `https://crates.io/api/v1/crates/tauri-runtime-cef` with a generic user agent;
