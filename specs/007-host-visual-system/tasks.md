@@ -189,7 +189,7 @@ fails `check`, naming the token.
     - `.dark`.
   - The radius steps use the multipliers 0.6, 0.8, 1, 1.4, 1.8, 2.2 and 2.6 of `--radius`.
   - Changing `rounded.base` in a fixture changes only `--radius`.
-- [ ] T011 [P] [US1] Write `design/test/drift.test.ts`. A committed file that differs in two
+- [X] T011 [P] [US1] Write `design/test/drift.test.ts`. A committed file that differs in two
   values reports one line for each, as
   `app/src/theme.generated.css: --<role> differs from DESIGN.md (run pnpm --filter ./design gen)`.
   A file that differs only in `\r\n` passes.
