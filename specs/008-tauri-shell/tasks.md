@@ -408,7 +408,7 @@ change in a register the move can empty.
   Run `pnpm --filter ./design check`. Its criteria step reads only B4 rows, so B7 rows do not
   need `HS-` ids; confirm it passes.
 - [X] T024 [P] Update the comment at `.github/workflows/ci.yml:27` to cite constitution v2.6.1.
-- [ ] T025 [P] Update `CONTRIBUTING.md`:
+- [X] T025 [P] Update `CONTRIBUTING.md`:
   - **Security core:** the list gains the window's protections (research R13).
   - **The probe:** a short "The window's protections" section: what the probe is, how to run it
     locally (contracts/probe.md's four commands), and that a new host command needs the three

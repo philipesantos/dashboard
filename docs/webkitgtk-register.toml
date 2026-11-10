@@ -35,3 +35,9 @@ id = "probe-download-as-navigation"
 files = ["app/src/probe/engine.ts"]
 reason = "WebKitGTK turns a download link to another bundled file into a navigation, which on_navigation refuses before on_download is reached, so the download-link case also accepts a navigation refusal."
 removal = "Require an on_download refusal, unless the embedded engine also treats the click as a navigation."
+
+[[entry]]
+id = "cef-watch"
+files = [".github/workflows/audit.yml"]
+reason = "While Linux uses WebKitGTK, the weekly audit reports a stable tauri-runtime-cef release, which makes the next engine trial due (FR-017)."
+removal = "Replace with the weekly check that the embedded engine is current with Chromium's security releases (FR-017)."

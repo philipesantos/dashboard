@@ -22,6 +22,9 @@ const TRIPWIRE: &[&str] = &[
     "useragent",
     "navigator.platform",
 ];
+/// Names of the register's own bookkeeping, which mention the engine without being a change for
+/// it; removed from a line before the tripwire looks at it.
+const BOOKKEEPING: &[&str] = &["webkitgtk-register", "webkitgtk_register", "webkitgtk-only"];
 /// How many lines above a matching line a marker may sit.
 const MARKER_REACH: usize = 3;
 
@@ -130,7 +133,10 @@ fn the_register_matches_the_markers() {
                 found.entry(id).or_default().insert(path.clone());
             }
             if in_tripwire_scope(&path) {
-                let lower = line.to_lowercase();
+                let mut lower = line.to_lowercase();
+                for name in BOOKKEEPING {
+                    lower = lower.replace(name, "");
+                }
                 if let Some(sign) = TRIPWIRE.iter().find(|sign| lower.contains(*sign)) {
                     let from = index.saturating_sub(MARKER_REACH);
                     if !lines[from..=index]

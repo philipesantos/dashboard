@@ -47,6 +47,9 @@ above it:
 | A Linux-only build condition in the app | `target_os = "linux"` (in `#[cfg]`, `cfg!` and Cargo target tables alike) |
 | Engine sniffing in the UI | `userAgent`, `navigator.platform` |
 
+The register's own names (`webkitgtk-register`, `WEBKITGTK-ONLY`) are bookkeeping, not changes
+for the engine, so they are removed from a line before it is matched.
+
 A match that is not a WebKitGTK-only change, such as a Linux condition the embedded engine also
 needs, still gets an entry, with "Keep" as its removal and the reason it stays. A comment about
 code the macOS engine shares names the engines by system ("the macOS and Linux engines"), not

@@ -179,17 +179,69 @@ to your global gitignore or to `.git/info/exclude`.
 
 You do not need Spec Kit to read or edit a spec: specs are plain Markdown.
 
+### The window's protections
+
+The host window loads only the app's bundle and can reach no host command unless the reviewed
+list says so (`specs/008-tauri-shell/`). Three things keep it that way.
+
+**The shell probe** is the release build plus one page module and two commands. Inside the real
+page it tries every forbidden action (injected script, loads from the internet, navigation, new
+windows, host commands, engine permissions, downloads and dialogs) and reads each engine's
+settings, then exits non-zero if anything was allowed. CI runs it on all three systems. Locally:
+
+```bash
+pnpm --filter ./app build --mode probe          # adds src/probe/run.ts to the page
+cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked
+DASHBOARD_PROBE=1 ./target/release/dashboard    # on Linux: xvfb-run -a, with
+                                                # WEBKIT_DISABLE_DMABUF_RENDERER=1 (needs xvfb)
+pnpm --filter ./app build                       # put the normal dist back
+```
+
+It prints `probe: running <id>` before each case, one `held` or `broken` line per case, and a
+summary. A missing report after 60 s means a case unloaded or blocked the page: the last
+`running` line names it. Add a case under `app/src/probe/` whenever you add a protection.
+
+**The reviewed list.** `app/src-tauri/window-surface.toml` lists every permission, command and
+Tauri plugin the window may use, each with its reason, and `tests/surface.rs` fails when the
+list and the app disagree. To add a host command, follow the three steps in that file's comment.
+
+**Run-time styles carry the nonce.** The content policy refuses a `<style>` element without the
+response's nonce. A Radix or shadcn component that draws one takes `nonce={getNonce()}` (from
+`get-nonce`), and `shadcn add` must not drop it: `tests/style_nonce.rs` fails otherwise.
+
+**WebKitGTK-only changes are registered.** While Linux draws the window with WebKitGTK
+([decision 0002](docs/decisions/0002-linux-window-engine.md)), anything you add only because of
+it, in code, configuration, dependencies, CI or the UI, gets a `WEBKITGTK-ONLY(<id>)` comment
+where it is made and an entry in [`docs/webkitgtk-register.toml`](docs/webkitgtk-register.toml),
+so the move to the embedded engine can remove it. `tests/webkitgtk_register.rs` fails when the
+two disagree, or when a line in `app/` or `.github/` names the engine with no marker nearby. It
+cannot see a change that never names the engine, such as a CSS value picked for how WebKitGTK
+draws, so reviewers ask about those. Code the macOS engine shares is not WebKitGTK-only; name
+the engines by system in its comments.
+
 ## Security rules for every change
 
 - A change that adds or touches a security rule comes with an automated test that fails when
   the rule is broken. The security test suite only grows: do not delete or weaken its tests.
 - Changes to the security core (plugin runtime, permission engine, connector engine and
   network proxy, plugin storage in `runtime/src/storage/`, the secrets vault in
-  `runtime/src/vault/` with the accounts and the sign-in, and the official connector catalog
-  in `connectors/`) get
+  `runtime/src/vault/` with the accounts and the sign-in, the official connector catalog
+  in `connectors/`, and the window's protections listed below) get
   line-by-line human review before merge, including code written with AI help.
   They always go through a pull request, even when a maintainer could push to `master`
   directly, and the pull request records who reviewed them.
+- The window's protections, in the security core since constitution v2.6.0:
+  - `app/src-tauri/src/window.rs`, `lib.rs` (the `commands!` macro and the invoke handler),
+    `commands.rs` and `probe.rs`;
+  - `app/src-tauri/build.rs`, `permissions/` and `capabilities/`;
+  - `app/src-tauri/window-surface.toml`;
+  - `tauri.conf.json`'s `app.security` and `bundle` blocks, and the `tauri` features in
+    `app/src-tauri/Cargo.toml`;
+  - `app/index.html`'s empty `<style>`, and in `app/src/main.tsx` the nonce hand-off and the
+    context-menu cancel; the `nonce` props in `app/src/components/ui/`;
+  - `app/vite.config.ts`'s development policy;
+  - the tests that guard them: `app/src-tauri/tests/surface.rs` and `style_nonce.rs`,
+    `app/src/probe/` and the probe step in `ci.yml`.
 - New Rust dependencies must come from crates.io and use a license allowed in
   [`deny.toml`](deny.toml); `cargo deny check` enforces both.
 

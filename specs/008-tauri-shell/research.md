@@ -472,6 +472,7 @@ The entries this feature starts with:
 | `ci-dmabuf` | `ci.yml`'s probe step | WebKitGTK's DMA-BUF renderer fails under `xvfb` (R8) | Delete |
 | `probe-devtools-read` | `probe.rs`, and the `webkit2gtk` dependency in `app/src-tauri/Cargo.toml` | The `devtools-setting` case reads `enable-developer-extras` (T016) | Replace with the embedded engine's read |
 | `probe-ephemeral-read` | `probe.rs` | The `store-incognito` case reads the ephemeral session (T019) | Replace with the embedded engine's read |
+| `cef-watch` | `audit.yml` | While Linux uses WebKitGTK, the weekly job reports a stable `tauri-runtime-cef` (T022) | Replace with the weekly Chromium security check of FR-017 |
 | `probe-download-as-navigation` | `app/src/probe/engine.ts` | WebKitGTK turns a download link into a navigation, which `on_navigation` refuses first, so `download-link` also accepts that refusal (T018) | Require an `on_download` refusal, unless the new engine does the same |
 
 The register lists only what is specific to WebKitGTK. Code shared with WKWebView, such as the

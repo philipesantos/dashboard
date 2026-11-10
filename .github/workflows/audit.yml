@@ -51,6 +51,7 @@ jobs:
       # Fails at high and above; see the pnpm-audit job in ci.yml
       - run: pnpm audit --audit-level high
 
+  # WEBKITGTK-ONLY(cef-watch): only while Linux uses WebKitGTK; the move replaces it.
   # While Linux draws the window with WebKitGTK, a stable release of Tauri's embedded-Chromium
   # runtime makes the next engine trial due (constitution v2.6.1; specs/008-tauri-shell, FR-017;
   # docs/decisions/0002-linux-window-engine.md). This fails, naming the version, when one exists
