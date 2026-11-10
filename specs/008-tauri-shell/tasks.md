@@ -62,7 +62,7 @@ probe step in `ci.yml`, is core (research R13). The pull request gets line-by-li
 
 **⚠️ CRITICAL**: no story can begin until this phase is complete
 
-- [ ] T002 Build the window in Rust (research R2):
+- [X] T002 Build the window in Rust (research R2):
   - set `app.windows` to `[]` in `app/src-tauri/tauri.conf.json`;
   - create `app/src-tauri/src/window.rs` with `pub fn build(app: &tauri::App)`, which builds the
     `main` window with `WebviewWindowBuilder` (`WebviewUrl::App("index.html".into())`, the
