@@ -214,7 +214,7 @@ fails `check`, naming the token.
   - Run the pinned checker as `node node_modules/@google/design.md/dist/index.js lint DESIGN.md`,
     resolved from the `design` package with `import.meta.resolve`, never `npx`.
   - Parse its JSON report, then fail on its errors and print its warnings. Pass T012.
-- [ ] T017 [US1] Copy the OFL-1.1 license text of each font into `app/public/licenses/fonts/`:
+- [X] T017 [US1] Copy the OFL-1.1 license text of each font into `app/public/licenses/fonts/`:
   - `figtree.txt`, from `app/node_modules/@fontsource-variable/figtree/LICENSE`;
   - `bricolage-grotesque.txt`;
   - `ibm-plex-mono.txt`.
