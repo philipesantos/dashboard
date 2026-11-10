@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Context } from '../cli.ts';
-import { generateCss, THEME_FILE } from '../generate.ts';
+import { generateCss, THEME_FILE, WIDGET_MAP_FILE, widgetMapJson } from '../generate.ts';
 
 const HINT = '(run pnpm --filter ./design gen)';
 
@@ -58,6 +58,39 @@ function read(path: string): string | undefined {
   return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
 }
 
+/** Compares the committed widget map with the expected one, naming each entry that differs. */
+export function compareJson(file: string, committed: string | undefined, expected: string): string[] {
+  if (committed === undefined) return [`${file}: missing ${HINT}`];
+  const actual = committed.replace(/\r\n/g, '\n');
+  if (actual === expected) return [];
+  let have: Record<string, unknown>;
+  try {
+    have = JSON.parse(actual);
+  } catch {
+    return [`${file}: is not valid JSON ${HINT}`];
+  }
+  const want = JSON.parse(expected) as Record<string, unknown>;
+  const lines: string[] = [];
+  for (const key of new Set([...Object.keys(want), ...Object.keys(have)])) {
+    const w = want[key];
+    const h = have[key];
+    if (typeof w === 'object' && w !== null && !Array.isArray(w) && typeof h === 'object' && h !== null && !Array.isArray(h)) {
+      for (const name of new Set([...Object.keys(w), ...Object.keys(h)])) {
+        const a = JSON.stringify((w as Record<string, unknown>)[name]);
+        const b = JSON.stringify((h as Record<string, unknown>)[name]);
+        if (a !== b) lines.push(`${file}: ${key}.${name} differs from DESIGN.md ${HINT}`);
+      }
+    } else if (JSON.stringify(w) !== JSON.stringify(h)) {
+      lines.push(`${file}: ${key} differs from DESIGN.md ${HINT}`);
+    }
+  }
+  if (lines.length === 0) lines.push(`${file}: differs from what DESIGN.md generates ${HINT}`);
+  return lines;
+}
+
 export function checkDrift(ctx: Context): string[] {
-  return compareCss(THEME_FILE, read(join(ctx.root, THEME_FILE)), generateCss(ctx.design));
+  return [
+    ...compareCss(THEME_FILE, read(join(ctx.root, THEME_FILE)), generateCss(ctx.design)),
+    ...compareJson(WIDGET_MAP_FILE, read(join(ctx.root, WIDGET_MAP_FILE)), widgetMapJson(ctx.design)),
+  ];
 }

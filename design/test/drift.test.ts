@@ -47,3 +47,13 @@ test('a missing file is named', () => {
     `${FILE}: missing (run pnpm --filter ./design gen)`,
   ]);
 });
+
+test('the widget map names each tone or variant that differs', async () => {
+  const { compareJson } = await import('../src/checks/drift.ts');
+  const expected = `${JSON.stringify({ generatedFrom: 'DESIGN.md', tones: { ok: { text: 'ok' } }, variants: { 'button.primary': { fill: 'primary' } } }, null, 2)}\n`;
+  const committed = expected.replace('"fill": "primary"', '"fill": "frame-header"');
+  assert.deepEqual(compareJson('design/widget-map.generated.json', committed, expected), [
+    'design/widget-map.generated.json: variants.button.primary differs from DESIGN.md (run pnpm --filter ./design gen)',
+  ]);
+  assert.deepEqual(compareJson('design/widget-map.generated.json', expected.replace(/\n/g, '\r\n'), expected), []);
+});

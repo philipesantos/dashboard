@@ -88,12 +88,14 @@ docs/design/host-surfaces.md: HS-07 has no "Feature:" line
     "ok": { "text": "ok", "icon": "circle-check" }
   },
   "variants": {
-    "button.primary": { "text": "primary-foreground", "fill": "primary", "rounded": "md" }
-  }
+    "button.primary": { "text": "primary-foreground", "fill": "primary", "rounded": "lg" }
+  },
+  "elevation": ["flat"]
 }
 ```
 
-It contains role and token names only, never values and never a host-only role. The future kit
+It contains role and token names only, never values and never a host-only role or level.
+`gen` refuses to write it when the host-only step fails. The future kit
 turns a role into `var(--<role>)`.
 
 ## `docs/design/host-surfaces.md`

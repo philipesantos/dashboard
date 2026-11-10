@@ -1,8 +1,42 @@
 // Writes the app's theme from DESIGN.md (specs/007-host-visual-system/contracts/outputs.md).
 
-import type { Design } from './parse.ts';
+import type { Design, StyleMap } from './parse.ts';
 
 export const THEME_FILE = 'app/src/theme.generated.css';
+export const WIDGET_MAP_FILE = 'design/widget-map.generated.json';
+
+/** What the declarative UI kit reads: role and token names only, never a value. */
+export interface WidgetMap {
+  generatedFrom: 'DESIGN.md';
+  unknownTone: string | undefined;
+  tones: Record<string, StyleMap>;
+  variants: Record<string, StyleMap>;
+  /** The elevation levels widget content may use. */
+  elevation: string[];
+}
+
+const MAP_KEYS = ['text', 'fill', 'border', 'icon', 'rounded', 'spacing', 'typography'] as const;
+
+function pick(style: StyleMap): StyleMap {
+  const out: StyleMap = {};
+  for (const key of MAP_KEYS) if (style[key] !== undefined) out[key] = String(style[key]);
+  return out;
+}
+
+export function generateWidgetMap(design: Design): WidgetMap {
+  const r = design.rules;
+  return {
+    generatedFrom: 'DESIGN.md',
+    unknownTone: r.unknownTone,
+    tones: Object.fromEntries(Object.entries(r.tones ?? {}).map(([k, v]) => [k, pick(v)])),
+    variants: Object.fromEntries(Object.entries(r.variants ?? {}).map(([k, v]) => [k, pick(v)])),
+    elevation: Object.entries(r.elevation ?? {}).filter(([, e]) => !e.hostOnly).map(([k]) => k),
+  };
+}
+
+export function widgetMapJson(design: Design): string {
+  return `${JSON.stringify(generateWidgetMap(design), null, 2)}\n`;
+}
 
 /** shadcn's radius steps, as multipliers of `--radius`. */
 export const RADIUS_STEPS: [string, number][] = [

@@ -360,7 +360,7 @@ by name, and `design/widget-map.generated.json` holds no host-only role.
     - `unknownTone: default`;
     - the variants of `text`, `list`, `table`, `chart`, `button` and `form`, each mapping to
       shared roles only, and to `rounded` steps, spacing and typography.
-- [ ] T030 [US3] Implement `design/src/checks/hostonly.ts`, and extend `design/src/generate.ts`
+- [X] T030 [US3] Implement `design/src/checks/hostonly.ts`, and extend `design/src/generate.ts`
   to write `design/widget-map.generated.json` (`contracts/outputs.md`). Extend the drift check
   to cover it. Pass T028.
 - [ ] T031 [US3] Run `gen` and `check`, and confirm the map lists every tone and variant and no

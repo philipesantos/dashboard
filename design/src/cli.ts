@@ -8,11 +8,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDesign, type Design } from './parse.ts';
-import { generateCss, THEME_FILE } from './generate.ts';
+import { generateCss, THEME_FILE, WIDGET_MAP_FILE, widgetMapJson } from './generate.ts';
 import { checkContrast } from './checks/contrast.ts';
 import { checkDrift } from './checks/drift.ts';
 import { checkFonts } from './checks/fonts.ts';
 import { checkFormat } from './checks/format.ts';
+import { checkHostOnly } from './checks/hostonly.ts';
 import { checkSchema } from './checks/schema.ts';
 import { checkUsage } from './checks/usage.ts';
 
@@ -34,6 +35,7 @@ const CHECKS: [string, Check][] = [
   ['project layer', (ctx) => [...ctx.design.errors, ...checkSchema(ctx)]],
   ['contrast and coverage', checkContrast],
   ['color usage in app/src', checkUsage],
+  ['host-only', checkHostOnly],
   ['drift', checkDrift],
   ['font licenses', checkFonts],
 ];
@@ -69,13 +71,15 @@ async function main(command: string | undefined): Promise<number> {
     }
     case 'gen': {
       const ctx = load();
-      const errors = [...ctx.design.errors, ...checkSchema(ctx)];
+      // Never write what widget content could use to reach a host surface.
+      const errors = [...ctx.design.errors, ...checkSchema(ctx), ...checkHostOnly(ctx)];
       if (errors.length > 0) {
         for (const line of errors) console.error(line);
         return 1;
       }
       writeFileSync(join(ctx.root, THEME_FILE), generateCss(ctx.design));
-      console.log(`wrote ${THEME_FILE}`);
+      writeFileSync(join(ctx.root, WIDGET_MAP_FILE), widgetMapJson(ctx.design));
+      console.log(`wrote ${THEME_FILE} and ${WIDGET_MAP_FILE}`);
       return 0;
     }
     case 'preview':
