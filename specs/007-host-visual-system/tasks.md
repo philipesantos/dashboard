@@ -178,7 +178,7 @@ fails `check`, naming the token.
 
 ### Tests for User Story 1
 
-- [ ] T010 [P] [US1] Write `design/test/generate.test.ts`, with fixtures in
+- [X] T010 [P] [US1] Write `design/test/generate.test.ts`, with fixtures in
   `design/test/fixtures/generate/`.
   - The generated CSS has the three blocks of `contracts/outputs.md`, in `DESIGN.md`'s role
     order:
