@@ -347,7 +347,7 @@ by name, and `design/widget-map.generated.json` holds no host-only role.
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] Add the remaining `design-rules` blocks to `DESIGN.md`:
+- [X] T029 [US3] Add the remaining `design-rules` blocks to `DESIGN.md`:
   - **Colors:** `hostOnly`, listing `sidebar`, `frame`, `dialog`, `scrim` and `ring`, with the
     reason in the prose. The prose says the split is by role, not color (research R6).
   - **Elevation & Depth:** `flat`, then `frame`, `raised` and `dialog`, the last three host-only,

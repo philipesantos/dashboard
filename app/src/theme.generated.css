@@ -65,6 +65,10 @@
     --text-xl--line-height: calc(1.75 / 1.25);
     --text-2xl: 1.5rem;
     --text-2xl--line-height: calc(2 / 1.5);
+    --shadow-flat: var(--elevation-flat);
+    --shadow-frame: var(--elevation-frame);
+    --shadow-raised: var(--elevation-raised);
+    --shadow-dialog: var(--elevation-dialog);
 }
 
 :root {
@@ -110,6 +114,10 @@
     --dialog-foreground: oklch(0.19 0.02 255);
     --scrim: oklch(0 0 0 / 10%);
     --radius: 0.625rem;
+    --elevation-flat: none;
+    --elevation-frame: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    --elevation-raised: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --elevation-dialog: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
 .dark {
@@ -154,4 +162,8 @@
     --dialog: oklch(0.23 0.015 255);
     --dialog-foreground: oklch(0.96 0.006 250);
     --scrim: oklch(0 0 0 / 50%);
+    --elevation-flat: none;
+    --elevation-frame: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    --elevation-raised: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --elevation-dialog: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }

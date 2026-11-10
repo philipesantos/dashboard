@@ -346,6 +346,23 @@ kept separate so the chrome can change without moving widget content.
 - **dialog-foreground**: text in a dialog.
 - **scrim**: the layer between a dialog and the rest of the window.
 
+### What only the host draws
+
+The chrome (`sidebar*`), the frame (`frame*`), host dialogs (`dialog*` and `scrim`) and the focus
+style (`ring`) are host-only: no tone or variant of widget content may resolve to them, and
+`check` fails if one does. The split is by role, not by color. `sidebar-primary` holds the same
+value as `primary`, and widget content may use the accent; what tells a host surface apart is its
+place and, for a dialog, its form, never a color no widget can reach.
+
+```design-rules
+hostOnly:
+  - sidebar
+  - frame
+  - dialog
+  - scrim
+  - ring
+```
+
 ### Pairings
 
 Every foreground is checked on what it is drawn on, in both themes, by
@@ -473,7 +490,34 @@ here changed nothing on screen.
 
 ## Elevation & Depth
 
-Depth is mostly carried by surface lightness. Shadows are reserved for what floats.
+Depth is mostly carried by surface lightness. Shadows are reserved for what floats, and every
+level above `flat` is the host's: widget content cannot raise anything above its frame.
+
+- **flat**: widget content and everything inside a frame. No shadow.
+- **frame**: the widget frame on the dashboard grid, Tailwind's `shadow-sm`, just enough to lift
+  it off `background`.
+- **raised**: the host's menus, selects and popovers, Tailwind's `shadow-md`.
+- **dialog**: host dialogs above the scrim, Tailwind's `shadow-lg`, the deepest level.
+
+The levels start at Tailwind's values so moving them here changed nothing on screen. The active
+tab's slight lift is a control's detail, not a level, and keeps Tailwind's `shadow-sm`.
+
+```design-rules
+elevation:
+  flat: { shadow: none, dark: none }
+  frame:
+    shadow: "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)"
+    dark: "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)"
+    hostOnly: true
+  raised:
+    shadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)"
+    dark: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)"
+    hostOnly: true
+  dialog:
+    shadow: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)"
+    dark: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)"
+    hostOnly: true
+```
 
 ## Shapes
 
@@ -520,6 +564,41 @@ The form has no password or masked field.
 
 - **form-input**: a text field, edged with `input` so it is found without its label.
 - **form-label**: a field's label.
+
+### Tones and variants
+
+A tone colors text: `default`, `muted`, `accent`, and the three statuses `ok`, `warning` and
+`error`, each drawn with its icon from the app's lucide set. A name the host does not know draws
+as `default`, and the host records it in the plugin's log. A variant is one of the entries above,
+named `component.variant`; `rounded` names a step derived from **base**, and `spacing` and
+`typography` name tokens. The generator writes these, with role names only, to
+`design/widget-map.generated.json`, the only styling the declarative UI kit can reach.
+
+```design-rules
+tones:
+  default: { text: foreground }
+  muted: { text: muted-foreground }
+  accent: { text: primary }
+  ok: { text: ok, icon: circle-check }
+  warning: { text: warning, icon: triangle-alert }
+  error: { text: destructive, icon: circle-x }
+unknownTone: default
+variants:
+  text.default: { text: foreground, typography: body-sm }
+  text.muted: { text: muted-foreground, typography: body-sm }
+  text.heading: { text: foreground, typography: heading }
+  list.default: { text: foreground, border: border, spacing: control-gap, typography: body-sm }
+  table.header: { text: muted-foreground, typography: body-sm }
+  table.row: { text: foreground, border: border, typography: body-sm }
+  chart.default: { text: muted-foreground, typography: body-xs }
+  button.primary: { text: primary-foreground, fill: primary, rounded: lg, spacing: control-gap, typography: body-sm }
+  button.secondary: { text: secondary-foreground, fill: secondary, rounded: lg, spacing: control-gap, typography: body-sm }
+  button.outline: { text: foreground, fill: background, border: input, rounded: lg, spacing: control-gap, typography: body-sm }
+  button.ghost: { text: foreground, rounded: lg, spacing: control-gap, typography: body-sm }
+  button.destructive: { text: destructive, fill: destructive/10, rounded: lg, spacing: control-gap, typography: body-sm }
+  form.input: { text: foreground, fill: background, border: input, rounded: lg, typography: body-sm }
+  form.label: { text: foreground, typography: body-sm }
+```
 
 ## Do's and Don'ts
 
