@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDesign, type Design } from './parse.ts';
 import { generateCss, THEME_FILE } from './generate.ts';
+import { checkContrast } from './checks/contrast.ts';
 import { checkDrift } from './checks/drift.ts';
 import { checkFonts } from './checks/fonts.ts';
 import { checkFormat } from './checks/format.ts';
@@ -30,6 +31,7 @@ export type Check = (ctx: Context) => string[] | Promise<string[]>;
 const CHECKS: [string, Check][] = [
   ['format (design.md 0.4.0)', checkFormat],
   ['project layer', (ctx) => [...ctx.design.errors, ...checkSchema(ctx)]],
+  ['contrast and coverage', checkContrast],
   ['drift', checkDrift],
   ['font licenses', checkFonts],
 ];
@@ -44,13 +46,14 @@ async function runChecks(ctx: Context): Promise<number> {
   for (const [name, check] of CHECKS) {
     const lines = await check(ctx);
     for (const line of lines) {
-      if (line.startsWith('warning: ')) console.warn(line);
+      if (line.startsWith('info: ')) console.log(line);
+      else if (line.startsWith('warning: ')) console.warn(line);
       else {
         console.error(line);
         failures++;
       }
     }
-    if (!lines.some((l) => !l.startsWith('warning: '))) console.log(`ok: ${name}`);
+    if (!lines.some((l) => !l.startsWith('warning: ') && !l.startsWith('info: '))) console.log(`ok: ${name}`);
   }
   return failures;
 }
