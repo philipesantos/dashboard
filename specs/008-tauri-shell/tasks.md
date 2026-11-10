@@ -390,7 +390,7 @@ change in a register the move can empty.
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T023 Update `docs/threat-model.md` (research R10, FR-019):
+- [X] T023 Update `docs/threat-model.md` (research R10, FR-019):
   - **Boundary:** add B7 "Host window ↔ host core".
   - **Rows:** 8 rows on B7 in Phase 3, each citing its probe case or test:
     - injected script;

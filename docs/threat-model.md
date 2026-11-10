@@ -1,7 +1,7 @@
 # Threat model v0
 
-Status: draft, 2026-10-21, revised 2026-10-23 for connectors (feature 003) and 2026-10-25 for
-credentials (feature 005). It describes the
+Status: draft, 2026-10-21, revised 2026-10-23 for connectors (feature 003), 2026-10-25 for
+credentials (feature 005) and 2026-11-10 for the desktop shell (feature 008). It describes the
 planned architecture; many components do not exist yet. Revisit it at every phase gate and whenever a new component crosses a trust boundary.
 
 The rules referenced as I–IX are the principles of the
@@ -18,7 +18,7 @@ flowchart TB
             generated["AI-generated module"]
         end
         subgraph host["Host: trusted"]
-            ui["Host UI (React in the Tauri webview)"]
+            ui["Host UI (React in the system webview: WebView2, WKWebView, WebKitGTK)"]
             dialogs["Host dialogs: install, permissions, accounts, AI actions"]
             perm["Permission engine"]
             vault["Secrets vault"]
@@ -84,6 +84,7 @@ code, which the host runs, with a fixed destination and typed parameters the hos
 | B4 | Plugin UI ↔ user | Widget content | Declarative UI inside the host frame, no password fields, no windows or dialogs (V); a host dialog covers the chrome and every frame, makes the rest of the window inert, holds keyboard focus and is all that assistive technology sees, which widget content cannot do |
 | B5 | AI ↔ host | Prompts out, model output in | Output treated as untrusted: safe rendering, taint tracking, human confirmation of actions (VI); trust decisions only in host dialogs (VII) |
 | B6 | Distribution ↔ host | Plugin packages, app updates | ed25519 signatures, hash check on install, revocation list, signed updater |
+| B7 | Host window ↔ host core | Host commands the page calls; what the engine would grant, open or draw for the page | The reviewed list `app/src-tauri/window-surface.toml`, enforced by Tauri's ACL; the release content policy; the window's handlers and engine settings in `app/src-tauri/src/window.rs` (feature 008). Breaking tests: the shell probe, run inside the release build on the three systems, and `app/src-tauri/tests/surface.rs` |
 
 ## Threats and planned tests
 
@@ -150,6 +151,14 @@ suite grows with every phase and never shrinks.
 | Widget opens a window or dialog (phishing) | T1 | A2, A4 | B4 | V, VII: a control in widget content triggers only its widget's declared actions, no plugin string opens anything, and a host dialog covers the chrome and every frame and makes the rest inert, which widget content cannot do (HS-05, HS-07, HS-10, HS-11, HS-16, HS-25) | Phase 3 |
 | Widget content imitates the host's styling: tones and variants arranged to look like a frame header or a host dialog | T1 | A2, A4 | B4 | Widget content selects only tones and variants of shared roles, never a host-only one (`DESIGN.md`); a host dialog is told apart by its form, which widget content cannot produce. Breaking test: a hostile widget, added with the declarative UI, that uses every tone and variant to look like a dialog (HS-01, HS-04, HS-16, HS-24, HS-25) | Phase 3 |
 | Asks for little at install, then presses the user to turn on optional permissions one at a time | T1 | A1, A4 | B4 | Only host controls turn a permission on (VII); the dangerous-combination warning runs on every grant change, judged on the permissions the plugin will hold afterwards; no control in widget content can turn one on (HS-05) | Phase 3 |
+| Script injected into the window: markup or text that reaches the page and runs | T1, T2 | A1, A2, A4 | B7 | The release content policy runs script only from the bundle: no inline script or handler, no `eval`; `Object.prototype` frozen; a run-time `<style>` needs the response's nonce. Probe: `script-inline-element`, `script-inline-attribute`, `script-eval`, `script-function`, `script-timeout-string`, `load-script-remote`, `prototype-frozen`, `load-style-import`, `style-runtime-element`; `tests/style_nonce.rs` | Phase 3 |
+| The window loads from the internet, to exfiltrate or to pull in content | T1, T2 | A1 | B7 | Every source `'self'`; connections only to the host's channel; no `data:`, `blob:`, frame, object or worker; no `<base>`; forms submit nowhere. Probe: `load-*`, `connect-*`, `embed-*`, `worker-blob`, `base-element`, `form-remote-submit` | Phase 3 |
+| The window navigates away from the app's page | T1, T2 | A2, A4 | B7 | `on_navigation` allows only the app's own page (and the development server's in development); Tauri's drop handler stays on. Probe: `navigate-location`, `navigate-assign`, `navigate-meta-refresh`, `navigate-link`, `navigate-own-asset`, `navigate-file-scheme`; the surface test fails if the drop handler is turned off | Phase 3 |
+| The window opens another window | T1, T2 | A2, A4 | B7 | `on_new_window` denies every request. Probe: `window-open`, `window-target-blank`, each checked against the host's window count | Phase 3 |
+| The page calls a host command or plugin that is not on the reviewed list | T1, T2, T4 | A1, A2, A4 | B7 | Tauri's ACL with the app manifest always present; `window-surface.toml` lists every grant, command and plugin with its reason, and the window starts with none. Probe: `command-ungranted`, `command-opener`, `command-core`; the surface test fails on any disagreement or a missing app manifest | Phase 3 |
+| Developer tools or the engine's context menu in a release build, which the user could be talked into opening | T1, T2 | A2, A4 | B7 | Developer tools only in development builds, and never the `devtools` feature; the engine's context menu off (WebView2) or cancelled (macOS and Linux). Probe: `devtools-setting`, `context-menu`, `context-menu-setting`; the surface test fails on the `devtools` feature | Phase 3 |
+| The engine offers to fill or save a password, or keeps form data | T1 | A2 | B7 | Every engine incognito with general autofill off; WebView2 password saving off; no macOS web-credential entitlement. Probe: `store-incognito`, `autofill-general`, `autofill-password`; the surface test checks the entitlements. Limit: whether macOS offers AutoFill has no automated test, since no API or WebDriver reaches it; a review step covers it (`specs/008-tauri-shell/quickstart.md` §6) | Phase 3 |
+| The engine grants a web permission, saves a download or draws its own dialog | T1, T2 | A1, A3, A4 | B7 | Every permission request denied; no download saved; `alert`, `confirm`, `prompt` and `print` replaced in every frame. Probe: `permission-camera`, `permission-location`, `permission-notification`, `download-link`, `dialog-*` | Phase 3 |
 | Hidden instruction in content read by AI (prompt injection) | T2, T3 | A1, A4 | B5 | VI, taint tracking | Phase 4 |
 | Remote image with data in its URL in AI output | T2, T3 | A1 | B5 | Safe rendering without remote resources | Phase 4 |
 | Generated module calls a connector the user did not mention | T3 | A1 | B1, B2 | Permissions derived from the user's request | Phase 5 |
@@ -159,8 +168,12 @@ suite grows with every phase and never shrinks.
 ## Assumptions and out of scope
 
 - Trusted: the operating system, the OS keychain and its access control between the user's
-  processes, and the sandboxing of Wasmtime and the webview. Their vulnerabilities are handled by pinned versions, `cargo audit` and fast
-  updates, not by this design.
+  processes, and the sandboxing of Wasmtime and the webview. Wasmtime's vulnerabilities are
+  handled by pinned versions, `cargo audit` and fast updates. The webview is patched by whoever
+  ships it: WebView2 and WKWebView by Microsoft and Apple; WebKitGTK, while Linux uses it, by the
+  distribution ([decision 0002](decisions/0002-linux-window-engine.md)); and an engine the app
+  embeds by the project's own releases, with a weekly check and critical or high fixes within
+  14 days (constitution, "Window engine"). None of these are handled by this design.
 - Out of scope: malware already running on the machine, an attacker with administrator or
   physical access, and the AI provider reading the prompts the user chose to send it.
 
@@ -169,9 +182,12 @@ suite grows with every phase and never shrinks.
 - Does the plugin runtime run in a separate OS process? Not during Phase 1:
   [decision 0001](decisions/0001-plugin-process-isolation.md) explains why and when to revisit
   it, in Phase 3's plan at the latest.
-- How is widget render data turned into UI in the webview, and which Content Security Policy
-  does the app ship? The template default (`"csp": null` in `app/src-tauri/tauri.conf.json`)
-  must become restrictive by Phase 3.
+- Which Content Security Policy does the app ship? Answered by feature 008: script, styles,
+  fonts and images only from the bundle, connections only to the host's channel, nothing
+  embedded, no `<base>` and no form target, with run-time styles carrying the response's nonce
+  ([contracts/content-policy.md](../specs/008-tauri-shell/contracts/content-policy.md)). The
+  shell probe breaks each rule in the release build on every system. How widget render data is
+  turned into UI remains for the declarative UI feature.
 - How does taint propagate across plugin calls, storage and later executions? Phase 4.
 - Where are third-party plugins installed from, and how is the installed version pinned?
   Decided on 2026-10-22 (feature 002): only from their authors' repositories, never from a
