@@ -499,7 +499,7 @@ criterion with a test or hostile case and a feature, and each holds in forced-co
   - what each check means;
   - how to open the preview;
   - that new frame or dialog work must pass `docs/design/host-surfaces.md`.
-- [ ] T045 Run every local check, and record the times of `check` and `test` (target: under 10
+- [X] T045 Run every local check, and record the times of `check` and `test` (target: under 10
   seconds, plan's Performance Goals):
   - `pnpm --filter ./design check`, `test` and `licenses`;
   - `pnpm audit --audit-level high`;

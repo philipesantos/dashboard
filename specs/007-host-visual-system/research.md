@@ -392,6 +392,12 @@ theme comparison page in the conversation that preceded this feature.
 The constitution needs no change: its rule already says Markdown the build uses as code is not
 documentation.
 
+**Measured locally** (T045, 2026-11-10, Linux, Node.js 26): `check` 0.55 s with its 8 steps,
+`test` 0.74 s with 79 tests, `run licenses` 0.32 s over 505 packages, `pnpm audit` 0.50 s and the
+app build 3.05 s, all exit 0. The plan's target for `check` and `test` was under 10 s each.
+Nothing under `runtime/`, `wit/`, `plugins/`, `runtime/tests/hostile*` or `plugins/hostile/`
+changed, so the Rust checks and the security suite run as before (FR-021).
+
 **Rationale**: FR-006 and SC-004. The checks take seconds, so running them on the three systems
 costs little and catches line-ending issues on Windows.
 
