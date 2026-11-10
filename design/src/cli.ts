@@ -14,6 +14,8 @@ export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 export interface Context {
   root: string;
+  /** DESIGN.md's text, as read. */
+  source: string;
   design: Design;
 }
 
@@ -25,7 +27,7 @@ const CHECKS: [string, Check][] = [['project layer', (ctx) => ctx.design.errors]
 
 export function load(root = ROOT): Context {
   const source = readFileSync(join(root, 'DESIGN.md'), 'utf8');
-  return { root, design: parseDesign(source) };
+  return { root, source, design: parseDesign(source) };
 }
 
 async function runChecks(ctx: Context): Promise<number> {

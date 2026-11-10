@@ -210,7 +210,7 @@ fails `check`, naming the token.
 - [X] T015 [US1] Implement `design/src/checks/drift.ts`: generate in memory and compare with the
   committed file after normalizing `\r\n`. Report every differing variable, one line each
   (FR-005). Pass T011.
-- [ ] T016 [US1] Implement `design/src/checks/format.ts`.
+- [X] T016 [US1] Implement `design/src/checks/format.ts`.
   - Run the pinned checker as `node node_modules/@google/design.md/dist/index.js lint DESIGN.md`,
     resolved from the `design` package with `import.meta.resolve`, never `npx`.
   - Parse its JSON report, then fail on its errors and print its warnings. Pass T012.
