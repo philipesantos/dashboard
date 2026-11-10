@@ -445,7 +445,9 @@ keyboard, and with a screen reader on each of the three systems.
   - darker input edges, and in dark mode the field and switch fills that use the same role;
   - a solid focus ring;
   - two darker chart colors in light;
-  - a slightly darker red in light;
+  - a darker red in light and a lighter one in dark;
+  - the primary button's hover a little stronger, and the destructive button's dark hover a
+    little softer;
   - the submenu's shadow matching the menu's.
 - **SC-007**: Every CI run that builds publishes the preview page, and the maintainer can review
   the visual system in a browser without building the app.

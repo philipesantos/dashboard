@@ -306,13 +306,14 @@ every color the app's code draws is declared.
   - `destructive` oklch(0.54 0.2 27).
 
   Run `gen`.
-- [ ] T027 [P] [US2] Make the app draw only declared colors:
+- [X] T027 [P] [US2] Make the app draw only declared colors:
   - in `badge.tsx`, `button.tsx`, `checkbox.tsx`, `input.tsx`, `select.tsx`, `switch.tsx` and
     `tabs.tsx`, under `app/src/components/ui/`, change `ring-ring/50` to `ring-ring`;
   - in `app/src/index.css`, change `outline-ring/50` to `outline-ring`;
   - in `app/src/components/ui/dialog.tsx`, change the overlay's `bg-black/10` to `bg-scrim`;
-  - in `select.tsx` and `dropdown-menu.tsx`, change `shadow-md` and `shadow-lg` to
-    `shadow-raised` (research R5, "Elevation").
+  - the hover fixes research R4 recorded in T025: `hover:bg-primary/80` to `/90` in `button.tsx`
+    and `badge.tsx`, the destructive button's `dark:hover:bg-destructive/30` to `/25`, and the
+    switch's dark unchecked track from `bg-input/80` to `bg-input`.
 
   Run `check` until it passes with zero failures (SC-002).
 
@@ -350,7 +351,9 @@ by name, and `design/widget-map.generated.json` holds no host-only role.
   - **Colors:** `hostOnly`, listing `sidebar`, `frame`, `dialog`, `scrim` and `ring`, with the
     reason in the prose. The prose says the split is by role, not color (research R6).
   - **Elevation & Depth:** `flat`, then `frame`, `raised` and `dialog`, the last three host-only,
-    at Tailwind's `shadow-sm`, `shadow-md` and `shadow-lg` values (research R5).
+    at Tailwind's `shadow-sm`, `shadow-md` and `shadow-lg` values (research R5). In
+    `select.tsx` and `dropdown-menu.tsx`, change `shadow-md` and `shadow-lg` to `shadow-raised`
+    (research R5, "Elevation").
   - **Components:**
     - the tones `default`, `muted`, `accent`, `ok`, `warning` and `error`, with icons
       `circle-check`, `triangle-alert` and `circle-x` for the three statuses;
