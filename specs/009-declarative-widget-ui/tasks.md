@@ -316,7 +316,7 @@ widgets through three reviewed commands; nothing is drawn yet.
 
 **Goal**: the three commands are the window's only new reach, and feature 008's protections hold.
 
-- [ ] T028 [US6] Run quickstart §5: `cargo test -p dashboard` passes; removing `widget_act`'s
+- [X] T028 [US6] Run quickstart §5: `cargo test -p dashboard` passes; removing `widget_act`'s
   entry from `window-surface.toml` fails the surface test naming it (revert). Run the full probe
   locally: every case of feature 008 and of this feature holds.
 
