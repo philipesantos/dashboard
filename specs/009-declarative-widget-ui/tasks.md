@@ -90,7 +90,7 @@ widget host, before any story draws.
 
 ### The manifest's new fields
 
-- [ ] T007 [P] Write the manifest tests first in `runtime/tests/manifest_schema.rs`: agreement
+- [X] T007 [P] Write the manifest tests first in `runtime/tests/manifest_schema.rs`: agreement
   cases for `name` (1 to 60 characters, no control characters), `icon` (base64) and `actions`
   (up to 16, unique, `^[a-z][a-z0-9-]{0,31}$`); host-only cases in
   `the_host_also_refuses_what_a_schema_cannot_see`: an SVG, a JPEG, a PNG over 8 KiB, not square,

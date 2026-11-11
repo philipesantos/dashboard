@@ -127,6 +127,9 @@ runtime = { path = ".", features = ["test-network", "cli"] }
 boon = "0.6"
 # Turns WebAssembly text into the binary packages that tests pass to Runtime::load
 wat = "1"
+# Encodes the test icons of tests/manifest_schema.rs (feature 009); the runtime decodes them
+png = "0.18.1"
+base64 = "0.22.1"
 # Reads wit/v1 to check that every capability can answer not-granted (tests/contract_v1.rs).
 # Pinned to the version Wasmtime 50 uses.
 wit-parser = "=0.261.0"

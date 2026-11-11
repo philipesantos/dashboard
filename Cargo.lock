@@ -3399,6 +3399,7 @@ name = "runtime"
 version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
+ "base64 0.22.1",
  "boon",
  "dbus-secret-service-keyring-store",
  "dirs",
@@ -3408,6 +3409,7 @@ dependencies = [
  "libsqlite3-sys",
  "memchr",
  "open",
+ "png",
  "rcgen",
  "regex",
  "ring",
