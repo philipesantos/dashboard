@@ -30,7 +30,10 @@ function Part({ component }: { component: Component }) {
   switch (component.type) {
     case "text":
       return (
-        <p className={`flex items-start gap-1.5 ${textClass(component.tone, component.variant)}`}>
+        <p
+          data-tone={component.tone.name}
+          className={`flex items-start gap-1.5 ${textClass(component.tone, component.variant)}`}
+        >
           <StatusIcon tone={component.tone} />
           <bdi className="min-w-0 break-words">{component.text}</bdi>
         </p>
@@ -41,6 +44,7 @@ function Part({ component }: { component: Component }) {
           {component.items.map((item, index) => (
             <li
               key={index}
+              data-tone={item.tone.name}
               className={`flex items-start gap-1.5 py-1.5 ${toneClass[item.tone.name] ?? toneClass.default}`}
             >
               <StatusIcon tone={item.tone} />

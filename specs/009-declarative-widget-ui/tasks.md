@@ -307,7 +307,7 @@ widgets through three reviewed commands; nothing is drawn yet.
 
 **Goal**: HS-08 in the page.
 
-- [ ] T027 [US5] Add `status-icons` to `app/src/probe/widgets.ts` and `PAGE_CASES`: each status
+- [X] T027 [US5] Add `status-icons` to `app/src/probe/widgets.ts` and `PAGE_CASES`: each status
   text of `ui-strings` and the showcase has its icon element. Run until it holds.
 
 ---

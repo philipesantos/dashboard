@@ -528,4 +528,25 @@ export const controlCases: Case[] = [
         : { held: false, detail: problems.join("; ").slice(0, 300) || "no text entry drawn" };
     },
   },
+  {
+    // HS-08: a status text never relies on color alone
+    id: "status-icons",
+    async run(context): Promise<Verdict> {
+      await frameWhere(context, (name) => name === "ui-strings");
+      await frameWhere(context, (name) => name === "Vitrine");
+      const problems: string[] = [];
+      const counts: Record<string, number> = {};
+      for (const handle of [await handleOf("ui-strings"), await handleOf("Vitrine")]) {
+        const statuses = section(handle)?.querySelectorAll('[data-tone="ok"], [data-tone="warning"], [data-tone="error"]') ?? [];
+        counts[handle] = statuses.length;
+        for (const status of statuses) {
+          if (!status.querySelector(":scope > svg")) problems.push(`${handle}: a ${status.getAttribute("data-tone")} text has no icon`);
+        }
+      }
+      if (Object.values(counts).some((count) => count < 3)) problems.push(`status texts found: ${JSON.stringify(counts)}`);
+      return problems.length === 0
+        ? { held: true, detail: `every status text has its icon (${JSON.stringify(counts)})` }
+        : { held: false, detail: [...new Set(problems)].join("; ") };
+    },
+  },
 ];
