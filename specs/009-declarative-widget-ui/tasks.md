@@ -178,7 +178,7 @@ widget host, before any story draws.
   - the drawn name (`name.rs`): markup, bidi overrides, format characters, 60 characters,
     nothing left → the id's last part (HS-02).
   They fail until T016.
-- [ ] T016 Build the widget host (research R1, R2, R9, R12; contracts/window-commands.md):
+- [X] T016 Build the widget host (research R1, R2, R9, R12; contracts/window-commands.md):
   - `app/src-tauri/build.rs`: embed `target/plugins/showcase.wasm`, and with `shell-probe` the
     `ui-*` fixtures; fail with "run `cargo xtask plugins` first" when one is missing; one
     `rerun-if-changed` per package; write the embedded list for T015;

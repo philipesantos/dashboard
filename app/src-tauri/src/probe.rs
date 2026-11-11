@@ -108,6 +108,14 @@ pub fn refused(refusal: Refusal) {
     counter.fetch_add(1, Ordering::SeqCst);
 }
 
+static ACTIONS: AtomicU32 = AtomicU32::new(0);
+
+/// Counts an action that reached a plugin. `widgets.rs` calls it just before the plugin runs, so
+/// a case can show that a refused action never did (specs/009-declarative-widget-ui, R14).
+pub fn action_ran() {
+    ACTIONS.fetch_add(1, Ordering::SeqCst);
+}
+
 /// The handlers' refusals so far. The page diffs two snapshots around a case.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,6 +124,8 @@ pub struct Counters {
     new_window: u32,
     permission: u32,
     download: u32,
+    /// Actions that reached a plugin.
+    actions: u32,
 }
 
 fn counters() -> Counters {
@@ -124,6 +134,7 @@ fn counters() -> Counters {
         new_window: NEW_WINDOW.load(Ordering::SeqCst),
         permission: PERMISSION.load(Ordering::SeqCst),
         download: DOWNLOAD.load(Ordering::SeqCst),
+        actions: ACTIONS.load(Ordering::SeqCst),
     }
 }
 

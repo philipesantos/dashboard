@@ -21,7 +21,9 @@ fn crate_dir() -> PathBuf {
 
 /// A package `cargo xtask plugins` built.
 fn package(name: &str) -> Vec<u8> {
-    let path = crate_dir().join("../../target/plugins").join(format!("{name}.wasm"));
+    let path = crate_dir()
+        .join("../../target/plugins")
+        .join(format!("{name}.wasm"));
     std::fs::read(&path).unwrap_or_else(|error| {
         panic!(
             "{}: {error}; run `cargo xtask plugins` first",
@@ -134,7 +136,10 @@ fn the_apps_source_never_names_the_development_records() {
 
 #[test]
 fn a_build_embeds_exactly_its_packages() {
-    let mut embedded: Vec<&str> = widgets::BUNDLED.iter().map(|bundled| bundled.file).collect();
+    let mut embedded: Vec<&str> = widgets::BUNDLED
+        .iter()
+        .map(|bundled| bundled.file)
+        .collect();
     embedded.sort_unstable();
     #[cfg(not(feature = "shell-probe"))]
     let expected = vec!["showcase.wasm"];
@@ -152,7 +157,12 @@ fn a_build_embeds_exactly_its_packages() {
     assert_eq!(embedded, expected);
     for bundled in widgets::BUNDLED {
         let name = bundled.file.trim_end_matches(".wasm");
-        assert_eq!(bundled.bytes, package(name), "{} is the built package", bundled.file);
+        assert_eq!(
+            bundled.bytes,
+            package(name),
+            "{} is the built package",
+            bundled.file
+        );
     }
 }
 
@@ -187,7 +197,10 @@ fn refused_at_start(name: &str, declared: &str) {
         other => panic!("{name}: expected not-loaded, got {other:?}"),
     }
     let log = log_text(&widgets, "w1");
-    assert!(log.contains(&format!("declares {declared}")), "{name}: {log}");
+    assert!(
+        log.contains(&format!("declares {declared}")),
+        "{name}: {log}"
+    );
     assert!(matches!(
         widgets.act("w1", "anything", &values(&[])),
         Rendered::Refused("undeclared-action")
@@ -261,7 +274,14 @@ fn act_refuses_in_order_without_calling_the_plugin() {
         assert_eq!(refused(&acted), Some("unknown-widget"), "{handle:?}");
     }
     // 3. The action, before the values
-    for action in ["not-declared", "", "ADD", "add ", "plugin:opener|open_url", "increment\0"] {
+    for action in [
+        "not-declared",
+        "",
+        "ADD",
+        "add ",
+        "plugin:opener|open_url",
+        "increment\0",
+    ] {
         let acted = widgets.act("w0", action, &json!([1]));
         assert_eq!(refused(&acted), Some("undeclared-action"), "{action:?}");
     }
@@ -291,7 +311,10 @@ fn act_refuses_in_order_without_calling_the_plugin() {
     // That action was the first to reach the plugin
     let text = content_text(&widgets.render("w0"));
     assert!(text.contains("Contagem: 1"), "{text}");
-    assert!(!text.contains("xxxxxxxx"), "no refused value reached the plugin");
+    assert!(
+        !text.contains("xxxxxxxx"),
+        "no refused value reached the plugin"
+    );
 }
 
 /// A widget whose action is running refuses another render or action, before the action name
@@ -299,8 +322,10 @@ fn act_refuses_in_order_without_calling_the_plugin() {
 #[test]
 fn a_busy_widget_refuses_render_and_act() {
     let dir = tempfile::tempdir().unwrap();
+    // The time limit ends the loop, not the CPU budget, which a debug build spends quickly
     let limits = Limits {
         update_time_limit: Duration::from_secs(2),
+        fuel: u64::MAX / 2,
         ..Limits::default()
     };
     let probe = packed(
@@ -322,7 +347,7 @@ fn a_busy_widget_refuses_render_and_act() {
         let widgets = std::sync::Arc::clone(&widgets);
         std::thread::spawn(move || widgets.act("w0", "loop", &values(&[])))
     };
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(300));
     assert_eq!(refused(&widgets.render("w0")), Some("widget-busy"));
     assert_eq!(
         refused(&widgets.act("w0", "not-declared", &json!([1]))),
@@ -373,9 +398,17 @@ fn runtime_holding(dir: &Path, key: &str) -> Runtime {
 #[test]
 fn a_form_value_holding_a_held_secret_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let key = "k3y-held-by-the-host";
+    let key = "k3y/held+by=the-host";
     let widgets = start_on(runtime_holding(dir.path(), key), &[showcase()]);
-    for title in [key.to_owned(), format!("see {key}"), key.replace('-', "\\u002d")] {
+    // As typed, inside other text, and in two of the encodings the network layer withholds
+    for title in [
+        key.to_owned(),
+        format!("see {key}"),
+        key.replace('/', "\\/"),
+        key.replace('/', "%2F")
+            .replace('+', "%2B")
+            .replace('=', "%3D"),
+    ] {
         let acted = widgets.act("w0", "add", &values(&[("title", &title)]));
         assert_eq!(refused(&acted), Some("secret-in-form"), "{title}");
     }
@@ -385,7 +418,10 @@ fn a_form_value_holding_a_held_secret_is_refused() {
     // An innocent value passes, and is the first the plugin sees
     let acted = widgets.act("w0", "add", &values(&[("title", "Revisar PR")]));
     let text = content_text(&acted);
-    assert!(text.contains("Revisar PR") && !text.contains("k3y"), "{text}");
+    assert!(
+        text.contains("Revisar PR") && !text.contains("k3y"),
+        "{text}"
+    );
 }
 
 /// A keychain that cannot be read refuses the form: the check fails closed.
@@ -394,7 +430,11 @@ fn an_unreadable_keychain_refuses_the_form() {
     let dir = tempfile::tempdir().unwrap();
     let runtime = runtime_holding(dir.path(), "k3y-unreadable");
     let origin = runtime.list_accounts().unwrap()[0].origin.clone();
-    runtime.test_vault_fail_next("catalog/keyed", &origin, runtime::VaultFailure::NoStorageAccess);
+    runtime.test_vault_fail_next(
+        "catalog/keyed",
+        &origin,
+        runtime::VaultFailure::NoStorageAccess,
+    );
     let widgets = start_on(runtime, &[showcase()]);
     let acted = widgets.act("w0", "add", &values(&[("title", "anything")]));
     assert_eq!(refused(&acted), Some("secret-in-form"));
@@ -406,17 +446,29 @@ fn an_unreadable_keychain_refuses_the_form() {
 fn the_drawn_name_is_plain_text_within_its_bounds() {
     let showcase = "local/showcase";
     // Markup stays text: the page draws it as text
-    assert_eq!(drawn_name(Some("<b>Vitrine</b>"), showcase), "<b>Vitrine</b>");
+    assert_eq!(
+        drawn_name(Some("<b>Vitrine</b>"), showcase),
+        "<b>Vitrine</b>"
+    );
     // Bidirectional overrides and isolates, and other format characters, are removed
     assert_eq!(drawn_name(Some("Vit\u{202E}enir"), showcase), "Vitenir");
-    assert_eq!(drawn_name(Some("\u{2066}Vitrine\u{2069}"), showcase), "Vitrine");
+    assert_eq!(
+        drawn_name(Some("\u{2066}Vitrine\u{2069}"), showcase),
+        "Vitrine"
+    );
     assert_eq!(
         drawn_name(Some("Vi\u{200B}tri\u{200D}ne\u{FEFF}\u{00AD}"), showcase),
         "Vitrine"
     );
-    assert_eq!(drawn_name(Some("Vitrine\u{E0041}\u{E007F}"), showcase), "Vitrine");
+    assert_eq!(
+        drawn_name(Some("Vitrine\u{E0041}\u{E007F}"), showcase),
+        "Vitrine"
+    );
     // Whitespace collapsed and trimmed
-    assert_eq!(drawn_name(Some("  Minha \t  vitrine "), showcase), "Minha vitrine");
+    assert_eq!(
+        drawn_name(Some("  Minha \t  vitrine "), showcase),
+        "Minha vitrine"
+    );
     // The longest accepted name is cut at 40 characters, with an ellipsis
     let long = "é".repeat(60);
     let drawn = drawn_name(Some(&long), showcase);

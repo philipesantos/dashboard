@@ -27,8 +27,8 @@ Checked in this order, each refusal returned as `{ refused: <kind> }` without ca
 1. `unknown-widget`: the handle is not one the host is showing, or is malformed.
 2. `widget-busy`: a render or an action of this widget is running.
 3. `undeclared-action`: the manifest does not declare `action`.
-4. `bad-values`: `values` is not an object of strings, has more than 20 entries, or a value is
-   over 500 characters.
+4. `bad-values`: `values` is not an object of strings, has more than 20 entries, a key over 32
+   characters (the longest field id), or a value over 500 characters.
 5. `secret-in-form`: a value holds a secret the host holds (research R11).
 
 Then the action runs; on success the host keeps its data, renders, and returns the content; on
