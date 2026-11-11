@@ -458,17 +458,24 @@ change in a register the move can empty.
   Done: PR #20. The first run broke three cases on macOS and Windows, each a fault of the case
   (R14 records them); the second run is green on the three systems, with the times in R11.
   `cef-watch` passed by hand.
-- [ ] T030 The maintainer's part, before the merge:
+- [X] T030 The maintainer's part, before the merge:
   - the line-by-line review of the security core (Principle IX);
   - quickstart §5 and §6 on Windows and macOS, the macOS AutoFill check being the review step of
     research R7;
   - quickstart §8, the installers' engine edge cases.
 
   Record the outcome of the walks in research R7, and the start-up times in research R11.
-- [ ] T031 Before the merge, and only when the maintainer asks, update the development guide:
+
+  Done in part: the maintainer reported the line-by-line review done on 2026-11-10 and chose to
+  merge before the walks. Quickstart §5, §6 and §8 on Windows and macOS stay open after the
+  merge; research R7 records that the macOS AutoFill review step has not been walked.
+- [X] T031 Before the merge, and only when the maintainer asks, update the development guide:
   tick the Phase 3 item "Shell Tauri com capabilities mínimas e CSP restritiva", noting the
   WebKitGTK fallback and the decision record 0002.
-- [ ] T032 Merge:
+
+  Done: guide rev 150 ticks the item, with a note on what 008 delivered, the WebKitGTK fallback,
+  decision 0002 and the register.
+- [X] T032 Merge:
   - The maintainer reviewed the pull request line by line.
   - CI is green on the three systems.
   - `grep -n '^- \[ \]' specs/008-tauri-shell/tasks.md` shows only this task.

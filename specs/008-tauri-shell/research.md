@@ -266,6 +266,11 @@ Whether AutoFill itself appears has no automated breaking test on macOS. The mac
 model's row record the gap. The walk's form submits by removing itself, which engines treat as a
 submission, because `form-action 'none'` blocks a real submit.
 
+**Walk status (2026-11-10)**: not yet done. The maintainer merged 008 after the line-by-line
+review and before the Windows and macOS walks of `quickstart.md` §5, §6 and §8, so whether macOS
+offers AutoFill in the window is still unchecked; it is the one HS-26 question with no automated
+test.
+
 **Rationale**: FR-016 and criterion HS-26 of feature 007.
 
 ## R8. Breaking tests against the built app: the probe
