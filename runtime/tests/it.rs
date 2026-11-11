@@ -6,6 +6,7 @@
 mod common;
 
 mod accounts;
+mod actions;
 mod cli;
 mod contract;
 mod contract_v1;

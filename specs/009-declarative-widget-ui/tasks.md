@@ -105,10 +105,13 @@ widget host, before any story draws.
 
 ### Actions in the runtime
 
-- [ ] T009 [P] Write the action tests first, `runtime/tests/actions.rs` (listed in `tests/it.rs`),
+- [X] T009 [P] Write the action tests first, `runtime/tests/actions.rs` (listed in `tests/it.rs`),
   with two new packages: `plugins/fixtures/action-probe` (`interactive-connected-stored-widget`,
   1.4.0: actions that write the store, call a read operation, and fail) and
-  `plugins/hostile/action-escape` (calls a change operation, writes the store and fails, loops).
+  `plugins/fixtures/action-steps` (configurable like `store-probe`: store writes, a read and a
+  change operation, then ok, an error, a trap or a loop; a fixture rather than a hostile crate,
+  since `hostile/` holds one broken rule per crate). `action-probe` is the actor-only
+  `interactive-widget`, and `action-steps` the `interactive-connected-stored-widget`.
   Cases (research R13):
   - an undeclared name is refused with `undeclared-action` before instantiation;
   - a 1.3.0 plugin has no actions;

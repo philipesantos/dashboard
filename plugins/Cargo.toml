@@ -28,6 +28,8 @@ members = [
     "fixtures/net-probe",
     "fixtures/store-probe",
     "fixtures/account-probe",
+    "fixtures/action-probe",
+    "fixtures/action-steps",
 ]
 
 [workspace.package]
