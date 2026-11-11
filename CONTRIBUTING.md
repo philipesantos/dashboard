@@ -206,6 +206,11 @@ its id to `PAGE_CASES` in `probe.rs`: a case missing from either breaks the run.
 Tauri plugin the window may use, each with its reason, and `tests/surface.rs` fails when the
 list and the app disagree. To add a host command, follow the three steps in that file's comment.
 
+**No engine pickers.** The window cancels every file input, and `showPicker()` (file, date
+and color) and the browser's file APIs do nothing; the console says so. A feature that needs a
+file goes through a host dialog, Tauri's dialog plugin, added to `window-surface.toml` with its
+reason (FR-021).
+
 **Run-time styles carry the nonce.** The content policy refuses a `<style>` element without the
 response's nonce. A Radix or shadcn component that draws one takes `nonce={getNonce()}` (from
 `get-nonce`), and `shadcn add` must not drop it: `tests/style_nonce.rs` fails otherwise.

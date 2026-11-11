@@ -39,12 +39,17 @@ const ENGINE_UI_SCRIPT: &str = r#"(() => {
   lock(window, "prompt", () => null);
   lock(window, "print", () => undefined);
 
-  // No file picker: no click activates a file input, and no picker API is left
+  // No file picker: no click activates a file input, and no picker API is left. The console
+  // says why, so a field that does nothing is not a mystery: choosing a file goes through a host
+  // dialog, listed in window-surface.toml.
+  const refused = (what) =>
+    console.warn(`${what}: the engine's pickers are off in this window; use a host dialog`);
   const click = HTMLInputElement.prototype.click;
   lock(HTMLInputElement.prototype, "click", function () {
-    if (this.type !== "file") click.call(this);
+    if (this.type === "file") refused("input.click() on a file input");
+    else click.call(this);
   });
-  lock(HTMLInputElement.prototype, "showPicker", () => undefined);
+  lock(HTMLInputElement.prototype, "showPicker", () => refused("showPicker()"));
   for (const name of ["showOpenFilePicker", "showSaveFilePicker", "showDirectoryPicker"]) {
     if (name in window) lock(window, name, undefined);
   }
@@ -54,6 +59,7 @@ const ENGINE_UI_SCRIPT: &str = r#"(() => {
       if (event.target instanceof HTMLInputElement && event.target.type === "file") {
         event.preventDefault();
         event.stopImmediatePropagation();
+        refused("a click on a file input");
       }
     },
     true,
