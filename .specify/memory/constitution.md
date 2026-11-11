@@ -72,8 +72,12 @@ judges with every destination in view.
 
 ### IV. Plugins Never See Secrets
 
-Plugins MUST NOT receive passwords, OAuth tokens or AI provider keys. Authentication and
-secrets MUST stay in the host and the OS keychain. A connector declares the credential its
+Plugins MUST NOT receive passwords, OAuth tokens or AI provider keys. This covers every secret
+the host holds, in the OS keychain through its vault, and every secret that passes through its
+credential flows: the sign-in, connected accounts and the credentials it adds to connector
+requests. Text a person types or pastes into a widget's form is not a secret the host holds, and
+in general cannot be recognised as one; the threat model records that residual. Authentication
+and secrets MUST stay in the host and the OS keychain. A connector declares the credential its
 operations need, and the host MUST inject it only into that connector's requests to its own
 destination, and only over HTTPS with a certificate that is valid for that destination or that
 the user accepted for it.
@@ -197,4 +201,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.6.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10
+**Version**: 2.6.2 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10
