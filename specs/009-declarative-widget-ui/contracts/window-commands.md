@@ -16,14 +16,16 @@ The name is already sanitised (research R6).
 
 ## `widget_render(handle) -> Rendered`
 
-`Rendered`: `{ content: <normalised content> } | { error: { kind, reason } }`.
+`Rendered`: `{ content: <normalised content> } | { error: { kind, reason } } | { refused: kind }`.
+Refused with `unknown-widget` for a handle the host is not showing, and `widget-busy` while an
+action of that widget runs.
 
 ## `widget_act(handle, action, values) -> Rendered`
 
 Checked in this order, each refusal returned as `{ refused: <kind> }` without calling the plugin:
 
 1. `unknown-widget`: the handle is not one the host is showing, or is malformed.
-2. `widget-busy`: an action of this widget is running.
+2. `widget-busy`: a render or an action of this widget is running.
 3. `undeclared-action`: the manifest does not declare `action`.
 4. `bad-values`: `values` is not an object of strings, has more than 20 entries, or a value is
    over 500 characters.

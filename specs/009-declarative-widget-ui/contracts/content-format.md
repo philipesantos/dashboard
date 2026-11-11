@@ -72,8 +72,8 @@ map; there is no field for a color, font, size, class or style.
 | An unknown field (e.g. `color`, `style`, `class`) | the field is ignored; the rest draws | one entry per document naming the fields |
 | An unknown tone | drawn in `default` | one entry naming the tone |
 | An unknown `type` | the host's placeholder in its place; the rest draws | one entry naming the type |
-| Not JSON, a wrong type, a missing field, a bound passed, `format` not 1 | the frame's error state: `bad-shape` or `over-bound` with the path | one entry |
-| Render failed (error, trap, time, memory, output too large) | the frame's error state: `render-failed` with the runtime's error kind | the runtime's entry |
+| A wrong type, a missing field, a bound passed, `format` not 1 | the frame's error state: `bad-shape` or `over-bound` with the path | one entry |
+| Render failed (error, trap, time, memory, output too large, output not JSON) | the frame's error state: `render-failed` with the runtime's error kind | the runtime's entry |
 
 The schema refuses unknown fields and tones, so an author's tools catch them; the host is lenient
 there only, as criterion HS-09 requires.
@@ -81,5 +81,7 @@ there only, as criterion HS-09 requires.
 ## Agreement test
 
 `widget-content/tests/schema.rs` holds a corpus: every schema-valid document is accepted with no
-log entry; every document the host refuses is schema-invalid; the lenient cases (unknown fields,
-tones and types) are listed apart, schema-invalid and drawn with log entries.
+log entry; every document the host refuses is schema-invalid, except the host-only rules a schema
+cannot express, listed apart (the 500-component total, the 64 KiB size, rows as long as the
+columns, as many chart labels as values); the lenient cases (unknown fields, tones and types) are
+listed apart too, schema-invalid and drawn with log entries.

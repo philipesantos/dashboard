@@ -30,6 +30,8 @@ Every component has `type`. The rest by type, all optional unless marked:
 
 **Form field**: `{id, label, kind, …}` with `kind` one of `text`, `number`, `checkbox`, `select`
 (`options`: strings). `id` is the key of the value sent to the action. No other kind exists.
+`button.action` and `submit.action` are plain names in the content (the checker only bounds
+their length); whether the manifest declares them is the host's check when the control is used.
 
 **Validation**:
 - Strings at most 2,000 characters; lists 200 items; tables 20 columns and 200 rows; charts 5
@@ -47,7 +49,7 @@ carrying their icon name, and each form field's host id. It never holds the plug
 
 | Field | Rule |
 | --- | --- |
-| `kind` | `not-json`, `bad-shape`, `over-bound`, `render-failed` |
+| `kind` | `bad-shape`, `over-bound`, `render-failed` (output that is not JSON is the runtime's `invalid-output`, a render failure) |
 | `reason` | Short, host-written; names the field path or the bound, never the plugin's text. |
 
 ## Manifest additions
@@ -65,7 +67,7 @@ carrying their icon name, and each form field's host id. It never holds the plug
 | `handle` | `w0`, `w1`…, assigned by the host for each widget it shows. |
 | `name` | Drawn name: controls and format characters removed, at most 40 characters, or the id's last part. |
 | `icon` | RGBA pixels decoded by the host, or none (the host's monogram). |
-| `state` | `loading`, `content`, `error`, `busy` (an action running). |
+| `state` | `loading`, `content`, `error`, `busy` (a render or an action running), `not-loaded` (the plugin was refused at load). |
 
 ## Action run
 
@@ -81,6 +83,5 @@ carrying their icon name, and each form field's host id. It never holds the plug
 | Field | Rule |
 | --- | --- |
 | `file` | A package built by `cargo xtask plugins`, embedded at build. |
-| `digest` | SHA-256 pinned at build; checked before load. |
-| `permissions` | None. A bundled package that declares any is refused. |
+| `permissions` | None: no `permissions`, no `connectors`, no `storage`. A bundled package that declares any is refused (Principle VII, v2.6.3). |
 | `origin` | `bundled:<file>`. |

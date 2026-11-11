@@ -37,7 +37,8 @@ dela."
   id and an icon it generates. Installation and the store will reuse the same fields.
 - Q: A button or form triggers only an action its widget declared. What does the action run, since
   contract v1 has only render and update? → A: A new contract minor, 1.4.0, that only adds an
-  `actions` export. The manifest declares the action names. The host runs an action as it runs an
+  `actor` export (so named in the plan; the manifest field that lists them is `actions`). The
+  manifest declares the action names. The host runs an action as it runs an
   update: it may write the widget's store and call its connectors, as granted, and it returns the
   widget's data, which the host keeps and gives to the next render. Then the host draws the
   widget again.
@@ -153,9 +154,11 @@ HS-24, HS-25) in CI and check each one's stated outcome.
 5. **Given** a widget with a select of many long options, strings everywhere a tooltip could come
    from, and an invalid form submitted, **When** the person uses them, **Then** nothing is drawn
    outside the frame's body (HS-25).
-6. **Given** a plugin whose manifest name holds markup, control characters, bidirectional
-   overrides, 500 characters or nothing, **When** its frame draws, **Then** the name is drawn
-   escaped, stripped, cut at the limit or replaced by the host's placeholder (HS-02).
+6. **Given** a plugin whose manifest name holds markup, bidirectional overrides, the longest
+   name the manifest accepts, or only characters the frame removes, **When** its frame draws,
+   **Then** the name is drawn as text, stripped, cut at the frame's limit or replaced by the
+   host's placeholder (HS-02). A name with control characters or over the manifest's limit is
+   refused when the plugin loads, and the frame shows the host's "could not load" state.
 
 ---
 
@@ -251,8 +254,8 @@ This is the first one.
 
 - **FR-001**: Widget content MUST be a document of the shape the published schema defines, at most
   64 KiB as the contract states, carrying the format's version, and built only from these
-  components: text, list, table, chart, button and simple form. There MUST be no link component and
-  no password or masked field.
+  components: text, list, table, chart, button and simple form, and a stack that groups them.
+  There MUST be no link component and no password or masked field.
 - **FR-002**: Widget content MUST choose styling only by tone and variant names from the widget map
   of feature 007. It MUST have no field for a color, a font, a size, a class or a style; such
   fields are ignored, and the content draws as without them (HS-09).
@@ -277,12 +280,13 @@ This is the first one.
   icon and the host's actions, and a body for the widget content. Widget content MUST never be
   drawn in the header or change it (HS-01).
 - **FR-008**: The frame's name and icon MUST come from the plugin's manifest, never from widget
-  content. The manifest gains optional `name` and `icon` fields; the icon is a small image under a
-  published size limit. Without a name, the host shows the last part of the plugin's id; without
+  content. The manifest gains optional `name` and `icon` fields; the icon is a small PNG under a
+  published size limit, and any other image, an SVG included, is refused when the plugin loads.
+  Without a name, the host shows the last part of the plugin's id; without
   an icon, an icon the host generates. The name MUST be drawn as text, with control and bidirectional override characters removed and
   a length limit, and a host placeholder when it is empty. An icon MUST be drawn as an image in a
   fixed box, never as markup, running and fetching nothing (HS-02). The host MUST decode the icon
-  itself, SVG included, and hand the page only pixels to draw, so the window's content policy and
+  itself and hand the page only pixels to draw, so the window's content policy and
   its probe stay exactly as feature 008 left them: no new image source, no case removed.
 - **FR-009**: The frame's body MUST contain and clip everything in it, so no part of widget
   content is drawn outside it, and the header MUST sit outside the body, so content can neither
@@ -316,7 +320,7 @@ This is the first one.
 
 #### Actions in the contract
 
-- **FR-022**: Contract v1 MUST gain a minor version, 1.4.0, that only adds an `actions` export,
+- **FR-022**: Contract v1 MUST gain a minor version, 1.4.0, that only adds an `actor` export,
   following the contract's own rule: 1.3.0 frozen first, and the only-adds tests extended. Since
   an existing world cannot change, the export arrives in new worlds beside the six of 1.3.0, and
   what an action and a render receive is defined in new items, frozen comments staying as they
@@ -340,7 +344,9 @@ This is the first one.
   the app arrives with the installation dialog.
 - **FR-024**: The app MUST keep its own grant record, kept data and vault, apart from the
   development ones of the command-line tool, and MUST never read the development grant record or
-  the development vault. Its grant record stays empty until host dialogs write it. The app MUST
+  the development vault. Its grant record holds no permission until a host dialog grants one; the
+  only entries before then are the start-up approvals of built-in plugins that declare none
+  (Principle VII, v2.6.3). The app MUST
   run the runtime with development mode off, so no unverified local connector runs. Reloading a
   rebuilt bundled plugin reloads its code and never changes a grant.
 - **FR-019**: Every host command the window gains MUST be added to the reviewed list of feature
@@ -360,7 +366,7 @@ This is the first one.
   earlier minor (FR-022), the app's separate records and development mode off (FR-024), and
   repeated presses while a widget is drawing.
 - **FR-021**: The threat model's rows MUST cite each of those tests: B4 for the frame and the
-  library, B1 for the `actions` export and the manifest fields, B7 for the window's new commands.
+  library, B1 for the `actor` export and the manifest fields, B7 for the window's new commands.
   Its boundary text MUST be revised where actions change it (B1 says stores are written all or
   nothing in `update`; B2 says connectors are called only in `update`). Decision 0001 stays as it
   is, since its trigger is installing a plugin the app did not build; the plan MUST record that
@@ -373,7 +379,7 @@ This is the first one.
 - **Component**: text, list, table, chart, button or simple form, each with its own fields, a tone
   or variant where it has styling, and nothing else.
 - **Declared action**: a name the manifest declares, which a control in that widget's content may
-  trigger; the host runs it through the plugin's `actions` export and keeps the data it returns.
+  trigger; the host runs it through the plugin's `actor` export and keeps the data it returns.
 - **Manifest name and icon**: optional manifest fields the frame shows, bounded and drawn by the
   host.
 - **Frame**: the host-drawn header (name, icon, host actions) and body (widget content) of one
@@ -408,10 +414,12 @@ This is the first one.
 - **The bundled example is a showcase.** It shows every component, tone and variant, so it serves
   the person, the reviewer and authors as the reference widget.
 - **Render runs as today.** The runtime's render, its limits and its log are unchanged; this
-  feature adds the app's side, the content format and the `actions` export. Scheduled data
+  feature adds the app's side, the content format and the `actor` export. Scheduled data
   updates through connectors in the app arrive with the official widgets.
 - **The bundled example's actions need no permission.** It keeps its state in the data its
-  actions return, which the host keeps, so it shows a working action without a grant.
+  actions return, which the host keeps, so it shows a working action without a grant. Kept data
+  is a host cache, not the plugin's storage: it is discarded whenever the package or its approval
+  changes, and a widget that needs durable state declares `storage`.
 - **The look follows feature 007.** Components draw with the shared roles of `DESIGN.md`; the
   frame header uses its host-only roles.
 - **Charts are simple.** A line or bar chart of a few series, drawn by the host, with a text

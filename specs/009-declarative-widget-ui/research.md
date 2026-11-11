@@ -7,7 +7,7 @@ without a prefix are under `runtime/src/`.
 
 **Decision**: the app crate (`app/src-tauri`) owns one `runtime::Runtime`, built at start-up with
 `RuntimeOptions::new(<app data dir>/host)` and development mode off. It loads the bundled
-packages, embedded in the binary at build time, each pinned by its SHA-256. A host-owned
+packages, embedded in the binary at build time. A host-owned
 `Widgets` state holds each loaded `Plugin` behind its own lock, so calls to one widget never run
 at the same time, and calls to different widgets can.
 
@@ -21,29 +21,42 @@ at the same time, and calls to different widgets can.
   binary is read.
 - The packages come from `target/plugins/` (`cargo xtask plugins`, `xtask/src/main.rs:85-147`).
   `app/src-tauri/build.rs` fails with "run `cargo xtask plugins` first" when one is missing, and
-  writes the pinned digests the app checks at start. CI runs `cargo xtask plugins` before the app
-  is built.
+  prints a `rerun-if-changed` line for each, since its explicit lines turn off Cargo's default
+  rerun (`build.rs:21-22`). A digest computed from the very file it embeds would protect nothing,
+  so there is no pinned digest; instead a test checks **which** packages a build embeds: exactly
+  `showcase` without `shell-probe`, and the hostile `ui-*` fixtures only with it.
+- **CI order**: `cargo xtask plugins --locked` moves above the probe build (today `ci.yml:157`,
+  before it at `:179`), so the app can be built at all; `CONTRIBUTING.md`'s commands and the
+  quickstart list it first too.
+- **Build cost**: the app crate now links Wasmtime and Cranelift, built under the release profile's
+  `lto = true` and `codegen-units = 1` (`Cargo.toml:18-22`). The probe's release build time and peak memory are
+  measured locally under the memory cap before the first push, and the 40-minute job limit is
+  checked against the Windows run.
+- **macOS signing, later**: Cranelift writes executable memory, so a signed, hardened macOS build
+  will need the `com.apple.security.cs.allow-jit` entitlement; the surface test reads
+  entitlements, and must allow that one when the updater feature signs builds (Phase 6).
 
 **Alternatives considered**: loading packages from a folder next to the app. Rejected: that is
 installation, with its own dialogs and decision 0001's trigger.
 
 ## R2. The bundled plugins' approval, without a dialog
 
-**Decision** (maintainer, 2026-11-10): the app approves each bundled package **in memory**, at
-start-up, only when its manifest declares **no permission at all** and its digest matches the
-one pinned at build. A bundled package that declares any permission is refused, with a test. The
+**Decision** (maintainer, 2026-11-10; constitution v2.6.3, Principle VII): the app approves each
+bundled package **in memory**, at start-up, only when its manifest declares **no permission at
+all**: no `permissions`, no `connectors`, and so no `storage`. `GrantStore::approve` grants every
+required permission it is given (`grants.rs:586-633`), so this check is the only gate; a test
+refuses a bundled package declaring each kind. The
 approval lives in a `GrantStore::in_memory()` (`grants.rs:449`) and is never written to disk.
 
 - `load` refuses any plugin without an approval entry, even with no permission
   (`permissions.rs:476-483`: "`{id}` has no approval; approve it first"). The entry identifies the
   package's origin; with no permission it grants nothing.
-- Principle VII reserves granting permissions and installing plugins to host dialogs. An approval
-  of no permission grants nothing, and the person installed these plugins by installing the app,
-  as part of it. The plan's Constitution Check records this reading; installed plugins get their
-  approval in the installation dialog, into the app's own record on disk.
+- Principle VII (v2.6.3): "A plugin built into the app and declaring no permission is part of the
+  app, not an installed plugin: the host MAY approve it at start-up, and the approval grants it
+  nothing." The amendment followed the plan's independent review, which held that a reading
+  recorded only in a plan would be the case-by-case exception governance forbids.
 
-**Alternatives considered**: an amendment to Principle VII; deferring the real widget until the
-installation dialog. Both declined by the maintainer.
+**Alternatives considered**: deferring the real widget until the installation dialog. Declined.
 
 ## R3. The app's records stay apart from development (FR-024)
 
@@ -60,8 +73,14 @@ installation dialog. Both declined by the maintainer.
   `RuntimeOptions` gains `vault_service(name)`; the app passes `dev.philsantos.dashboard.app`.
   The bundled plugins use no account, so the app's vault stays empty in this feature.
 
-A test in the app crate builds the app's `RuntimeOptions` and fails if any path or the service
-equals the development one, or if development mode is on.
+`Vault.service` is `&'static str` (`vault/mod.rs:168`), so the option takes `&'static str`.
+
+Tests: one in the app crate builds the app's `RuntimeOptions` and fails if any path or the
+service equals the development one, or if development mode is on. Since the runtime's CLI module
+is public (`lib.rs:19-20`) and `default_development_path()` and `default_development_data_dir()`
+are callable from the app, that test alone could not fail on a stray call; so the runtime's CLI
+moves behind a `cli` feature that the `runtime` binary enables and the app does not, and a second
+test scans `app/src-tauri/src` for the development functions' names.
 
 ## R4. The widget content format and where it is checked
 
@@ -86,8 +105,11 @@ is lenient where HS-09 requires it: a style field or other unknown field is drop
 once, an unknown tone draws as `default` and is logged, an unknown component type draws as a host
 placeholder and is logged. Anything else the schema refuses (wrong types, missing fields, over a
 bound) is invalid content. An agreement test pins both sides: every schema-valid document is
-accepted with no log entry; every document the host refuses is schema-invalid; the documents that
-differ only by unknown fields or tones are listed as the lenient cases.
+accepted with no log entry; every document the host refuses is schema-invalid, **except the
+host-only rules a schema cannot express**, listed apart as the manifest test does
+(`manifest_schema.rs:319`): the 500-component total, the 64 KiB size, rows as long as the
+columns, and as many chart labels as values; the documents that differ only by unknown fields or
+tones are listed as the lenient cases.
 
 **Alternatives considered**: validating with a JSON Schema library at run time. Rejected: `boon`
 (`runtime/Cargo.toml:116`) is a test dependency, and a typed parser gives the normalised tree and
@@ -160,11 +182,22 @@ is fetched." Feature 007's rule allows this: a criterion changes before the feat
   (`calls.rs:487-498`; maintainer's decision). Every place that matches on `Phase`
   (`lib.rs:1415,1462,1549,1562,1581`; `calls.rs:464,563`; `storage/mod.rs:517,597,703,716,775`)
   gets the third arm.
-- **Kept data** today gates on `updater()` (`lib.rs:1600-1641`); it gates on `updater()` or
-  `actor()`.
+- **Kept data** today gates on `updater()` (`lib.rs:1600-1641`), and so does render's choice of
+  the document it passes (`lib.rs:1392`); both gate on `updater()` or `actor()`, or an actor-only
+  plugin would never see its data. After an action, `fetched_at_ms` is the action's time and
+  `last_update` records the action's outcome, as for an update.
+- **Kept data is a host cache**, discarded when the package or its approval changes
+  (`kept.rs:4-7`); durable state is the `storage` permission's. The threat model's B1 says so.
+- **Phase checks** today are `==` comparisons (`calls.rs:464`, `lib.rs:1549,1562`,
+  `storage/mod.rs:517,597,716,775`), which a new variant would not trip; they become methods,
+  `Phase::may_call_connectors()` and `Phase::writes_storage()`, so each site states the rule.
 - **Version**: `V1_VERSION` becomes 1.4.0 and `ACTIONS_SINCE` is added
   (`permissions.rs:27-35`); `Contract::renderer()` names 1.4.0 (`:61`). Host bindings move to
   `interactive-account-stored-widget` (`lib.rs:78-85`).
+- **Doc comments** of 1.3.0 that 1.4.0 makes untrue ("Calls work only while the host runs
+  `update`", `widget.wit:36`; storage writes "`update` only"; render's document "for a plugin that
+  also exports `updater`") are corrected in `wit/v1` before 1.4.0 is frozen, which `wit/README.md`
+  allows; `wit/README.md` itself is updated (six more worlds, 1.4.0, the host's world).
 - **Freezing**: 1.3.0 is already frozen (`wit/history/1.3.0`). `wit/v1` becomes 1.4.0 and is
   frozen as `history/1.4.0` in the same change, pinned in `frozen_contracts`, because
   `v1_equals_its_frozen_copy` requires it (`contract_v1.rs:348-370`). The not-granted test skips
@@ -200,10 +233,11 @@ instantiating the plugin, with `undeclared-action`, a new `ErrorKind`.
 
 - **Handles** are short strings the host assigns (`w0`, `w1`…) for the widgets it is showing;
   anything else is refused with `unknown-widget` before any plugin is touched.
-- `widget_act` checks, in order: the handle; the action name against the manifest (R8); the
-  values against the form's bounds (R5); the secret check (R11); then it runs the action, keeps
-  its data, renders and returns the content. One action per widget at a time: a press while the
-  widget is busy is refused with `widget-busy` and the button shows it is working (edge case).
+- `widget_act` checks, in the order of `contracts/window-commands.md`: the handle; whether the
+  widget is busy (a render or an action running); the action name against the manifest (R8); the
+  values against the form's bounds (R5); the secret check (R11). Then it runs the action, keeps
+  its data, renders and returns the content. A press while the widget is busy is refused with
+  `widget-busy`, and the button shows it is working.
 - The window's probe of feature 008 gains the cases of R14 and keeps every case it has.
 
 ## R10. The page side: frame and components
@@ -213,9 +247,10 @@ per component) and `Widgets.tsx`, the stack of frames shown above the demo's tab
 
 - **Frame**: a header and a body as siblings. The header uses the host-only `frame-header` roles
   (`DESIGN.md` 337-346) and draws the name, the icon canvas and the host's actions (a reload
-  button). The body uses `frame` roles, with `contain: layout paint`, `overflow: hidden` and
-  `isolation: isolate`, so nothing of the content paints outside it or above the header (HS-03,
-  HS-04, HS-16). Content never uses `position: fixed` or `z-index`.
+  button). The body uses `frame` roles, with `contain: layout paint`, `overflow: auto`, a fixed maximum
+  height (scrolling inside the body past it) and `isolation: isolate`, so nothing of the content
+  paints outside it or above the header (HS-03, HS-04, HS-16). Content never uses
+  `position: fixed` or `z-index`.
 - **Strings**: rendered as React text children only, each wrapped in `<bdi>` so
   bidirectional characters cannot reorder around it (HS-24). No component sets `title`, `href`,
   `src` or any URL attribute from content (HS-07, HS-25).
@@ -224,29 +259,33 @@ per component) and `Widgets.tsx`, the stack of frames shown above the demo's tab
 - **Select** in a form: a host listbox drawn inside the body, not Radix Select or a native
   `<select>`, both of which draw outside the page's layout (HS-25). The form has `noValidate` and
   no `required`, `pattern` or `type` that triggers engine validation; the host shows errors
-  inline. Inputs are `type="text"` (numbers use `inputMode="decimal"`), `autocomplete="off"`, no
-  `name` taken from content, no credential hints (HS-06).
+  inline. Text and number inputs are `type="text"` (numbers use `inputMode="decimal"`); a checkbox is a
+  native `<input type="checkbox">`, not Radix's, which renders a hidden extra input. Every input
+  has `autocomplete="off"`, no `name` taken from content, no credential hints (HS-06).
 - **Chart**: drawn by the host as inline SVG elements (line or bar), series in `chart-1` to
   `chart-5` order, with a text table of the values for assistive technology. No chart library:
   none is installed, and SVG elements load nothing.
 - **Design check**: the components use only role utilities at declared opacities
-  (`design/src/checks/usage.ts:112-168`). Content data lives in `.ts` modules, which the usage
-  scan does not read, so a tone name in data cannot trip it.
+  (`design/src/checks/usage.ts:112-168`). The map from tones and variants to classes lives in a
+  `.tsx` module, so the usage scan, which reads only `.tsx` (`usage.ts:120-124`), checks it.
 - **Theme**: the frame and components use the same role utilities as the rest of the app, so
   they follow `.dark` with no extra code.
 
 ## R11. Form values carrying a held secret (FR-025)
 
-**Decision**: the runtime gains `Runtime::holds_secret_in(&self, text: &str) -> bool`. It reads
-the app's connected accounts (`accounts.rs:130-151`), takes each one's secret from the app's
-vault, and checks the text with the encodings the network layer already uses to withhold a
+**Decision**: the runtime gains `Runtime::holds_secret_in(&self, text: &str) ->
+Result<bool, RuntimeError>`. It reads the app's connected accounts (`accounts.rs:130-151`), takes
+each one's secrets from the app's vault (the access token, and the refresh token or key where the
+credential has one), and checks the text with the encodings the network layer already uses to withhold a
 credential echoed back (`network/mod.rs:245-286`, made a shared function). The app calls it on
 each form value before `widget_act` runs the plugin; on a match it refuses with
 `secret-in-form`, logs the field's name but never the value, and the plugin is not called.
 
-With no account connected, as in this feature, the check finds nothing and never touches the
-keychain. Its test connects an account in a mock vault (`lib.rs:515,534`) and submits the secret
-in each encoding.
+A vault that cannot be read (`keychain-unavailable`, `vault/mod.rs:205-238`) makes the check an
+error, and the form is refused: it fails closed. With no account connected, as in this feature,
+the check finds nothing and never touches the keychain. Its tests connect an account in a mock
+vault (`lib.rs:515,534`), submit each secret in each encoding, and make the vault fail with the
+existing `test_vault_fail_next` hook.
 
 ## R12. The plugin's log in the app
 
@@ -271,6 +310,11 @@ development build. Showing them in the UI comes with the dashboard's widget sett
 | Unknown handle, busy widget, bad values, secret in form (FR-019, FR-025) | app tests on the command functions |
 | Contract 1.4.0 only adds; 1.3.0 frozen | `runtime/tests/contract_v1.rs` |
 | Every author doc example is valid content | `widget-content/tests/docs.rs` reads the examples of `docs/authors/reference/content.md` |
+| A release build embeds only `showcase`; hostile fixtures only with `shell-probe` | app test on the embedded list |
+| A bundled package declaring permissions, connectors or storage is refused (R2) | app test, one case each |
+| The app never calls the development paths (FR-024) | app test of the options, and a source scan of `app/src-tauri/src` |
+| The secret check fails closed (FR-025) | runtime test with `test_vault_fail_next` |
+| Each `Phase` rule holds for `Action` | `runtime/tests/actions.rs`: store written all or nothing, read operations allowed, change operations refused, connectors refused in render |
 
 ## R14. Breaking tests in the page: the probe's widget cases
 
@@ -280,18 +324,22 @@ that check, in the real page on the three systems:
 
 | Case | Criterion | Holds when |
 | --- | --- | --- |
-| `frame-header-kept` | HS-01 | content shaped like a header with another name sits below the real header, which shows the manifest's name and the host's reload button |
-| `frame-clips` | HS-03 | no element of the oversized widget has a bounding box outside its body |
-| `frame-header-hittable` | HS-04 | `elementFromPoint` at the header's corners and centre returns the header |
-| `content-is-text` | HS-24, HS-07 | strings with HTML, script, image tags and bidi overrides appear as literal text, no element they name exists, no navigation, window or violation |
-| `dialog-shaped-widget` | HS-16 | beside the dialog-shaped widget, another widget's button still receives a click and keyboard focus; nothing covers the chrome |
-| `nothing-outside-frame` | HS-25 | with the long select open and an invalid form submitted, nothing in the document lies outside the widget's body, and no `title` attribute exists in content |
+| `frame-header-kept` | HS-01, HS-02 | content shaped like a header with another name sits below the real header; the header's text equals the `ui-header` manifest's name as the host draws it (markup and overrides as text, no child element from it) and its only button is the host's reload |
+| `frame-clips` | HS-03 | hit-testing points just outside the oversized widget's body, on each side, never returns an element of its content, and every content element's box, intersected with its clipping ancestors, lies inside the body (bounding boxes alone ignore clipping) |
+| `frame-header-hittable` | HS-04 | `elementFromPoint` at points inset from the header's corners, and at its centre, returns the header |
+| `content-is-text` | HS-24, HS-07 | strings with HTML, script, image tags, bidi overrides, URLs, file paths and custom schemes appear as literal text; no element they name exists; clicking each string changes neither the navigation nor the new-window counter, and no violation fires |
+| `strings-isolated` | HS-24 | each content string sits in an element with computed `unicode-bidi: isolate`, and a sentinel after a right-to-left override string keeps its position |
+| `dialog-shaped-widget` | HS-16 | beside the dialog-shaped widget, `elementFromPoint` at another widget's button returns that button, which then takes keyboard focus; nothing covers the chrome |
+| `nothing-outside-frame` | HS-25 | with the long select open and an invalid form submitted, nothing in the document lies outside the widget's body, no `invalid` event fires, every form has `noValidate`, and no `title` attribute exists in content |
 | `status-icons` | HS-08 | each status text has its icon element |
-| `form-no-credentials` | HS-06 | every input has `autocomplete="off"`, `type="text"`, no credential name or hint |
-| `foreign-actions-refused` | HS-05 | each button naming a host command or another widget's action is refused by the host, which reports no action run |
+| `form-no-credentials` | HS-06 | every text-entry input is `type="text"`; every input has `autocomplete="off"` and no credential name or hint |
+| `foreign-actions-refused` | HS-05 | the probe calls `widget_act` with host command names, another widget's action and undeclared names; each is refused, and a new `actions` counter in the probe (incremented by `widgets.rs` like `probe::refused`) shows no action ran |
 | `content-error-shown` | FR-005 | the invalid-content fixture shows the host's error state, and the widget beside it still draws |
 
-They join `PAGE_CASES` (`app/src-tauri/src/probe.rs:26-81`).
+They join `PAGE_CASES` (`app/src-tauri/src/probe.rs:26-81`). Which fixture carries which case:
+`ui-header` (HS-01, HS-02), `ui-overflow` (HS-03, HS-04), `ui-strings` (HS-07, HS-24, HS-25,
+HS-06, HS-08), `ui-dialog` (HS-16, HS-05: its buttons name host commands and other widgets'
+actions, which the content checker lets through as plain names), `ui-invalid` (FR-005).
 
 ## R15. Decision 0001: recorded review
 
@@ -299,7 +347,8 @@ They join `PAGE_CASES` (`app/src-tauri/src/probe.rs:26-81`).
 itself" (`docs/decisions/0001-plugin-process-isolation.md:55-57`). The bundled plugins are built
 with the app and pinned by digest, and compiling them takes 22 to 68 ms. Its accepted risk said
 "only the maintainer loads plugins, from the CLI" (`:51`); the decision gains a dated note that
-the app now loads its own bundled plugins too, which does not change that risk. The
+widens its "During Phase 1" scope to the app's own bundled plugins, which does not change that
+risk. The
 installation item reviews it.
 
 ## R16. The author docs and the threat model
@@ -308,12 +357,13 @@ installation item reviews it.
 - **New page** `docs/authors/reference/content.md`: every component, tone, variant and bound,
   with `<!-- ref: content <path> -->` markers; `docs_reference.rs` gains the kind `content`,
   sourced from `wit/content.schema.json` (`docs_reference.rs:16`, `:98-180`).
-- **Updated**: `manifest.md` (`name`, `icon`, `actions`), `contract.md` (1.4.0, `actor`, the six
+- **Updated**: `wit/README.md` (1.4.0, the six new worlds, the host's world), `manifest.md`
+  (`name`, `icon`, `actions`), `contract.md` (1.4.0, `actor`, the six
   worlds), `errors.md` (`undeclared-action`), `limits.md` (content bounds), `cli.md`
   (`runtime act`), and the getting-started walkthrough's contract version.
 - **Threat model**: B4 rows cite the probe cases of R14 and the tests of R13 (the design check
   requires a test or hostile case per cited criterion, `design/src/checks/criteria.ts:89-99`).
   New rows on B1 (an action reaching beyond its grants; an undeclared action), and B7 (a window
   command given a forged handle). B1's text "all or nothing in update" and B2's "calls only in
-  `update`" become "in update or an action". A residual row records typed text in a form
-  (Principle IV as amended in v2.6.2).
+  `update`" become "in update or an action". B1 says kept data is a host cache. A residual row
+  records typed text in a form (Principle IV as amended in v2.6.2).

@@ -36,8 +36,8 @@ in-memory grant record (research R2, R3).
 **Testing**: `cargo test` (runtime, widget-content, app crate), the agreement tests with the two
 schemas, the docs reference test, and the window probe of feature 008 with new widget cases.
 
-**Target Platform**: Windows (WebView2), macOS (WKWebView), Linux (WebKitGTK under the v2.6.2
-fallback).
+**Target Platform**: Windows (WebView2), macOS (WKWebView), Linux (WebKitGTK under the
+constitution's fallback).
 
 **Project Type**: desktop app with a Rust host library and a Wasm plugin contract.
 
@@ -49,14 +49,18 @@ render under 1 ms); an action's new state within 1 second.
   page as pixels.
 - Contract 1.3.0 and every frozen version stay byte for byte; 1.4.0 only adds.
 - Development records, vault and mode are never used by the app.
+- `cargo xtask plugins` runs before any build of the app, in CI and locally (R1).
+- The probe's release build now links Wasmtime under LTO: its time and peak memory are measured
+  under the memory cap before the first push (R1).
 
 **Scale/Scope**: 1 bundled widget in release; 5 hostile widgets in the probe build; 7 components;
-3 window commands; 1 new WIT interface, 6 new worlds; about 10 new probe cases.
+3 window commands; 1 new WIT interface, 6 new worlds; 11 new probe cases.
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.* Checked against
-constitution v2.6.2.
+constitution v2.6.3, after the independent review of this plan (2026-11-11), whose findings are
+folded into research R1 to R16; one of them led to the v2.6.3 amendment.
 
 | Principle or rule | Status | How |
 | --- | --- | --- |
@@ -66,11 +70,12 @@ constitution v2.6.2.
 | IV. Plugins never see secrets | Pass | Form values holding a secret the host holds are refused before the plugin runs (R11); typed text is the residual v2.6.2 names, recorded in the threat model. The app's vault is its own (R3). |
 | V. Plugins stay inside the host frame | Pass | The frame's body contains and clips content; the header is the host's; no portal, tooltip, native select or validation bubble; no password field (R10). Probe cases break each (R14). |
 | VI. Human confirmation for AI actions | Pass | No AI in scope. |
-| VII. Trust decisions only in host dialogs | Pass, with the reading recorded | No control grants, installs, connects or answers a dialog (FR-014). The bundled plugins are approved in memory only when they declare no permission: the approval grants nothing, and the person installed them with the app (R2, maintainer's decision). Installed plugins will be approved in the installation dialog. |
+| VII. Trust decisions only in host dialogs | Pass | No control grants, installs, connects or answers a dialog (FR-014). The bundled plugins are approved in memory only when they declare no permission, no connector and no storage, as v2.6.3 allows: "A plugin built into the app and declaring no permission is part of the app … the approval grants it nothing" (R2). Installed plugins will be approved in the installation dialog. |
 | VIII. Every security rule has a breaking test | Pass | R13 and R14 list a test for each criterion and refusal; quickstart §3, §4 and §5 break three of them by hand. |
 | IX. Human review of the security core | Pass | `wit/`, the runtime's grants and phases, the app's window module, commands and `window-surface.toml`, and the new frame and content components join the security core's review; this pull request is reviewed line by line. |
 | Fixed decision: Rust + Tauri 2, React UI | Pass | Unchanged. |
 | Fixed decision: the window engine | Pass | Unchanged; the probe runs on the three engines. |
+| Fixed decision: plugin storage, one SQLite database per plugin | Pass | Kept data stays a host cache, discarded when the package or its approval changes; durable state is the `storage` permission's (R7). |
 | Fixed decision: plugin contract by WIT, minors only add | Pass | 1.4.0 follows `wit/README.md`'s procedure: frozen as `history/1.4.0`, pinned, only-adds tested (R7). |
 | CI on three systems, audits | Pass | The new tests and probe cases run in the existing jobs; no new dependency outside the lock. |
 | Decision 0001 (plugins in the host process) | Pass, review recorded | Its trigger is installing a plugin the app did not build; the app now loads its own bundled plugins, which the decision gains as a dated note (R15). |
@@ -129,6 +134,8 @@ app/
     ├── src/commands.rs          # widgets_list, widget_render, widget_act
     ├── capabilities/default.json, window-surface.toml
     └── tests/                   # widgets.rs (records, approval, handles, busy, secret)
+.github/workflows/ci.yml           # cargo xtask plugins before the app is built
+CONTRIBUTING.md                    # the order of the build commands; the widget rules
 docs/
 ├── authors/reference/content.md   # new
 ├── authors/reference/{manifest,contract,errors,limits,cli}.md, getting-started.md

@@ -24,7 +24,8 @@ cargo run -p runtime --locked -- act target/plugins/showcase.wasm increment
 **Expected**: `run` prints the content and "drawn, no log entries". `act` prints the new data and
 the next render's content. Then run `run` on `target/plugins/ui-invalid.wasm`.
 
-**Expected**: the content error with its path, and one log entry.
+**Expected**: the content error with its path, and one log entry. With a fresh clone,
+`cargo xtask plugins` comes before any build of the app: the app embeds what it builds.
 
 ## 3. The format and the docs agree (FR-006, SC-003)
 
@@ -45,7 +46,8 @@ Run the probe of feature 008 (`specs/008-tauri-shell/contracts/probe.md`).
 `nothing-outside-frame`, `status-icons`, `form-no-credentials`, `foreign-actions-refused`,
 `content-error-shown`.
 
-Then, in `app/src/widgets/Frame.tsx`, remove `overflow: hidden` from the body and run it again.
+Then, in `app/src/widgets/Frame.tsx`, remove both `contain` and `overflow` from the body (either
+one alone still clips) and run it again.
 
 **Expected**: `frame-clips` breaks. Revert.
 
