@@ -348,7 +348,7 @@ widgets through three reviewed commands; nothing is drawn yet.
   `name.rs`, the three commands, `app/src/widgets/`, `widget-content/` and the content schema;
   a short section on widgets (the content format, the bundled-plugin rule, the hostile fixtures
   and probe cases).
-- [ ] T032 Run every local check under the memory cap: `cargo xtask plugins`, clippy on the
+- [X] T032 Run every local check under the memory cap: `cargo xtask plugins`, clippy on the
   workspace and the probe build, `cargo test --workspace`, `cargo test -p widget-content`,
   `cargo deny`, `cargo audit`, `pnpm audit`, the design checks and licenses, the docs reference
   test, and the probe on Linux. Record the times in research R1.

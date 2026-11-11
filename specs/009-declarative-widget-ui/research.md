@@ -38,6 +38,17 @@ at the same time, and calls to different widgets can.
   its largest process peaked at 2.04 GiB resident, well inside the cap. The binary grew from 6.3
   to 21.6 MiB. The 40-minute limit stays: the probe build is a fraction of it, and the Windows
   run of the first push confirms it.
+  **Every local check** (T032), on 2026-11-11 on the same machine, one after another under the
+  cap: formatting, the design checks, tests and licenses in under 10 s; `cargo xtask plugins`
+  4 s; the probe's release build 5 min 53 s from a warm `target/release`, and the probe 21 s
+  (65 cases held, the showcase drawn 745 ms after the page began loading); clippy on the probe
+  build, the workspace and the plugins 27 s; `cargo test --workspace` 15 min 55 s in a session
+  with its own GNOME Keyring (the runtime's `it` 14 min 13 s of it, its hostile timed cases);
+  `widget-content` 2 s; the test seam's release refusal 81 s; the docs reference 8 s;
+  `cargo deny`, `cargo audit` on the three lockfiles and `pnpm audit` 8 s together. It found one
+  failure, fixed in 97dcf89: the repository's manifest test refused `ui-badmanifest`, invalid on
+  purpose. With the fix that test passes, and so do the test binaries the failure had stopped
+  before (`widget-content`, `xtask`, the doc tests): 341 runtime tests pass, 4 ignored.
 - **macOS signing, later**: Cranelift writes executable memory, so a signed, hardened macOS build
   will need the `com.apple.security.cs.allow-jit` entitlement; the surface test reads
   entitlements, and must allow that one when the updater feature signs builds (Phase 6).
@@ -312,7 +323,7 @@ development build. Showing them in the UI comes with the dashboard's widget sett
 | Status icons (HS-08) | `widget-content` test: every status tone in the widget map carries its icon in the normalised tree |
 | Form: no password, no credential hints (HS-06) | `widget-content` test: `password`, `masked`, credential names and hints refused or dropped |
 | Name and icon bounds (HS-02, FR-008) | `runtime/tests/manifest_schema.rs`: agreement cases for `name`, and host-only cases for icons (SVG, JPEG, over 8 KiB, not square, too small or large, animated, malformed); an app test of the drawn name (markup, overrides, format characters, the longest accepted name, nothing left) |
-| Actions: declared names, limits, grants, no change operations, kept data, older minors (FR-022, FR-023) | `runtime/tests/actions.rs` with fixtures `action-probe` and `hostile/action-escape` |
+| Actions: declared names, limits, grants, no change operations, kept data, older minors (FR-022, FR-023) | `runtime/tests/actions.rs` with fixtures `action-probe` and `action-steps` (a fixture rather than a hostile crate, since `hostile/` holds one broken rule per crate; T009) |
 | The bundled approval refuses a package with permissions (R2) | app test |
 | App records apart, development off (FR-024) | app test |
 | Unknown handle, busy widget, bad values, secret in form (FR-019, FR-025) | app tests on the command functions |
