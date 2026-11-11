@@ -52,7 +52,7 @@ before any build of the app (research R1).
 - [X] T002 [P] Put the runtime's CLI behind a `cli` feature in `runtime/Cargo.toml`, enabled by
   the `runtime` binary and the tests that need it, not by default for library users (research
   R3). `cargo build -p runtime --locked` and `cargo test -p runtime --test it` still pass.
-- [ ] T003 [P] Change criterion HS-02's check in `docs/design/host-surfaces.md` first, as feature
+- [X] T003 [P] Change criterion HS-02's check in `docs/design/host-surfaces.md` first, as feature
   007's rule allows (research R6): "An SVG icon, or any image that is not a PNG within the bounds,
   is refused when the plugin loads, and the frame draws the host's monogram; nothing of it runs or
   is fetched." Run `pnpm --filter ./design check`.
