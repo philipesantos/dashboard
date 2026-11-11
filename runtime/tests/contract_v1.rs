@@ -10,6 +10,8 @@ use wit_parser::{Resolve, Type, TypeDefKind, TypeOwner};
 /// The interfaces a plugin exports, which carry no capability.
 const RENDERER: &str = "renderer";
 const UPDATER: &str = "updater";
+/// Feature 009: the plugin's actions, an export like the two above
+const ACTOR: &str = "actor";
 const NOT_GRANTED: &str = "not-granted";
 
 /// Why a function breaks the rule, if it does.
@@ -50,7 +52,7 @@ fn every_capability_of_contract_v1_can_answer_not_granted() {
     let mut capabilities = 0;
     let mut broken = Vec::new();
     for (name, &interface) in &resolve.packages[package].interfaces {
-        if name == RENDERER || name == UPDATER {
+        if name == RENDERER || name == UPDATER || name == ACTOR {
             continue;
         }
         capabilities += 1;
@@ -171,17 +173,48 @@ fn contract_1_2_0_contains_everything_of_1_1_0_unchanged() {
     }
 }
 
-/// Feature 005, research R9: 1.3.0 (`wit/v1`) holds everything of the published 1.2.0
-/// unchanged, and adds `accounts`, whose call answers with errors of its own.
+/// Feature 005, research R9: the published 1.3.0 (`wit/history/1.3.0`) holds everything of the
+/// published 1.2.0 unchanged, and adds `accounts`, whose call answers with errors of its own.
 #[test]
 fn contract_1_3_0_contains_everything_of_1_2_0_unchanged() {
-    let added = assert_only_adds(&wit().join("history").join("1.2.0"), &wit().join("v1"));
+    let history = wit().join("history");
+    let added = assert_only_adds(&history.join("1.2.0"), &history.join("1.3.0"));
     for name in ["accounts.call", "accounts.account-call-error"] {
         assert!(added.contains_key(name), "{name}");
     }
     // The connectors' answers are the same as in 1.2.0: the new ones are only in `accounts`
     let old = definitions(&wit().join("history").join("1.2.0"));
     assert_eq!(added["connectors.call-error"], old["connectors.call-error"]);
+}
+
+/// Feature 009, research R7: 1.4.0 (`wit/v1`) holds everything of the published 1.3.0
+/// unchanged, and adds `actor` with six worlds that export it. The 1.3.0 worlds are untouched,
+/// since a world that gained an export would no longer be the same world.
+#[test]
+fn contract_1_4_0_contains_everything_of_1_3_0_unchanged() {
+    let added = assert_only_adds(&wit().join("history").join("1.3.0"), &wit().join("v1"));
+    assert!(added.contains_key("actor.act"), "actor.act");
+    for world in [
+        "interactive-widget",
+        "interactive-connected-widget",
+        "interactive-stored-widget",
+        "interactive-connected-stored-widget",
+        "interactive-account-widget",
+        "interactive-account-stored-widget",
+    ] {
+        let items = added
+            .get(&format!("world {world}"))
+            .unwrap_or_else(|| panic!("world {world}"));
+        assert!(items.contains("export dashboard:widget/actor"), "{world}: {items}");
+        // The same imports and exports as its 1.3.0 counterpart, plus `actor`
+        let base = world.trim_start_matches("interactive-");
+        let base_items = &added[&format!("world {base}")];
+        let without_actor: Vec<&str> = items
+            .split("; ")
+            .filter(|item| *item != "export dashboard:widget/actor")
+            .collect();
+        assert_eq!(without_actor.join("; "), *base_items, "{world} against {base}");
+    }
 }
 
 /// The published contracts are frozen: the comparisons above would follow an edit to them, so
@@ -206,6 +239,10 @@ fn frozen_contracts() {
         (
             "1.3.0",
             "7a03fde5494b73e54469550c8d3e26282d6738e32e330d8d0c4be7bebfe3d45b",
+        ),
+        (
+            "1.4.0",
+            "0000000000000000000000000000000000000000000000000000000000000000",
         ),
     ] {
         let path = wit().join("history").join(version).join("widget.wit");

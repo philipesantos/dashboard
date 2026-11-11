@@ -73,7 +73,7 @@ widget host, before any story draws.
 
 ### Contract 1.4.0
 
-- [ ] T005 Write the 1.4.0 tests first in `runtime/tests/contract_v1.rs`: a new only-adds test,
+- [X] T005 Write the 1.4.0 tests first in `runtime/tests/contract_v1.rs`: a new only-adds test,
   1.3.0 (`history/1.3.0`) against `wit/v1`, asserting `actor.act` and the six `interactive-*`
   worlds exist; the 1.3.0 pair test moves to history against history; `actor` joins the skip list
   of the not-granted check (`:11-12,53`); a SHA-256 pin for `history/1.4.0` in
