@@ -344,7 +344,7 @@ widgets through three reviewed commands; nothing is drawn yet.
 - [X] T030 [P] Add the dated note to `docs/decisions/0001-plugin-process-isolation.md`: its
   "During Phase 1" scope now covers the app's own bundled plugins, with no change to its risk
   (research R15).
-- [ ] T031 [P] Update `CONTRIBUTING.md`: the security core gains `app/src-tauri/src/widgets.rs`,
+- [X] T031 [P] Update `CONTRIBUTING.md`: the security core gains `app/src-tauri/src/widgets.rs`,
   `name.rs`, the three commands, `app/src/widgets/`, `widget-content/` and the content schema;
   a short section on widgets (the content format, the bundled-plugin rule, the hostile fixtures
   and probe cases).

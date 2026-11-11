@@ -227,6 +227,34 @@ cannot see a change that never names the engine, such as a CSS value picked for 
 draws, so reviewers ask about those. Code the macOS engine shares is not WebKitGTK-only; name
 the engines by system in its comments.
 
+### Widgets
+
+A widget never draws anything itself. Its `render` returns content in the host's format
+([`docs/authors/reference/content.md`](docs/authors/reference/content.md), schema
+`wit/content.schema.json`); `widget-content/` checks it against the schema's kinds and the
+host's bounds, and `app/src/widgets/` draws it with the host's own components inside the host's
+frame, every string as text inside `<bdi>`. The frame's header, the plugin's name and its icon
+belong to the host. A button or form runs only an action the manifest declares, through
+`widget_act`, under the grants and limits of an update; the data an action returns stays in
+memory until the app quits.
+
+- **A new component, field kind, tone or bound** changes the schema, `widget-content/`, the
+  drawing in `app/src/widgets/content/` and the author page together; `widget-content`'s tests
+  and `runtime/tests/docs_reference.rs` fail when they disagree. A tone or variant that widget
+  content can select must reach only shared roles (`pnpm --filter ./design check`, host-only).
+- **Bundled widgets** are built by `cargo xtask plugins` (run it before building the app) and
+  embedded by `app/src-tauri/build.rs` from `BUNDLED`. One that declares no permission, connector
+  or storage is part of the app and approved at start-up with nothing granted (constitution,
+  Principle VII); the app refuses to load a bundled package that declares any, and
+  `tests/widgets.rs` checks that a release build embeds exactly `showcase`.
+- **Hostile widgets** live in `plugins/hostile/ui-*`, one broken rule each, and are embedded
+  only in the probe build (`PROBE_BUNDLED`). The probe's widget cases in
+  `app/src/probe/widgets.ts` break each frame and content rule in the real page: the header kept
+  and hittable, content clipped and drawn as text, isolated strings, nothing outside the frame,
+  no credential inputs, status icons, foreign actions refused, error states shown, the window
+  responsive under a looping action. A new rule on widget content gets a fixture and a case
+  here, listed in `run.ts` and `PAGE_CASES`.
+
 ## Security rules for every change
 
 - A change that adds or touches a security rule comes with an automated test that fails when
@@ -234,7 +262,7 @@ the engines by system in its comments.
 - Changes to the security core (plugin runtime, permission engine, connector engine and
   network proxy, plugin storage in `runtime/src/storage/`, the secrets vault in
   `runtime/src/vault/` with the accounts and the sign-in, the official connector catalog
-  in `connectors/`, and the window's protections listed below) get
+  in `connectors/`, the window's protections and the widget host listed below) get
   line-by-line human review before merge, including code written with AI help.
   They always go through a pull request, even when a maintainer could push to `master`
   directly, and the pull request records who reviewed them.
@@ -250,6 +278,13 @@ the engines by system in its comments.
   - `app/vite.config.ts`'s development policy;
   - the tests that guard them: `app/src-tauri/tests/surface.rs` and `style_nonce.rs`,
     `app/src/probe/` and the probe step in `ci.yml`.
+- The widget host, in the security core since feature 009:
+  - `app/src-tauri/src/widgets.rs` (the bundled widgets, their records and log, and the checks
+    before a plugin runs), `name.rs` (the drawn name) and the three commands `widgets_list`,
+    `widget_render` and `widget_act` in `commands.rs`;
+  - `app/src/widgets/`, which draws the frame and every component of widget content;
+  - `widget-content/`, which checks content and turns it into the tree the page draws, and the
+    content schema `wit/content.schema.json`.
 - New Rust dependencies must come from crates.io and use a license allowed in
   [`deny.toml`](deny.toml); `cargo deny check` enforces both.
 
