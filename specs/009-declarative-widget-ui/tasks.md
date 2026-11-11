@@ -78,7 +78,7 @@ widget host, before any story draws.
   worlds exist; the 1.3.0 pair test moves to history against history; `actor` joins the skip list
   of the not-granted check (`:11-12,53`); a SHA-256 pin for `history/1.4.0` in
   `frozen_contracts`. They fail until T006.
-- [ ] T006 Write contract 1.4.0 in `wit/v1/widget.wit` (contracts/actions.md):
+- [X] T006 Write contract 1.4.0 in `wit/v1/widget.wit` (contracts/actions.md):
   - first correct the doc comments 1.4.0 makes untrue: "Calls work only while the host runs
     `update`" (`:36`), storage writes "`update` only", and render's document "for a plugin that
     also exports `updater`" (research R7);

@@ -242,7 +242,7 @@ fn frozen_contracts() {
         ),
         (
             "1.4.0",
-            "0000000000000000000000000000000000000000000000000000000000000000",
+            "5d04c4f3a578e824d49882869fa01701b74c6fe538311a608e7d0a3244098886",
         ),
     ] {
         let path = wit().join("history").join(version).join("widget.wit");
