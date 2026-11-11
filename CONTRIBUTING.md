@@ -36,6 +36,7 @@ Then, from the repository root:
 
 ```bash
 pnpm install
+cargo xtask plugins --locked
 pnpm tauri dev
 ```
 
@@ -51,12 +52,12 @@ session bus of their own, as CI does:
 
 
 ```bash
+cargo xtask plugins --locked                                   # the plugins: first, the app embeds some
 pnpm --filter ./design check                                   # the visual system (below)
 pnpm --filter ./design test
 pnpm --filter ./design run licenses                            # npm licenses
 pnpm audit --audit-level high                                  # npm advisories
 pnpm --filter ./app build                                      # UI type-check and build
-cargo xtask plugins --locked                                   # the plugins the tests load
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo clippy --manifest-path plugins/Cargo.toml --target wasm32-unknown-unknown \
   --target-dir target/plugins-build --locked -- -D warnings    # the plugins themselves
@@ -70,8 +71,9 @@ cargo deny --manifest-path docs/authors/getting-started/Cargo.toml check
 ```
 
 Install `cargo audit` and `cargo deny` with `cargo install --locked cargo-audit cargo-deny`.
-`cargo test` fails, never skips, when a plugin it loads was not built: run
-`cargo xtask plugins` first.
+`cargo test` fails, never skips, when a plugin it loads was not built, and the app does not build
+without the widgets it embeds: run `cargo xtask plugins` first, after every change under
+`plugins/`.
 
 The runtime's integration tests build as one executable, `runtime/tests/it.rs`, since each
 executable links the whole runtime (about 100 MB in a debug build). Each file in `runtime/tests/`

@@ -56,7 +56,7 @@ before any build of the app (research R1).
   007's rule allows (research R6): "An SVG icon, or any image that is not a PNG within the bounds,
   is refused when the plugin loads, and the frame draws the host's monogram; nothing of it runs or
   is fetched." Run `pnpm --filter ./design check`.
-- [ ] T004 [P] Move `cargo xtask plugins --locked` above the probe build in
+- [X] T004 [P] Move `cargo xtask plugins --locked` above the probe build in
   `.github/workflows/ci.yml` (today `:157` builds the app before `:179` builds the plugins), and
   list it first in `CONTRIBUTING.md`'s commands (research R1).
 
