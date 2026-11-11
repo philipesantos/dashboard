@@ -343,6 +343,52 @@ fn an_action_calls_read_operations_and_never_ones_that_change_data() {
 }
 
 #[test]
+fn an_action_reaches_no_further_than_its_grants() {
+    let pki = TestPki::new();
+    let server = Server::https(&pki.leaf(&["api.echo.test"]));
+    server.route("/look", Reply::json(r#"{"ok":true}"#));
+    let world = echo_world(&pki, &server);
+    // The connector optional and left off: an action gets the stand-in, as an update would
+    let package = repack(
+        &fixture("action-steps"),
+        &manifest(
+            "local/action-steps",
+            &["save"],
+            json!({
+                "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }],
+                "connectors": [{ "id": "catalog/echo", "major": 1,
+                                  "operations": ["look"], "required": false }]
+            }),
+        ),
+    );
+    let plugin = world.approve_and_load(&package);
+    let call = |connector: &str, operation: &str| json!({ "op": "call", "connector": connector, "operation": operation });
+    let data = plugin
+        .act(
+            "save",
+            &steps(
+                json!([
+                    call("catalog/echo", "look"),
+                    call("catalog/echo", "write"),
+                    call("catalog/other", "look")
+                ]),
+                "ok",
+            ),
+            &none(),
+        )
+        .result
+        .unwrap();
+    // The optional connector left off, an operation it never declared, a connector it never named
+    for answer in answers(&data) {
+        assert_eq!(answer, json!({ "error": "CallError::NotGranted" }));
+    }
+    assert!(
+        server.received().is_empty(),
+        "an ungranted call reached the service"
+    );
+}
+
+#[test]
 fn an_action_runs_under_the_limits_of_an_update() {
     let world = World::production_with(
         Limits {

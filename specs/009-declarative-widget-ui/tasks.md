@@ -333,7 +333,7 @@ widgets through three reviewed commands; nothing is drawn yet.
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T029 Update `docs/threat-model.md` (research R16, FR-021):
+- [X] T029 Update `docs/threat-model.md` (research R16, FR-021):
   - B4 rows cite the probe cases and tests of each criterion;
   - new rows: B1, an action reaching beyond its grants; B1, an undeclared action; B7, a window
     command given a forged handle; a residual row for text typed into a form (Principle IV,
