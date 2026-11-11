@@ -15,6 +15,8 @@ semver = "1"
 # Typed manifest and grant record
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The CLI checks content as the app does (feature 009); only with the `cli` feature
+widget-content = { path = "../widget-content", optional = true }
 # The manifest's icon (feature 009, research R6): standard base64 of a PNG, decoded by the host so
 # the frame draws pixels. Both already in the lock, through Tauri and others.
 base64 = "0.22.1"
@@ -114,7 +116,7 @@ path = "tests/it.rs"
 default = ["cli"]
 # The development command-line tool (`runtime::cli`), on by default for the `runtime` binary and
 # the tests; the app turns default features off
-cli = []
+cli = ["dep:widget-content"]
 # The test seam of research R15: test routes and roots instead of DNS and Mozilla's roots.
 # Only the runtime's own tests turn it on, through the dev-dependency below, and the library
 # refuses to compile with it outside debug builds.

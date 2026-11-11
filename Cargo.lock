@@ -3428,6 +3428,7 @@ dependencies = [
  "wasmparser 0.261.0",
  "wasmtime",
  "wat",
+ "widget-content",
  "windows-native-keyring-store",
  "wit-component 0.262.0",
  "wit-parser 0.261.0",

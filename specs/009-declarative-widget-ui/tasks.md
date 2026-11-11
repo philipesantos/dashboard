@@ -156,7 +156,7 @@ widget host, before any story draws.
 - [X] T013 Write `wit/content.schema.json` and implement `widget-content` (`parse(&Value) ->
   Result<(Content, Vec<LogEntry>), ContentError>`), with the bounds as constants and the tones
   and status icons read from the widget map at build time (research R4, R5). T012 passes.
-- [ ] T014 [P] Teach the CLI (research R4, contracts/actions.md): `runtime run` reports the
+- [X] T014 [P] Teach the CLI (research R4, contracts/actions.md): `runtime run` reports the
   content check (drawn, log entries, or the error with its path); new `runtime act <package>
   <action> [--value id=text]…` with the development record. Update `cli::USAGE`; `docs_reference.rs` then asks for its doc,
   written in T023.
