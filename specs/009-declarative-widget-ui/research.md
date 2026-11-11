@@ -147,8 +147,9 @@ limit.
   decision of 2026-11-10: **PNG only**, since rasterising SVG would bring a large parser of a
   rich format into the host.
 - The manifest cap stays 16 KiB (`manifest.rs:19`): 8 KiB of PNG is about 11 KiB of base64.
-- **Drawing**: the app decodes the icon to RGBA pixels when the plugin loads, and the page draws
-  them on a `<canvas>` with `putImageData`. No URL is created, so `img-src 'self'` stays
+- **Drawing**: the runtime decodes the icon to RGBA pixels when it parses the manifest
+  (`Manifest::icon_rgba()`, where the PNG checks already run), the app hands those pixels to the
+  page, and the page draws them on a `<canvas>` with `putImageData`. No URL is created, so `img-src 'self'` stays
   (`tauri.conf.json:15-29`), and the probe's `load-image-data` case is untouched. Without an
   icon, or with one the host refused at load, the frame draws a monogram from the name.
 - **Name drawn**: bidirectional controls and other format characters removed, whitespace
@@ -304,7 +305,7 @@ development build. Showing them in the UI comes with the dashboard's widget sett
 | Unknown tone and style fields (HS-09) | `widget-content` test: draws as without them, one log entry |
 | Status icons (HS-08) | `widget-content` test: every status tone in the widget map carries its icon in the normalised tree |
 | Form: no password, no credential hints (HS-06) | `widget-content` test: `password`, `masked`, credential names and hints refused or dropped |
-| Name and icon bounds (HS-02, FR-008) | `runtime/tests/manifest_schema.rs` agreement cases; an app test of the drawn name (markup, controls, overrides, 500 characters, empty) and of icons (SVG, JPEG, oversize, too large, animated, malformed) |
+| Name and icon bounds (HS-02, FR-008) | `runtime/tests/manifest_schema.rs`: agreement cases for `name`, and host-only cases for icons (SVG, JPEG, over 8 KiB, not square, too small or large, animated, malformed); an app test of the drawn name (markup, overrides, format characters, the longest accepted name, nothing left) |
 | Actions: declared names, limits, grants, no change operations, kept data, older minors (FR-022, FR-023) | `runtime/tests/actions.rs` with fixtures `action-probe` and `hostile/action-escape` |
 | The bundled approval refuses a package with permissions (R2) | app test |
 | App records apart, development off (FR-024) | app test |
@@ -319,7 +320,7 @@ development build. Showing them in the UI comes with the dashboard's widget sett
 
 ## R14. Breaking tests in the page: the probe's widget cases
 
-**Decision**: the probe build (feature 008) also embeds five hostile widget fixtures under
+**Decision**: the probe build (feature 008) also embeds seven hostile widget fixtures under
 `plugins/hostile/ui-*`, shown only in the probe build, and `app/src/probe/widgets.ts` adds cases
 that check, in the real page on the three systems:
 
@@ -335,12 +336,16 @@ that check, in the real page on the three systems:
 | `status-icons` | HS-08 | each status text has its icon element |
 | `form-no-credentials` | HS-06 | every text-entry input is `type="text"`; every input has `autocomplete="off"` and no credential name or hint |
 | `foreign-actions-refused` | HS-05 | the probe calls `widget_act` with host command names, another widget's action and undeclared names; each is refused, and a new `actions` counter in the probe (incremented by `widgets.rs` like `probe::refused`) shows no action ran |
-| `content-error-shown` | FR-005 | the invalid-content fixture shows the host's error state, and the widget beside it still draws |
+| `content-error-shown` | FR-005 | `ui-invalid` shows the host's error state for content over a bound and, after its `wrong-type` action, for a wrong type; `ui-crash` shows it for a render that traps; `ui-badmanifest`, whose name is over the manifest's limit, shows the not-loaded state; the showcase beside them still draws |
+| `window-responsive` | FR-017 | while `ui-invalid`'s `spin` action loops until the time limit, the showcase's reload button is hit by `elementFromPoint` and its `widget_render` answers within a second; then the spin ends as `action-failed` |
+| `showcase-on-time` | SC-001 | the showcase's content is drawn within a second of the page's load; the detail gives the time, which T035 records per system |
 
 They join `PAGE_CASES` (`app/src-tauri/src/probe.rs:26-81`). Which fixture carries which case:
 `ui-header` (HS-01, HS-02), `ui-overflow` (HS-03, HS-04), `ui-strings` (HS-07, HS-24, HS-25,
 HS-06, HS-08), `ui-dialog` (HS-16, HS-05: its buttons name host commands and other widgets'
-actions, which the content checker lets through as plain names), `ui-invalid` (FR-005).
+actions, which the content checker lets through as plain names), `ui-invalid` (FR-005, FR-017:
+content over a bound; actions `wrong-type` and `spin`), `ui-crash` (a render that traps),
+`ui-badmanifest` (a name over 60 characters, refused at load).
 
 ## R15. Decision 0001: recorded review
 

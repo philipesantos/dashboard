@@ -16,8 +16,8 @@ below the page, R14 the probe cases in the page.
 
 **Security core** (constitution v2.6.3, Principle IX): `wit/`, the runtime's grants, phases,
 vault and network changes, `app/src-tauri/` (`widgets.rs`, `name.rs`, `commands.rs`,
-`capabilities/`, `window-surface.toml`, `build.rs`), `app/src/widgets/` and `app/src/probe/`, and
-the probe step in `ci.yml`. The pull request gets line-by-line human review.
+`capabilities/`, `window-surface.toml`, `build.rs`), `widget-content/` and
+`wit/content.schema.json`, `app/src/widgets/` and `app/src/probe/`, and the probe step in `ci.yml`. The pull request gets line-by-line human review.
 
 **Heavy builds**: run `cargo build` and `cargo test` locally inside
 `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=1G`; run `cargo xtask plugins`
@@ -163,8 +163,10 @@ widget host, before any story draws.
   - the app's `RuntimeOptions`: no path or vault service equals the development one, development
     mode off; a scan of `app/src-tauri/src` finds no `default_development_path` or
     `default_development_data_dir`;
-  - a release build embeds exactly `showcase`; with `shell-probe`, the `ui-*` fixtures too;
+  - a release build embeds exactly `showcase`; with `shell-probe`, the seven `ui-*` fixtures too;
   - a bundled package declaring a permission, a connector or storage is refused, one case each;
+  - `widget_render` refuses a handle not shown or malformed (`unknown-widget`) and a widget whose
+    action is running (`widget-busy`);
   - `widget_act` refuses, in order and without calling the plugin: a handle not shown or
     malformed (`unknown-widget`), a busy widget (`widget-busy`), an undeclared action, bad values
     (`bad-values`: not strings, over 20 entries, over 500 characters), a value holding a held
@@ -234,11 +236,13 @@ widgets through three reviewed commands; nothing is drawn yet.
 
 **Independent Test**: quickstart §2 and §3.
 
-- [ ] T021 [P] [US2] Write `plugins/hostile/ui-invalid` (1.4.0, no permission): its render
-  returns content over a bound; with a setting, a wrong type. Add the probe case
-  `content-error-shown` to a new `app/src/probe/widgets.ts`, registered in `run.ts` and
-  `PAGE_CASES` (`probe.rs:26-81`): the fixture's frame shows the host's error state with its
-  reason, and the showcase beside it still draws. It fails until T022.
+- [ ] T021 [P] [US2] Write three fixtures (1.4.0, no permission), embedded only in the probe
+  build: `plugins/hostile/ui-invalid` (render returns content over a bound; action `wrong-type`
+  makes the next render return a wrong type; action `spin` loops until the time limit),
+  `ui-crash` (render traps), `ui-badmanifest` (a manifest name over 60 characters). Add to a new
+  `app/src/probe/widgets.ts`, registered in `run.ts` and `PAGE_CASES` (`probe.rs:26-81`), the
+  cases `content-error-shown`, `window-responsive` and `showcase-on-time` of research R14. They
+  fail until T022.
 - [ ] T022 [US2] Draw the content error and the not-loaded state in `Frame.tsx` (FR-005): the
   host's message with the error's kind and path, as text; the plugin's log gets the entry
   (`widgets.rs`). T021's case holds.
@@ -341,9 +345,11 @@ widgets through three reviewed commands; nothing is drawn yet.
   another widget, outlive its permission, or see a secret. Check each finding at the source
   before changing anything; bring real trade-offs to the maintainer.
 - [ ] T035 Only once the maintainer has pushed and opened the pull request, as they ask: follow
-  CI on the three systems and record the probe's time per system in research R1.
+  CI on the three systems and record, per system, the probe's time and the showcase's
+  first-render time from `showcase-on-time` (SC-001) in research R1.
 - [ ] T036 The maintainer's part, before the merge: the line-by-line review of the security core
-  (Principle IX); quickstart §7 (keyboard and screen reader) on Windows, macOS and Linux.
+  (Principle IX); quickstart §7 (keyboard, screen reader, narrow frames, forced colors and
+  reduced motion) on Windows, macOS and Linux.
 - [ ] T037 Before the merge, and only when the maintainer asks, update the development guide:
   tick the Phase 3 items "Biblioteca de UI declarativa" and "Moldura do host em cada widget",
   noting contract 1.4.0 and constitution v2.6.2 and v2.6.3.

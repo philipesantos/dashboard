@@ -248,8 +248,6 @@ This is the first one.
   bubble appears.
 - A narrow frame: tables and charts stay inside the body, scrolling inside it if they must.
 - Forced colors and reduced motion: the frame stays recognisable, and status icons stay visible.
-- The plugin is replaced while its widget is showing (a development rebuild): the frame draws the
-  new content or the error state, never a mix.
 
 ## Requirements *(mandatory)*
 
@@ -354,8 +352,8 @@ This is the first one.
   the development vault. Its grant record holds no permission until a host dialog grants one; the
   only entries before then are the start-up approvals of built-in plugins that declare none
   (Principle VII, v2.6.3). The app MUST
-  run the runtime with development mode off, so no unverified local connector runs. Reloading a
-  rebuilt bundled plugin reloads its code and never changes a grant.
+  run the runtime with development mode off, so no unverified local connector runs. A rebuilt
+  bundled plugin arrives only with a new build of the app, which changes no grant.
 - **FR-019**: Every host command the window gains MUST be added to the reviewed list of feature
   008 with its reason and granted to the window, and MUST refuse a widget the host is not showing
   or a malformed argument. The window's protections of feature 008 MUST still hold, with its probe

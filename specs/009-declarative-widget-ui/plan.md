@@ -15,7 +15,7 @@ run actions through contract minor 1.4.0, which adds an `actor` export in six ne
 write the widget's store and call read operations only, and return data the host keeps. The window
 gains three reviewed commands. Every criterion and refusal has a breaking test: unit and agreement
 tests below the page, and new cases in feature 008's probe, run inside the real page on the three
-systems against five hostile widgets.
+systems against seven hostile widgets.
 
 ## Technical Context
 
@@ -53,8 +53,8 @@ render under 1 ms); an action's new state within 1 second.
 - The probe's release build now links Wasmtime under LTO: its time and peak memory are measured
   under the memory cap before the first push (R1).
 
-**Scale/Scope**: 1 bundled widget in release; 5 hostile widgets in the probe build; 7 components;
-3 window commands; 1 new WIT interface, 6 new worlds; 11 new probe cases.
+**Scale/Scope**: 1 bundled widget in release; 7 hostile widgets in the probe build; 7 components;
+3 window commands; 1 new WIT interface, 6 new worlds; 13 new probe cases.
 
 ## Constitution Check
 
@@ -122,7 +122,8 @@ runtime/
 plugins/
 ├── examples/showcase/           # the bundled widget (interactive-widget, no permission)
 ├── fixtures/action-probe/       # actions with store and connector reads
-└── hostile/ui-header, ui-overflow, ui-strings, ui-dialog, ui-invalid, action-escape
+└── hostile/ui-header, ui-overflow, ui-strings, ui-dialog, ui-invalid, ui-crash,
+             ui-badmanifest, action-escape
 app/
 ├── src/widgets/                 # Widgets.tsx, Frame.tsx, content/*.tsx, api.ts
 ├── src/probe/widgets.ts         # the R14 cases
@@ -130,7 +131,7 @@ app/
 └── src-tauri/
     ├── build.rs                 # embeds and pins the bundled packages
     ├── src/widgets.rs           # runtime, bundled approval, handles, commands (security core)
-    ├── src/icon.rs, name.rs     # PNG decode, name sanitising
+    ├── src/name.rs              # name sanitising (the runtime decodes the icon, R6)
     ├── src/commands.rs          # widgets_list, widget_render, widget_act
     ├── capabilities/default.json, window-surface.toml
     └── tests/                   # widgets.rs (records, approval, handles, busy, secret)

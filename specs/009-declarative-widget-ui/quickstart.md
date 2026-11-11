@@ -45,7 +45,7 @@ Run the probe of feature 008 (`specs/008-tauri-shell/contracts/probe.md`).
 **Expected**: every case holds, including the widget cases of research R14: `frame-header-kept`,
 `frame-clips`, `frame-header-hittable`, `content-is-text`, `dialog-shaped-widget`,
 `nothing-outside-frame`, `status-icons`, `form-no-credentials`, `foreign-actions-refused`,
-`content-error-shown`.
+`content-error-shown`, `window-responsive`, `showcase-on-time`.
 
 Then, in `app/src/widgets/Frame.tsx`, remove both `contain` and `overflow` from the body (either
 one alone still clips) and run it again.
@@ -70,8 +70,11 @@ cargo test -p runtime --test it --locked actions::
 **Expected**: an undeclared name is refused before the plugin runs; a change operation is
 refused; the store is written all or nothing; a 1.3.0 plugin has no actions.
 
-## 7. Review: keyboard and screen reader
+## 7. Review: keyboard, screen reader, narrow frames, forced colors
 
 On each system, tab through the showcase: every button, input and the listbox are reachable,
 with the focus ring; the listbox opens and closes with the keyboard inside the frame; a screen
-reader reads the chart's values from its table.
+reader reads the chart's values from its table. Narrow the window until the frame is at its
+narrowest: tables and charts stay inside the body, scrolling inside it. Turn on forced colors
+(Windows high contrast) and reduced motion: the frame stays recognisable and the status icons
+visible.
