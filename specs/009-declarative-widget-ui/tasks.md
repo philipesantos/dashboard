@@ -163,7 +163,7 @@ widget host, before any story draws.
 
 ### The app's widget host
 
-- [ ] T015 Write the app's widget tests first, `app/src-tauri/tests/widgets.rs` (research R13):
+- [X] T015 Write the app's widget tests first, `app/src-tauri/tests/widgets.rs` (research R13):
   - the app's `RuntimeOptions`: no path or vault service equals the development one, development
     mode off; a scan of `app/src-tauri/src` finds no `default_development_path` or
     `default_development_data_dir`;

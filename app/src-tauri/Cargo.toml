@@ -40,6 +40,11 @@ webkit2gtk = { version = "2.0.2", optional = true }
 [dev-dependencies]
 # The surface test reads window-surface.toml and Cargo.toml (specs/008-tauri-shell, T011)
 toml = "1.1.8"
+# The widget host's tests (specs/009-declarative-widget-ui, T015): a fresh data directory each,
+# and the runtime's mock vault, to hold a secret the form check must find. The test seam only
+# compiles in debug builds, and dev-dependencies never reach a build of the app
+tempfile = "3"
+runtime = { path = "../../runtime", default-features = false, features = ["test-network"] }
 
 [features]
 # The shell probe: the release build plus a report command and an ungranted one, for the
