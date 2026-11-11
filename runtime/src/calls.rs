@@ -1781,7 +1781,11 @@ mod tests {
             grants,
             manifest,
             loaded,
-            vault: Arc::new(Vault::new(Backend::mock(), 2560)),
+            vault: Arc::new(Vault::new(
+                Backend::mock(),
+                2560,
+                crate::vault::DEVELOPMENT_SERVICE,
+            )),
         }
     }
 

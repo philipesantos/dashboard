@@ -134,7 +134,7 @@ widget host, before any story draws.
   - the last action's data kept in the `Plugin` in memory, and render's document chosen on
     `updater()` or `actor()` (`lib.rs:1392`), with the newer data.
   T009 passes; `cargo test -p runtime --test it` passes.
-- [ ] T011 [P] Write, then implement, the app vault and the secret check (research R3, R11):
+- [X] T011 [P] Write, then implement, the app vault and the secret check (research R3, R11):
   - `RuntimeOptions::vault_service(&'static str)` used by `Vault::new` (`vault/mod.rs:168,205-210`);
   - `Runtime::holds_secret_in(&self, text) -> Result<bool, RuntimeError>`: every connected
     account's secrets, in the encodings of `network/mod.rs:245-286` made a shared function;

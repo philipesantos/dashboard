@@ -153,6 +153,7 @@ pub struct RuntimeOptions {
     development: bool,
     connectors_dir: Option<PathBuf>,
     data_dir: PathBuf,
+    vault_service: &'static str,
 }
 
 impl RuntimeOptions {
@@ -163,7 +164,21 @@ impl RuntimeOptions {
             development: false,
             connectors_dir: None,
             data_dir: data_dir.into(),
+            vault_service: vault::DEVELOPMENT_SERVICE,
         }
+    }
+
+    /// Keeps the vault's secrets under the keychain service `service`. The development tool
+    /// keeps the development one; the app passes its own, so it never reads the development
+    /// vault (`specs/009-declarative-widget-ui/research.md`, R3).
+    pub fn with_vault_service(mut self, service: &'static str) -> RuntimeOptions {
+        self.vault_service = service;
+        self
+    }
+
+    /// The keychain service the vault keeps its secrets under.
+    pub fn vault_service(&self) -> &'static str {
+        self.vault_service
     }
 
     /// Turns development mode on or off. Only the development command-line tool turns it on;
@@ -632,7 +647,11 @@ impl Runtime {
         let clock = Arc::new(EpochClock::new());
         start_epoch_ticker(&engine, Arc::clone(&clock))?;
 
-        let vault = Arc::new(vault::Vault::new(backend, limits.max_secret_bytes));
+        let vault = Arc::new(vault::Vault::new(
+            backend,
+            limits.max_secret_bytes,
+            options.vault_service(),
+        ));
         Ok(Runtime {
             engine,
             limits,
@@ -687,6 +706,42 @@ impl Runtime {
     ) -> Result<accounts::Connected, RuntimeError> {
         let (connector, origin) = self.connectors().find(connector_id)?;
         signin::connect_key(&self.signin_context(), &connector, &origin, key)
+    }
+
+    /// Whether `text` holds a secret this runtime's vault keeps, in any encoding the network
+    /// module withholds an echoed credential in: every connected account's access and refresh
+    /// token, or its key (`specs/009-declarative-widget-ui/`, FR-025, research R11). The host
+    /// checks a form's values with it before they reach a plugin. With no account connected it
+    /// never touches the keychain; a keychain that cannot be read is an error, so the caller
+    /// refuses the form rather than pass the value on.
+    pub fn holds_secret_in(&self, text: &str) -> Result<bool, RuntimeError> {
+        let store = accounts::AccountStore::open(self.options.data_dir());
+        let Some(vault_id) = store.existing_vault_id()? else {
+            return Ok(false);
+        };
+        for account in store.list()? {
+            let user = vault::entry_user(&vault_id, &account.connector, &account.origin);
+            let stored = match self.vault.read(&user).within(self.limits.call_time_limit) {
+                Ok(stored) => stored,
+                // An account whose credential is gone holds nothing to find
+                Err(vault::VaultError::NoEntry) => continue,
+                Err(error) => {
+                    return Err(RuntimeError::new(
+                        ErrorKind::KeychainUnavailable,
+                        format!("the form's values cannot be checked: {error}"),
+                    ));
+                }
+            };
+            for secret in stored.secrets() {
+                if network::echo_forms(secret.expose())
+                    .iter()
+                    .any(|form| text.contains(form.expose()))
+                {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Every connected account, with whether its connector's file still exists (FR-014).

@@ -245,7 +245,7 @@ pub(crate) fn is_bearer_token(text: &str) -> bool {
 /// The secret as a response could carry it: as is, `/` escaped `\/` as some JSON encoders do,
 /// `+`, `/` and `=` as `\u` escapes or percent-encoded, in either case. A bearer token holds no
 /// other character an encoder changes (`"`, `\`, `<`, `>`, `&`), so these are every form.
-fn echo_forms(secret: &str) -> Vec<Secret> {
+pub(crate) fn echo_forms(secret: &str) -> Vec<Secret> {
     let mapped = |map: &dyn Fn(char) -> Option<&'static str>| -> String {
         secret
             .chars()
