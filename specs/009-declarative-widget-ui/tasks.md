@@ -192,7 +192,7 @@ widget host, before any story draws.
     `capabilities/default.json`: their three `allow-` permissions; `window-surface.toml`: the
     three permissions and three commands with the reasons of contracts/window-commands.md.
   T015 and `tests/surface.rs` pass.
-- [ ] T017 Measure the probe's release build now that it links Wasmtime under LTO: time and peak
+- [X] T017 Measure the probe's release build now that it links Wasmtime under LTO: time and peak
   memory, inside the memory cap (research R1). Record them in research R1, and raise the build
   job's timeout in `ci.yml` only if the Windows estimate needs it.
 

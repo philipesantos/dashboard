@@ -32,6 +32,12 @@ at the same time, and calls to different widgets can.
   `lto = true` and `codegen-units = 1` (`Cargo.toml:18-22`). The probe's release build time and peak memory are
   measured locally under the memory cap before the first push, and the 40-minute job limit is
   checked against the Windows run.
+  **Measured** on 2026-11-11 (Linux, 8 threads, under `MemoryMax=8G`, from an empty
+  `target/release`, beside another build): `cargo build -p dashboard --release --features
+  shell-probe,tauri/custom-protocol` took 8 min 53 s of wall time (1,323 s user, 281% CPU), and
+  its largest process peaked at 2.04 GiB resident, well inside the cap. The binary grew from 6.3
+  to 21.6 MiB. The 40-minute limit stays: the probe build is a fraction of it, and the Windows
+  run of the first push confirms it.
 - **macOS signing, later**: Cranelift writes executable memory, so a signed, hardened macOS build
   will need the `com.apple.security.cs.allow-jit` entitlement; the surface test reads
   entitlements, and must allow that one when the updater feature signs builds (Phase 6).
