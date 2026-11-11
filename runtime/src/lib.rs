@@ -16,6 +16,7 @@ mod calls;
 mod catalog;
 // The development CLI, a module so a test-only binary can run the same code
 // (specs/006-contract-v1-docs/research.md, R9)
+#[cfg(feature = "cli")]
 #[doc(hidden)]
 pub mod cli;
 pub mod connector;

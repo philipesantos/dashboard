@@ -49,7 +49,7 @@ before any build of the app (research R1).
   `runtime/tests/contract.rs:252-258`; `docs/authors/getting-started.md:254-274` (the `sed` and
   its expected message). Run `cargo xtask plugins` and `cargo test -p runtime --test it` (research
   R7).
-- [ ] T002 [P] Put the runtime's CLI behind a `cli` feature in `runtime/Cargo.toml`, enabled by
+- [X] T002 [P] Put the runtime's CLI behind a `cli` feature in `runtime/Cargo.toml`, enabled by
   the `runtime` binary and the tests that need it, not by default for library users (research
   R3). `cargo build -p runtime --locked` and `cargo test -p runtime --test it` still pass.
 - [ ] T003 [P] Change criterion HS-02's check in `docs/design/host-surfaces.md` first, as feature

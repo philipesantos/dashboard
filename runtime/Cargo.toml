@@ -85,12 +85,19 @@ apple-native-keyring-store = { version = "=1.0.2", features = ["keychain"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus-secret-service-keyring-store = { version = "=1.0.1", features = ["crypto-rust"] }
 
+# The development CLI. Its code sits behind the `cli` feature, so a host that links the library,
+# such as the app, does not get the development record and paths it uses
+# (specs/009-declarative-widget-ui/research.md, R3)
+[[bin]]
+name = "runtime"
+required-features = ["cli"]
+
 # The development CLI on the test seam, for the docs runner (specs/006-contract-v1-docs/research.md,
 # R9): it builds only with test-network, which refuses release builds, so `cargo install` never
 # installs it
 [[bin]]
 name = "runtime-test-network"
-required-features = ["test-network"]
+required-features = ["test-network", "cli"]
 
 # Every file in tests/ is a module of this one executable: each executable links the whole runtime
 # (about 100 MB in debug), so one per file filled the disk. tests/it.rs fails when a file there
@@ -100,6 +107,10 @@ name = "it"
 path = "tests/it.rs"
 
 [features]
+default = ["cli"]
+# The development command-line tool (`runtime::cli`), on by default for the `runtime` binary and
+# the tests; the app turns default features off
+cli = []
 # The test seam of research R15: test routes and roots instead of DNS and Mozilla's roots.
 # Only the runtime's own tests turn it on, through the dev-dependency below, and the library
 # refuses to compile with it outside debug builds.
@@ -110,7 +121,7 @@ test-network = []
 # use ring, as rustls does here
 rcgen = "0.14"
 # The runtime's tests reach the test seam (R15); release builds never do
-runtime = { path = ".", features = ["test-network"] }
+runtime = { path = ".", features = ["test-network", "cli"] }
 # Validates manifests against wit/manifest.schema.json, to prove the schema and the parser
 # agree (tests/manifest_schema.rs)
 boon = "0.6"
