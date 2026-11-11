@@ -207,7 +207,7 @@ widgets through three reviewed commands; nothing is drawn yet.
 
 **Independent Test**: quickstart §1.
 
-- [ ] T018 [US1] Write `plugins/examples/showcase` (`local/showcase`, world `interactive-widget`
+- [X] T018 [US1] Write `plugins/examples/showcase` (`local/showcase`, world `interactive-widget`
   of 1.4.0, no permission): manifest `name` "Vitrine", a 32×32 PNG `icon`, actions `increment`
   and `add`; render shows every component, tone and variant (a heading, the three status texts,
   a list, a table, a bar and a line chart, every button variant, a form with each field kind,
@@ -256,7 +256,9 @@ widgets through three reviewed commands; nothing is drawn yet.
   `widget-content/tests/docs.rs` validating every example of the page; `limits.md` (the content
   bounds), `manifest.md` (`name`, `icon`, `actions`), `contract.md` (1.4.0, `actor`, the six
   worlds), `errors.md` (`undeclared-action`), `cli.md` (`act`, the content report),
-  `docs/authors/README.md` and `getting-started.md` (the contract version).
+  `docs/authors/README.md` and `getting-started.md` (the contract version). The tutorial and the
+  examples `hello-widget`, `github-releases`, `update-counter` and `private-notes` render content
+  in format 1, so the app draws them, and the tutorial runs `runtime run --check-content`.
   `cargo test -p runtime --test it docs_reference::` and `cargo test -p widget-content` pass.
 
 **Checkpoint**: an author can write and check content from the docs alone.

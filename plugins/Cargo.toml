@@ -9,6 +9,7 @@ members = [
     "examples/github-releases",
     "examples/update-counter",
     "examples/private-notes",
+    "examples/showcase",
     "hostile/infinite-loop",
     "hostile/huge-alloc",
     "hostile/deep-recursion",
