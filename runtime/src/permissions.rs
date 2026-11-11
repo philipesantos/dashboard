@@ -692,7 +692,7 @@ mod tests {
     fn no_renderer_of_a_known_version_is_a_contract_mismatch() {
         for renderer in [
             None,
-            Some("dashboard:widget/renderer@1.4.0"),
+            Some("dashboard:widget/renderer@1.5.0"),
             Some("dashboard:widget/renderer@2.0.0"),
             Some("dashboard:widget/renderer@0.2.0"),
             Some("dashboard:other/renderer@1.0.0"),
@@ -973,7 +973,7 @@ mod tests {
     #[test]
     fn another_renderer_version_is_no_contract() {
         for export in [
-            "dashboard:widget/renderer@1.4.0",
+            "dashboard:widget/renderer@1.5.0",
             "dashboard:widget/renderer@2.0.0",
             "dashboard:widget/renderer@0.2.0",
             "dashboard:widget/renderer",
@@ -1008,7 +1008,7 @@ mod tests {
     fn an_import_from_the_other_contract_matches_nothing() {
         assert_eq!(by_import(Contract::V0, "dashboard:widget/log@1.0.0"), None);
         assert_eq!(by_import(Contract::V1, "dashboard:widget/log@0.1.0"), None);
-        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@1.4.0"), None);
+        assert_eq!(by_import(Contract::V1, "dashboard:widget/log@1.5.0"), None);
         assert_eq!(by_import(Contract::V1, "dashboard:widget/log@2.0.0"), None);
     }
 
@@ -1099,14 +1099,14 @@ mod tests {
     fn a_plugin_built_for_a_newer_minor_is_a_contract_mismatch_naming_both() {
         let error = check_component(
             &component(
-                &["dashboard:widget/log@1.4.0"],
-                &["dashboard:widget/renderer@1.4.0"],
+                &["dashboard:widget/log@1.5.0"],
+                &["dashboard:widget/renderer@1.5.0"],
             ),
             &manifest(Some(true)),
         )
         .expect_err("refused");
         assert_eq!(error.kind(), ErrorKind::ContractMismatch);
-        assert!(error.detail().contains("1.4.0"), "{error}");
+        assert!(error.detail().contains("1.5.0"), "{error}");
         assert!(error.detail().contains("1.3.0"), "{error}");
     }
 
@@ -1450,7 +1450,7 @@ mod tests {
             None
         );
         assert_eq!(
-            by_import(Contract::V1, "dashboard:widget/storage@1.4.0"),
+            by_import(Contract::V1, "dashboard:widget/storage@1.5.0"),
             None
         );
     }

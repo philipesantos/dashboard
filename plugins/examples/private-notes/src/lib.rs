@@ -3,7 +3,7 @@
 //! credential to the request itself; this widget never sees it. Without an account connected the
 //! service answers with its public notes only, and `render` shows what the host kept.
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "account-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.3.0", world: "account-widget" });
 
 use dashboard::widget::accounts::{AccountCallError, call};
 use exports::dashboard::widget::renderer::Guest as Renderer;

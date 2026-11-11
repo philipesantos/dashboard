@@ -6,7 +6,7 @@
 //! it, at load, before it runs (specs/005-plugin-credentials/data-model.md, Hostile cases,
 //! `token-hunt`).
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "account-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.3.0", world: "account-widget" });
 
 use exports::dashboard::widget::renderer::Guest as Renderer;
 use exports::dashboard::widget::updater::Guest as Updater;

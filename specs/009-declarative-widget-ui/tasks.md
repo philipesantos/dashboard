@@ -42,7 +42,7 @@ before any build of the app (research R1).
 
 **Purpose**: clear the way for contract 1.4.0 and for the app embedding plugins.
 
-- [ ] T001 Repoint the plugins that build against `wit/v1` (1.3.0) to `wit/history/1.3.0`:
+- [X] T001 Repoint the plugins that build against `wit/v1` (1.3.0) to `wit/history/1.3.0`:
   `plugins/examples/private-notes/src/lib.rs:6`, `plugins/fixtures/account-probe/src/lib.rs:10`,
   `plugins/hostile/token-hunt/src/lib.rs:9`. Change every use of 1.4.0 as "newer than the host"
   to 1.5.0: `runtime/src/permissions.rs` 695, 976, 1011, 1102-1109, 1453;

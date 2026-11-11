@@ -251,15 +251,15 @@ error: invalid-manifest: missing field `author` at line 8 column 1
 ### A newer contract than the CLI runs
 
 A widget built against a contract the installed CLI does not have yet, such as a later minor, is
-refused, naming both versions. Here the copied contract claims 1.4.0:
+refused, naming both versions. Here the copied contract claims 1.5.0:
 
 ```console check os=linux,macos output=any
-$ sed -i.bak 's/@1.3.0;/@1.4.0;/' wit/widget.wit
+$ sed -i.bak 's/@1.3.0;/@1.5.0;/' wit/widget.wit
 $ cargo build --release --target wasm32-unknown-unknown
 ```
 
 ```console check os=windows output=any
-PS> (Get-Content wit/widget.wit) -replace '@1.3.0;', '@1.4.0;' | Set-Content wit/widget.wit
+PS> (Get-Content wit/widget.wit) -replace '@1.3.0;', '@1.5.0;' | Set-Content wit/widget.wit
 PS> cargo build --release --target wasm32-unknown-unknown
 ```
 
@@ -271,7 +271,7 @@ digest: sha256:<digest>
 
 ```console check exit=1
 $ runtime approve newer.wasm
-error: contract-mismatch: dashboard:widget/renderer@1.4.0 (is built for contract 1.4.0, newer than 1.3.0, the newest this host runs; update the host)
+error: contract-mismatch: dashboard:widget/renderer@1.5.0 (is built for contract 1.5.0, newer than 1.3.0, the newest this host runs; update the host)
 ```
 
 Copy back the contract the installed CLI runs, `wit/history/1.3.0/widget.wit` of the clone it was

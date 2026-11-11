@@ -7,7 +7,7 @@
 //! "arguments": [[name, value], ...], "repeat": n}], "dump": bool, "fail": bool}`; `render`
 //! returns the document the host gives it, kept data included.
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "account-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.3.0", world: "account-widget" });
 
 use dashboard::widget::accounts::{self, AccountCallError};
 use dashboard::widget::connectors::{self, Argument, CallError, Problem, Response, Rule, Value};
