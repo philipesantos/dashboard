@@ -24,7 +24,7 @@ jobs:
   # skip them. The workflow still runs, because a skipped job counts as passing for the
   # required "CI result" check, while a workflow that never starts leaves it pending forever.
   # New advisories do not need a change here; audit.yml checks for them every week.
-  # The constitution (v2.6.2, Development Workflow) allows this skip; keep the documentation
+  # The constitution (v2.6.3, Development Workflow) allows this skip; keep the documentation
   # paths below in sync with the ones it lists. Markdown the build uses as code is not
   # documentation for that rule: the docs checks read docs/authors/ and wit/, so a change there
   # runs everything (specs/006-contract-v1-docs/research.md, R11). The design checks read

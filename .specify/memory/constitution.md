@@ -108,7 +108,10 @@ tool MAY grant permissions to local packages, recording them only in a developme
 record that installed plugins never use, and MAY connect accounts for the connectors of local
 packages, keeping their credentials only in a development vault, in the OS keychain, that
 installed plugins never use. Neither AI output nor a plugin MAY perform, trigger or
-pre-approve these actions.
+pre-approve these actions. A plugin built into the app and declaring no permission is part of the
+app, not an installed plugin: the host MAY approve it at start-up, and the approval grants it
+nothing. A built-in plugin that declares any permission gets it only in a host dialog, as an
+installed one does.
 
 Rationale: these decisions expand what code can do, so they stay out of reach of the
 parties the threat model distrusts: plugin authors, external content and manipulated AI.
@@ -201,4 +204,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.6.2 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10
+**Version**: 2.6.3 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-11
