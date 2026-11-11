@@ -293,6 +293,73 @@ impl KeptStore {
     }
 }
 
+/// What an action leaves in memory (feature 009): the data of its last success, when that was,
+/// and how the last action went. Never written to disk, so it has no package or approval to
+/// match: the plugin holding it is the package loaded under its approval.
+pub(crate) fn in_memory(
+    previous: Option<Kept>,
+    id: &str,
+    origin: &str,
+    result: &Result<Value, crate::RuntimeError>,
+    at_ms: u64,
+) -> Kept {
+    let mut kept = previous.unwrap_or_else(|| Kept {
+        id: id.to_owned(),
+        origin: origin.to_owned(),
+        digest: String::new(),
+        approval: KeptApproval {
+            digest: String::new(),
+            connectors_on: Vec::new(),
+        },
+        fetched_at_ms: None,
+        data: None,
+        last_update: None,
+        accounts: BTreeMap::new(),
+    });
+    match result {
+        Ok(data) => {
+            kept.data = Some(data.clone());
+            kept.fetched_at_ms = Some(at_ms);
+            kept.last_update = Some(LastUpdate {
+                at_ms,
+                outcome: Outcome::Ok,
+                error: None,
+            });
+        }
+        Err(error) => {
+            kept.last_update = Some(LastUpdate {
+                at_ms,
+                outcome: Outcome::Failed,
+                error: Some(error.to_string()),
+            });
+        }
+    }
+    kept
+}
+
+/// The newer of the update's data, from disk, and the action's, from memory: the data of the
+/// later success, and the outcome of the later run, whichever produced each (research R7).
+pub(crate) fn newest(from_update: Option<Kept>, from_action: Option<Kept>) -> Option<Kept> {
+    match (from_update, from_action) {
+        (None, other) | (other, None) => other,
+        (Some(update), Some(action)) => {
+            let fetched = |kept: &Kept| kept.fetched_at_ms.unwrap_or(0);
+            let ran = |kept: &Kept| kept.last_update.as_ref().map_or(0, |last| last.at_ms);
+            let mut newest = if fetched(&action) >= fetched(&update) {
+                action.clone()
+            } else {
+                update.clone()
+            };
+            newest.last_update = if ran(&action) >= ran(&update) {
+                action.last_update
+            } else {
+                update.last_update
+            };
+            Some(newest)
+        }
+    }
+}
+
 /// The configuration `render` receives for a widget that exports `updater`
 /// (`data-model.md`, What render receives): `data` and `fetched_at_ms` are `null` before the
 /// first successful update, and `last_update` before the first update.

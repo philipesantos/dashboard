@@ -121,7 +121,7 @@ widget host, before any story draws.
   - the action's data reaches the next render and is never written to `widget-data/`; the newer
     of update data and action data wins; an actor-only plugin sees its data.
   They fail until T010.
-- [ ] T010 Implement actions in the runtime (research R7, R8):
+- [X] T010 Implement actions in the runtime (research R7, R8):
   - `V1_VERSION` 1.4.0 and `ACTIONS_SINCE` in `permissions.rs:27-35`; `renderer@1.4.0` (`:61`);
     the `actor` export found like `updater` (`:182-196`);
   - host bindings on `interactive-account-stored-widget` (`lib.rs:78-85`); `Prepared`/`V1Pre`

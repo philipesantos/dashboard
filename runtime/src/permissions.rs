@@ -17,14 +17,14 @@ use crate::manifest::Manifest;
 pub enum Contract {
     /// `dashboard:widget@0.1.0` (`wit/v0`): only `log`, which cannot answer "not granted".
     V0,
-    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.3.0: every
+    /// `dashboard:widget@1.m.p` (`wit/v1`), any minor up to the host's own, 1.4.0: every
     /// capability can answer "not granted".
     V1,
 }
 
 /// The newest minor version of contract v1 this host runs; plugins built for any v1 minor up to
 /// it run, and newer ones are refused (FR-016).
-pub const V1_VERSION: semver::Version = semver::Version::new(1, 3, 0);
+pub const V1_VERSION: semver::Version = semver::Version::new(1, 4, 0);
 /// The only version of contract v0.
 const V0_VERSION: semver::Version = semver::Version::new(0, 1, 0);
 /// The minor version that brought connectors and `updater`.
@@ -33,10 +33,13 @@ const CONNECTORS_SINCE: semver::Version = semver::Version::new(1, 1, 0);
 const STORAGE_SINCE: semver::Version = semver::Version::new(1, 2, 0);
 /// The minor version that brought `accounts` (`specs/005-plugin-credentials/research.md`, R9).
 const ACCOUNTS_SINCE: semver::Version = semver::Version::new(1, 3, 0);
+/// The minor version that brought `actor` (`specs/009-declarative-widget-ui/research.md`, R7).
+const ACTIONS_SINCE: semver::Version = semver::Version::new(1, 4, 0);
 
 /// The interface names of the contract, without their version.
 const RENDERER: &str = "dashboard:widget/renderer";
 const UPDATER: &str = "dashboard:widget/updater";
+const ACTOR: &str = "dashboard:widget/actor";
 /// The interface that carries every connector a manifest declares (research R12).
 const CONNECTORS: &str = "dashboard:widget/connectors";
 /// The interface that carries every connector the manifest declares with `"account": true`.
@@ -58,7 +61,7 @@ impl Contract {
     pub fn renderer(self) -> &'static str {
         match self {
             Contract::V0 => "dashboard:widget/renderer@0.1.0",
-            Contract::V1 => "dashboard:widget/renderer@1.3.0",
+            Contract::V1 => "dashboard:widget/renderer@1.4.0",
         }
     }
 
@@ -101,6 +104,11 @@ impl ContractVersion {
     /// Whether this version has `accounts`.
     pub fn has_accounts(&self) -> bool {
         self.contract == Contract::V1 && self.version >= ACCOUNTS_SINCE
+    }
+
+    /// Whether this version has `actor`, the widget's actions.
+    pub fn has_actions(&self) -> bool {
+        self.contract == Contract::V1 && self.version >= ACTIONS_SINCE
     }
 }
 
@@ -193,6 +201,16 @@ impl Interfaces {
 
     pub(crate) fn updater(&self) -> Option<&str> {
         self.export(UPDATER)
+    }
+
+    pub(crate) fn actor(&self) -> Option<&str> {
+        self.export(ACTOR)
+    }
+
+    /// Whether the plugin keeps data the host gives back to `render`: from an update, an
+    /// action, or both.
+    pub(crate) fn keeps_data(&self) -> bool {
+        self.updater().is_some() || self.actor().is_some()
     }
 }
 
@@ -355,11 +373,13 @@ pub(crate) fn check_component(
                 )),
             ));
         }
-        if interfaces.updater().is_none() {
+        if !interfaces.keeps_data() {
             return Err(RuntimeError::with_names(
                 ErrorKind::MissingUpdater,
                 ids,
-                Some("a widget that declares connectors must export updater, where it calls them"),
+                Some(
+                    "a widget that declares connectors must export updater or actor, where it calls them",
+                ),
             ));
         }
     }
@@ -395,15 +415,39 @@ pub(crate) fn check_component(
                 )),
             ));
         }
-        if interfaces.updater().is_none() {
+        if !interfaces.keeps_data() {
             return Err(RuntimeError::with_names(
                 ErrorKind::MissingUpdater,
                 names(),
                 Some(
-                    "a widget that declares storage must export updater: storage is written only in an update",
+                    "a widget that declares storage must export updater or actor: storage is written only in an update or an action",
                 ),
             ));
         }
+    }
+
+    // Actions and the `actor` export go together (feature 009, research R8): the host runs only
+    // the actions the manifest names, so an `actor` with none could never run, and actions
+    // without `actor` have nothing to run
+    match (interfaces.actor().is_some(), manifest.actions().is_empty()) {
+        (true, true) => {
+            return Err(RuntimeError::new(
+                ErrorKind::InvalidManifest,
+                "exports actor but the manifest declares no action",
+            ));
+        }
+        (false, false) => {
+            return Err(RuntimeError::with_names(
+                ErrorKind::InvalidManifest,
+                manifest.actions().to_vec(),
+                Some(if contract.has_actions() {
+                    "the manifest declares actions but the plugin exports no actor"
+                } else {
+                    "the manifest declares actions, which need contract 1.4.0 and its actor export"
+                }),
+            ));
+        }
+        _ => {}
     }
 
     // Step 6: every import is a capability the host offers, through a declared permission
@@ -953,7 +997,7 @@ mod tests {
     #[test]
     fn each_contract_has_its_renderer() {
         assert_eq!(Contract::V0.renderer(), "dashboard:widget/renderer@0.1.0");
-        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.3.0");
+        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.4.0");
         assert_eq!(
             Contract::from_renderer("dashboard:widget/renderer@0.1.0"),
             Some(Contract::V0)
@@ -1107,7 +1151,7 @@ mod tests {
         .expect_err("refused");
         assert_eq!(error.kind(), ErrorKind::ContractMismatch);
         assert!(error.detail().contains("1.5.0"), "{error}");
-        assert!(error.detail().contains("1.3.0"), "{error}");
+        assert!(error.detail().contains("1.4.0"), "{error}");
     }
 
     const ACCOUNTS_V1_3: &str = "dashboard:widget/accounts@1.3.0";
@@ -1372,9 +1416,9 @@ mod tests {
         )
         .unwrap();
         assert!(!older.has_storage());
-        // The host itself has since moved to 1.3.0 (feature 005)
-        assert_eq!(V1_VERSION, semver::Version::new(1, 3, 0));
-        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.3.0");
+        // The host itself has since moved to 1.4.0 (feature 009)
+        assert_eq!(V1_VERSION, semver::Version::new(1, 4, 0));
+        assert_eq!(Contract::V1.renderer(), "dashboard:widget/renderer@1.4.0");
     }
 
     #[test]

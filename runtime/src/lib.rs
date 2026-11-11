@@ -76,13 +76,13 @@ pub(crate) mod v0 {
     wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
 }
 
-/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.3.0`), from its widest world,
-/// `account-stored-widget`, for the host side of every interface. Wasmtime matches the imports
+/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.4.0`), from its widest world,
+/// `interactive-account-stored-widget`, for the host side of every interface. Wasmtime matches the imports
 /// of plugins built for an older minor against them by compatible version. Exports are looked up
 /// one by one, by the exact names each plugin has, since a render-only widget has no `updater`
 /// (`specs/003-plugin-connectors/research.md`, R11; `specs/004-plugin-storage/research.md`, R13).
 pub(crate) mod v1 {
-    wasmtime::component::bindgen!({ path: "../wit/v1", world: "account-stored-widget" });
+    wasmtime::component::bindgen!({ path: "../wit/v1", world: "interactive-account-stored-widget" });
 }
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
@@ -435,6 +435,9 @@ pub struct Plugin {
     rates: Arc<Rates>,
     vault: Arc<vault::Vault>,
     kept: KeptStore,
+    /// What the last action returned, kept in memory for as long as the plugin stays loaded and
+    /// never written to disk (feature 009, maintainer's decision of 2026-11-11).
+    action_data: Mutex<Option<kept::Kept>>,
     log: RequestLog,
     /// Where declared connectors are found, for [`Plugin::recheck`].
     catalog: catalog::Catalog,
@@ -480,6 +483,8 @@ struct V1Pre {
     render: ComponentExportIndex,
     /// The `update` function, for a plugin that exports `updater`.
     update: Option<ComponentExportIndex>,
+    /// The `act` function, for a plugin that exports `actor` (feature 009).
+    act: Option<ComponentExportIndex>,
     /// The connectors granted when it was linked, for a plugin that imports `connectors`;
     /// `None` when it was linked to the stand-in, or imports nothing of them.
     table: Option<Arc<ConnectorTable>>,
@@ -978,6 +983,7 @@ impl Runtime {
             rates: Arc::clone(&self.rates),
             vault: Arc::clone(&self.vault),
             kept: KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes),
+            action_data: Mutex::new(None),
             log: RequestLog::new(self.options.data_dir(), &self.limits),
             catalog: self.catalog.clone(),
             options: self.options.clone(),
@@ -1339,10 +1345,14 @@ fn prepare(
             let update = interfaces
                 .updater()
                 .and_then(|updater| export_function(&package.component, updater, "update"));
+            let act = interfaces
+                .actor()
+                .and_then(|actor| export_function(&package.component, actor, "act"));
             Prepared::V1(V1Pre {
                 pre,
                 render,
                 update,
+                act,
                 table,
                 account_table,
                 vault_id,
@@ -1390,13 +1400,112 @@ impl Plugin {
                 };
             }
         };
-        if self.package.interfaces.updater().is_some() {
+        if self.package.interfaces.keeps_data() {
             let config: serde_json::Value = serde_json::from_str(config)
                 .unwrap_or_else(|_| serde_json::Value::String(config.to_owned()));
-            let document = kept::render_document(config, self.kept_data().as_ref()).to_string();
+            let document = kept::render_document(config, self.newest_data().as_ref()).to_string();
             return self.render_prepared(&prepared, &document);
         }
         self.render_prepared(&prepared, config)
+    }
+
+    /// The data `render` and the next action get: the newer of what the last update returned,
+    /// kept on disk, and what the last action returned, kept in memory; with how the latest of
+    /// the two went (feature 009, research R7).
+    fn newest_data(&self) -> Option<kept::Kept> {
+        let from_update = self.kept_data();
+        let from_action = self
+            .action_data
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        kept::newest(from_update, from_action)
+    }
+
+    /// Runs the action `action` the manifest declares, with the widget's configuration and the
+    /// form's `values`, in a fresh instance, as an update runs: the update's time limit, render's
+    /// CPU and memory caps, the store written all or nothing, connectors' read operations only
+    /// (feature 009, research R7). A name the manifest does not declare is refused before
+    /// anything is instantiated. The data it returns is kept in memory only, and given to the
+    /// next render and action; on failure the previous data stays and the failure is recorded.
+    pub fn act(
+        &self,
+        action: &str,
+        config: &str,
+        values: &serde_json::Map<String, serde_json::Value>,
+    ) -> UpdateReport {
+        let failed = |error: RuntimeError| UpdateReport {
+            result: Err(error),
+            logs: Vec::new(),
+            dropped_logs: 0,
+            calls: CallCounts::default(),
+            storage: None,
+        };
+        if self.package.interfaces.actor().is_none() || !self.manifest().declares_action(action) {
+            return failed(RuntimeError::new(
+                ErrorKind::UndeclaredAction,
+                format!(
+                    "`{}` is not an action {} declares",
+                    text::escape(action),
+                    self.manifest().id()
+                ),
+            ));
+        }
+        let prepared = match self.current() {
+            Ok(prepared) => prepared,
+            Err(error) => return failed(error),
+        };
+        let Prepared::V1(V1Pre { act: Some(act), .. }) = &*prepared else {
+            return failed(RuntimeError::new(
+                ErrorKind::UndeclaredAction,
+                format!("{} exports no actor", self.manifest().id()),
+            ));
+        };
+        let act = *act;
+        let config: serde_json::Value = serde_json::from_str(config)
+            .unwrap_or_else(|_| serde_json::Value::String(config.to_owned()));
+        let input = serde_json::json!({
+            "config": config,
+            "data": self.newest_data().and_then(|kept| kept.data),
+            "values": values,
+        })
+        .to_string();
+        let mut store = self.store(&prepared, Phase::Action);
+        let result = self
+            .start_limits(&mut store, self.limits.update_time_limit)
+            .and_then(|()| self.call_act(&prepared, &mut store, act, action, &input));
+        let mut state = store.into_data();
+        state.run.finish();
+        // The store first, as for an update: its writes are committed only when the action
+        // succeeded, and a commit that fails fails the action
+        let (result, storage) = match state.storage.take() {
+            None => (result, None),
+            Some(run) => match run.finish(result.is_ok()) {
+                Ok(counts) => (result, Some(counts)),
+                Err(error) => (Err(error), None),
+            },
+        };
+        let now = calls::now_ms();
+        {
+            let mut kept = self
+                .action_data
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            *kept = Some(kept::in_memory(
+                kept.take(),
+                self.manifest().id().as_str(),
+                &self.origin,
+                &result,
+                now,
+            ));
+        }
+        UpdateReport {
+            result,
+            logs: state.logs,
+            dropped_logs: state.dropped_logs,
+            calls: state.run.counts,
+            storage,
+        }
     }
 
     /// Renders `document` as it is, for [`render_with_kept`](Self::render_with_kept).
@@ -1547,7 +1656,9 @@ impl Plugin {
             grants: Arc::clone(&self.grants),
             table,
             phase,
-            session: (phase == Phase::Update).then(|| self.network.session(&self.limits)),
+            session: phase
+                .may_call_connectors()
+                .then(|| self.network.session(&self.limits)),
             deadline: Instant::now() + self.limits.update_time_limit,
             update_bytes_left: Arc::clone(&update_bytes_left),
             limits: self.limits.clone(),
@@ -1560,7 +1671,9 @@ impl Plugin {
             grants: Arc::clone(&self.grants),
             table,
             phase,
-            session: (phase == Phase::Update).then(|| self.network.session(&self.limits)),
+            session: phase
+                .may_call_connectors()
+                .then(|| self.network.session(&self.limits)),
             deadline: Instant::now() + self.limits.update_time_limit,
             update_bytes_left: Arc::clone(&update_bytes_left),
             limits: self.limits.clone(),
@@ -1581,7 +1694,7 @@ impl Plugin {
         {
             let time_limit = match phase {
                 Phase::Render => self.limits.time_limit,
-                Phase::Update => self.limits.update_time_limit,
+                Phase::Update | Phase::Action => self.limits.update_time_limit,
             };
             state.storage = Some(StorageRun::new(
                 binding.clone(),
@@ -1823,6 +1936,43 @@ impl Plugin {
                 instance
                     .get_typed_func::<(&str,), (Result<String, String>,)>(&mut *store, &update)?
                     .call(&mut *store, (config,))
+                    .map(|(result,)| result)
+            })
+            .map_err(|error| self.call_error(error, self.limits.update_time_limit))?
+            .map_err(|message| RuntimeError::new(ErrorKind::PluginError, message))?;
+        if data.len() > self.limits.max_update_output_bytes {
+            return Err(RuntimeError::new(
+                ErrorKind::OutputTooLarge,
+                format!(
+                    "the data is {} bytes, over the cap of {}",
+                    data.len(),
+                    self.limits.max_update_output_bytes
+                ),
+            ));
+        }
+        serde_json::from_str(&data)
+            .map_err(|error| RuntimeError::new(ErrorKind::InvalidOutput, error.to_string()))
+    }
+
+    /// Calls `act` and checks its output: JSON within the update's output limit.
+    fn call_act(
+        &self,
+        prepared: &Prepared,
+        store: &mut Store<HostState>,
+        act: ComponentExportIndex,
+        action: &str,
+        input: &str,
+    ) -> Result<serde_json::Value, RuntimeError> {
+        let Prepared::V1(v1) = prepared else {
+            unreachable!("only contract v1 has actor")
+        };
+        let data = v1
+            .pre
+            .instantiate(&mut *store)
+            .and_then(|instance| {
+                instance
+                    .get_typed_func::<(&str, &str), (Result<String, String>,)>(&mut *store, &act)?
+                    .call(&mut *store, (action, input))
                     .map(|(result,)| result)
             })
             .map_err(|error| self.call_error(error, self.limits.update_time_limit))?

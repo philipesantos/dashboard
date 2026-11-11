@@ -120,7 +120,10 @@ fn an_undeclared_action_is_refused_before_the_plugin_runs() {
         assert!(report.logs.is_empty(), "{name}: the plugin ran");
     }
     // Nothing reached the plugin, so it has no data
-    assert_eq!(plugin.render("{}").result.unwrap()["document"]["data"], Value::Null);
+    assert_eq!(
+        plugin.render("{}").result.unwrap()["document"]["data"],
+        Value::Null
+    );
 }
 
 #[test]
@@ -148,10 +151,14 @@ fn declared_actions_and_the_actor_export_go_together() {
             json!({ "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }] }),
         ),
     );
-    let error = world.runtime.check(&without_actor).unwrap_err();
+    let Err(error) = world.runtime.check(&without_actor) else {
+        panic!("actions without actor were accepted");
+    };
     assert_eq!(error.kind(), ErrorKind::InvalidManifest, "{error}");
     // `actor` exported with no action declared
-    let error = world.runtime.check(&action_probe(&[])).unwrap_err();
+    let Err(error) = world.runtime.check(&action_probe(&[])) else {
+        panic!("actor without actions was accepted");
+    };
     assert_eq!(error.kind(), ErrorKind::InvalidManifest, "{error}");
 }
 
@@ -160,7 +167,11 @@ fn an_action_receives_its_values_and_the_data_and_its_output_reaches_the_next_re
     let world = World::production(false);
     let plugin = world.approve_and_load(&action_probe(&["remember"]));
     let first = plugin
-        .act("remember", r#"{"lang":"pt"}"#, &values(&[("note", "first")]))
+        .act(
+            "remember",
+            r#"{"lang":"pt"}"#,
+            &values(&[("note", "first")]),
+        )
         .result
         .unwrap();
     assert_eq!(first["remembered"], json!({ "note": "first" }));
@@ -169,7 +180,10 @@ fn an_action_receives_its_values_and_the_data_and_its_output_reaches_the_next_re
         .act("remember", "{}", &values(&[("note", "second")]))
         .result
         .unwrap();
-    assert_eq!(second["seen"], first, "the action sees the data the last one returned");
+    assert_eq!(
+        second["seen"], first,
+        "the action sees the data the last one returned"
+    );
 
     // An actor-only plugin gets the render document with the action's data
     let document = plugin.render(r#"{"lang":"pt"}"#).result.unwrap()["document"].clone();
@@ -181,7 +195,11 @@ fn an_action_receives_its_values_and_the_data_and_its_output_reaches_the_next_re
     // A failed action keeps the previous data (none here) and says so
     let failing = world.approve_and_load(&action_probe(&["fail"]));
     assert_eq!(
-        failing.act("fail", "{}", &none()).result.unwrap_err().kind(),
+        failing
+            .act("fail", "{}", &none())
+            .result
+            .unwrap_err()
+            .kind(),
         ErrorKind::PluginError
     );
     let document = failing.render("{}").result.unwrap()["document"].clone();
@@ -195,7 +213,11 @@ fn an_action_s_data_stays_in_memory_and_never_reaches_the_disk() {
     let package = action_probe(&["remember"]);
     let plugin = world.approve_and_load(&package);
     plugin
-        .act("remember", "{}", &values(&[("secret-ish", "typed by the person")]))
+        .act(
+            "remember",
+            "{}",
+            &values(&[("secret-ish", "typed by the person")]),
+        )
         .result
         .unwrap();
     assert!(!plugin.render("{}").result.unwrap()["document"]["data"].is_null());
@@ -221,9 +243,16 @@ fn an_action_s_data_stays_in_memory_and_never_reaches_the_disk() {
     // A new run of the host starts without it
     let runtime = Runtime::new(Limits::default(), RuntimeOptions::new(world.data.path())).unwrap();
     let again = runtime
-        .load(&package, common::TEST_ORIGIN, std::sync::Arc::clone(&world.grants))
+        .load(
+            &package,
+            common::TEST_ORIGIN,
+            std::sync::Arc::clone(&world.grants),
+        )
         .unwrap();
-    assert_eq!(again.render("{}").result.unwrap()["document"]["data"], Value::Null);
+    assert_eq!(
+        again.render("{}").result.unwrap()["document"]["data"],
+        Value::Null
+    );
 }
 
 #[test]
@@ -238,7 +267,10 @@ fn render_gets_the_newer_of_the_update_s_data_and_the_action_s() {
     plugin.update(r#"{"n":1}"#).result.unwrap();
     assert_eq!(data(&plugin), "update");
     std::thread::sleep(Duration::from_millis(5));
-    plugin.act("save", &steps(json!([]), "ok"), &none()).result.unwrap();
+    plugin
+        .act("save", &steps(json!([]), "ok"), &none())
+        .result
+        .unwrap();
     assert_eq!(data(&plugin), "action");
     std::thread::sleep(Duration::from_millis(5));
     plugin.update(r#"{"n":2}"#).result.unwrap();
@@ -254,7 +286,10 @@ fn an_action_writes_the_store_all_or_nothing() {
     let set = |name: &str, value: &str| json!({ "op": "set", "name": name, "value": value });
     let get = |name: &str| json!({ "op": "get", "name": name });
 
-    plugin.act("save", &steps(json!([set("kept", "1")]), "ok"), &none()).result.unwrap();
+    plugin
+        .act("save", &steps(json!([set("kept", "1")]), "ok"), &none())
+        .result
+        .unwrap();
     for end in ["error", "trap"] {
         assert!(
             plugin
@@ -265,12 +300,20 @@ fn an_action_writes_the_store_all_or_nothing() {
         );
     }
     let read = plugin
-        .act("save", &steps(json!([get("kept"), get("error"), get("trap")]), "ok"), &none())
+        .act(
+            "save",
+            &steps(json!([get("kept"), get("error"), get("trap")]), "ok"),
+            &none(),
+        )
         .result
         .unwrap();
     assert_eq!(
         answers(&read),
-        [json!({ "ok": "1" }), json!({ "ok": null }), json!({ "ok": null })]
+        [
+            json!({ "ok": "1" }),
+            json!({ "ok": null }),
+            json!({ "ok": null })
+        ]
     );
 }
 
@@ -282,11 +325,13 @@ fn an_action_calls_read_operations_and_never_ones_that_change_data() {
     server.route("/write", Reply::json(r#"{"ok":true}"#));
     let world = echo_world(&pki, &server);
     let plugin = world.approve_and_load(&action_steps());
-    let call = |operation: &str| {
-        json!({ "op": "call", "connector": "catalog/echo", "operation": operation })
-    };
+    let call = |operation: &str| json!({ "op": "call", "connector": "catalog/echo", "operation": operation });
     let data = plugin
-        .act("save", &steps(json!([call("look"), call("write")]), "ok"), &none())
+        .act(
+            "save",
+            &steps(json!([call("look"), call("write")]), "ok"),
+            &none(),
+        )
         .result
         .unwrap();
     let answers = answers(&data);

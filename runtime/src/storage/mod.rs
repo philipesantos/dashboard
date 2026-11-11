@@ -514,7 +514,7 @@ impl StorageRun {
         else {
             return Ok(counts(0, self.usage_without_opening()));
         };
-        if self.phase == Phase::Render {
+        if !self.phase.writes_storage() {
             // Dropping the connection ends the read transaction
             return Ok(counts(0, *usage));
         }
@@ -594,7 +594,7 @@ impl StorageRun {
                 ),
             ));
         }
-        if writes && self.phase == Phase::Render {
+        if writes && !self.phase.writes_storage() {
             return Err(CallError::Refused(
                 Rule::RenderOnlyReads,
                 "render only reads storage; write it in update".to_owned(),
@@ -699,9 +699,10 @@ impl StorageRun {
                     ));
                 }
             };
-            let mode = match self.phase {
-                Phase::Render => Mode::Render,
-                Phase::Update => Mode::Update,
+            let mode = if self.phase.writes_storage() {
+                Mode::Update
+            } else {
+                Mode::Render
             };
             let opened = match connection::open(
                 &binding.file,
@@ -713,7 +714,7 @@ impl StorageRun {
                 Err(error) => {
                     // An update that cannot take its store never opens it: a later call that
                     // got in (the store no longer busy) would keep part of the update
-                    if self.phase == Phase::Update {
+                    if self.phase.writes_storage() {
                         self.unopened = Some(describe(&error));
                     }
                     return Err(call_error(error));
@@ -772,7 +773,7 @@ impl StorageRun {
 
     /// Ends the run's writes on `error` when `ended`, keeping the first failure.
     fn abort_if(&mut self, ended: bool, error: &StoreError) {
-        if self.phase == Phase::Update && ended && self.aborted.is_none() {
+        if self.phase.writes_storage() && ended && self.aborted.is_none() {
             self.aborted = Some(describe(error));
         }
     }

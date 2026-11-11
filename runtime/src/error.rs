@@ -95,6 +95,9 @@ error_kinds! {
     /// A widget declares a connector or storage but exports no `updater`, or `update` was asked
     /// of a widget without one.
     MissingUpdater => "missing-updater",
+    /// A control asked for an action the manifest does not declare, or a plugin built before
+    /// contract 1.4.0 was asked for one; the plugin was not called (feature 009).
+    UndeclaredAction => "undeclared-action",
     /// An approval was given the digest of something other than what it would approve now.
     ApprovalChanged => "approval-changed",
     /// An update's storage could not be committed (busy, damaged, unavailable, the file cap, or
@@ -241,6 +244,7 @@ mod tests {
             (ErrorKind::ConnectorUnavailable, "connector-unavailable"),
             (ErrorKind::ContractTooOld, "contract-too-old"),
             (ErrorKind::MissingUpdater, "missing-updater"),
+            (ErrorKind::UndeclaredAction, "undeclared-action"),
             (ErrorKind::ApprovalChanged, "approval-changed"),
             (ErrorKind::StorageFailed, "storage-failed"),
             (ErrorKind::CredentialNeedsHttps, "credential-needs-https"),
@@ -264,7 +268,7 @@ mod tests {
     fn all_lists_every_kind_once() {
         let names: std::collections::BTreeSet<&str> =
             ErrorKind::ALL.iter().map(|kind| kind.as_str()).collect();
-        assert_eq!(ErrorKind::ALL.len(), 36);
+        assert_eq!(ErrorKind::ALL.len(), 37);
         assert_eq!(names.len(), ErrorKind::ALL.len());
     }
 

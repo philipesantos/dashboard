@@ -255,7 +255,7 @@ fn a_component_built_for_a_newer_minor_is_a_contract_mismatch_naming_both_versio
     let (kind, detail) = load_error(&runtime(), &package);
     assert_eq!(kind, ErrorKind::ContractMismatch);
     assert!(
-        detail.contains("1.5.0") && detail.contains("1.3.0"),
+        detail.contains("1.5.0") && detail.contains("1.4.0"),
         "{detail}"
     );
 }
