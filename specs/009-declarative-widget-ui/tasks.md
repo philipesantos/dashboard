@@ -226,9 +226,18 @@ widgets through three reviewed commands; nothing is drawn yet.
     content; the tone and variant class map in `content/styles.tsx`;
   - `Widgets.tsx`: the stack of frames, shown in `App.tsx` above the demo's tabs.
   `pnpm --filter ./app build` and `pnpm --filter ./design check` pass.
-- [ ] T020 [US1] Walk quickstart §1 on Linux: the widget appears within a second, follows the
+- [X] T020 [US1] Walk quickstart §1 on Linux: the widget appears within a second, follows the
   theme, "Contar" counts and starts over after a restart. Capture the development build on a
   virtual display, as feature 008 did.
+
+  Done on 2026-11-11, the development build captured on an X virtual display (1280×800): the
+  "Vitrine" frame above the demo's tabs with its icon and name, every component down to the
+  form; the frame and content follow both themes; "Contar" went 0 → 2 in two presses, each
+  shown within a second; after a restart it read 0. Timed from the window's mapping, the page
+  drew at about 2 s and the showcase's content at 3.6 s: the development build runs Vite's
+  unbundled modules and an unoptimised Wasmtime, so SC-001's second is measured on the release
+  build (`showcase-on-time`, 0.6 to 0.9 s on a quiet machine; T035 per system). The walk also
+  found `tauri dev` rebuilding forever, fixed in `build.rs` (72e977e).
 
 **Checkpoint**: the showcase is on the dashboard.
 
