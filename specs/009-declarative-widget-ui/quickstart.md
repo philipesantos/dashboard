@@ -18,14 +18,18 @@ action's data is kept in memory only.
 ## 2. Content checked before the app (US2)
 
 ```sh
-cargo run -p runtime --locked -- run target/plugins/showcase.wasm
+cargo run -p runtime --locked -- approve target/plugins/showcase.wasm
+cargo run -p runtime --locked -- run target/plugins/showcase.wasm --check-content
 cargo run -p runtime --locked -- act target/plugins/showcase.wasm increment
 ```
 
-**Expected**: `run` prints the content and "drawn, no log entries". `act` prints the new data and
-the next render's content. Then run `run` on `target/plugins/ui-invalid.wasm`.
+**Expected**: `run` prints the content, then `content: drawn` (no log entries). `act` prints
+`acted local/showcase 0.1.0: increment`, the new data (`"count": 1`), the next render's content
+and `content: drawn`. Then approve `target/plugins/ui-invalid.wasm` and run `run --check-content`
+on it.
 
-**Expected**: the content error with its path, and one log entry. With a fresh clone,
+**Expected**: `content: not drawn: over-bound at $.body[0].text: longer than 2000 characters`,
+exit status 1; in the app, the same error in the frame and one log entry. With a fresh clone,
 `cargo xtask plugins` comes before any build of the app: the app embeds what it builds.
 
 ## 3. The format and the docs agree (FR-006, SC-003)

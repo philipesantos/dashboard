@@ -8,7 +8,7 @@ project's CI, so what you see is what the docs show; values that change from run
 
 It was walked with Rust 1.99.1 and its `wasm32-unknown-unknown` target, `wit-bindgen` 0.63.0,
 `serde_json` 1.0.154 and the development CLI built from the repository, against contract
-`dashboard:widget@1.3.0`. Where a command differs between systems, the page shows each form: the
+`dashboard:widget@1.4.0`. Where a command differs between systems, the page shows each form: the
 `$` lines are for bash on Linux and macOS, the `PS>` lines for PowerShell 7 on Windows.
 
 ## 1. The tools
@@ -37,20 +37,20 @@ $ cargo install --path dashboard/runtime --locked
 ## 3. A crate for the widget
 
 A widget is a Rust library built for WebAssembly. Make its folder beside the clone, with the
-contract copied into it: `wit/history/1.3.0/widget.wit` is contract 1.3.0 as published, and it
+contract copied into it: `wit/history/1.4.0/widget.wit` is contract 1.4.0 as published, and it
 never changes, so your widget keeps building whatever the clone does later. Run this from the
 folder that holds `dashboard/`:
 
 ```console check os=linux,macos
 $ mkdir -p my-widget/src my-widget/wit
 $ cd my-widget
-$ cp ../dashboard/wit/history/1.3.0/widget.wit wit/
+$ cp ../dashboard/wit/history/1.4.0/widget.wit wit/
 ```
 
 ```console check os=windows
 PS> New-Item -ItemType Directory -Path my-widget/src, my-widget/wit | Out-Null
 PS> cd my-widget
-PS> Copy-Item ../dashboard/wit/history/1.3.0/widget.wit wit/
+PS> Copy-Item ../dashboard/wit/history/1.4.0/widget.wit wit/
 ```
 
 `Cargo.toml` makes it a library WebAssembly can load (`cdylib`), with the two crates it uses, at
@@ -73,7 +73,9 @@ wit-bindgen = "=0.63.0"
 
 `src/lib.rs` is the widget. `wit_bindgen::generate!` reads the contract in `wit/` and gives it the
 `widget` world: the `log` interface to call and the `renderer` interface to implement, whose
-`render` gets the widget's configuration as JSON and returns its content as JSON.
+`render` gets the widget's configuration as JSON and returns its content as JSON. The content is
+in the host's format: a list of components, here a heading and a line of text, that the app draws
+in the widget's frame ([widget content](reference/content.md)).
 
 ```rust file=src/lib.rs check
 //! A widget that greets the name in its configuration and writes one log message.
@@ -87,8 +89,9 @@ use serde_json::{Value, json};
 struct MyWidget;
 
 impl Guest for MyWidget {
-    /// `config` is the JSON configuration the host passes; the content returned is JSON too.
-    /// An `Err` reaches the host as a `plugin-error` with this message.
+    /// `config` is the JSON configuration the host passes. The content returned is JSON in the
+    /// host's content format 1, which the app draws in the widget's frame. An `Err` reaches the
+    /// host as a `plugin-error` with this message.
     fn render(config: String) -> Result<String, String> {
         // `log` is required in the manifest, so the host runs this widget only with `log`
         // granted, and `write` answers `ok`
@@ -101,7 +104,14 @@ impl Guest for MyWidget {
             Some(Value::String(name)) => name,
             Some(_) => return Err(r#""name" in the configuration must be a string"#.to_owned()),
         };
-        Ok(json!({"title": "Hello", "text": format!("Hello, {name}!")}).to_string())
+        Ok(json!({
+            "format": 1,
+            "body": [
+                { "type": "text", "text": "Hello", "variant": "heading" },
+                { "type": "text", "text": format!("Hello, {name}!") }
+            ]
+        })
+        .to_string())
     }
 }
 
@@ -159,7 +169,7 @@ grants everything it requires:
 $ runtime permissions my-widget.wasm
 plugin: local/my-widget 0.1.0
 author: Your name
-contract: v1 (1.3.0)
+contract: v1 (1.4.0)
 approved: no
 permissions:
   log  required  not granted
@@ -176,18 +186,31 @@ own. The last line, `login providers`, reports a manifest field that grants noth
 1.3.0: a widget acts as an account only through a connector ([accounts](guides/accounts.md)).
 
 Now it runs. Its log message comes first, on standard error, then the content `render`
-returned, on standard output, which the CLI prints as indented JSON:
+returned, on standard output, which the CLI prints as indented JSON. `--check-content` then reads
+the content as the app does and says whether the app would draw it:
 
 ```console check
-$ runtime run my-widget.wasm --config '{"name":"Ada"}'
+$ runtime run my-widget.wasm --config '{"name":"Ada"}' --check-content
 [plugin] info: rendering my-widget
 {
-  "text": "Hello, Ada!",
-  "title": "Hello"
+  "body": [
+    {
+      "text": "Hello",
+      "type": "text",
+      "variant": "heading"
+    },
+    {
+      "text": "Hello, Ada!",
+      "type": "text"
+    }
+  ],
+  "format": 1
 }
+content: drawn
 ```
 
-That is a widget of your own, running. The [guides](README.md#guides) show how to fetch data,
+That is a widget of your own, running. [Widget content](reference/content.md) lists every
+component it can show, and the buttons and forms that run its actions. The [guides](README.md#guides) show how to fetch data,
 act as the user's account and keep data of its own; the [reference](README.md#reference) lists
 every part of the contract.
 
@@ -254,12 +277,12 @@ A widget built against a contract the installed CLI does not have yet, such as a
 refused, naming both versions. Here the copied contract claims 1.5.0:
 
 ```console check os=linux,macos output=any
-$ sed -i.bak 's/@1.3.0;/@1.5.0;/' wit/widget.wit
+$ sed -i.bak 's/@1.4.0;/@1.5.0;/' wit/widget.wit
 $ cargo build --release --target wasm32-unknown-unknown
 ```
 
 ```console check os=windows output=any
-PS> (Get-Content wit/widget.wit) -replace '@1.3.0;', '@1.5.0;' | Set-Content wit/widget.wit
+PS> (Get-Content wit/widget.wit) -replace '@1.4.0;', '@1.5.0;' | Set-Content wit/widget.wit
 PS> cargo build --release --target wasm32-unknown-unknown
 ```
 
@@ -271,20 +294,20 @@ digest: sha256:<digest>
 
 ```console check exit=1
 $ runtime approve newer.wasm
-error: contract-mismatch: dashboard:widget/renderer@1.5.0 (is built for contract 1.5.0, newer than 1.3.0, the newest this host runs; update the host)
+error: contract-mismatch: dashboard:widget/renderer@1.5.0 (is built for contract 1.5.0, newer than 1.4.0, the newest this host runs; update the host)
 ```
 
-Copy back the contract the installed CLI runs, `wit/history/1.3.0/widget.wit` of the clone it was
+Copy back the contract the installed CLI runs, `wit/history/1.4.0/widget.wit` of the clone it was
 built from, and build again:
 
 ```console check os=linux,macos output=any
-$ cp ../dashboard/wit/history/1.3.0/widget.wit wit/
+$ cp ../dashboard/wit/history/1.4.0/widget.wit wit/
 $ rm wit/widget.wit.bak
 $ cargo build --release --target wasm32-unknown-unknown
 ```
 
 ```console check os=windows output=any
-PS> Copy-Item ../dashboard/wit/history/1.3.0/widget.wit wit/
+PS> Copy-Item ../dashboard/wit/history/1.4.0/widget.wit wit/
 PS> cargo build --release --target wasm32-unknown-unknown
 ```
 

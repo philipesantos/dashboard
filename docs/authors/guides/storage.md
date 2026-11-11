@@ -13,7 +13,8 @@ well as `renderer`. Its manifest asks for storage with a quota, the most its sto
 "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }]
 ```
 
-Its `update` reads `count`, adds one and writes it back; its `render` reads it and shows it.
+Its `update` reads `count`, adds one and writes it back; its `render` reads it and shows it,
+with the notes its configuration gave it as a list.
 
 ```console check output=any
 $ cd dashboard/plugins/examples/update-counter
@@ -49,13 +50,22 @@ storage: 4 calls, 2 writes kept, used 147 of 65536 bytes
 $ runtime update update-counter.wasm
 updated local/update-counter 0.1.0
 storage: 3 calls, 1 writes kept, used 147 of 65536 bytes
-$ runtime run update-counter.wasm
+$ runtime run update-counter.wasm --check-content
 {
-  "first_run_ms": "0",
-  "items": [],
-  "text": "Updated 2 times",
-  "title": "Update counter"
+  "body": [
+    {
+      "text": "Update counter",
+      "type": "text",
+      "variant": "heading"
+    },
+    {
+      "text": "Updated 2 times",
+      "type": "text"
+    }
+  ],
+  "format": 1
 }
+content: drawn
 ```
 
 What the store does:

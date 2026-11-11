@@ -1,7 +1,8 @@
 //! The drift test (`specs/006-contract-v1-docs/research.md`, R7, and
 //! `specs/006-contract-v1-docs/contracts/docs-format.md`): the reference for authors under
-//! `docs/authors/reference/` names every item of the contract, the manifest and connector
-//! formats, the host's errors, the limits and the CLI, and nothing they do not have. Each entry
+//! `docs/authors/reference/` names every item of the contract, the manifest, connector and
+//! widget content formats, the host's errors, the limits and the CLI, and nothing they do not
+//! have. Each entry
 //! carries a marker `<!-- ref: <kind> <id> -->`; the expected set comes from the sources
 //! themselves, so a new item fails the build until the reference has it.
 
@@ -13,7 +14,15 @@ use regex::Regex;
 use serde_json::Value;
 use wit_parser::{Resolve, TypeDefKind};
 
-const KINDS: [&str; 6] = ["wit", "error", "manifest", "connector", "limit", "cli"];
+const KINDS: [&str; 7] = [
+    "wit",
+    "error",
+    "manifest",
+    "connector",
+    "content",
+    "limit",
+    "cli",
+];
 
 /// What the reference must hold: each item by (kind, id), with its default for a limit.
 type Expected = BTreeMap<(String, String), Option<String>>;
@@ -517,6 +526,11 @@ fn every_item_is_in_the_reference() {
         "connector",
         &mut expected,
     ));
+    unclassified.extend(schema_fields(
+        &json(&root.join("wit/content.schema.json")),
+        "content",
+        &mut expected,
+    ));
     for kind in runtime::ErrorKind::ALL {
         add(&mut expected, "error", kind.as_str());
     }
@@ -651,6 +665,59 @@ fn schema_paths_follow_items_maps_and_refs() {
     assert_eq!(found, ["list", "list[]/name", "map", "map/*/kind"]);
     let odd = serde_json::json!({ "patternProperties": { "^x": {} } });
     assert!(!schema_fields(&odd, "connector", &mut Expected::new()).is_empty());
+}
+
+#[test]
+fn schema_paths_follow_alternatives_and_conditions_once_per_definition() {
+    // The shape of wit/content.schema.json: components as `oneOf` alternatives, a list item
+    // that is a string or an object, a field whose options an `if`/`then`/`else` requires, and
+    // a component that holds components again
+    let schema: Value = serde_json::json!({
+        "properties": {
+            "body": { "type": "array", "items": { "$ref": "#/$defs/component" } }
+        },
+        "$defs": {
+            "text": { "type": "string" },
+            "component": { "oneOf": [{ "$ref": "#/$defs/list" }, { "$ref": "#/$defs/stack" }] },
+            "list": {
+                "properties": {
+                    "type": { "const": "list" },
+                    "items": { "items": { "oneOf": [
+                        { "$ref": "#/$defs/text" },
+                        { "properties": { "text": { "$ref": "#/$defs/text" } } }
+                    ] } },
+                    "field": {
+                        "properties": { "kind": {}, "options": {} },
+                        "if": { "properties": { "kind": { "const": "select" } } },
+                        "then": { "required": ["options"] },
+                        "else": { "not": { "required": ["options"] } }
+                    }
+                }
+            },
+            "stack": {
+                "properties": {
+                    "type": { "const": "stack" },
+                    "children": { "items": { "$ref": "#/$defs/component" } }
+                }
+            }
+        }
+    });
+    let mut expected = Expected::new();
+    assert!(schema_fields(&schema, "content", &mut expected).is_empty());
+    let found: Vec<&str> = expected.keys().map(|(_, id)| id.as_str()).collect();
+    assert_eq!(
+        found,
+        [
+            "body",
+            "body[]/children",
+            "body[]/field",
+            "body[]/field/kind",
+            "body[]/field/options",
+            "body[]/items",
+            "body[]/items[]/text",
+            "body[]/type",
+        ]
+    );
 }
 
 #[test]

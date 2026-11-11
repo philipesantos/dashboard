@@ -75,23 +75,24 @@ service answers as it does for anyone.
 $ runtime update private-notes.wasm --connectors connectors
 updated local/private-notes 0.1.0
 calls: 1 (0 not granted, 0 refused, 0 failed), 37 bytes received
-$ runtime run private-notes.wasm --connectors connectors
+$ runtime run private-notes.wasm --connectors connectors --check-content
 {
-  "account": null,
-  "fetched_at_ms": <n>,
-  "items": [
+  "body": [
     {
-      "private": false,
-      "title": "Welcome"
+      "text": "Notes",
+      "type": "text",
+      "variant": "heading"
+    },
+    {
+      "items": [
+        "Welcome"
+      ],
+      "type": "list"
     }
   ],
-  "last_update": {
-    "at_ms": <n>,
-    "outcome": "ok"
-  },
-  "text": null,
-  "title": "Notes"
+  "format": 1
 }
+content: drawn
 ```
 
 ## Connecting the account
@@ -119,33 +120,34 @@ local/notes  local file <path>
 ## With the account
 
 The widget acts as the account connected when the host loaded it. With the account, the service
-answers with the account's own notes too:
+answers with the account's own notes too, which the widget shows in the `accent` tone:
 
 ```console check
 $ runtime update private-notes.wasm --connectors connectors
 updated local/private-notes 0.1.0
 calls: 1 (0 not granted, 0 refused, 0 failed), 79 bytes received
-$ runtime run private-notes.wasm --connectors connectors
+$ runtime run private-notes.wasm --connectors connectors --check-content
 {
-  "account": null,
-  "fetched_at_ms": <n>,
-  "items": [
+  "body": [
     {
-      "private": false,
-      "title": "Welcome"
+      "text": "Notes",
+      "type": "text",
+      "variant": "heading"
     },
     {
-      "private": true,
-      "title": "Ada's own note"
+      "items": [
+        "Welcome",
+        {
+          "text": "Ada's own note",
+          "tone": "accent"
+        }
+      ],
+      "type": "list"
     }
   ],
-  "last_update": {
-    "at_ms": <n>,
-    "outcome": "ok"
-  },
-  "text": null,
-  "title": "Notes"
+  "format": 1
 }
+content: drawn
 ```
 
 ## Every answer of a call

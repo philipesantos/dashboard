@@ -16,7 +16,8 @@ Example plugins, one folder each.
   credential to each request, and the widget never sees it.
 
 Each example has a `manifest.json` beside its `Cargo.toml`: who the plugin is and the
-permissions it needs. Each has a guide in [the docs for authors](../../docs/authors/README.md),
+permissions it needs. Each renders its content in the host's content format, which the app draws
+in the widget's frame ([widget content](../../docs/authors/reference/content.md)). Each has a guide in [the docs for authors](../../docs/authors/README.md),
 which start with [a walkthrough](../../docs/authors/getting-started.md) that builds a widget of
 your own outside the repository.
 

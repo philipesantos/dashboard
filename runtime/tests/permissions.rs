@@ -910,6 +910,11 @@ fn rendered(plugin: &Plugin) -> serde_json::Value {
     plugin.render("{}").result.unwrap()
 }
 
+/// Whether `private-notes` shows that it has no notes.
+fn no_notes(content: &serde_json::Value) -> bool {
+    common::texts(content).contains(&"No notes yet".to_owned())
+}
+
 /// `kept_data_account`: reconnecting the same account keeps the data read as it; disconnecting
 /// discards it at once, and data read as an account that is no longer the one connected is
 /// discarded at the next load.
@@ -921,7 +926,7 @@ fn kept_data_account() {
     let plugin = world.approve_and_load(&package);
     assert!(plugin.update("{}").result.is_ok());
     let shown = rendered(&plugin);
-    assert_ne!(shown["text"], json!("No notes yet"), "{shown}");
+    assert!(!no_notes(&shown), "{shown}");
 
     // The same account again: kept
     let again = connect(&service, &world);
@@ -944,7 +949,7 @@ fn kept_data_account() {
         .unwrap();
     assert_eq!(gone.kept_discarded, ["local/private-notes"]);
     assert!(!kept_file.exists());
-    assert_eq!(rendered(&plugin)["text"], json!("No notes yet"));
+    assert!(no_notes(&rendered(&plugin)));
 
     // Another account connected after the disconnect, and the old data back, as a process that
     // stopped before deleting it would leave it: discarded at the next load
@@ -952,9 +957,6 @@ fn kept_data_account() {
     let other = connect(&service, &world);
     assert_ne!(other.account_id, first.account_id);
     std::fs::write(&kept_file, &kept_bytes).unwrap();
-    assert_eq!(
-        rendered(&world.load(&package))["text"],
-        json!("No notes yet")
-    );
+    assert!(no_notes(&rendered(&world.load(&package))));
     assert!(!kept_file.exists());
 }

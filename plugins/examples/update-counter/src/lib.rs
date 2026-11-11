@@ -1,6 +1,7 @@
 //! Example plugin for contract 1.2.0: remembers how many times it has updated, when it first
 //! ran, and the last five notes its configuration gave it, in its own storage. `update` writes
-//! them, and `render` reads them back, on any later run of the host.
+//! them, and `render` reads the count and the notes back, on any later run of the host, as
+//! content in the host's format 1.
 
 wit_bindgen::generate!({ path: "../../../wit/history/1.2.0", world: "stored-widget" });
 
@@ -66,34 +67,40 @@ impl Updater for UpdateCounter {
     }
 }
 
+/// Content in the host's format 1: the heading, then `body`.
+fn content(body: Vec<Value>) -> String {
+    let mut all = vec![json!({ "type": "text", "text": "Update counter", "variant": "heading" })];
+    all.extend(body);
+    json!({ "format": 1, "body": all }).to_string()
+}
+
 impl Renderer for UpdateCounter {
     fn render(_config: String) -> Result<String, String> {
         // Storage that the user turned off answers not-granted: say so instead of failing
         if let Err(StorageError::NotGranted) = get("count") {
-            return Ok(json!({
-                "title": "Update counter",
-                "text": "Storage is off: turn it on to keep a count"
-            })
-            .to_string());
+            return Ok(content(vec![json!({
+                "type": "text",
+                "text": "Storage is off: turn it on to keep a count",
+                "tone": "warning",
+            })]));
         }
         let Some(count) = read_text("count")? else {
-            return Ok(json!({ "title": "Update counter", "text": "Not updated yet" }).to_string());
+            return Ok(content(vec![
+                json!({ "type": "text", "text": "Not updated yet", "variant": "muted" }),
+            ]));
         };
-        let first_run_ms = read_text("first_run_ms")?.unwrap_or_default();
+        let mut body = vec![json!({ "type": "text", "text": format!("Updated {count} times") })];
         let page = list("notes/", None).map_err(|error| describe("list notes/", error))?;
-        let mut items = Vec::new();
+        let mut notes = Vec::new();
         for name in page.names {
             if let Some(note) = read_text(&name)? {
-                items.push(note);
+                notes.push(note);
             }
         }
-        Ok(json!({
-            "title": "Update counter",
-            "text": format!("Updated {count} times"),
-            "first_run_ms": first_run_ms,
-            "items": items,
-        })
-        .to_string())
+        if !notes.is_empty() {
+            body.push(json!({ "type": "list", "items": notes }));
+        }
+        Ok(content(body))
     }
 }
 

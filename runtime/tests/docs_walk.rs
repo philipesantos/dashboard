@@ -660,7 +660,7 @@ fn set_up(session: &mut Session, page: &str) {
         );
         fs::create_dir_all(crate_dir.join("wit")).expect("the crate's wit folder");
         fs::copy(
-            repository().join("wit/history/1.3.0/widget.wit"),
+            repository().join("wit/history/1.4.0/widget.wit"),
             crate_dir.join("wit/widget.wit"),
         )
         .expect("the contract is copied");

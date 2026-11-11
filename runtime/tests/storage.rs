@@ -73,8 +73,8 @@ fn update_counter_remembers_its_values_across_runs_of_the_host() {
     assert!(storage.writes_kept > 0);
     assert_eq!(storage.quota_bytes, 65536);
     let content = counter.render("{}").result.unwrap();
-    assert_eq!(content["text"], "Updated 2 times");
-    assert_eq!(content["items"], json!(["second", "first"]));
+    assert!(common::texts(common::drawn(&content)).contains(&"Updated 2 times".to_owned()));
+    assert_eq!(common::list_items(&content), ["second", "first"]);
     // A new run of the host, on the same data directory and grant record
     let runtime = Runtime::new(Limits::default(), RuntimeOptions::new(world.data.path())).unwrap();
     let again = runtime
@@ -85,8 +85,8 @@ fn update_counter_remembers_its_values_across_runs_of_the_host() {
         )
         .unwrap();
     let content = again.render("{}").result.unwrap();
-    assert_eq!(content["text"], "Updated 2 times");
-    assert_eq!(content["items"], json!(["second", "first"]));
+    assert!(common::texts(common::drawn(&content)).contains(&"Updated 2 times".to_owned()));
+    assert_eq!(common::list_items(&content), ["second", "first"]);
 }
 
 #[test]

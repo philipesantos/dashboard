@@ -25,7 +25,8 @@ calls:
 ```
 
 Its `update` calls `list-releases` with the repository of its configuration and returns the
-releases; its `render` shows what the host kept. Build and pack it:
+releases; its `render` shows what the host kept, with when it was fetched and how the last update
+went. Build and pack it:
 
 ```console check output=any
 $ cd dashboard/plugins/examples/github-releases
@@ -81,32 +82,47 @@ updated local/github-releases 0.1.0
 calls: 1 (0 not granted, 0 refused, 0 failed), 332 bytes received
 ```
 
-`runtime run` renders from what the host kept, without any request:
+`runtime run` renders from what the host kept, without any request: a heading, the releases as
+a table, and when they were fetched. `--check-content` says the app would draw it:
 
 ```console check
-$ runtime run github-releases.wasm --config '{"owner":"rust-lang","repo":"rust"}'
+$ runtime run github-releases.wasm --config '{"owner":"rust-lang","repo":"rust"}' --check-content
 {
-  "fetched_at_ms": <n>,
-  "items": [
+  "body": [
     {
-      "name": "Rust 1.99.1",
-      "published_at": "2026-10-16T00:00:00Z",
-      "tag": "1.99.1",
-      "url": "https://github.com/rust-lang/rust/releases/tag/1.99.1"
+      "text": "rust-lang/rust releases",
+      "type": "text",
+      "variant": "heading"
     },
     {
-      "name": "Rust 1.99.0",
-      "published_at": "2026-10-02T00:00:00Z",
-      "tag": "1.99.0",
-      "url": "https://github.com/rust-lang/rust/releases/tag/1.99.0"
+      "columns": [
+        "Release",
+        "Tag",
+        "Published"
+      ],
+      "rows": [
+        [
+          "Rust 1.99.1",
+          "1.99.1",
+          "2026-10-16"
+        ],
+        [
+          "Rust 1.99.0",
+          "1.99.0",
+          "2026-10-02"
+        ]
+      ],
+      "type": "table"
+    },
+    {
+      "text": "Fetched <time>",
+      "type": "text",
+      "variant": "muted"
     }
   ],
-  "last_update": {
-    "at_ms": <n>,
-    "outcome": "ok"
-  },
-  "title": "rust-lang/rust releases"
+  "format": 1
 }
+content: drawn
 ```
 
 `runtime requests` shows every call, allowed or refused, with its destination and how it ended:
@@ -140,7 +156,7 @@ means for it. Otherwise it answers one of three errors ([the contract](../refere
   wrong format. Keep showing what the last update fetched; the next update tries again.
 
 `github-releases` returns an error from `update` for all three, so the host keeps the previous
-data and `render` shows that the last update failed. A widget can also return what it has with a
+data and `render` shows that the last update failed, in the `error` tone, below the releases. A widget can also return what it has with a
 note, as [accounts](accounts.md) shows.
 
 ## Writing your own connector

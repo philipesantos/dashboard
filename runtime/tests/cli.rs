@@ -66,7 +66,7 @@ fn run_prints_the_content_on_stdout_and_the_logs_on_stderr() {
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     let content: serde_json::Value =
         serde_json::from_str(&stdout(&output)).expect("stdout is the widget content as JSON");
-    assert_eq!(content, json!({"title": "Hello", "text": "Hello, world!"}));
+    assert_eq!(content, common::hello("world"));
     assert_eq!(stderr(&output), "[plugin] info: rendering hello-widget\n");
 }
 
@@ -1649,8 +1649,8 @@ fn update_prints_its_storage_and_run_renders_what_it_kept() {
     let output = stored.run(&["run", path_str(&stored.plugin)]);
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     let content: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
-    assert_eq!(content["text"], "Updated 1 times");
-    assert_eq!(content["items"], json!(["first"]));
+    assert!(common::texts(common::drawn(&content)).contains(&"Updated 1 times".to_owned()));
+    assert_eq!(common::list_items(&content), ["first"]);
     assert_eq!(
         Stored::line(&stored.permissions(), "storage:"),
         "storage: quota 65536 bytes (64 KiB), approved up to 65536 bytes, used 223 bytes"
@@ -1902,7 +1902,7 @@ fn storage_clear_empties_one_store_and_no_other() {
     );
     let output = stored.run(&["run", path_str(&stored.plugin)]);
     let content: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
-    assert_eq!(content["text"], "Not updated yet");
+    assert!(common::texts(&content).contains(&"Not updated yet".to_owned()));
     // A store whose package file is gone, by id and origin
     let probe_origin = origin(&probe);
     std::fs::remove_file(&probe).unwrap();
@@ -2041,7 +2041,7 @@ fn optional_storage_off_keeps_the_data_and_remove_says_where_it_is() {
     );
     let content: serde_json::Value =
         serde_json::from_str(&stdout(&stored.run(&["run", plugin]))).unwrap();
-    assert_eq!(content["items"], json!(["kept"]));
+    assert_eq!(common::list_items(&content), ["kept"]);
     // Turning it on above the approved quota needs a new approval
     stored.run(&["optional", plugin, "storage", "off"]);
     let larger = common::stored_manifest("local/update-counter", "0.1.0", false, 131072);
@@ -2072,7 +2072,7 @@ fn optional_storage_off_keeps_the_data_and_remove_says_where_it_is() {
     stored.run(&["optional", plugin, "storage", "on"]);
     let content: serde_json::Value =
         serde_json::from_str(&stdout(&stored.run(&["run", plugin]))).unwrap();
-    assert_eq!(content["items"], json!(["kept"]));
+    assert_eq!(common::list_items(&content), ["kept"]);
 }
 
 /// The CLI half of `data_dir_is_absolute` (`specs/004-plugin-storage/data-model.md`): a

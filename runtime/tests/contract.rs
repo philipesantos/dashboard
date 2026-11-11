@@ -5,7 +5,7 @@ use crate::common;
 
 use std::sync::Arc;
 
-use common::{TEST_ORIGIN, approved, fixture, manifest, repack};
+use common::{TEST_ORIGIN, approved, drawn, fixture, hello, manifest, repack, texts};
 use runtime::grants::GrantStore;
 use runtime::package::pack;
 use runtime::{Contract, ErrorKind, Limits, LogLevel, LogMessage, Plugin, Runtime};
@@ -53,10 +53,7 @@ fn a_contract_1_0_0_plugin_runs_on_the_1_1_0_host() {
     );
     assert_eq!(plugin.contract_version().display(), "v1 (1.0.0)");
     let report = plugin.render(r#"{"name":"Ada"}"#);
-    assert_eq!(
-        report.result.expect("hello-widget renders"),
-        json!({"title": "Hello", "text": "Hello, Ada!"})
-    );
+    assert_eq!(report.result.expect("hello-widget renders"), hello("Ada"));
     assert_eq!(report.logs.len(), 1);
 }
 
@@ -74,7 +71,7 @@ fn contract_1_0_0_and_1_1_0_plugins_run_on_the_1_2_0_host() {
         .render(r#"{"owner":"rust-lang","repo":"rust"}"#)
         .result
         .expect("github-releases renders before its first update");
-    assert_eq!(content["text"], "No data yet");
+    assert!(texts(drawn(&content)).contains(&"No data yet".to_owned()));
 }
 
 #[test]
@@ -85,10 +82,8 @@ fn hello_widget_renders_its_greeting_and_one_log() {
 
     let report = plugin.render("{}");
 
-    assert_eq!(
-        report.result.expect("hello-widget renders"),
-        json!({"title": "Hello", "text": "Hello, world!"})
-    );
+    let content = report.result.expect("hello-widget renders");
+    assert_eq!(*drawn(&content), hello("world"));
     assert_eq!(
         report.logs,
         [LogMessage {
@@ -104,14 +99,16 @@ fn hello_widget_greets_the_configured_name() {
     let runtime = runtime();
     let plugin = load(&runtime, &fixture("hello-widget"));
 
-    for (config, text) in [
-        (r#"{"name":"Ada"}"#, "Hello, Ada!"),
-        (r#"{"name":"Grace"}"#, "Hello, Grace!"),
-        ("{}", "Hello, world!"),
+    for (config, name) in [
+        (r#"{"name":"Ada"}"#, "Ada"),
+        (r#"{"name":"Grace"}"#, "Grace"),
+        ("{}", "world"),
+        // Markup is text, drawn as it is
+        (r#"{"name":"<b>Ada</b>"}"#, "<b>Ada</b>"),
     ] {
         assert_eq!(
             plugin.render(config).result.expect("hello-widget renders"),
-            json!({"title": "Hello", "text": text}),
+            hello(name),
             "config {config}"
         );
     }

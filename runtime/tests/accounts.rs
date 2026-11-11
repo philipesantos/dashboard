@@ -61,17 +61,9 @@ impl Setup {
     }
 }
 
-/// The titles of the notes `content` shows.
+/// The titles of the notes `content` shows, checked as the app draws it.
 fn titles(content: &Value) -> Vec<String> {
-    content["items"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item["title"].as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
+    common::list_items(common::drawn(content))
 }
 
 /// `private_notes`: the example end to end (User Story 1, quickstart step 3).
@@ -134,10 +126,7 @@ fn private_notes() {
     // Loaded again, the optional credential is not sent and only the public notes come
     let plugin = setup.world.load(&package);
     let render = plugin.render("{}");
-    assert_eq!(
-        render.result.as_ref().unwrap()["text"],
-        json!("No notes yet")
-    );
+    assert!(common::texts(render.result.as_ref().unwrap()).contains(&"No notes yet".to_owned()));
     let update = plugin.update("{}");
     assert_eq!(
         update.result.as_ref().unwrap()["notes"]

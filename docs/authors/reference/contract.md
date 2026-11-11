@@ -1,7 +1,7 @@
 # The contract
 
-Contract v1 at 1.3.0, the WIT package `dashboard:widget@1.3.0`, is everything a widget and the host
-say to each other. It is published as `wit/history/1.3.0/widget.wit` in the repository and never
+Contract v1 at 1.4.0, the WIT package `dashboard:widget@1.4.0`, is everything a widget and the host
+say to each other. It is published as `wit/history/1.4.0/widget.wit` in the repository and never
 changes; a widget binds its own copy ([the walkthrough](../getting-started.md)). The names below
 are the WIT names; `wit-bindgen` turns them into Rust ones (`call-error` into `CallError`,
 `not-granted` into `NotGranted`).
@@ -51,8 +51,23 @@ connectors as the person's account. Since 1.3.0.
 <!-- ref: wit account-stored-widget -->
 ### `account-stored-widget`
 
-Imports `log`, `connectors`, `accounts` and `storage`; exports `renderer` and `updater`; the world
-the host binds. Since 1.3.0.
+Imports `log`, `connectors`, `accounts` and `storage`; exports `renderer` and `updater`. Since
+1.3.0.
+
+### Worlds with actions
+
+Each world above has an `interactive-` twin with the same imports and exports, plus `actor`: the
+actions the widget's buttons and forms run ([widget content](content.md#actions)). A widget with
+actions builds one of these and declares its actions in the manifest. Since 1.4.0.
+
+| World | Imports | Exports |
+| --- | --- | --- |
+| `interactive-widget` | `log` | `renderer`, `actor` <!-- ref: wit interactive-widget --> |
+| `interactive-connected-widget` | `log`, `connectors` | `renderer`, `updater`, `actor` <!-- ref: wit interactive-connected-widget --> |
+| `interactive-stored-widget` | `log`, `storage` | `renderer`, `updater`, `actor` <!-- ref: wit interactive-stored-widget --> |
+| `interactive-connected-stored-widget` | `log`, `connectors`, `storage` | `renderer`, `updater`, `actor` <!-- ref: wit interactive-connected-stored-widget --> |
+| `interactive-account-widget` | `log`, `connectors`, `accounts` | `renderer`, `updater`, `actor` <!-- ref: wit interactive-account-widget --> |
+| `interactive-account-stored-widget` | `log`, `connectors`, `accounts`, `storage` | `renderer`, `updater`, `actor`; the world the host binds <!-- ref: wit interactive-account-stored-widget --> |
 
 ## `log`
 
@@ -88,8 +103,8 @@ none can add a line or pass for the host's own output.
 <!-- ref: wit connectors -->
 Calls the operations of the connectors the manifest declares, each a permission of its own. The
 host makes every request: it checks the call against the connector and the manifest, and refuses
-it before sending anything when a rule says so. Calls work only while the host runs `update`.
-Since 1.1.0. [The connectors guide](../guides/connectors.md) walks through one.
+it before sending anything when a rule says so. Calls work only while the host runs `update` or
+an action. Since 1.1.0. [The connectors guide](../guides/connectors.md) walks through one.
 
 <!-- ref: wit connectors/value -->
 ### `value`
@@ -145,8 +160,8 @@ was sent (through `accounts`, a token refresh of the host's own may have gone fi
 | --- | --- | --- |
 | `operation-not-declared` | The manifest does not declare this operation for this connector | Declare it; it is a mistake to fix, not to handle <!-- ref: wit connectors/rule/operation-not-declared --> |
 | `value-outside-type` | An argument is unknown, repeated, missing or outside its parameter's type, or the call passes more than 16 arguments | Check the value before calling, or show that it is invalid <!-- ref: wit connectors/rule/value-outside-type --> |
-| `called-outside-update` | The call came from `render`, which never reaches the network | Call from `update`, and render what it kept <!-- ref: wit connectors/rule/called-outside-update --> |
-| `change-needs-user-action` | The operation changes data; until user actions arrive (Phase 3), `update` only reads | Call reads only <!-- ref: wit connectors/rule/change-needs-user-action --> |
+| `called-outside-update` | The call came from `render`, which never reaches the network | Call from `update` or an action, and render what it kept <!-- ref: wit connectors/rule/called-outside-update --> |
+| `change-needs-user-action` | The operation changes data; `update` and actions only read, until the host can show the person a change and have it approved | Call reads only <!-- ref: wit connectors/rule/change-needs-user-action --> |
 | `over-limit` | A limit: calls per run or per minute, the request's address or body, the response's body or headers, the update's bodies together, or time ([limits](limits.md)) | Call less; to keep the previous data, return an error from `update`: the host keeps it, while `ok` replaces it <!-- ref: wit connectors/rule/over-limit --> |
 | `non-public-address` | The destination's name led only to addresses that are not public | Nothing the widget can do; show that the service is unreachable <!-- ref: wit connectors/rule/non-public-address --> |
 | `redirect-not-allowed` | The service redirected to a destination the connector does not declare, to one whose name leads only to non-public addresses, or more than five times | As above <!-- ref: wit connectors/rule/redirect-not-allowed --> |
@@ -183,7 +198,8 @@ manifest declares with `"account": true` is called through `accounts`: here it a
 <!-- ref: wit accounts -->
 Calls the operations of connectors the manifest declares with `"account": true`, as the account
 connected to that connector. The host adds the credential to the request itself: the widget never
-sees it, and nothing it passes can name it. Calls work only while the host runs `update`. A
+sees it, and nothing it passes can name it. Calls work only while the host runs `update` or an
+action. A
 connector declared without an account answers `not-granted` here, and one declared with an
 account answers `not-granted` through `connectors`. Which account a widget acts as is fixed when
 the host loads it: one connected later is used from the next load. Since 1.3.0.
@@ -238,11 +254,12 @@ time limit, and every response body counts toward the update's.
 The widget's own store of named values, carried by the `storage` permission with its quota. The
 host picks the store from the widget's id and origin: no function names a store, a file or a
 place, and no widget reaches another's. Names are any non-empty text up to 256 bytes of UTF-8,
-compared and sorted as bytes; values are bytes, up to 256 KiB. Reads work in `render` and
-`update`; writes only in `update`, kept together only when `update` returns `ok` with data the
-host keeps. In `update`, the first call that reaches the store opens it for writing; when it cannot
-(`busy`, `damaged`, `unavailable`), that call answers so and every later call of the run answers
-`run-aborted`: the run reads and writes nothing, and what `update` returns stands. When the data
+compared and sorted as bytes; values are bytes, up to 256 KiB. Reads work in `render`, `update`
+and actions; writes only in `update` and actions, kept together only when the run returns `ok`
+with data the host keeps. In `update` or an action, the first call that reaches the store opens
+it for writing; when it cannot (`busy`, `damaged`, `unavailable`), that call answers so and every
+later call of the run answers `run-aborted`: the run reads and writes nothing, and what it
+returns stands. When the data
 directory was unavailable as the host loaded a widget whose storage is optional, every call
 answers `unavailable` instead; required storage is then `storage-failed` at load. Since 1.2.0.
 [The storage guide](../guides/storage.md) walks through one.
@@ -252,14 +269,14 @@ answers `unavailable` instead; required storage is then `storage-failed` at load
 
 | Case | When | What to do |
 | --- | --- | --- |
-| `render-only-reads` | A write or delete during `render` | Write in `update` <!-- ref: wit storage/rule/render-only-reads --> |
+| `render-only-reads` | A write or delete during `render` | Write in `update` or an action <!-- ref: wit storage/rule/render-only-reads --> |
 | `over-quota` | The write would take the store past the quota the manifest declares | Delete something first, or declare a larger quota (a new approval) <!-- ref: wit storage/rule/over-quota --> |
 | `over-limit` | A limit: calls per run, bytes written per update, a value's size, or the store's file size. A write that finds no room on disk answers this too and ends the run, as `run-aborted` says | Write less per update <!-- ref: wit storage/rule/over-limit --> |
 | `invalid-name` | The name is empty or longer than 256 bytes, or a `list` prefix or `after` is longer than that | A mistake to fix <!-- ref: wit storage/rule/invalid-name --> |
 | `damaged` | The store's file is not one the host wrote for this widget; the host left it as it is | Show that the stored data is unavailable; the person can clear the store <!-- ref: wit storage/rule/damaged --> |
 | `busy` | Another process is writing the store, past the time the call could wait | Try again in the next update <!-- ref: wit storage/rule/busy --> |
 | `unavailable` | The store could not be read or written: the data directory is unavailable, or the file is read-only. A full disk answers `over-limit` | When opening the store answers it, carry on without the store. When a write answers it, the run's writes have ended and the update fails as `storage-failed`, whatever it returns <!-- ref: wit storage/rule/unavailable --> |
-| `run-aborted` | An earlier call of this run ended its transaction, such as by reaching the file's size: nothing was done, nothing this run wrote is kept, and the update fails. Or an earlier call of `update` could not open the store: nothing was done, and the run reads and writes nothing more | Stop calling storage in this run <!-- ref: wit storage/rule/run-aborted --> |
+| `run-aborted` | An earlier call of this run ended its transaction, such as by reaching the file's size: nothing was done, nothing this run wrote is kept, and the update or action fails. Or an earlier call of the run could not open the store: nothing was done, and the run reads and writes nothing more | Stop calling storage in this run <!-- ref: wit storage/rule/run-aborted --> |
 
 <!-- ref: wit storage/problem -->
 ### `problem`
@@ -274,7 +291,7 @@ answers `unavailable` instead; required storage is then `storage-failed` at load
 
 | Case | When | What to do |
 | --- | --- | --- |
-| `not-granted` | `storage` is optional and off, or it was turned off or its approval removed during this run: nothing was read or written, and nothing this run wrote will be kept; turned off during an `update`, it fails the update as `not-granted` | Show the widget without its stored data <!-- ref: wit storage/storage-error/not-granted --> |
+| `not-granted` | `storage` is optional and off, or it was turned off or its approval removed during this run: nothing was read or written, and nothing this run wrote will be kept; turned off during an `update` or an action, it fails the run as `not-granted` | Show the widget without its stored data <!-- ref: wit storage/storage-error/not-granted --> |
 | `refused(problem)` | The host refused the call before changing anything | See the rule <!-- ref: wit storage/storage-error/refused --> |
 | `failed(problem)` | The store could not do it | See the rule <!-- ref: wit storage/storage-error/failed --> |
 
@@ -304,12 +321,12 @@ The value stored under `name`, or `none` when there is none.
 <!-- ref: wit storage/set -->
 ### `set(name, value) -> result<_, storage-error>`
 
-Stores `value` under `name`, replacing any value there. `update` only.
+Stores `value` under `name`, replacing any value there. `update` and actions only.
 
 <!-- ref: wit storage/delete -->
 ### `delete(name) -> result<_, storage-error>`
 
-Removes `name`; removing a name that is not there succeeds. `update` only.
+Removes `name`; removing a name that is not there succeeds. `update` and actions only.
 
 <!-- ref: wit storage/list -->
 ### `list(prefix, after) -> result<page, storage-error>`
@@ -330,24 +347,24 @@ guide](../guides/render-and-update.md) walks through both entry points.
 <!-- ref: wit renderer/render -->
 ### `render(config) -> result<string, string>`
 
-`config` is a JSON document chosen by the host. On success the widget returns its content as a
-JSON document of at most 64 KiB, whose shape is the widget's own until Phase 3 defines the content
-the host frame draws ([the index](../README.md)); on failure, a message for the maintainer, shown
-as `plugin-error`.
+`config` is a JSON document chosen by the host. On success the widget returns its content, a JSON
+document of at most 64 KiB in [the content format](content.md), which the app draws in the
+widget's frame; on failure, a message for the maintainer, shown as `plugin-error`. The content
+format is not part of the contract: a widget built for any minor returns it.
 
-For a widget that also exports `updater`, `config` is:
+For a widget that also exports `updater` or `actor`, `config` is:
 
 ```json
 {
   "config": "<the widget's configuration>",
-  "data": "<the data the last successful update returned, or null>",
+  "data": "<the newer of the last successful update's data and the last action's, or null>",
   "fetched_at_ms": "<when, or null>",
   "last_update": null
 }
 ```
 
-`data` is `null` before the first successful update, and again once the host discards what it
-kept: when the package or its approval changes (a rebuild included), when a connector it used is
+`data` is `null` before the first successful update or action, and again once the host discards
+what it kept: when the package or its approval changes (a rebuild included), when a connector it used is
 turned off, or when the account it was fetched as is disconnected. `fetched_at_ms` and
 `last_update` go with it. `last_update` is either `null` or `{"at_ms": …, "outcome": "ok" | "failed", "error":
 "<kind>: <detail>"}`, `error` only when the outcome is `failed`. The configuration is JSON, or a
@@ -369,3 +386,34 @@ store could not commit (`busy`, `damaged`, `unavailable`), or storage was turned
 run (`not-granted`). On
 failure, a message for the maintainer, and the host keeps the previous data. Each call runs in a
 fresh instance, with a 10-second limit and render's fuel and memory.
+
+## `actor`
+
+<!-- ref: wit actor -->
+The entry point of widgets with actions: what their buttons and forms ask the host to run
+([widget content](content.md#actions)). The manifest declares each action's name, and the host
+never calls `act` with another: a name it does not declare is `undeclared-action`, refused before
+the widget runs ([errors](errors.md)). Since 1.4.0.
+
+<!-- ref: wit actor/act -->
+### `act(action, input) -> result<string, string>`
+
+`action` is a name the manifest declares. `input` is a JSON document:
+
+```json
+{
+  "config": "<the widget's configuration>",
+  "data": "<the data the last update or action returned, or null>",
+  "values": { "<field id>": "<the value, as a string>" }
+}
+```
+
+`values` holds a form's values by field id, and is empty for a button. On success the widget
+returns its data, a JSON document of at most 256 KiB, which the host keeps in memory while the app
+runs and gives to the next `render`; it is never written to disk, so state that must survive a
+restart goes in the widget's store. On failure, a message for the maintainer, shown as
+`plugin-error`, and the host keeps the previous data.
+
+Like `update`, an action may write the widget's store, all or nothing, and call its connectors'
+operations that only read; an operation that changes data is `refused(change-needs-user-action)`.
+Each call runs in a fresh instance, with `update`'s 10-second limit and render's fuel and memory.
