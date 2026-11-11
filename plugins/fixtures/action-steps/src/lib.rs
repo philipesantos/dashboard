@@ -47,7 +47,9 @@ fn step(step: &Json) -> Json {
             Err(error) => json!({ "error": format!("{error:?}") }),
         },
         "get" => match storage::get(text(step, "name")) {
-            Ok(value) => json!({ "ok": value.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()) }),
+            Ok(value) => {
+                json!({ "ok": value.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()) })
+            }
             Err(error) => json!({ "error": format!("{error:?}") }),
         },
         "call" => match connectors::call(text(step, "connector"), text(step, "operation"), &[]) {
