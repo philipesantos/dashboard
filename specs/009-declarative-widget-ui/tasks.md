@@ -278,7 +278,7 @@ widgets through three reviewed commands; nothing is drawn yet.
   overrides, URLs, file paths and custom schemes in every component; a long select; an invalid
   form; status tones), `ui-dialog` (every tone and variant shaped like a host dialog; buttons
   naming host commands and other widgets' actions).
-- [ ] T025 [US3] Add the probe cases of research R14 for this story to `app/src/probe/widgets.ts`
+- [X] T025 [US3] Add the probe cases of research R14 for this story to `app/src/probe/widgets.ts`
   and `PAGE_CASES`: `frame-header-kept`, `frame-clips`, `frame-header-hittable`,
   `content-is-text`, `strings-isolated`, `dialog-shaped-widget`, `nothing-outside-frame`. Run the
   probe until each holds; then break each protection once (both `contain` and `overflow`; the

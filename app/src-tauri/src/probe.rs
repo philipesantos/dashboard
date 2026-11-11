@@ -59,6 +59,13 @@ const PAGE_CASES: &[&str] = &[
     "showcase-on-time",
     "content-error-shown",
     "window-responsive",
+    "frame-header-kept",
+    "frame-header-hittable",
+    "frame-clips",
+    "content-is-text",
+    "strings-isolated",
+    "dialog-shaped-widget",
+    "nothing-outside-frame",
     // The window (FR-009 to FR-011)
     "context-menu",
     "navigate-location",
