@@ -61,7 +61,13 @@ export const widgetCases: Case[] = [
         const [mark] = performance.getEntriesByName(name, "mark");
         if (mark) {
           const ms = Math.round(mark.startTime);
-          return { held: ms <= 1000, detail: `the showcase was drawn ${ms} ms after the page began loading` };
+          const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+          const loaded = Math.round(page?.loadEventStart ?? 0);
+          const ready = Math.round(page?.domContentLoadedEventStart ?? 0);
+          return {
+            held: ms <= 1000,
+            detail: `the showcase was drawn ${ms} ms after the page began loading (DOM ready at ${ready} ms, load at ${loaded} ms)`,
+          };
         }
         await context.wait(POLL_MS);
       }
