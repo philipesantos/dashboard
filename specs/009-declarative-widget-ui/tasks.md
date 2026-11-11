@@ -247,7 +247,7 @@ widgets through three reviewed commands; nothing is drawn yet.
   `app/src/probe/widgets.ts`, registered in `run.ts` and `PAGE_CASES` (`probe.rs:26-81`), the
   cases `content-error-shown`, `window-responsive` and `showcase-on-time` of research R14. They
   fail until T022.
-- [ ] T022 [US2] Draw the content error and the not-loaded state in `Frame.tsx` (FR-005): the
+- [X] T022 [US2] Draw the content error and the not-loaded state in `Frame.tsx` (FR-005): the
   host's message with the error's kind and path, as text; the plugin's log gets the entry
   (`widgets.rs`). T021's case holds.
 - [ ] T023 [US2] Write the author docs (research R16): `docs/authors/reference/content.md` (each

@@ -16,7 +16,11 @@ The name is already sanitised (research R6).
 
 ## `widget_render(handle) -> Rendered`
 
-`Rendered`: `{ content: <normalised content> } | { error: { kind, reason } } | { refused: kind }`.
+`Rendered`: `{ content: <normalised content> } | { error: { kind, reason, path? } } | { refused: kind }`.
+For content the checker refuses (`bad-shape`, `over-bound`), `reason` is the checker's and `path`
+the place in the content (`body[0].text`); for a refused load (`not-loaded`) or a failed render
+(`render-failed`), `reason` is the runtime's error kind. The frame draws the kind, the path and
+the reason as text after the host's own message (FR-005).
 Refused with `unknown-widget` for a handle the host is not showing, and `widget-busy` while an
 action of that widget runs.
 

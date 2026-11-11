@@ -7,7 +7,7 @@
 // Part of the security core (constitution, Principle IX).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LoaderCircle, RotateCw } from "lucide-react";
+import { CircleX, LoaderCircle, RotateCw } from "lucide-react";
 
 import { actWidget, renderWidget, type Content as ContentTree, type Failure, type FrameInfo, type Rendered } from "./api";
 import { ActionContext } from "./content/action";
@@ -122,11 +122,41 @@ export function Frame({ frame }: { frame: FrameInfo }) {
           </ActionContext.Provider>
         );
       case "error":
-        return <p className="text-sm text-frame-foreground">Este widget não pôde ser desenhado.</p>;
+        return <Problem message="Este widget não pôde ser desenhado." failure={view.failure} />;
       case "not-loaded":
-        return <p className="text-sm text-frame-foreground">Este widget não foi carregado.</p>;
+        return <Problem message="Este widget não foi carregado." failure={view.failure} />;
     }
   }
+}
+
+/**
+ * The host's error state (FR-005): its own message, then the failure's kind, where in the content
+ * it is and the host's reason, each as text. Nothing here comes from the plugin's own error text.
+ */
+function Problem({ message, failure }: { message: string; failure: Failure }) {
+  return (
+    <div role="status" className="flex items-start gap-2 text-sm">
+      <CircleX aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-frame-foreground">{message}</p>
+        <p className="break-words text-xs text-muted-foreground">
+          <bdi>{failure.kind}</bdi>
+          {failure.path && (
+            <>
+              {" em "}
+              <bdi>{failure.path}</bdi>
+            </>
+          )}
+          {failure.reason && (
+            <>
+              {": "}
+              <bdi>{failure.reason}</bdi>
+            </>
+          )}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 /** The manifest's icon, decoded by the host, drawn as pixels; or the host's monogram. */
