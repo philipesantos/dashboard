@@ -75,7 +75,7 @@ folded into research R1 to R16; one of them led to the v2.6.3 amendment.
 | IX. Human review of the security core | Pass | `wit/`, the runtime's grants and phases, the app's window module, commands and `window-surface.toml`, and the new frame and content components join the security core's review; this pull request is reviewed line by line. |
 | Fixed decision: Rust + Tauri 2, React UI | Pass | Unchanged. |
 | Fixed decision: the window engine | Pass | Unchanged; the probe runs on the three engines. |
-| Fixed decision: plugin storage, one SQLite database per plugin | Pass | Kept data stays a host cache, discarded when the package or its approval changes; durable state is the `storage` permission's (R7). |
+| Fixed decision: plugin storage, one SQLite database per plugin | Pass | An action's data stays in memory while the app runs and is never written to disk; durable state is the `storage` permission's, with its approved quota (R7). |
 | Fixed decision: plugin contract by WIT, minors only add | Pass | 1.4.0 follows `wit/README.md`'s procedure: frozen as `history/1.4.0`, pinned, only-adds tested (R7). |
 | CI on three systems, audits | Pass | The new tests and probe cases run in the existing jobs; no new dependency outside the lock. |
 | Decision 0001 (plugins in the host process) | Pass, review recorded | Its trigger is installing a plugin the app did not build; the app now loads its own bundled plugins, which the decision gains as a dated note (R15). |

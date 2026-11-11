@@ -52,6 +52,11 @@ dela."
   that Principle IV covers the secrets the host holds or that pass through its credential flows,
   since text a person types cannot be recognised in general.
 
+- Q: (plan review, 2026-11-11) The data an action returns would be kept on disk, up to 256 KiB
+  per widget, with no storage permission or quota, and may hold what the person typed. Is that
+  acceptable? → A: No. The host keeps an action's data in memory only, while the app runs; state
+  that must survive a restart needs the `storage` permission and its approved quota.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The people in these stories are:
@@ -328,8 +333,10 @@ This is the first one.
   host runs a declared action with its name and the form's values, under the same limits as an
   update. An action may write the widget's store and call its connectors' operations that only
   read, each only as granted; an operation that changes data MUST stay refused, as it is today.
-  An action returns the widget's data, which the host keeps and gives to the next render, as it does for an
-  update. A plugin built for an earlier minor keeps running and has no actions.
+  An action returns the widget's data, which the host keeps **in memory, while the app runs**,
+  and gives to the next render. Data an action returns is never written to disk: state that must
+  survive a restart needs the `storage` permission and its approved quota. A plugin built for an
+  earlier minor keeps running and has no actions.
 - **FR-023**: The manifest MUST declare each action's name, and the host MUST refuse, before
   calling the plugin, any action name the manifest does not declare. The manifest schema and the
   author reference MUST describe `name`, `icon` and the declared actions, and the host's manifest
@@ -417,9 +424,9 @@ This is the first one.
   feature adds the app's side, the content format and the `actor` export. Scheduled data
   updates through connectors in the app arrive with the official widgets.
 - **The bundled example's actions need no permission.** It keeps its state in the data its
-  actions return, which the host keeps, so it shows a working action without a grant. Kept data
-  is a host cache, not the plugin's storage: it is discarded whenever the package or its approval
-  changes, and a widget that needs durable state declares `storage`.
+  actions return, which the host keeps in memory, so it shows a working action without a grant;
+  its state starts over when the app restarts. A widget that needs durable state declares
+  `storage`.
 - **The look follows feature 007.** Components draw with the shared roles of `DESIGN.md`; the
   frame header uses its host-only roles.
 - **Charts are simple.** A line or bar chart of a few series, drawn by the host, with a text

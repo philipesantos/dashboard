@@ -12,7 +12,8 @@ pnpm --filter ./app tauri dev
 **Expected**: above the demo's tabs, the "Vitrine" widget in its frame: its icon and name in the
 header, then every component (heading, status texts with icons, list, table, chart, buttons, a
 form). It appears within a second of the window. Switch to dark: the frame and content follow.
-Press "Contar": the number goes up within a second, and survives a restart.
+Press "Contar": the number goes up within a second. Restart the app: it starts over, since an
+action's data is kept in memory only.
 
 ## 2. Content checked before the app (US2)
 

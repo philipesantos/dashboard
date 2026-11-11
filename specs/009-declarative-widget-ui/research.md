@@ -171,8 +171,8 @@ is fetched." Feature 007's rule allows this: a criterion changes before the feat
   `interactive-account-stored-widget`. Existing worlds are untouched: the only-adds test compares
   each world's imports and exports (`runtime/tests/contract_v1.rs:259-275`).
 - `input` is `{"config": …, "data": <kept data or null>, "values": {<field>: <value>}}`;
-  the output, as for `update`, is the widget's data, up to 256 KiB, which the host keeps
-  (`kept.rs`) and passes to the next render in the shape the contract already defines for
+  the output, as for `update`, is the widget's data, up to 256 KiB, which the host keeps **in
+  memory only** and passes to the next render in the shape the contract already defines for
   `updater` (`wit/v1/widget.wit:249-254`). A plugin that exports `actor` without `updater`
   receives that same shape; the new interface's doc comment says so, since frozen comments stay.
 - **Runtime**: `Phase` gains `Action` (`calls.rs:86-91`). An action runs with the update's time
@@ -182,12 +182,13 @@ is fetched." Feature 007's rule allows this: a criterion changes before the feat
   (`calls.rs:487-498`; maintainer's decision). Every place that matches on `Phase`
   (`lib.rs:1415,1462,1549,1562,1581`; `calls.rs:464,563`; `storage/mod.rs:517,597,703,716,775`)
   gets the third arm.
-- **Kept data** today gates on `updater()` (`lib.rs:1600-1641`), and so does render's choice of
-  the document it passes (`lib.rs:1392`); both gate on `updater()` or `actor()`, or an actor-only
-  plugin would never see its data. After an action, `fetched_at_ms` is the action's time and
-  `last_update` records the action's outcome, as for an update.
-- **Kept data is a host cache**, discarded when the package or its approval changes
-  (`kept.rs:4-7`); durable state is the `storage` permission's. The threat model's B1 says so.
+- **Action data stays in memory** (maintainer's decision, 2026-11-11): the plugin's `Plugin`
+  holds the last data an action returned, with its time, behind its lock; nothing of it reaches
+  `kept.rs`'s files, so a widget without `storage` keeps nothing across a restart. Render's choice
+  of document (`lib.rs:1392`) gates on `updater()` or `actor()`, so an actor-only plugin sees its
+  data; `data` is the newer of the update's kept data on disk and the action's data in memory,
+  `fetched_at_ms` its time, and `last_update` the outcome of whichever produced it. Durable state
+  is the `storage` permission's, with its approved quota; the threat model's B1 says so.
 - **Phase checks** today are `==` comparisons (`calls.rs:464`, `lib.rs:1549,1562`,
   `storage/mod.rs:517,597,716,775`), which a new variant would not trip; they become methods,
   `Phase::may_call_connectors()` and `Phase::writes_storage()`, so each site states the rule.
@@ -365,5 +366,6 @@ installation item reviews it.
   requires a test or hostile case per cited criterion, `design/src/checks/criteria.ts:89-99`).
   New rows on B1 (an action reaching beyond its grants; an undeclared action), and B7 (a window
   command given a forged handle). B1's text "all or nothing in update" and B2's "calls only in
-  `update`" become "in update or an action". B1 says kept data is a host cache. A residual row
+  `update`" become "in update or an action". B1 says an action's data stays in memory and durable
+state needs `storage`. A residual row
   records typed text in a form (Principle IV as amended in v2.6.2).

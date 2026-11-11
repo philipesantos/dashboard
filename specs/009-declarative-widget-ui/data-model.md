@@ -76,7 +76,7 @@ carrying their icon name, and each form field's host id. It never holds the plug
 | `action` | A name the manifest declares; checked before the plugin runs. |
 | `values` | The form's values by field id, each at most 500 characters, none holding a secret the host holds. |
 | `input` (to the plugin) | `{"config", "data", "values"}` |
-| `output` | The widget's data, at most 256 KiB, kept by the host and given to the next render. |
+| `output` | The widget's data, at most 256 KiB, kept by the host in memory while the app runs and given to the next render; never written to disk. |
 
 ## Bundled widget
 

@@ -12,7 +12,9 @@ interface actor {
   /// `{"config": <the widget's configuration>, "data": <the data the last update or action
   /// returned, or null>, "values": {<field id>: <string>}}`, with `values` empty for a button.
   /// On success the plugin returns the widget's data, a JSON document of at most 256 KiB, which
-  /// the host keeps and gives to the next render; on failure, a message for the maintainer.
+  /// the host keeps in memory while the app runs and gives to the next render; it is never
+  /// written to disk, so state that must survive a restart goes in the widget's store. On
+  /// failure, a message for the maintainer.
   /// Like `update`, an action may write the widget's store, all or nothing, and call its
   /// connectors' operations that only read; an operation that changes data is refused.
   /// A plugin that exports `actor` receives in `render` the same document as a plugin that
