@@ -1,0 +1,20 @@
+# What the host window may call. Every entry needs a reason. The test in tests/surface.rs fails
+# when this list and the app disagree (specs/008-tauri-shell/contracts/window-surface.md).
+#
+# Part of the security core (constitution, Principle IX): every change gets line-by-line review.
+#
+# To add a host command:
+# 1. add it to the commands! list in src/commands.rs;
+# 2. add its permission, "allow-<command>", to capabilities/default.json;
+# 3. add both entries here, with the reason the host UI needs it:
+#
+#   [[permission]]
+#   id = "allow-list-widgets"
+#   reason = "The dashboard grid lists the installed widgets."
+#
+#   [[command]]
+#   name = "list_widgets"
+#   reason = "Same as above; the command behind the permission."
+#
+# A Tauri plugin is listed as [[plugin]] with its crate name and reason, and each permission it
+# needs as a [[permission]].

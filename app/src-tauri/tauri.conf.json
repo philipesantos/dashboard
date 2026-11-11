@@ -10,15 +10,24 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "dashboard",
-        "width": 800,
-        "height": 600
-      }
-    ],
+    "windows": [],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self'",
+        "font-src": "'self'",
+        "img-src": "'self'",
+        "connect-src": "ipc:",
+        "object-src": "'none'",
+        "frame-src": "'none'",
+        "child-src": "'none'",
+        "worker-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'",
+        "frame-ancestors": "'none'"
+      },
+      "freezePrototype": true
     }
   },
   "bundle": {

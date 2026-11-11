@@ -24,7 +24,7 @@ jobs:
   # skip them. The workflow still runs, because a skipped job counts as passing for the
   # required "CI result" check, while a workflow that never starts leaves it pending forever.
   # New advisories do not need a change here; audit.yml checks for them every week.
-  # The constitution (v2.4.1, Development Workflow) allows this skip; keep the documentation
+  # The constitution (v2.6.1, Development Workflow) allows this skip; keep the documentation
   # paths below in sync with the ones it lists. Markdown the build uses as code is not
   # documentation for that rule: the docs checks read docs/authors/ and wit/, so a change there
   # runs everything (specs/006-contract-v1-docs/research.md, R11). The design checks read
@@ -62,8 +62,8 @@ jobs:
             changed=$(git diff --name-only --no-renames "$range")
             printf '%s\n' "$changed"
             # Documentation only: Markdown anywhere, specs/, docs/, .specify/ and LICENSE, except
-            # what the docs and design checks read
-            if grep -qE '^(design|docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$' <<< "$changed"; then
+            # what the docs and design checks read, and docs/webkitgtk-register.toml, which a test reads
+            if grep -qE '^(design|docs/authors|docs/design|wit)/|^(DESIGN|docs/threat-model)\.md$|^docs/webkitgtk-register\.toml$' <<< "$changed"; then
               code=true
             elif grep -qvE '\.md$|^(specs|docs|\.specify)/|^LICENSE$' <<< "$changed"; then
               code=true
@@ -82,7 +82,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # The shell probe adds a release build of the app (specs/008-tauri-shell/research.md, R11)
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -97,8 +98,11 @@ jobs:
         run: |
           apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
           sudo apt-get $apt_options update
+          # WEBKITGTK-ONLY(system-libs): Tauri 2 on Linux builds against WebKitGTK
           sudo apt-get $apt_options install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev
+          # A virtual display for the shell probe (specs/008-tauri-shell/research.md, R8)
+          sudo apt-get $apt_options install -y xvfb
           # The secrets vault: libdbus to build the Secret Service store, gnome-keyring for
           # the tests that use the real keychain (specs/005-plugin-credentials/research.md, R15)
           sudo apt-get $apt_options install -y libdbus-1-dev gnome-keyring
@@ -144,7 +148,31 @@ jobs:
           path: design/preview/
           if-no-files-found: error
 
-      # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time
+      # The shell probe: the release build plus one page module and two commands. Inside the
+      # real page it tries every forbidden action, and it fails unless each one is refused
+      # (specs/008-tauri-shell/contracts/probe.md). Built as `tauri build` builds, with
+      # tauri/custom-protocol, so the page and its content policy are the release ones.
+      - run: pnpm --filter ./app build --mode probe
+
+      - run: cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked
+
+      - name: Shell probe
+        shell: bash
+        timeout-minutes: 3
+        env:
+          DASHBOARD_PROBE: "1"
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            # WEBKITGTK-ONLY(ci-dmabuf): WebKitGTK's DMA-BUF renderer fails under xvfb
+            WEBKIT_DISABLE_DMABUF_RENDERER=1 xvfb-run -a ./target/release/dashboard
+          else
+            ./target/release/dashboard
+          fi
+
+      - run: cargo clippy -p dashboard --features shell-probe --all-targets --locked -- -D warnings
+
+      # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time.
+      # It also puts back the normal dist after the probe's.
       - run: pnpm --filter ./app build
 
       # Builds every plugin into target/plugins/, the fixtures the runtime tests load

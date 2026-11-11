@@ -1,0 +1,49 @@
+# Every change made only because Linux uses the system WebKitGTK (spec 008, FR-022; decision
+# record 0002). Mark each place with WEBKITGTK-ONLY(<id>) in a comment, and list it here with
+# its files. The test in app/src-tauri/tests/webkitgtk_register.rs fails when the two disagree,
+# and when a line in app/ or .github/ names the engine with no marker nearby
+# (specs/008-tauri-shell/contracts/webkitgtk-register.md).
+#
+# The move to the embedded engine works through this list until it is empty.
+
+[[entry]]
+id = "system-libs"
+files = [".github/workflows/ci.yml", "CONTRIBUTING.md"]
+reason = "Tauri 2 on Linux builds against WebKitGTK, so CI and contributors install libwebkit2gtk-4.1-dev."
+removal = "Replace with the embedded engine's build dependencies."
+
+[[entry]]
+id = "ci-dmabuf"
+files = [".github/workflows/ci.yml"]
+reason = "WebKitGTK's DMA-BUF renderer fails under xvfb, so the probe step turns it off."
+removal = "Delete the variable."
+
+[[entry]]
+id = "probe-devtools-read"
+files = ["app/src-tauri/src/probe.rs", "app/src-tauri/Cargo.toml"]
+reason = "The probe's devtools-setting case reads WebKitGTK's enable-developer-extras through the webkit2gtk crate, an optional dependency of the probe build."
+removal = "Replace with the embedded engine's read, and drop the webkit2gtk dependency."
+
+[[entry]]
+id = "probe-ephemeral-read"
+files = ["app/src-tauri/src/probe.rs"]
+reason = "The probe's store-incognito case reads whether the WebKitGTK session is ephemeral."
+removal = "Replace with the embedded engine's read."
+
+[[entry]]
+id = "probe-download-as-navigation"
+files = ["app/src/probe/engine.ts"]
+reason = "WebKitGTK turns a download link to another bundled file into a navigation, which on_navigation refuses before on_download is reached, so the download-link case also accepts a navigation refusal."
+removal = "Require an on_download refusal, unless the embedded engine also treats the click as a navigation."
+
+[[entry]]
+id = "cef-watch"
+files = [".github/workflows/audit.yml"]
+reason = "While Linux uses WebKitGTK, the weekly audit reports a stable tauri-runtime-cef release, which makes the next engine trial due (FR-017)."
+removal = "Replace with the weekly check that the embedded engine is current with Chromium's security releases (FR-017)."
+
+[[entry]]
+id = "window-close"
+files = ["app/src-tauri/src/window.rs", "app/src/probe/window.ts"]
+reason = "WebKitGTK destroys the webview when the page calls window.close(), which would blank the app, so the window's start-up script makes it do nothing."
+removal = "Delete the replacement, unless the embedded engine also closes the page."

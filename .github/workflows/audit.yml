@@ -50,3 +50,60 @@ jobs:
 
       # Fails at high and above; see the pnpm-audit job in ci.yml
       - run: pnpm audit --audit-level high
+
+  # WEBKITGTK-ONLY(cef-watch): only while Linux uses WebKitGTK; the move replaces it.
+  # While Linux draws the window with WebKitGTK, a stable release of Tauri's embedded-Chromium
+  # runtime makes the next engine trial due (constitution v2.6.1; specs/008-tauri-shell, FR-017;
+  # docs/decisions/0002-linux-window-engine.md). This fails, naming the version, when one exists
+  # that is newer than the last version tried.
+  cef-watch:
+    name: Embedded engine watch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: A stable tauri-runtime-cef newer than the last version tried
+        shell: python3 {0}
+        run: |
+          import json, re, sys, urllib.request
+
+          record = open("docs/decisions/0002-linux-window-engine.md", encoding="utf-8").read()
+          found = re.search(r"^Last runtime version tried: (\S+)$", record, re.MULTILINE)
+          if not found:
+              sys.exit("decision record 0002 has no 'Last runtime version tried:' line")
+          last = found.group(1)
+
+          def key(version):
+              core, _, pre = version.split("+")[0].partition("-")
+              numbers = tuple(int(part) for part in core.split("."))
+              # A release sorts after its own pre-releases, which sort by their parts:
+              # numbers numerically, below words (semver 11.4)
+              if not pre:
+                  return numbers, 1, ()
+              parts = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split("."))
+              return numbers, 0, parts
+
+          request = urllib.request.Request(
+              "https://crates.io/api/v1/crates/tauri-runtime-cef",
+              headers={"User-Agent": "dashboard-cef-watch (GitHub Actions)"},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              versions = [v for v in json.load(response)["versions"] if not v["yanked"]]
+
+          names = [v["num"] for v in versions]
+          newest = max(names, key=key)
+          stable = [name for name in names if "-" not in name]
+          print(f"last version tried: {last}")
+          print(f"newest version published: {newest}")
+          print(f"stable versions: {', '.join(sorted(stable, key=key)) or 'none'}")
+
+          due = [name for name in stable if key(name) > key(last)]
+          if due:
+              version = max(due, key=key)
+              sys.exit(
+                  f"tauri-runtime-cef {version} is a stable release newer than {last}: the Linux "
+                  "engine trial is due (docs/decisions/0002-linux-window-engine.md)"
+              )
