@@ -1300,47 +1300,92 @@ fn base64_of(bytes: &[u8]) -> String {
 #[test]
 fn the_schema_and_the_parser_agree_on_name_icon_and_actions() {
     let schema = schema();
-    let sixteen: Vec<Value> = (0..16).map(|n| json!({ "name": format!("a{n}") })).collect();
-    let seventeen: Vec<Value> = (0..17).map(|n| json!({ "name": format!("a{n}") })).collect();
+    let sixteen: Vec<Value> = (0..16)
+        .map(|n| json!({ "name": format!("a{n}") }))
+        .collect();
+    let seventeen: Vec<Value> = (0..17)
+        .map(|n| json!({ "name": format!("a{n}") }))
+        .collect();
     let valid = [
         ("a name", set("name", json!("Vitrine"))),
-        ("a name of 60 characters", set("name", json!("n".repeat(60)))),
+        (
+            "a name of 60 characters",
+            set("name", json!("n".repeat(60))),
+        ),
         // Markup and bidirectional overrides are text to the parser; the frame draws them as
         // text and removes the overrides (HS-02)
         ("a name with markup", set("name", json!("<b>Vitrine</b>"))),
-        ("a name with an override", set("name", json!("Vit\u{202e}rine"))),
+        (
+            "a name with an override",
+            set("name", json!("Vit\u{202e}rine")),
+        ),
         ("a 32 by 32 icon", set("icon", json!(png_icon(32, 32, 1)))),
         ("a 16 by 16 icon", set("icon", json!(png_icon(16, 16, 1)))),
         ("a 64 by 64 icon", set("icon", json!(png_icon(64, 64, 1)))),
-        ("one action", set("actions", json!([{ "name": "increment" }]))),
+        (
+            "one action",
+            set("actions", json!([{ "name": "increment" }])),
+        ),
         ("sixteen actions", set("actions", Value::Array(sixteen))),
         ("no action", set("actions", json!([]))),
     ];
     for (case, manifest) in valid {
-        assert!(valid_for_schema(&schema, &manifest), "the schema refused {case}");
+        assert!(
+            valid_for_schema(&schema, &manifest),
+            "the schema refused {case}"
+        );
         assert_eq!(parse(&manifest), Ok(()), "the parser refused {case}");
     }
 
     let invalid = [
         ("an empty name", set("name", json!(""))),
-        ("a name of 61 characters", set("name", json!("n".repeat(61)))),
-        ("a name with a control character", set("name", json!("Vit\u{7}rine"))),
+        (
+            "a name of 61 characters",
+            set("name", json!("n".repeat(61))),
+        ),
+        (
+            "a name with a control character",
+            set("name", json!("Vit\u{7}rine")),
+        ),
         ("a name that is not text", set("name", json!(7))),
         ("an empty icon", set("icon", json!(""))),
-        ("an icon that is not base64", set("icon", json!("not base64!"))),
         (
-            "an icon over 8 KiB",
-            set("icon", json!(base64_of(&vec![0u8; 8 * 1024 + 1]))),
+            "an icon that is not base64",
+            set("icon", json!("not base64!")),
         ),
-        ("an action name in capitals", set("actions", json!([{ "name": "Increment" }]))),
-        ("an action name of 33 characters", set("actions", json!([{ "name": "a".repeat(33) }]))),
-        ("the same action twice", set("actions", json!([{ "name": "a" }, { "name": "a" }]))),
+        // Past the longest base64 of 8 KiB; one to two bytes over 8 KiB are as long, and only the
+        // parser refuses them (below)
+        (
+            "an icon well over 8 KiB",
+            set("icon", json!(base64_of(&vec![0u8; 8 * 1024 + 3]))),
+        ),
+        (
+            "an action name in capitals",
+            set("actions", json!([{ "name": "Increment" }])),
+        ),
+        (
+            "an action name of 33 characters",
+            set("actions", json!([{ "name": "a".repeat(33) }])),
+        ),
+        (
+            "the same action twice",
+            set("actions", json!([{ "name": "a" }, { "name": "a" }])),
+        ),
         ("seventeen actions", set("actions", Value::Array(seventeen))),
-        ("an action with another field", set("actions", json!([{ "name": "a", "label": "A" }]))),
-        ("actions that are not a list", set("actions", json!("increment"))),
+        (
+            "an action with another field",
+            set("actions", json!([{ "name": "a", "label": "A" }])),
+        ),
+        (
+            "actions that are not a list",
+            set("actions", json!("increment")),
+        ),
     ];
     for (case, manifest) in invalid {
-        assert!(!valid_for_schema(&schema, &manifest), "the schema accepted {case}");
+        assert!(
+            !valid_for_schema(&schema, &manifest),
+            "the schema accepted {case}"
+        );
         assert_eq!(
             parse(&manifest),
             Err(ErrorKind::InvalidManifest),
@@ -1358,8 +1403,15 @@ fn the_schema_and_the_parser_agree_on_name_icon_and_actions() {
     };
     truncated.truncate(truncated.len() / 2);
     let host_only = [
+        (
+            "an icon one byte over 8 KiB",
+            base64_of(&vec![0u8; 8 * 1024 + 1]),
+        ),
         ("an SVG icon", base64_of(svg)),
-        ("a JPEG icon", base64_of(&[0xff, 0xd8, 0xff, 0xe0, 0, 16, b'J', b'F', b'I', b'F', 0])),
+        (
+            "a JPEG icon",
+            base64_of(&[0xff, 0xd8, 0xff, 0xe0, 0, 16, b'J', b'F', b'I', b'F', 0]),
+        ),
         ("an icon that is not square", png_icon(32, 16, 1)),
         ("an icon under 16 pixels", png_icon(8, 8, 1)),
         ("an icon over 64 pixels", png_icon(128, 128, 1)),
@@ -1368,7 +1420,10 @@ fn the_schema_and_the_parser_agree_on_name_icon_and_actions() {
     ];
     for (case, icon) in host_only {
         let manifest = set("icon", json!(icon));
-        assert!(valid_for_schema(&schema, &manifest), "the schema refused {case}");
+        assert!(
+            valid_for_schema(&schema, &manifest),
+            "the schema refused {case}"
+        );
         assert_eq!(
             parse(&manifest),
             Err(ErrorKind::InvalidManifest),

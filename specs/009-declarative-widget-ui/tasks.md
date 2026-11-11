@@ -96,11 +96,12 @@ widget host, before any story draws.
   `the_host_also_refuses_what_a_schema_cannot_see`: an SVG, a JPEG, a PNG over 8 KiB, not square,
   under 16 or over 64 px, animated, malformed; actions declared without `actor`, `actor` without
   actions (contracts/actions.md). They fail until T008.
-- [ ] T008 Add `name`, `icon` and `actions` to `wit/manifest.schema.json` and to `RawManifest` in
+- [X] T008 Add `name`, `icon` and `actions` to `wit/manifest.schema.json` and to `RawManifest` in
   `runtime/src/manifest.rs` (research R6, R8). Decode the icon at parse time with `png` 0.18.1
   (already in the lock), keeping RGBA pixels for `Manifest::icon_rgba()`; refuse anything else
-  with `invalid-manifest`. Check `actions` against the `actor` export at load in
-  `runtime/src/permissions.rs`, as `updater` is for connectors (`:358-364`). T007 passes.
+  with `invalid-manifest`. The check of `actions` against the `actor` export at load
+  needs the runtime to know `actor`, so it lands in T010 (`runtime/src/permissions.rs`, as
+  `updater` is checked for connectors at `:358-364`). T007 passes.
 
 ### Actions in the runtime
 

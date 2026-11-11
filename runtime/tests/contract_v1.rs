@@ -205,7 +205,10 @@ fn contract_1_4_0_contains_everything_of_1_3_0_unchanged() {
         let items = added
             .get(&format!("world {world}"))
             .unwrap_or_else(|| panic!("world {world}"));
-        assert!(items.contains("export dashboard:widget/actor"), "{world}: {items}");
+        assert!(
+            items.contains("export dashboard:widget/actor"),
+            "{world}: {items}"
+        );
         // The same imports and exports as its 1.3.0 counterpart, plus `actor`
         let base = world.trim_start_matches("interactive-");
         let base_items = &added[&format!("world {base}")];
@@ -213,7 +216,11 @@ fn contract_1_4_0_contains_everything_of_1_3_0_unchanged() {
             .split("; ")
             .filter(|item| *item != "export dashboard:widget/actor")
             .collect();
-        assert_eq!(without_actor.join("; "), *base_items, "{world} against {base}");
+        assert_eq!(
+            without_actor.join("; "),
+            *base_items,
+            "{world} against {base}"
+        );
     }
 }
 

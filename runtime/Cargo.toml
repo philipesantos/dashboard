@@ -15,6 +15,10 @@ semver = "1"
 # Typed manifest and grant record
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The manifest's icon (feature 009, research R6): standard base64 of a PNG, decoded by the host so
+# the frame draws pixels. Both already in the lock, through Tauri and others.
+base64 = "0.22.1"
+png = "0.18.1"
 # Names the field path of every manifest error, such as permissions[0].name
 serde_path_to_error = "0.1"
 # The package digest: SHA-256 of the whole file
@@ -127,9 +131,7 @@ runtime = { path = ".", features = ["test-network", "cli"] }
 boon = "0.6"
 # Turns WebAssembly text into the binary packages that tests pass to Runtime::load
 wat = "1"
-# Encodes the test icons of tests/manifest_schema.rs (feature 009); the runtime decodes them
-png = "0.18.1"
-base64 = "0.22.1"
+
 # Reads wit/v1 to check that every capability can answer not-granted (tests/contract_v1.rs).
 # Pinned to the version Wasmtime 50 uses.
 wit-parser = "=0.261.0"

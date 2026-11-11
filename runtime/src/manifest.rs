@@ -45,6 +45,14 @@ const STORAGE: &str = "storage";
 const MIN_QUOTA_BYTES: u64 = 64;
 const MAX_QUOTA_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_LOCAL_NAME_CHARS: usize = 64;
+/// Feature 009 (research R6, R8): the frame's name, the icon and the declared actions.
+const MAX_NAME_CHARS: usize = 60;
+/// The icon's PNG, decoded from base64, and its side in pixels: square, 16 to 64.
+pub const MAX_ICON_BYTES: usize = 8 * 1024;
+const MIN_ICON_SIDE: u32 = 16;
+const MAX_ICON_SIDE: u32 = 64;
+const MAX_ACTIONS: usize = 16;
+const MAX_ACTION_NAME_CHARS: usize = 32;
 
 /// A plugin's manifest, as checked by [`Manifest::parse`]; there is no other way to build one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +64,29 @@ pub struct Manifest {
     login_providers: Vec<String>,
     connectors: Vec<ConnectorRequest>,
     storage: Option<StorageRequest>,
+    name: Option<String>,
+    icon: Option<Icon>,
+    actions: Vec<String>,
+}
+
+/// The manifest's icon, decoded by the host when the manifest is parsed: a square PNG, kept as
+/// RGBA pixels, so the frame draws pixels and never an image the engine would load (research R6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Icon {
+    size: u32,
+    rgba: Vec<u8>,
+}
+
+impl Icon {
+    /// The side in pixels.
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    /// `size × size` pixels, four bytes each, row by row.
+    pub fn rgba(&self) -> &[u8] {
+        &self.rgba
+    }
 }
 
 /// Where a plugin comes from: `github.com/<owner>/<repository>` or `local/<name>`, lowercase.
@@ -167,6 +198,26 @@ impl Manifest {
     pub fn connector(&self, id: &str) -> Option<&ConnectorRequest> {
         self.connectors.iter().find(|connector| connector.id == id)
     }
+
+    /// The name the frame shows, as written; the frame removes what it must not draw.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// The icon, decoded.
+    pub fn icon(&self) -> Option<&Icon> {
+        self.icon.as_ref()
+    }
+
+    /// The actions the widget's buttons and forms may run, in the manifest's order.
+    pub fn actions(&self) -> &[String] {
+        &self.actions
+    }
+
+    /// Whether the manifest declares the action `name`.
+    pub fn declares_action(&self, name: &str) -> bool {
+        self.actions.iter().any(|action| action == name)
+    }
 }
 
 impl PluginId {
@@ -219,6 +270,19 @@ struct RawManifest {
     /// Absent means none (feature 003). An array when present: `null` is not accepted.
     #[serde(default, deserialize_with = "present")]
     connectors: Option<Vec<Object<RawConnectorRequest>>>,
+    /// Feature 009. Strings when present: `null` is not accepted.
+    #[serde(default, deserialize_with = "present_string")]
+    name: Option<String>,
+    #[serde(default, deserialize_with = "present_string")]
+    icon: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    actions: Option<Vec<Object<RawAction>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAction {
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -302,6 +366,11 @@ impl RawManifest {
         let (permissions, storage) = check_permissions(self.permissions)?;
         check_login_providers(&self.login_providers)?;
         let connectors = check_connectors(self.connectors.unwrap_or_default())?;
+        if let Some(name) = &self.name {
+            check_name(name)?;
+        }
+        let actions = check_actions(self.actions.unwrap_or_default())?;
+        let icon = self.icon.as_deref().map(decode_icon).transpose()?;
 
         // Only after every rule of the schema: an unknown permission is a host's limit, not a
         // malformed manifest (FR-008).
@@ -326,8 +395,125 @@ impl RawManifest {
             login_providers: self.login_providers,
             connectors,
             storage,
+            name: self.name,
+            icon,
+            actions,
         })
     }
+}
+
+/// The frame's name: 1 to 60 characters and no control character, as `author`. Markup and
+/// bidirectional controls are text here; the frame draws text and removes them (HS-02).
+fn check_name(name: &str) -> Result<(), RuntimeError> {
+    let length = name.chars().count();
+    if !(1..=MAX_NAME_CHARS).contains(&length) {
+        return Err(field(
+            "name",
+            format!("must have 1 to {MAX_NAME_CHARS} characters, found {length}"),
+        ));
+    }
+    if name.chars().any(char::is_control) {
+        return Err(field("name", "contains a control character"));
+    }
+    Ok(())
+}
+
+/// Up to 16 actions, each named `^[a-z][a-z0-9-]{0,31}$`, none twice.
+fn check_actions(actions: Vec<Object<RawAction>>) -> Result<Vec<String>, RuntimeError> {
+    if actions.len() > MAX_ACTIONS {
+        return Err(field("actions", format!("more than {MAX_ACTIONS} actions")));
+    }
+    let mut names: Vec<String> = Vec::with_capacity(actions.len());
+    for Object(RawAction { name }) in actions {
+        let well_formed = name.chars().count() <= MAX_ACTION_NAME_CHARS
+            && name.starts_with(|c: char| c.is_ascii_lowercase())
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !well_formed {
+            return Err(field(
+                "actions",
+                format!(
+                    "`{}` is not a lowercase action name of at most {MAX_ACTION_NAME_CHARS} characters",
+                    crate::text::escape(&name)
+                ),
+            ));
+        }
+        if names.contains(&name) {
+            return Err(field("actions", format!("`{name}` appears twice")));
+        }
+        names.push(name);
+    }
+    Ok(names)
+}
+
+/// The icon: standard base64 of a PNG of at most 8 KiB, square, 16 to 64 pixels, one frame.
+/// Anything else, an SVG or a JPEG included, is refused; the frame then draws its monogram.
+fn decode_icon(text: &str) -> Result<Icon, RuntimeError> {
+    use base64::Engine as _;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(text)
+        .map_err(|_| field("icon", "is not base64"))?;
+    if bytes.len() > MAX_ICON_BYTES {
+        return Err(field(
+            "icon",
+            format!("is {} bytes, over {MAX_ICON_BYTES}", bytes.len()),
+        ));
+    }
+    let not_png =
+        |problem: String| field("icon", format!("is not a PNG within the bounds: {problem}"));
+    let mut decoder = png::Decoder::new_with_limits(
+        std::io::Cursor::new(bytes),
+        png::Limits {
+            bytes: (MAX_ICON_SIDE * MAX_ICON_SIDE * 8) as usize,
+        },
+    );
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder
+        .read_info()
+        .map_err(|error| not_png(error.to_string()))?;
+    let info = reader.info();
+    if info.animation_control().is_some() {
+        return Err(not_png("an animated PNG".into()));
+    }
+    let (width, height) = (info.width, info.height);
+    if width != height || !(MIN_ICON_SIDE..=MAX_ICON_SIDE).contains(&width) {
+        return Err(not_png(format!(
+            "{width} by {height} pixels; it must be square, {MIN_ICON_SIDE} to {MAX_ICON_SIDE}"
+        )));
+    }
+    let mut buffer = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .ok_or_else(|| not_png("too large".into()))?
+    ];
+    let frame = reader
+        .next_frame(&mut buffer)
+        .map_err(|error| not_png(error.to_string()))?;
+    let pixels = &buffer[..frame.buffer_size()];
+    let rgba: Vec<u8> = match frame.color_type {
+        png::ColorType::Rgba => pixels.to_vec(),
+        png::ColorType::Rgb => pixels
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|&[r, g, b]| [r, g, b, 0xff])
+            .collect(),
+        png::ColorType::GrayscaleAlpha => pixels
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .flat_map(|&[g, a]| [g, g, g, a])
+            .collect(),
+        png::ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g, 0xff]).collect(),
+        png::ColorType::Indexed => return Err(not_png("an unexpanded palette".into())),
+    };
+    if rgba.len() != (width * height * 4) as usize {
+        return Err(not_png("an unexpected pixel layout".into()));
+    }
+    Ok(Icon { size: width, rgba })
 }
 
 fn check_version(version: &str) -> Result<(), RuntimeError> {
