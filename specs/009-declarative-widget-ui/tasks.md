@@ -153,7 +153,7 @@ widget host, before any story draws.
     from `design/widget-map.generated.json`); HS-06 (no password, masked or credential field kind,
     name or hint survives); an unknown `type` → placeholder and one log entry.
   They fail until T013.
-- [ ] T013 Write `wit/content.schema.json` and implement `widget-content` (`parse(&Value) ->
+- [X] T013 Write `wit/content.schema.json` and implement `widget-content` (`parse(&Value) ->
   Result<(Content, Vec<LogEntry>), ContentError>`), with the bounds as constants and the tones
   and status icons read from the widget map at build time (research R4, R5). T012 passes.
 - [ ] T014 [P] Teach the CLI (research R4, contracts/actions.md): `runtime run` reports the
