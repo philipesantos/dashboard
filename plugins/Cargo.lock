@@ -461,7 +461,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "ui-dialog"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "ui-header"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "ui-invalid"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "ui-overflow"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "ui-strings"
 version = "0.1.0"
 dependencies = [
  "serde_json",

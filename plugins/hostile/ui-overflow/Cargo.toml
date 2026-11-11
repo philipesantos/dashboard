@@ -1,0 +1,13 @@
+[package]
+name = "ui-overflow"
+version = "0.1.0"
+description = "Hostile widget (window probe fixture, never shipped): content wider and taller than any frame"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json.workspace = true
+wit-bindgen.workspace = true

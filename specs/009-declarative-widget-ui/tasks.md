@@ -271,7 +271,7 @@ widgets through three reviewed commands; nothing is drawn yet.
 
 **Independent Test**: quickstart §4.
 
-- [ ] T024 [P] [US3] Write the hostile fixtures (1.4.0, no permission), embedded only in the
+- [X] T024 [P] [US3] Write the hostile fixtures (1.4.0, no permission), embedded only in the
   probe build: `plugins/hostile/ui-header` (manifest name with markup and bidi overrides; content
   shaped like a header with another plugin's name), `ui-overflow` (wider and taller than any
   frame, toward the header in every direction), `ui-strings` (HTML, script, image tags, bidi

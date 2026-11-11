@@ -22,7 +22,15 @@ const BUNDLED: &[&str] = &["showcase"];
 
 /// The hostile widgets the shell probe also embeds; never in a build anyone runs
 /// (specs/009-declarative-widget-ui/research.md, R14). They join as they are written.
-const PROBE_BUNDLED: &[&str] = &["ui-invalid", "ui-crash", "ui-badmanifest"];
+const PROBE_BUNDLED: &[&str] = &[
+    "ui-invalid",
+    "ui-crash",
+    "ui-badmanifest",
+    "ui-header",
+    "ui-overflow",
+    "ui-strings",
+    "ui-dialog",
+];
 
 /// Writes `$OUT_DIR/bundled.rs`: the `BUNDLED` list of `src/widgets.rs`, each package included
 /// from the file `cargo xtask plugins` built (research R1).
