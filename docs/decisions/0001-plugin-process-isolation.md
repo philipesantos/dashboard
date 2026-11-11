@@ -61,6 +61,16 @@ During Phase 1, plugins run in the host process. No separate process is built ye
   on any CI system.
 - Before AI-generated modules are compiled on the user's machine (Phase 5).
 
+## Notes
+
+- **2026-11-11, feature 009** ([declarative widget UI](../../specs/009-declarative-widget-ui/research.md),
+  R15): the app now runs plugins itself, in its own process: the widgets bundled with it. This
+  decision's "During Phase 1" scope covers them too. The risk is unchanged: a bundled plugin is
+  built with the app from this repository, embedded in its binary, declares no permission,
+  connector or storage (the app refuses one that does), and compiles in 22 to 68 ms. The
+  trigger above still stands: the review happens with the installation item, before the app
+  loads a plugin it did not build.
+
 ## Options considered
 
 - **In process** (chosen): fastest and simplest; the sandbox is the only boundary.

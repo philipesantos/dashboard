@@ -341,7 +341,7 @@ widgets through three reviewed commands; nothing is drawn yet.
   - B1's "all or nothing in update" and B2's "calls only in `update`" read "in update or an
     action"; B1 says an action's data stays in memory and durable state needs `storage`.
   `pnpm --filter ./design check` passes (its criteria step reads B4 rows).
-- [ ] T030 [P] Add the dated note to `docs/decisions/0001-plugin-process-isolation.md`: its
+- [X] T030 [P] Add the dated note to `docs/decisions/0001-plugin-process-isolation.md`: its
   "During Phase 1" scope now covers the app's own bundled plugins, with no change to its risk
   (research R15).
 - [ ] T031 [P] Update `CONTRIBUTING.md`: the security core gains `app/src-tauri/src/widgets.rs`,
