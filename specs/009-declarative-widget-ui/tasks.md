@@ -213,7 +213,7 @@ widgets through three reviewed commands; nothing is drawn yet.
   a list, a table, a bar and a line chart, every button variant, a form with each field kind,
   a stack); `increment` counts, `add` appends the form's title to a list, both in the data they
   return. `cargo xtask plugins` builds it; `runtime run` and `runtime act` on it pass.
-- [ ] T019 [US1] Draw widgets in the page (research R10):
+- [X] T019 [US1] Draw widgets in the page (research R10):
   - `app/src/widgets/api.ts`: the three commands, typed;
   - `Frame.tsx`: header in the `frame-header` roles with the icon drawn on a `<canvas>` by
     `putImageData` (or the monogram) and the drawn name, plus the host's reload button; body in

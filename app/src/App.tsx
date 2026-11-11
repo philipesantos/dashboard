@@ -64,6 +64,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Widgets } from "@/widgets/Widgets";
 
 const stats = [
   { title: "Receita", value: "R$ 45.231", change: "+20,1%", up: true, icon: DollarSign },
@@ -135,6 +136,8 @@ function App() {
             </Card>
           ))}
         </section>
+
+        <Widgets />
 
         <Tabs defaultValue="components">
           <TabsList>
