@@ -352,7 +352,14 @@ widgets through three reviewed commands; nothing is drawn yet.
   workspace and the probe build, `cargo test --workspace`, `cargo test -p widget-content`,
   `cargo deny`, `cargo audit`, `pnpm audit`, the design checks and licenses, the docs reference
   test, and the probe on Linux. Record the times in research R1.
-- [ ] T033 Walk quickstart §1 to §6 on Linux and fix any drift between it and the code.
+- [X] T033 Walk quickstart §1 to §6 on Linux and fix any drift between it and the code.
+
+  Done on 2026-11-11: §1 in T020; §2 as written once `cargo run -p runtime` could pick its
+  binary (`default-run`, fixed); §3's mutation fails `widget-content`'s docs test, not a schema
+  test, and the text says so; §4's 65 cases hold (T032), and its mutation needs the frame's clip
+  removed too, breaking `nothing-outside-frame` as well; §5 in T028; §6's ten action tests pass,
+  with the new grants case listed. The plan and research R13 named a `hostile/action-escape`
+  fixture that T009 replaced with `fixtures/action-steps`.
 - [ ] T034 Review the security core independently: a fresh agent with none of this feature's
   context reads `wit/`, the runtime's changes, `app/src-tauri/src/widgets.rs`, `name.rs`,
   `commands.rs`, `window-surface.toml` and `app/src/widgets/` against the spec and contracts, and

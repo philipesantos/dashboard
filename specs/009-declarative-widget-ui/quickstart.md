@@ -39,22 +39,25 @@ cargo test -p widget-content --locked
 cargo test -p runtime --test it --locked docs_reference:: manifest_schema:: contract_v1::
 ```
 
-**Expected**: all pass. Add `"color": "red"` to a text in the docs' example: the schema test
-fails on it, and the host draws it as before with one log entry.
+**Expected**: all pass. Add `"color": "red"` to a text in the first example of
+`docs/authors/reference/content.md`: `widget-content`'s docs test fails, naming the example's
+line, because the host draws it as before but with one log entry (`ignored fields this host does
+not know`). Revert.
 
 ## 4. The hostile widgets stay in their frames (US3, US4, US5)
 
 Run the probe of feature 008 (`specs/008-tauri-shell/contracts/probe.md`).
 
 **Expected**: every case holds, including the widget cases of research R14: `frame-header-kept`,
-`frame-clips`, `frame-header-hittable`, `content-is-text`, `dialog-shaped-widget`,
+`frame-clips`, `frame-header-hittable`, `content-is-text`, `strings-isolated`, `dialog-shaped-widget`,
 `nothing-outside-frame`, `status-icons`, `form-no-credentials`, `foreign-actions-refused`,
 `content-error-shown`, `window-responsive`, `showcase-on-time`.
 
-Then, in `app/src/widgets/Frame.tsx`, remove both `contain` and `overflow` from the body (either
-one alone still clips) and run it again.
+Then, in `app/src/widgets/Frame.tsx`, remove `contain-layout contain-paint` and `overflow-auto`
+from the body and `overflow-hidden` from the frame (any one of them alone still clips the content
+to the body) and run it again.
 
-**Expected**: `frame-clips` breaks. Revert.
+**Expected**: `frame-clips` and `nothing-outside-frame` break. Revert.
 
 ## 5. The window's surface (US6)
 
@@ -71,8 +74,9 @@ Remove `widget_act`'s entry from `window-surface.toml`: the test fails naming it
 cargo test -p runtime --test it --locked actions::
 ```
 
-**Expected**: an undeclared name is refused before the plugin runs; a change operation is
-refused; the store is written all or nothing; a 1.3.0 plugin has no actions.
+**Expected**: an undeclared name is refused before the plugin runs; a connector or operation the
+approval does not grant answers `not-granted`; a change operation is refused; the store is
+written all or nothing; a 1.3.0 plugin has no actions.
 
 ## 7. Review: keyboard, screen reader, narrow frames, forced colors
 

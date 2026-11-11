@@ -121,9 +121,10 @@ runtime/
 └── tests/                       # actions.rs, contract_v1, manifest_schema, docs_reference
 plugins/
 ├── examples/showcase/           # the bundled widget (interactive-widget, no permission)
-├── fixtures/action-probe/       # actions with store and connector reads
+├── fixtures/action-probe/       # actor-only actions
+├── fixtures/action-steps/       # actions with store writes and connector calls, configurable
 └── hostile/ui-header, ui-overflow, ui-strings, ui-dialog, ui-invalid, ui-crash,
-             ui-badmanifest, action-escape
+             ui-badmanifest
 app/
 ├── src/widgets/                 # Widgets.tsx, Frame.tsx, content/*.tsx, api.ts
 ├── src/probe/widgets.ts         # the R14 cases
