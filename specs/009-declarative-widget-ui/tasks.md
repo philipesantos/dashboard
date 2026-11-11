@@ -143,7 +143,7 @@ widget host, before any story draws.
 
 ### The content crate
 
-- [ ] T012 [P] Create the workspace crate `widget-content/` and write its tests first:
+- [X] T012 [P] Create the workspace crate `widget-content/` and write its tests first:
   - `tests/schema.rs`: compile `wit/content.schema.json` with `boon` and run the corpus of
     contracts/content-format.md: schema-valid ⇒ accepted with no log entry; host-refused ⇒
     schema-invalid, except the listed host-only rules (500 components, 64 KiB, row length, labels

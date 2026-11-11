@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["app/src-tauri", "bench", "runtime", "xtask"]
+members = ["app/src-tauri", "bench", "runtime", "widget-content", "xtask"]
 # Guest crates build for WebAssembly in their own workspace (cargo xtask plugins); the crate the
 # authors' walkthrough builds is kept beside its page for cargo audit and cargo deny
 exclude = ["plugins", "docs/authors/getting-started"]
