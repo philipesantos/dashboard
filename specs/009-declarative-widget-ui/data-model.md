@@ -24,7 +24,7 @@ Every component has `type`. The rest by type, all optional unless marked:
 | `list` | `items` (required, strings or `{text, tone}`) |
 | `table` | `columns` (required, strings), `rows` (required, arrays of strings, as many as columns) |
 | `chart` | `kind`: `line` or `bar`; `labels` (required); `series` (required, 1 to 5, each `{name, values}`) |
-| `button` | `label` (required), `action` (required, a declared action), `variant`: `primary`, `secondary`, `outline`, `ghost`, `destructive` |
+| `button` | `label` (required), `action` (required, a name), `variant`: `primary`, `secondary`, `outline`, `ghost`, `destructive` |
 | `form` | `fields` (required), `submit` (required, `{label, action}`) |
 | `stack` | `children` (required, components) |
 
