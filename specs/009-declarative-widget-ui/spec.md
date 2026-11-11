@@ -41,6 +41,15 @@ dela."
   update: it may write the widget's store and call its connectors, as granted, and it returns the
   widget's data, which the host keeps and gives to the next render. Then the host draws the
   widget again.
+- Q: (constitution review) Are actions the "user action" that connector operations which change
+  data have waited for? → A: No. In this feature an action may write its widget's store and call
+  only operations that read. Operations that change data stay refused, as today, until a feature
+  designs how the host shows and approves them.
+- Q: (constitution review) Principle IV says plugins never receive passwords, OAuth tokens or AI
+  provider keys, but a free-text field can receive a token the person pastes. How is it handled?
+  → A: The host refuses form values that contain a secret it holds, and a PATCH amendment states
+  that Principle IV covers the secrets the host holds or that pass through its credential flows,
+  since text a person types cannot be recognised in general.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -272,7 +281,9 @@ This is the first one.
   published size limit. Without a name, the host shows the last part of the plugin's id; without
   an icon, an icon the host generates. The name MUST be drawn as text, with control and bidirectional override characters removed and
   a length limit, and a host placeholder when it is empty. An icon MUST be drawn as an image in a
-  fixed box, never as markup, running and fetching nothing (HS-02).
+  fixed box, never as markup, running and fetching nothing (HS-02). The host MUST decode the icon
+  itself, SVG included, and hand the page only pixels to draw, so the window's content policy and
+  its probe stay exactly as feature 008 left them: no new image source, no case removed.
 - **FR-009**: The frame's body MUST contain and clip everything in it, so no part of widget
   content is drawn outside it, and the header MUST sit outside the body, so content can neither
   hide it nor take its clicks (HS-03, HS-04).
@@ -297,16 +308,23 @@ This is the first one.
   dialog because of a control (HS-05).
 - **FR-015**: The simple form MUST have no password or masked field, every input MUST have
   autocomplete off, and no input MAY carry a credential type, name or hint (HS-06).
+- **FR-025**: Before a form's values reach the plugin, the host MUST refuse them if any value
+  contains a secret the host holds, in any encoding its credential checks already recognise, and
+  log the refusal without the value (Principle IV, as amended).
 - **FR-016**: Text in the ok, warning and error tones MUST carry the host's icon for that tone,
   from the widget map (HS-08).
 
 #### Actions in the contract
 
 - **FR-022**: Contract v1 MUST gain a minor version, 1.4.0, that only adds an `actions` export,
-  following the contract's own rule: 1.3.0 frozen first, and the only-adds tests extended. The
+  following the contract's own rule: 1.3.0 frozen first, and the only-adds tests extended. Since
+  an existing world cannot change, the export arrives in new worlds beside the six of 1.3.0, and
+  what an action and a render receive is defined in new items, frozen comments staying as they
+  are. The
   host runs a declared action with its name and the form's values, under the same limits as an
-  update. An action may write the widget's store and call its connectors only as granted, and
-  returns the widget's data, which the host keeps and gives to the next render, as it does for an
+  update. An action may write the widget's store and call its connectors' operations that only
+  read, each only as granted; an operation that changes data MUST stay refused, as it is today.
+  An action returns the widget's data, which the host keeps and gives to the next render, as it does for an
   update. A plugin built for an earlier minor keeps running and has no actions.
 - **FR-023**: The manifest MUST declare each action's name, and the host MUST refuse, before
   calling the plugin, any action name the manifest does not declare. The manifest schema and the
@@ -320,6 +338,11 @@ This is the first one.
 - **FR-018**: The bundled example MUST need no permission that only a host dialog can grant
   (Principle VII); a widget whose required permissions are not granted MUST NOT run. Granting in
   the app arrives with the installation dialog.
+- **FR-024**: The app MUST keep its own grant record, kept data and vault, apart from the
+  development ones of the command-line tool, and MUST never read the development grant record or
+  the development vault. Its grant record stays empty until host dialogs write it. The app MUST
+  run the runtime with development mode off, so no unverified local connector runs. Reloading a
+  rebuilt bundled plugin reloads its code and never changes a grant.
 - **FR-019**: Every host command the window gains MUST be added to the reviewed list of feature
   008 with its reason and granted to the window, and MUST refuse a widget the host is not showing
   or a malformed argument. The window's protections of feature 008 MUST still hold, with its probe
@@ -329,10 +352,19 @@ This is the first one.
 
 - **FR-020**: Each criterion this feature runs (HS-01 to HS-09, HS-16, HS-24, HS-25) MUST have the
   test or hostile case it names, run in CI on Windows, macOS and Linux, and failing when the
-  protection is removed (Principle VIII).
-- **FR-021**: The threat model's B4 rows for Phase 3 MUST cite each of those tests. Decision 0001
-  stays as it is: the plugins this feature runs are built with the app, and its trigger is
-  installing a plugin the app did not build.
+  protection is removed (Principle VIII). So MUST every other refusal and limit of this feature:
+  the content bounds (FR-004), the manifest's name and icon bounds (FR-008), undeclared and
+  foreign action names (FR-014, FR-023), form values carrying a held secret (FR-025), an action
+  calling an operation that changes data (FR-022), commands given a widget the host is not showing or a
+  malformed argument (FR-019), an action's limits and grants and the absence of actions for an
+  earlier minor (FR-022), the app's separate records and development mode off (FR-024), and
+  repeated presses while a widget is drawing.
+- **FR-021**: The threat model's rows MUST cite each of those tests: B4 for the frame and the
+  library, B1 for the `actions` export and the manifest fields, B7 for the window's new commands.
+  Its boundary text MUST be revised where actions change it (B1 says stores are written all or
+  nothing in `update`; B2 says connectors are called only in `update`). Decision 0001 stays as it
+  is, since its trigger is installing a plugin the app did not build; the plan MUST record that
+  review, because the app now loads and compiles the bundled plugins in its own process.
 
 ### Key Entities
 
