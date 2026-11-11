@@ -53,8 +53,13 @@ export const OTHER_APP_ORIGIN = ON_WEBVIEW2 ? "tauri://localhost" : "http://taur
 /** A host that never resolves, so the network can never be what refused a load. */
 export const REMOTE = "https://probe.invalid";
 
-/** How long a case waits for the engine to report a refusal. */
-export const SETTLE_MS = 300;
+/**
+ * How long a case waits for the engine to report a refusal. Engines report some refusals late,
+ * when a load they deferred starts (WKWebView's media, after a first CI run held and a second
+ * did not), so a case polls for it up to this long, and a case that holds returns early.
+ */
+export const SETTLE_MS = 2000;
+const POLL_MS = 50;
 
 /**
  * The first violation of one of `directives`, matched as a prefix of the effective directive,
@@ -72,8 +77,13 @@ export async function expectViolation(
   directives: string[],
   sideEffect?: () => boolean,
 ): Promise<Verdict> {
-  await context.wait(SETTLE_MS);
-  const seen = violation(context, ...directives);
+  let seen = violation(context, ...directives);
+  for (let waited = 0; !seen && waited < SETTLE_MS; waited += POLL_MS) {
+    await context.wait(POLL_MS);
+    seen = violation(context, ...directives);
+  }
+  // A side effect lands in the same task as the action or never, but give it a moment
+  if (sideEffect) await context.wait(POLL_MS);
   const happened = sideEffect?.() ?? false;
   if (seen && !happened) {
     return {

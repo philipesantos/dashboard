@@ -141,9 +141,13 @@ const loads: Case[] = [
     id: "load-media-remote",
     async run(context) {
       const audio = document.createElement("audio");
+      audio.preload = "auto";
       audio.src = `${REMOTE}/probe.mp3`;
+      append(audio);
       audio.load();
-      return expectViolation(context, ["media-src", "default-src"]);
+      const verdict = await expectViolation(context, ["media-src", "default-src"]);
+      audio.remove();
+      return verdict;
     },
   },
   {

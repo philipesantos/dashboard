@@ -420,7 +420,13 @@ The comment at `.github/workflows/ci.yml:27` cites constitution v2.6.1.
 | macOS | 2 min 43 s | 23 s | 52 held | 13 min |
 | Linux | 1 min 20 s | 50 s, `xvfb` start-up included | 52 held | 13 min |
 
-The 40-minute job timeout leaves Windows room. The `cef-watch` job, run by hand, passed: newest
+The 40-minute job timeout leaves Windows room.
+
+A third run, on a commit that touched only `specs/`, broke `load-media-remote` on macOS: no
+violation within the case's fixed 300 ms, where the run before had one. WKWebView starts a media
+load late. The violation cases now poll for up to 2 s and return as soon as the violation
+arrives, and the audio element is in the document with `preload="auto"`; the probe got faster on
+Linux (about 15 s locally). The `cef-watch` job, run by hand, passed: newest
 published `3.0.0-alpha.7`, no stable release.
 
 ## R12. Decision 0001, where plugins run
