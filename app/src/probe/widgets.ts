@@ -453,3 +453,79 @@ export const containmentCases: Case[] = [
     },
   },
 ];
+
+/** What a credential field would carry in its name, autocomplete or hints. */
+const CREDENTIAL = /pass|user|login|email|card|otp|token|secret|one-time|cc-/i;
+
+export const controlCases: Case[] = [
+  {
+    // HS-05: the host refuses every action the widget did not declare, before the plugin runs
+    id: "foreign-actions-refused",
+    async run(context): Promise<Verdict> {
+      const dialog = await handleOf("ui-dialog");
+      const foreign = [
+        "widget_act",
+        "widgets_list",
+        "plugin:opener|open_url",
+        "shell_probe_report",
+        "increment",
+        "add",
+        "spin",
+        "DISMISS",
+        "dismiss ",
+        "",
+      ];
+      const problems: string[] = [];
+      const before = (await context.counters()).actions;
+      for (const name of foreign) {
+        const answer = await actWidget(dialog, name, {});
+        if (!("refused" in answer) || answer.refused !== "undeclared-action") {
+          problems.push(`${JSON.stringify(name)} answered ${failureKind(answer)}`);
+        }
+      }
+      // The dialog's buttons, pressed as a person would: each names an action it did not declare
+      const { body } = await frameWhere(context, (name) => name === "ui-dialog");
+      for (const button of body.querySelectorAll<HTMLButtonElement>("button")) {
+        if (button.textContent === "Fechar") continue;
+        button.click();
+        await context.wait(150);
+      }
+      const ran = (await context.counters()).actions - before;
+      if (ran !== 0) problems.push(`${ran} actions ran`);
+      // The control: the action it declares does run
+      const declared = await actWidget(dialog, "dismiss", {});
+      const counted = (await context.counters()).actions - before;
+      if (!("content" in declared) || counted !== 1) {
+        problems.push(`the declared action answered ${failureKind(declared)}, counted ${counted}`);
+      }
+      return problems.length === 0
+        ? { held: true, detail: `${foreign.length} foreign names and the dialog's buttons refused, none ran; dismiss ran` }
+        : { held: false, detail: problems.join("; ") };
+    },
+  },
+  {
+    // HS-06: no field of a widget looks like a credential field to the engine
+    id: "form-no-credentials",
+    async run(): Promise<Verdict> {
+      const problems: string[] = [];
+      const inputs = [...document.querySelectorAll<HTMLInputElement>("[data-frame-body] input")];
+      for (const input of inputs) {
+        const where = `${input.closest("section")?.getAttribute("data-widget")} ${input.id}`;
+        if (input.type !== "text" && input.type !== "checkbox") problems.push(`${where} is type ${input.type}`);
+        if (input.getAttribute("autocomplete") !== "off") problems.push(`${where} autocomplete is not off`);
+        for (const attribute of ["name", "inputmode", "aria-autocomplete"]) {
+          const value = input.getAttribute(attribute);
+          if (value && CREDENTIAL.test(value)) problems.push(`${where} ${attribute}=${value}`);
+        }
+        if (input.name) problems.push(`${where} has a name`);
+      }
+      if (document.querySelector("[data-frame-body] textarea, [data-frame-body] select")) {
+        problems.push("a field is a textarea or a native select");
+      }
+      const texts = inputs.filter((input) => input.type === "text").length;
+      return problems.length === 0 && texts > 0
+        ? { held: true, detail: `${inputs.length} inputs, ${texts} text entries, all type text with autocomplete off and no credential name` }
+        : { held: false, detail: problems.join("; ").slice(0, 300) || "no text entry drawn" };
+    },
+  },
+];

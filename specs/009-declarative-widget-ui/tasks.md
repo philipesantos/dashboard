@@ -294,7 +294,7 @@ widgets through three reviewed commands; nothing is drawn yet.
 
 **Independent Test**: quickstart §4 and §6.
 
-- [ ] T026 [US4] Add `foreign-actions-refused` and `form-no-credentials` to
+- [X] T026 [US4] Add `foreign-actions-refused` and `form-no-credentials` to
   `app/src/probe/widgets.ts` and `PAGE_CASES` (research R14): the probe calls `widget_act` with
   host command names, another widget's action and undeclared names, each refused, the `actions`
   counter unchanged; every text-entry input is `type="text"`, every input `autocomplete="off"`

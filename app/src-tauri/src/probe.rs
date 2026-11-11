@@ -66,6 +66,8 @@ const PAGE_CASES: &[&str] = &[
     "strings-isolated",
     "dialog-shaped-widget",
     "nothing-outside-frame",
+    "foreign-actions-refused",
+    "form-no-credentials",
     // The window (FR-009 to FR-011)
     "context-menu",
     "navigate-location",
