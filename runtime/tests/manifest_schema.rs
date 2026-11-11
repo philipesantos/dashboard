@@ -369,11 +369,20 @@ fn the_host_also_refuses_what_a_schema_cannot_see() {
     );
 }
 
-/// SC-006, FR-017: every plugin in this repository has a valid manifest with a local id.
+/// The hostile plugins whose manifest is invalid on purpose: each must be refused by both the
+/// schema and the host's parser, and no other manifest may be invalid.
+const INVALID_ON_PURPOSE: &[&str] = &[
+    // A name over 60 characters: the app shows its not-loaded state (feature 009, R14)
+    "hostile/ui-badmanifest",
+];
+
+/// SC-006, FR-017: every plugin in this repository has a valid manifest with a local id, except
+/// the hostile ones invalid on purpose, which both checks refuse.
 #[test]
 fn every_manifest_in_the_repository_is_valid_and_local() {
     let schema = schema();
     let mut found = Vec::new();
+    let mut refused = Vec::new();
     for group in ["examples", "hostile", "fixtures"] {
         let dir = repository().join("plugins").join(group);
         for entry in std::fs::read_dir(&dir).expect("the plugin group exists") {
@@ -383,6 +392,22 @@ fn every_manifest_in_the_repository_is_valid_and_local() {
             }
             let bytes = std::fs::read(&path).expect("readable");
             let manifest: Value = serde_json::from_slice(&bytes).expect("JSON");
+            let plugin = format!("{group}/{}", entry_name(&path));
+            if INVALID_ON_PURPOSE.contains(&plugin.as_str()) {
+                assert!(
+                    !valid_for_schema(&schema, &manifest),
+                    "the schema accepts {plugin}, invalid on purpose"
+                );
+                assert_eq!(
+                    Manifest::parse(&bytes)
+                        .map(drop)
+                        .map_err(|error| error.kind()),
+                    Err(ErrorKind::InvalidManifest),
+                    "the parser's verdict on {plugin}, invalid on purpose"
+                );
+                refused.push(plugin);
+                continue;
+            }
             assert!(
                 valid_for_schema(&schema, &manifest),
                 "{} breaks the schema",
@@ -402,6 +427,20 @@ fn every_manifest_in_the_repository_is_valid_and_local() {
         found.iter().any(|id| id == "local/hello-widget"),
         "the example's manifest was not found: {found:?}"
     );
+    refused.sort_unstable();
+    assert_eq!(
+        refused, INVALID_ON_PURPOSE,
+        "a plugin invalid on purpose was not found"
+    );
+}
+
+/// The plugin directory's name, for a path `<group>/<name>/manifest.json`.
+fn entry_name(manifest: &Path) -> String {
+    manifest
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 // Feature 003: the connector schema, `wit/connector.schema.json`, and the host's connector
