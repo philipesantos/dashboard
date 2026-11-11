@@ -7,6 +7,8 @@ export interface Counters {
   newWindow: number;
   permission: number;
   download: number;
+  /** Widget actions the host ran (feature 009), so a case can tell a refusal ran nothing. */
+  actions: number;
 }
 
 /** A case's verdict, as sent to the host. */

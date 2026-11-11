@@ -46,6 +46,14 @@ export function Frame({ frame }: { frame: FrameInfo }) {
 
   useEffect(reload, [reload]);
 
+  // The first content drawn, for the probe's time check (SC-001)
+  const drawn = useRef(false);
+  useEffect(() => {
+    if (view.state !== "content" || drawn.current) return;
+    drawn.current = true;
+    performance.mark(`widget-drawn-${frame.handle}`);
+  }, [view.state, frame.handle]);
+
   const act = useCallback(
     (action: string, values: Record<string, string>, control: string) => {
       setRunning(control);
@@ -68,6 +76,8 @@ export function Frame({ frame }: { frame: FrameInfo }) {
     <section
       aria-labelledby={`${frame.handle}-name`}
       aria-busy={running !== null}
+      data-widget={frame.handle}
+      data-view={view.state}
       className="overflow-hidden rounded-xl border border-frame-border"
     >
       <header className="flex items-center gap-2 bg-frame-header px-3 py-2 text-frame-header-foreground">
@@ -87,7 +97,10 @@ export function Frame({ frame }: { frame: FrameInfo }) {
           <RotateCw aria-hidden />
         </Button>
       </header>
-      <div className="isolate max-h-[28rem] overflow-auto bg-frame p-4 text-frame-foreground contain-layout contain-paint">
+      <div
+        data-frame-body
+        className="isolate max-h-[28rem] overflow-auto bg-frame p-4 text-frame-foreground contain-layout contain-paint"
+      >
         {actionFailure && (
           <p role="status" className="mb-3 text-sm text-destructive">
             A ação não deu certo ({actionFailure.reason || actionFailure.kind}).

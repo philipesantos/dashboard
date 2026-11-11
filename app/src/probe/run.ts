@@ -13,10 +13,17 @@ import type { Case, Context, Counters, Verdict } from "./case";
 import { commandCases } from "./commands";
 import { engineCases } from "./engine";
 import { policyCases } from "./policy";
+import { widgetCases } from "./widgets";
 import { windowCases } from "./window";
 
 /** Every case. The story tasks add theirs here. Cases that may unload the page run last. */
-const cases: Case[] = [...policyCases, ...commandCases, ...windowCases, ...engineCases].sort(
+const cases: Case[] = [
+  ...policyCases,
+  ...commandCases,
+  ...widgetCases,
+  ...windowCases,
+  ...engineCases,
+].sort(
   (first, second) => Number(first.mayLeave ?? false) - Number(second.mayLeave ?? false),
 );
 

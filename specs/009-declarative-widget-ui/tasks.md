@@ -240,7 +240,7 @@ widgets through three reviewed commands; nothing is drawn yet.
 
 **Independent Test**: quickstart §2 and §3.
 
-- [ ] T021 [P] [US2] Write three fixtures (1.4.0, no permission), embedded only in the probe
+- [X] T021 [P] [US2] Write three fixtures (1.4.0, no permission), embedded only in the probe
   build: `plugins/hostile/ui-invalid` (render returns content over a bound; action `wrong-type`
   makes the next render return a wrong type; action `spin` loops until the time limit),
   `ui-crash` (render traps), `ui-badmanifest` (a manifest name over 60 characters). Add to a new

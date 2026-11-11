@@ -1,0 +1,8 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "local/ui-crash",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "permissions": []
+}

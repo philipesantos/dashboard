@@ -55,6 +55,10 @@ const PAGE_CASES: &[&str] = &[
     "command-ungranted",
     "command-opener",
     "command-core",
+    // Widgets (feature 009, research R14)
+    "showcase-on-time",
+    "content-error-shown",
+    "window-responsive",
     // The window (FR-009 to FR-011)
     "context-menu",
     "navigate-location",
