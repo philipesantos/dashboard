@@ -2566,6 +2566,74 @@ kept data discarded: none
     );
 }
 
+/// `runtime act` refuses a value that holds a secret the development vault keeps, before the
+/// plugin runs, as the app refuses it in a form (Principle IV, FR-025); other values reach it.
+#[cfg(unix)]
+#[test]
+fn act_refuses_a_value_holding_a_kept_key() {
+    let manifest = json!({
+        "manifest_version": 1, "id": "local/action-probe", "version": "0.1.0",
+        "author": "Tests", "permissions": [], "actions": [{ "name": "remember" }]
+    });
+    let accounts = Accounts::new(&common::repack(
+        &common::fixture("action-probe"),
+        &manifest.to_string(),
+    ));
+    let file = keyed(&accounts);
+    let _forget = ForgetKey {
+        accounts: &accounts,
+        origin: file.to_string_lossy().into_owned(),
+    };
+    let grants = path_str(&accounts.grants).to_owned();
+    let data = path_str(accounts.dir.path()).to_owned();
+    let key = "k3y-kept_for.the~act";
+    let (status, shown) = on_terminal(
+        &[
+            "accounts",
+            "connect",
+            "local/keyed",
+            "--grants",
+            &grants,
+            "--data",
+            &data,
+        ],
+        key,
+    );
+    assert_eq!(status, Some(0), "{shown}");
+    let plugin = path_str(&accounts.plugin).to_owned();
+    let approved = accounts.run(&["approve", &plugin]);
+    assert_eq!(approved.status.code(), Some(0), "{}", stderr(&approved));
+
+    for value in [format!("v={key}"), format!("v=antes {key} depois")] {
+        let output = accounts.run(&["act", &plugin, "remember", "--value", &value]);
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{value}: {}",
+            stdout(&output)
+        );
+        assert!(
+            stderr(&output).contains("holds a secret the development vault keeps"),
+            "{}",
+            stderr(&output)
+        );
+        assert!(!stdout(&output).contains(key), "{}", stdout(&output));
+    }
+    // Another value reaches the plugin (whose render is not content the host draws, so the
+    // command still ends with 1 after printing the action's data)
+    let output = accounts.run(&["act", &plugin, "remember", "--value", "v=nada"]);
+    assert!(
+        stdout(&output).contains("acted local/action-probe 0.1.0: remember"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(
+        stdout(&output).contains(r#""v": "nada""#),
+        "{}",
+        stdout(&output)
+    );
+}
+
 /// `accounts disconnect` deletes at once the kept data read as the account. The account and the
 /// data come from the library, through the seam and the mock vault, in the data directory the
 /// CLI then works on.

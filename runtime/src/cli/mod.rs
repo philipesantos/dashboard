@@ -561,9 +561,36 @@ fn check_content(content: &serde_json::Value) -> ExitCode {
 /// renders and checks the content (feature 009). An action's data is kept in memory only, so it
 /// lasts for this command.
 fn act(options: &Options) -> ExitCode {
-    let plugin = match load(options) {
-        Ok((plugin, _)) => plugin,
+    let Target {
+        bytes,
+        origin,
+        grants,
+        runtime,
+    } = match Target::open(options) {
+        Ok(target) => target,
         Err(status) => return status,
+    };
+    // A secret the development vault holds never reaches the plugin, as the app refuses it in a
+    // form (Principle IV, FR-025); a keychain that cannot be read refuses the values
+    for (id, value) in &options.values {
+        match runtime.holds_secret_in(value.as_str().unwrap_or_default()) {
+            Ok(false) => {}
+            Ok(true) => {
+                eprintln!(
+                    "error: refused: the value \"{}\" holds a secret the development vault keeps",
+                    escape(id)
+                );
+                return ExitCode::from(PLUGIN_FAILED);
+            }
+            Err(error) => {
+                eprintln!("error: refused: the values could not be checked for secrets: {error}");
+                return ExitCode::from(PLUGIN_FAILED);
+            }
+        }
+    }
+    let plugin = match runtime.load(&bytes, &origin, Arc::new(grants)) {
+        Ok(plugin) => plugin,
+        Err(error) => return refused(&error),
     };
     let report = plugin.act(&options.action, &options.config, &options.values);
     print_logs(&report.logs, report.dropped_logs);

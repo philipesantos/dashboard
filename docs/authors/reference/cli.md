@@ -225,7 +225,7 @@ restart. An action the manifest does not declare is refused before the widget ru
 
 | Option | Meaning |
 | --- | --- |
-| `--value <id>=<text>` | A form field's value, by the field's id; once per field. Without any, the action gets no values, as from a button <!-- ref: cli act --value --> |
+| `--value <id>=<text>` | A form field's value, by the field's id; once per field. Without any, the action gets no values, as from a button. A value that holds a key or token the development vault keeps is refused before the widget runs, as the app refuses it in a form <!-- ref: cli act --value --> |
 | `--config <json>` | As for `run` <!-- ref: cli act --config --> |
 | `--config-file <path>` | As for `run` <!-- ref: cli act --config-file --> |
 | `--grants <path>` | As above <!-- ref: cli act --grants --> |
