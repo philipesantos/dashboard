@@ -277,7 +277,7 @@ memory until the app quits.
     context-menu cancel; the `nonce` props in `app/src/components/ui/`;
   - `app/vite.config.ts`'s development policy;
   - the tests that guard them: `app/src-tauri/tests/surface.rs` and `style_nonce.rs`,
-    `app/src/probe/` and the probe step in `ci.yml`.
+    `app/src/probe/` and the `probe` job in `ci.yml`.
 - The widget host, in the security core since feature 009:
   - `app/src-tauri/src/widgets.rs` (the bundled widgets, their records and log, and the checks
     before a plugin runs), `name.rs` (the drawn name) and the three commands `widgets_list`,
