@@ -285,6 +285,14 @@ installation even when optional: `inspect` keeps refused connectors apart (`lib.
 An account connector installs; with no account in the app's vault its calls answer
 `account-not-connected` (`calls.rs:756-765`), and the dialog says so (R6).
 
+**Found while implementing (T006, 2026-11-12)**: the built-in catalog holds only
+`catalog/github`, which declares no credential (`connectors/catalog/github.json`). So no widget
+installed in the app can use an account until a catalog connector with a credential lands, and in
+the app the dangerous combination warning has no source to find. The rule, the dialog's account
+line and FR-024 are still built and tested, with a connector the tests' catalog holds
+(`catalog/account-echo`, `Catalog::with_extra` under `test-network`); the `install-account`
+fixture is refused as `connector-unavailable` outside the tests.
+
 ## R10. The window's new commands (FR-025)
 
 **Decision**: five commands, each added to `window-surface.toml` with its reason, granted in
