@@ -103,11 +103,11 @@ Rationale: model output can be steered by instructions hidden in the content the
 ### VII. Trust Decisions Only in Host Dialogs
 
 Granting permissions, installing plugins and connectors, and connecting accounts MUST happen
-only in host dialogs. Until the host app has these dialogs (Phase 3), the host's development command-line
-tool MAY grant permissions to local packages, recording them only in a development grant
-record that installed plugins never use, and MAY connect accounts for the connectors of local
-packages, keeping their credentials only in a development vault, in the OS keychain, that
-installed plugins never use. Neither AI output nor a plugin MAY perform, trigger or
+only in host dialogs. The host's development command-line tool, which authors use to build and
+test their plugins, MAY grant permissions to local packages, recording them only in a
+development grant record that installed plugins and the app never use, and MAY connect accounts
+for the connectors of local packages, keeping their credentials only in a development vault, in
+the OS keychain, that installed plugins and the app never use. Neither AI output nor a plugin MAY perform, trigger or
 pre-approve these actions. A plugin built into the app and declaring no permission is part of the
 app, not an installed plugin: the host MAY approve it at start-up, and the approval grants it
 nothing. A built-in plugin that declares any permission gets it only in a host dialog, as an
@@ -127,14 +127,17 @@ Rationale: a rule without a test erodes silently.
 ### IX. Human Review of the Security Core
 
 Every change to the security core (plugin runtime, permission engine, connector engine and
-network proxy, secrets vault, the official connector catalog, and the host window's
-protections) MUST receive line-by-line human review before it is merged. The window's
+network proxy, secrets vault, the official connector catalog, the plugin installer with its
+compile process, the host dialogs, and the host window's protections) MUST receive line-by-line
+human review before it is merged. The window's
 protections are its content policy, the list of capabilities and host commands it may use, and
 the engine settings that block navigation, new windows, developer tools and autofill. An update
 of the engine itself is not part of the core; the window's breaking tests check it.
 
 Rationale: these components enforce every other principle, and the catalog decides which
-destinations every user trusts; a bug there breaks them all. The window draws untrusted content
+destinations every user trusts; a bug there breaks them all. The installer decides which code
+reaches the user's machine and compiles it, and the host dialogs are where every trust decision
+is made (Principle VII). The window draws untrusted content
 beside the host's dialogs, so its protections decide whether that content can act as the host
 (Principles V and VII).
 
@@ -204,4 +207,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.6.3 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-11
+**Version**: 2.7.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-12
