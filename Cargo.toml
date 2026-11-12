@@ -11,8 +11,12 @@ exclude = ["plugins", "docs/authors/getting-started"]
 [profile.dev]
 debug = "line-tables-only"
 
+# Dependencies are optimised even in these builds: Wasmtime and Cranelift compile every plugin a
+# test or `tauri dev` loads, and unoptimised they made the runtime's tests 12 times slower (666 s
+# against 56 s). The workspace's own crates stay unoptimised, with their debug assertions.
 [profile.dev.package."*"]
 debug = false
+opt-level = 2
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
@@ -21,3 +25,4 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
