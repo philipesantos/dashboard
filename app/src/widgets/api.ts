@@ -39,6 +39,8 @@ export type FrameInfo = {
   handle: string;
   name: string;
   icon: { size: number; rgba: number[] } | null;
+  /** The plugin's id, only when another frame draws the same name. */
+  id?: string;
 };
 
 export function listWidgets(): Promise<FrameInfo[]> {

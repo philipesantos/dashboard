@@ -18,7 +18,7 @@ use runtime::grants::GrantStore;
 use runtime::{Limits, LogMessage, Plugin, Runtime, RuntimeError, RuntimeOptions};
 use serde::Serialize;
 use serde_json::Value;
-use widget_content::{Content, ContentError};
+use widget_content::{Component, Content, ContentError};
 
 use crate::name::drawn_name;
 
@@ -70,6 +70,11 @@ pub struct FrameInfo {
     /// Already sanitised (`name.rs`).
     pub name: String,
     pub icon: Option<IconPixels>,
+    /// The plugin's id, or its file when it was refused before its manifest was read: given only
+    /// when another frame draws the same name, so the person can tell them apart by something
+    /// the plugin does not choose freely.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 /// An icon, decoded by the runtime from the manifest's PNG.
@@ -122,6 +127,8 @@ struct Shown {
     /// Held while a render or an action runs: a call that finds it held is refused as busy.
     busy: Mutex<()>,
     log: Mutex<VecDeque<LogEntry>>,
+    /// The field ids of each form in the content last drawn, in the order the person sees them.
+    forms: Mutex<Vec<Vec<String>>>,
 }
 
 /// The widgets the app shows, and the runtime they run in.
@@ -136,7 +143,7 @@ impl Widgets {
     /// log.
     pub fn start(runtime: Runtime, bundled: &[Bundled<'_>]) -> Widgets {
         let grants = Arc::new(GrantStore::in_memory());
-        let shown = bundled
+        let mut shown: Vec<Shown> = bundled
             .iter()
             .enumerate()
             .map(|(index, package)| {
@@ -149,9 +156,11 @@ impl Widgets {
                     plugin,
                     busy: Mutex::new(()),
                     log: Mutex::new(log),
+                    forms: Mutex::new(Vec::new()),
                 }
             })
             .collect();
+        same_names(&mut shown, bundled);
         let widgets = Widgets { runtime, shown };
         #[cfg(debug_assertions)]
         for shown in &widgets.shown {
@@ -213,17 +222,20 @@ impl Widgets {
             );
             return Rendered::Refused(BAD_VALUES);
         };
-        for (id, text) in &values {
-            let text = text.as_str().unwrap_or_default();
-            match self.runtime.holds_secret_in(text) {
+        let candidates = secret_candidates(&values, &lock(&shown.forms));
+        for (id, text) in candidates {
+            match self.runtime.holds_secret_in(&text) {
                 Ok(false) => {}
                 Ok(true) => {
                     shown.note(
                         "warn",
                         "host",
                         &format!(
-                            "refused an action: the field \"{}\" holds a secret the app holds",
-                            runtime::escape(id)
+                            "refused an action: {} holds a secret the app holds",
+                            match id {
+                                Some(id) => format!("the field \"{}\"", runtime::escape(&id)),
+                                None => "the fields read together".to_owned(),
+                            }
                         ),
                     );
                     return Rendered::Refused(SECRET_IN_FORM);
@@ -292,6 +304,7 @@ impl Shown {
                 for note in notes {
                     self.note("warn", "content", &note);
                 }
+                *lock(&self.forms) = form_orders(&content.body);
                 Rendered::Content(content)
             }
             Err(error) => {
@@ -327,6 +340,26 @@ impl Shown {
     }
 }
 
+/// Gives each frame that draws the same name as another, ignoring case, its plugin's id.
+fn same_names(shown: &mut [Shown], bundled: &[Bundled<'_>]) {
+    let names: Vec<String> = shown
+        .iter()
+        .map(|shown| shown.frame.name.to_lowercase())
+        .collect();
+    for (index, each) in shown.iter_mut().enumerate() {
+        let shared = names
+            .iter()
+            .enumerate()
+            .any(|(other, name)| other != index && *name == names[index]);
+        if shared {
+            each.frame.id = Some(match &each.plugin {
+                Ok(plugin) => plugin.manifest().id().to_string(),
+                Err(_) => bundled[index].file.to_owned(),
+            });
+        }
+    }
+}
+
 /// Checks and loads one bundled package: its frame, and the plugin or why it was refused.
 fn load(
     runtime: &Runtime,
@@ -351,6 +384,7 @@ fn load(
         handle: handle.to_owned(),
         name: drawn_name(None, stem),
         icon: None,
+        id: None,
     };
     let origin = format!("bundled:{}", package.file);
     let checked = match runtime.check(package.bytes) {
@@ -368,6 +402,7 @@ fn load(
             size: icon.size(),
             rgba: icon.rgba().to_vec(),
         }),
+        id: None,
     };
     // Principle VII (v2.6.3): only a bundled package that declares nothing is part of the app
     let declared = if manifest.storage().is_some() {
@@ -396,6 +431,62 @@ fn load(
             refuse(frame, format!("refused at load: {error}"), kind)
         }
     }
+}
+
+/// The field ids of every form in `body`, each in the order the form draws them.
+fn form_orders(body: &[Component]) -> Vec<Vec<String>> {
+    let mut forms = Vec::new();
+    for component in body {
+        match component {
+            Component::Form { fields, .. } => {
+                forms.push(fields.iter().map(|field| field.id.clone()).collect());
+            }
+            Component::Stack { children } => forms.extend(form_orders(children)),
+            _ => {}
+        }
+    }
+    forms
+}
+
+/// The texts checked for a secret the host holds, before a form's values reach the plugin: each
+/// value, named by its field; and, for a secret typed in pieces, the values read together in the
+/// order of each form last drawn with those fields, and in the order of their ids. A piece too
+/// short to be a secret on its own is caught with the others.
+fn secret_candidates(
+    values: &serde_json::Map<String, Value>,
+    forms: &[Vec<String>],
+) -> Vec<(Option<String>, String)> {
+    let text = |id: &str| values.get(id).and_then(Value::as_str).unwrap_or_default();
+    let mut candidates: Vec<(Option<String>, String)> = values
+        .keys()
+        .map(|id| (Some(id.clone()), text(id).to_owned()))
+        .collect();
+    let mut orders: Vec<Vec<&str>> = forms
+        .iter()
+        .map(|order| {
+            order
+                .iter()
+                .map(String::as_str)
+                .filter(|id| values.contains_key(*id))
+                .collect()
+        })
+        .collect();
+    orders.push(values.keys().map(String::as_str).collect());
+    for order in orders {
+        let pieces: Vec<&str> = order
+            .into_iter()
+            .map(text)
+            .filter(|piece| !piece.is_empty())
+            .collect();
+        if pieces.len() < 2 {
+            continue;
+        }
+        let joined = pieces.concat();
+        if !candidates.iter().any(|(_, seen)| *seen == joined) {
+            candidates.push((None, joined));
+        }
+    }
+    candidates
 }
 
 /// The form's values as the plugin gets them: an object of at most [`MAX_VALUES`] strings, each

@@ -11,8 +11,11 @@ Each command is listed in `app/src-tauri/window-surface.toml` with its reason, g
 
 ## `widgets_list() -> Vec<FrameInfo>`
 
-`FrameInfo`: `{ handle: "w0", name: "Vitrine", icon: { size: 32, rgba: [u8; size*size*4] } | null }`.
-The name is already sanitised (research R6).
+`FrameInfo`: `{ handle: "w0", name: "Vitrine", icon: { size: 32, rgba: [u8; size*size*4] } | null, id?: "local/showcase" }`.
+The name is already sanitised (research R6). `id`, the plugin's id (or its file when it was
+refused before its manifest was read), is given only when another frame draws the same name,
+ignoring case; the header shows it beside the name, apart from it, so two widgets of one name
+can be told apart.
 
 ## `widget_render(handle) -> Rendered`
 

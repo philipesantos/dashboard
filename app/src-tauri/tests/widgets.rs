@@ -134,6 +134,60 @@ fn the_apps_source_never_names_the_development_records() {
 
 // R1: which packages a build embeds
 
+/// Two frames drawing the same name, ignoring case, each show their plugin's id beside it; a
+/// name no other frame draws shows none.
+#[test]
+fn frames_of_one_name_show_their_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let impostor = packed(
+        "action-probe",
+        &json!({
+            "manifest_version": 1,
+            "id": "local/impostor",
+            "version": "0.1.0",
+            "author": "Someone",
+            "name": "VITRINE",
+            "permissions": [],
+            "actions": [{ "name": "remember" }]
+        }),
+    );
+    let alone = packed(
+        "action-probe",
+        &json!({
+            "manifest_version": 1,
+            "id": "local/alone",
+            "version": "0.1.0",
+            "author": "Someone",
+            "name": "Outro",
+            "permissions": [],
+            "actions": [{ "name": "remember" }]
+        }),
+    );
+    let widgets = start(
+        dir.path(),
+        &[
+            showcase(),
+            ("impostor.wasm", impostor),
+            ("alone.wasm", alone),
+        ],
+    );
+    let ids: Vec<(String, Option<String>)> = widgets
+        .list()
+        .into_iter()
+        .map(|frame| (frame.name, frame.id))
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            ("Vitrine".to_owned(), Some("local/showcase".to_owned())),
+            ("VITRINE".to_owned(), Some("local/impostor".to_owned())),
+            ("Outro".to_owned(), None),
+        ]
+    );
+    // One showcase alone has none
+    assert_eq!(start(dir.path(), &[showcase()]).list()[0].id, None);
+}
+
 #[test]
 fn a_build_embeds_exactly_its_packages() {
     let mut embedded: Vec<&str> = widgets::BUNDLED
@@ -425,6 +479,37 @@ fn a_form_value_holding_a_held_secret_is_refused() {
 }
 
 /// A keychain that cannot be read refuses the form: the check fails closed.
+/// A held secret typed in pieces across a form's fields is caught read in the order the form
+/// draws them, which is not the order of their ids (title, priority, estimate, done).
+#[test]
+fn a_held_secret_split_across_fields_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let key = "k3y/held+by=the-host";
+    let widgets = start_on(runtime_holding(dir.path(), key), &[showcase()]);
+    assert!(content_text(&widgets.render("w0")).contains("Vitrine dos componentes"));
+    let acted = widgets.act(
+        "w0",
+        "add",
+        &values(&[
+            ("title", "k3y/held+"),
+            ("priority", ""),
+            ("estimate", "by=the-host"),
+            ("done", "false"),
+        ]),
+    );
+    assert_eq!(refused(&acted), Some("secret-in-form"));
+    let log = log_text(&widgets, "w0");
+    assert!(log.contains("the fields read together"), "{log}");
+    assert!(!log.contains("k3y"), "the log never holds the value: {log}");
+    // Pieces that make no secret together pass
+    let acted = widgets.act(
+        "w0",
+        "add",
+        &values(&[("title", "Revisar"), ("estimate", "2"), ("done", "false")]),
+    );
+    assert!(content_text(&acted).contains("Revisar"));
+}
+
 #[test]
 fn an_unreadable_keychain_refuses_the_form() {
     let dir = tempfile::tempdir().unwrap();
