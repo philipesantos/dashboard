@@ -26,3 +26,10 @@ opt-level = 3
 panic = "abort"
 strip = true
 
+# The shell probe's build (specs/008-tauri-shell/contracts/probe.md): the release profile, so no
+# debug assertions and the same code, but without link-time optimisation across crates, which
+# changes how fast the code runs, not what the window allows, and took most of the probe's build
+[profile.probe]
+inherits = "release"
+codegen-units = 16
+lto = false

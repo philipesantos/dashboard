@@ -186,15 +186,16 @@ You do not need Spec Kit to read or edit a spec: specs are plain Markdown.
 The host window loads only the app's bundle and can reach no host command unless the reviewed
 list says so (`specs/008-tauri-shell/`). Three things keep it that way.
 
-**The shell probe** is the release build plus one page module and two commands. Inside the real
+**The shell probe** is the release build (in the `probe` profile: the release one without
+link-time optimisation, which takes most of its time) plus one page module and two commands. Inside the real
 page it tries every forbidden action (injected script, loads from the internet, navigation, new
 windows, host commands, engine permissions, downloads and dialogs) and reads each engine's
 settings, then exits non-zero if anything was allowed. CI runs it on all three systems. Locally:
 
 ```bash
 pnpm --filter ./app build --mode probe          # adds src/probe/run.ts to the page
-cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked
-DASHBOARD_PROBE=1 ./target/release/dashboard    # on Linux: xvfb-run -a, with
+cargo build -p dashboard --profile probe --features shell-probe,tauri/custom-protocol --locked
+DASHBOARD_PROBE=1 ./target/probe/dashboard      # on Linux: xvfb-run -a, with
                                                 # WEBKIT_DISABLE_DMABUF_RENDERER=1 (needs xvfb)
 pnpm --filter ./app build                       # put the normal dist back
 ```
@@ -277,7 +278,7 @@ memory until the app quits.
     context-menu cancel; the `nonce` props in `app/src/components/ui/`;
   - `app/vite.config.ts`'s development policy;
   - the tests that guard them: `app/src-tauri/tests/surface.rs` and `style_nonce.rs`,
-    `app/src/probe/` and the `probe` job in `ci.yml`.
+    `app/src/probe/` and the probe steps in `ci.yml`.
 - The widget host, in the security core since feature 009:
   - `app/src-tauri/src/widgets.rs` (the bundled widgets, their records and log, and the checks
     before a plugin runs), `name.rs` (the drawn name) and the three commands `widgets_list`,

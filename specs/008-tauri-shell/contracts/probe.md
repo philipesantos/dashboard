@@ -4,14 +4,16 @@
 
 ```sh
 pnpm --filter ./app build --mode probe          # adds src/probe/run.ts to index.html
-cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked
-DASHBOARD_PROBE=1 ./target/release/dashboard    # exits by itself; on Linux under xvfb-run
+cargo build -p dashboard --profile probe --features shell-probe,tauri/custom-protocol --locked
+DASHBOARD_PROBE=1 ./target/probe/dashboard      # exits by itself; on Linux under xvfb-run
                                                 # with WEBKIT_DISABLE_DMABUF_RENDERER=1
 pnpm --filter ./app build                       # put the normal dist back
 ```
 
 `tauri/custom-protocol` is what `tauri build` turns on. Without it the binary runs in dev mode,
-loads `devUrl` and serves no policy. The probe build is the release build plus:
+loads `devUrl` and serves no policy. The `probe` profile is the release one without link-time
+optimisation across crates (since feature 009, for CI time): the same code, no debug
+assertions, only slower to run. The probe build is the release build plus:
 - one bundled module, `src/probe/run.ts`;
 - two app commands, compiled in only with the feature:
   - `shell_probe_report`, granted by a run-time capability added through
