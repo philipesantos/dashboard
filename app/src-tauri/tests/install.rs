@@ -392,3 +392,61 @@ fn an_account_connector_installs_and_answers_account_not_connected() {
         "{answers}"
     );
 }
+
+// US3: updates through the commands (task T035)
+
+/// An update that needs the dialog replaces the widget in place, keeping its handle, only once
+/// approved; with no newer release the answer is none.
+#[test]
+fn an_update_replaces_the_widget_in_place_once_approved() {
+    let app = App::new();
+    let widgets = app.start();
+    let (token, choice) = request(&widgets.install_start(BASIC));
+    let handle = approved_handle(&widgets.request_approve(&token, &choice, &json!([])));
+    assert!(matches!(
+        widgets.update_start(&handle),
+        dashboard_lib::install::Started::None { none: true }
+    ));
+
+    app.source.publish(
+        "dashboard-fixtures/install-basic",
+        7,
+        "v0.2.0",
+        package_named("install-more"),
+    );
+    let started = widgets.update_start(&handle);
+    match &started {
+        dashboard_lib::install::Started::Request { model, .. } => {
+            assert_eq!(model.asking.installed_version.as_deref(), Some("0.1.0"));
+            assert_eq!(model.asking.version, "0.2.0");
+        }
+        other => panic!("expected a request, got {other:?}"),
+    }
+    let (token, choice) = request(&started);
+    // Cancelled, the installed version stays
+    widgets.request_cancel(&token);
+    assert_eq!(
+        app.layout()
+            .installed()
+            .get(BASIC)
+            .unwrap()
+            .unwrap()
+            .version,
+        "0.1.0"
+    );
+
+    let (token, choice_again) = request(&widgets.update_start(&handle));
+    assert_eq!(choice_again, choice);
+    let replaced = approved_handle(&widgets.request_approve(&token, &choice_again, &json!([])));
+    assert_eq!(replaced, handle);
+    assert_eq!(widgets.list().len(), 1);
+    assert_eq!(
+        app.layout()
+            .installed()
+            .get(BASIC)
+            .unwrap()
+            .unwrap()
+            .version,
+        "0.2.0"
+    );
+}

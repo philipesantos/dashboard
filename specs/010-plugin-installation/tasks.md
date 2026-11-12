@@ -292,19 +292,24 @@ before any build of the app or the tests.
 
 **Independent Test**: spec US3; quickstart §3 step 5 and §4's repository case.
 
-- [ ] T033 [US3] Write the update cases in `runtime/tests/install.rs`: `changed-release`,
+- [X] T033 [US3] Write the update cases in `runtime/tests/install.rs`: `changed-release`,
   `repo-jacked`, `renamed-at-update`, `downgrade`, the fallback path of research R4, an update that
   asks for nothing new (`update-confirm`), `install-basic` → `install-more`
   (`update-lists-everything`: every permission, connector and destination, the connector marked
   `changed`), and the old version still loaded until approval.
-- [ ] T034 [US3] Implement updates in `runtime/src/install/mod.rs`: `GET /repositories/{id}` first
+- [X] T034 [US3] Implement updates in `runtime/src/install/mod.rs`: `GET /repositories/{id}` first
   (`repository-changed` on `404` or another `full_name`), then the release by id; `not-newer` by
   Semantic Versioning; change marks in the model; on approval, the host's kept data is discarded
   when a source goes away (as `cli/mod.rs:1531-1546` does) and `account_sources` kept. T033 passes.
-- [ ] T035 [US3] Connect `update_start` (`app/src-tauri/src/install.rs`): `{ none: true }` when no
+
+  Done on 2026-11-12 with T022–T023's installer. The host's kept data needs no discard here: its
+  key holds the package, the approval and the connectors on (`lib.rs`, `data_key`), so a new
+  version, or an account source gone, leaves it unread and load step 7a removes it.
+  `account_sources` is kept at every write of the grant record (T014).
+- [X] T035 [US3] Connect `update_start` (`app/src-tauri/src/install.rs`): `{ none: true }` when no
   newer release; `update` or `update-confirm` models; the new version replaces the old only after
   `request_approve`.
-- [ ] T036 [P] [US3] The page: an update control in the frame header of installed widgets (a host
+- [X] T036 [P] [US3] The page: an update control in the frame header of installed widgets (a host
   control, `app/src/widgets/Frame.tsx`), and the update and confirm dialogs in
   `app/src/host/InstallDialog.tsx` with the change marks.
 

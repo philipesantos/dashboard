@@ -391,3 +391,197 @@ fn a_changed_compiled_form_is_compiled_again_and_a_changed_package_refused() {
         .expect("refused");
     assert_eq!(error.kind(), ErrorKind::PackageChanged);
 }
+
+// US3: updates (tasks T033, T034)
+
+/// `install-basic`'s manifest at `version`, packed with its component.
+fn basic_at(version: &str) -> Vec<u8> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../plugins/fixtures/install/install-basic.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path).expect("the manifest")).expect("JSON");
+    manifest["version"] = json!(version);
+    repack(&fixture("action-steps"), &manifest.to_string())
+}
+
+const BASIC: &str = "github.com/dashboard-fixtures/install-basic";
+const BASIC_NAME: &str = "dashboard-fixtures/install-basic";
+
+/// An app with `install-basic` 0.1.0 installed from the repository 7.
+fn installed_basic() -> (App, runtime::install::Installed) {
+    let app = App::new();
+    app.source
+        .publish(7, BASIC_NAME, "v0.1.0", fixture("install-basic"));
+    let installed = app.install(BASIC).expect("installed");
+    (app, installed)
+}
+
+/// `update-lists-everything` at the installer: an update that requires a connector it did not
+/// opens the dialog, marks the change, and the installed version runs until it is approved.
+#[test]
+fn an_update_that_asks_for_more_waits_for_the_dialog() {
+    let (app, installed) = installed_basic();
+    app.source
+        .publish(7, BASIC_NAME, "v0.2.0", fixture("install-more"));
+    let installer = app.installer();
+    let prepared = installer
+        .prepare_update(BASIC, &installed)
+        .expect("checked")
+        .expect("a newer release");
+    assert_eq!(prepared.kind, DialogKind::Update);
+    let shown = installer.model(&prepared, &[]);
+    let github = shown
+        .connectors
+        .iter()
+        .find(|line| line.id == "catalog/github")
+        .expect("listed");
+    assert_eq!(
+        github.change,
+        Some(runtime::install::dialog::Change::Changed)
+    );
+    assert_eq!(shown.permissions.len(), 2, "every permission is listed");
+
+    // Until it is approved, the installed version is the one that loads
+    let grants = Arc::new(app.layout.grants());
+    let plugin = installer
+        .load(BASIC, &installed, Arc::clone(&grants))
+        .expect("the old version loads");
+    assert_eq!(plugin.manifest().version(), "0.1.0");
+
+    let updated = installer
+        .commit(&prepared, &shown.choice, &[])
+        .expect("approved");
+    assert_eq!(updated.version, "0.2.0");
+    assert_eq!(updated.repository_id, 7);
+    let plugin = installer
+        .load(BASIC, &updated, grants)
+        .expect("the new version loads");
+    assert_eq!(plugin.manifest().version(), "0.2.0");
+    let entry = app
+        .layout
+        .grants()
+        .entry(plugin.manifest().id())
+        .unwrap()
+        .unwrap();
+    assert!(entry.is_connector_granted("catalog/github"));
+    // The old package directory is gone after the next start's cleanup
+    let cleaned = app.layout.cleanup().expect("clean");
+    assert_eq!(cleaned.packages, vec![installed.directory()]);
+}
+
+/// `update-confirm`: a newer version that asks for nothing new is only confirmed, and an optional
+/// the person had on stays on.
+#[test]
+fn an_update_that_asks_for_nothing_new_is_confirmed_and_keeps_the_optionals() {
+    let (app, installed) = installed_basic();
+    let grants = app.layout.grants();
+    let checked = app.runtime.check(&fixture("install-basic")).expect("valid");
+    checked
+        .set_connector(&grants, "github:7", "catalog/github", true)
+        .expect("turned on");
+    app.source
+        .publish(7, BASIC_NAME, "v0.1.1", basic_at("0.1.1"));
+    let installer = app.installer();
+    let prepared = installer
+        .prepare_update(BASIC, &installed)
+        .expect("checked")
+        .expect("a newer release");
+    assert_eq!(prepared.kind, DialogKind::UpdateConfirm);
+    let shown = installer.model(&prepared, &[]);
+    // An update that turns nothing on refuses a choice that would
+    assert!(
+        installer
+            .commit(&prepared, &shown.choice, &["catalog/github".to_owned()])
+            .is_err()
+    );
+    installer
+        .commit(&prepared, &shown.choice, &[])
+        .expect("confirmed");
+    let entry = grants.entry(checked.manifest().id()).unwrap().unwrap();
+    assert!(entry.is_connector_granted("catalog/github"));
+    assert_eq!(entry.approved_version, "0.1.1");
+}
+
+#[test]
+fn the_pinned_release_unchanged_is_no_update() {
+    let (app, installed) = installed_basic();
+    let prepared = app
+        .installer()
+        .prepare_update(BASIC, &installed)
+        .expect("checked");
+    assert!(prepared.is_none());
+}
+
+/// `changed-release`: the pinned tag now carries other bytes.
+#[test]
+fn the_pinned_tag_with_other_bytes_is_refused() {
+    let (app, installed) = installed_basic();
+    app.source
+        .publish(7, BASIC_NAME, "v0.1.0", basic_at("0.1.0"));
+    let error = app
+        .installer()
+        .prepare_update(BASIC, &installed)
+        .err()
+        .expect("refused");
+    assert_eq!(error.kind(), ErrorKind::ChangedRelease, "{error}");
+}
+
+/// `downgrade`: an older release is never offered as an update.
+#[test]
+fn an_older_release_is_refused() {
+    let (app, installed) = installed_basic();
+    app.source
+        .publish(7, BASIC_NAME, "v0.0.9", basic_at("0.0.9"));
+    let error = app
+        .installer()
+        .prepare_update(BASIC, &installed)
+        .err()
+        .expect("refused");
+    assert_eq!(error.kind(), ErrorKind::NotNewer, "{error}");
+}
+
+/// `repo-jacked`: the repository was deleted and its name taken by another; the update is asked
+/// by the permanent identifier, which leads nowhere, and nothing of the other is fetched.
+#[test]
+fn a_name_taken_by_another_repository_serves_no_update() {
+    let (app, installed) = installed_basic();
+    app.source.delete(7);
+    app.source
+        .publish(8, BASIC_NAME, "v9.0.0", basic_at("9.0.0"));
+    let error = app
+        .installer()
+        .prepare_update(BASIC, &installed)
+        .err()
+        .expect("refused");
+    assert_eq!(error.kind(), ErrorKind::RepositoryChanged, "{error}");
+    assert!(
+        !app.source.log().iter().any(|line| line.ends_with(" 8")),
+        "the other repository was asked: {:?}",
+        app.source.log()
+    );
+}
+
+/// `renamed-at-update`: a renamed repository is a new plugin.
+#[test]
+fn a_renamed_repository_serves_no_update() {
+    let (app, installed) = installed_basic();
+    app.source.rename(7, "dashboard-fixtures/renamed");
+    app.source.publish(
+        7,
+        "dashboard-fixtures/renamed",
+        "v0.2.0",
+        fixture("install-more"),
+    );
+    let error = app
+        .installer()
+        .prepare_update(BASIC, &installed)
+        .err()
+        .expect("refused");
+    assert_eq!(error.kind(), ErrorKind::RepositoryChanged, "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("github.com/dashboard-fixtures/renamed"),
+        "{error}"
+    );
+}

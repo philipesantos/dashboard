@@ -9,12 +9,14 @@ import { Frame } from "./Frame";
 export function Widgets({ version = 0 }: { version?: number }) {
   const [frames, setFrames] = useState<FrameInfo[] | null>(null);
   const [failed, setFailed] = useState(false);
+  /** Bumped when a frame's update was approved. */
+  const [updated, setUpdated] = useState(0);
 
   useEffect(() => {
     listWidgets()
       .then(setFrames)
       .catch(() => setFailed(true));
-  }, [version]);
+  }, [version, updated]);
 
   if (failed) {
     return <p className="text-sm text-destructive">Os widgets não puderam ser carregados.</p>;
@@ -23,7 +25,12 @@ export function Widgets({ version = 0 }: { version?: number }) {
   return (
     <section aria-label="Widgets" className="grid gap-4 md:grid-cols-2">
       {frames.map((frame) => (
-        <Frame key={frame.handle} frame={frame} />
+        <Frame
+          // A widget updated in place keeps its handle: its key changes, so its frame starts over
+          key={`${frame.handle}-${updated}`}
+          frame={frame}
+          onChanged={() => setUpdated((count) => count + 1)}
+        />
       ))}
     </section>
   );
