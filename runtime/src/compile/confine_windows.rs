@@ -11,7 +11,7 @@
 //!   the job, and only then resumed, so it runs nothing outside it.
 //! - A below-normal priority, and an environment of only what the parent passes.
 //!
-//! Past its CPU time, a job's process ends with `ERROR_NOT_ENOUGH_QUOTA`; past its memory, an
+//! Past its CPU time, a job's process ends with `STATUS_QUOTA_EXCEEDED` ([`TIME_LIMIT_EXIT_CODES`]); past its memory, an
 //! allocation fails and the child aborts ([`ABORT_EXIT_CODE`]) or ends with its own code for it.
 //!
 //! Part of the security core (constitution v2.7.0, Principle IX). Checked on Windows by CI only.
@@ -61,8 +61,14 @@ use windows_sys::Win32::System::Threading::{
 
 use super::{CompileLimits, Ended, Running};
 
-/// The exit code a job gives a process past its CPU time limit: `ERROR_NOT_ENOUGH_QUOTA`.
-pub(super) const TIME_LIMIT_EXIT_CODE: i32 = 1816;
+/// The exit codes a job gives a process past its CPU time limit: `STATUS_QUOTA_EXCEEDED`, as CI's
+/// Windows does, or `ERROR_NOT_ENOUGH_QUOTA`, as the documentation of job limits names it.
+pub(super) const TIME_LIMIT_EXIT_CODES: [i32; 2] = [0xC000_0044_u32 as i32, 1816];
+
+/// Held from the AppContainer's profile to the process's creation: two compiles starting at once
+/// raced the profile's creation, and the second could not find its folder yet
+/// (`ERROR_FILE_NOT_FOUND`).
+static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The status a process ends with when it aborts, as the standard library does when an
 /// allocation fails (`__fastfail`, `STATUS_STACK_BUFFER_OVERRUN`): under the job's memory limit,
@@ -425,6 +431,9 @@ pub(super) fn spawn(
     environment: &[(String, OsString)],
     limits: &CompileLimits,
 ) -> std::io::Result<Box<dyn Running>> {
+    let _starting = STARTING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let sid = container()?;
     grant(executable, &sid);
     let (child_in, parent_in) = pipe(true)?;

@@ -523,12 +523,14 @@ impl Compiler {
 
 /// Whether the child ended on its CPU time limit: `SIGXCPU` on Unix, which the kernel sends at
 /// the soft limit (`SIGKILL` follows a second later, at the hard one); on Windows, the exit code
-/// a job gives a process past its time limit, `ERROR_NOT_ENOUGH_QUOTA`.
+/// a job gives a process past its time limit (`confine_windows::TIME_LIMIT_EXIT_CODES`).
 fn ran_out_of_time(ended: &Ended) -> bool {
     #[cfg(unix)]
     return ended.signal == Some(libc::SIGXCPU);
     #[cfg(windows)]
-    return ended.code == Some(confine_windows::TIME_LIMIT_EXIT_CODE);
+    return ended
+        .code
+        .is_some_and(|code| confine_windows::TIME_LIMIT_EXIT_CODES.contains(&code));
     #[cfg(not(any(unix, windows)))]
     {
         let _ = ended;
