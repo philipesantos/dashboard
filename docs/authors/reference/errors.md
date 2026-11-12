@@ -280,3 +280,82 @@ Service (GNOME Keyring or KWallet).
 The connector's account needs a client registration with the service, and the host has none for
 it. In development, register an app with the service and give its client id with
 `runtime accounts connect --client <id>`.
+
+## Installation
+
+The app installs a widget from the latest release of its author's repository. These errors refuse an installation or an update, and
+nothing of it is kept.
+
+<!-- ref: error identity-mismatch -->
+### `identity-mismatch`
+
+The manifest's `id` is not the repository the package was downloaded from. A widget published
+from `github.com/owner/repo` must declare exactly that id, in lowercase.
+
+<!-- ref: error tag-mismatch -->
+### `tag-mismatch`
+
+The release's tag is not `v<version>` or `<version>`, where `<version>` is the manifest's
+`version`. Tag the release with the version the manifest declares.
+
+<!-- ref: error changed-release -->
+### `changed-release`
+
+A release the app already saw under this tag now carries other bytes. The app pins a release's
+package by its digest the first time it sees it; publish a new version instead of replacing the
+package of an old one.
+
+<!-- ref: error repository-changed -->
+### `repository-changed`
+
+The repository an installed widget came from was deleted or renamed, or its name now belongs to
+another repository. The app takes updates only from the repository it installed from, found by
+its permanent identifier, so a reused name inherits nothing. A renamed repository is a new plugin:
+install it again under its new id.
+
+<!-- ref: error not-newer -->
+### `not-newer`
+
+The repository's latest release is not a newer version, by Semantic Versioning, than the one
+installed. The app never installs an older or equal version as an update.
+
+<!-- ref: error source-unreachable -->
+### `source-unreachable`
+
+GitHub could not be reached, took too long, or answered something the app does not accept: an
+error, a body over its limit, or a redirect to a host other than GitHub's release-asset hosts.
+
+<!-- ref: error rate-limited -->
+### `rate-limited`
+
+GitHub's limit for requests without an account was reached (60 an hour from one address). The
+detail says when to try again.
+
+<!-- ref: error no-package-asset -->
+### `no-package-asset`
+
+The release has no asset whose name ends in `.wasm`, more than one, or one larger than the
+package limit (10 MiB, [limits](limits.md)). Attach exactly one package to each release.
+
+<!-- ref: error compile-time-limit -->
+### `compile-time-limit`
+
+Compiling the package took longer than the compile process allows. The app compiles every
+installed package in a separate process, under limits, before anything of it runs.
+
+<!-- ref: error compile-memory-limit -->
+### `compile-memory-limit`
+
+Compiling the package used more memory than the compile process allows.
+
+<!-- ref: error compile-failed -->
+### `compile-failed`
+
+The compile process stopped for another reason, or the app was updated on disk while it ran:
+restart the app and install again.
+
+<!-- ref: error package-changed -->
+### `package-changed`
+
+An installed package's file no longer matches the digest the app recorded when it installed it.
+The app does not run it; install the widget again.

@@ -58,7 +58,7 @@ before any build of the app or the tests.
 - [X] T003 [P] Replace the permission string registry in `runtime/src/permissions.rs:132-166` by an
   enum (`Permission::Log`, `Permission::Storage`) with the same names, `v0`, `v1` and `since`;
   parsing, errors and the CLI's output unchanged. `cargo test -p runtime --test it` passes.
-- [ ] T004 [P] Add the runtime error kinds of data-model.md to the `error_kinds!` macro in
+- [X] T004 [P] Add the runtime error kinds of data-model.md to the `error_kinds!` macro in
   `runtime/src/error.rs` (`identity-mismatch`, `tag-mismatch`, `changed-release`,
   `repository-changed`, `not-newer`, `source-unreachable`, `rate-limited`, `no-package-asset`,
   `compile-time-limit`, `compile-memory-limit`, `compile-failed`, `package-changed`), update the
