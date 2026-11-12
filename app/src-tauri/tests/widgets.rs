@@ -475,8 +475,17 @@ fn the_drawn_name_is_plain_text_within_its_bounds() {
     assert_eq!(drawn.chars().count(), 40);
     assert!(drawn.ends_with('…'));
     assert_eq!(drawn_name(Some(&"a".repeat(40)), showcase), "a".repeat(40));
+    // Characters that draw nothing are removed too
+    assert_eq!(
+        drawn_name(Some("Vi\u{034F}trine\u{FE0F}\u{E0100}"), showcase),
+        "Vitrine"
+    );
     // Nothing left, or no name: the id's last part
     assert_eq!(drawn_name(Some("\u{202E}\u{200B}"), showcase), "showcase");
+    assert_eq!(
+        drawn_name(Some("\u{3164}\u{115F}\u{1160}\u{FFA0}\u{2800}"), showcase),
+        "showcase"
+    );
     assert_eq!(drawn_name(Some("   "), showcase), "showcase");
     assert_eq!(drawn_name(None, showcase), "showcase");
 }

@@ -8,14 +8,15 @@
 pub const DRAWN_NAME_CHARS: usize = 40;
 
 /// The name to draw for a plugin: `name` without control or format characters (bidirectional
-/// overrides and isolates, zero-width characters, tags), whitespace collapsed, cut at
+/// overrides and isolates, zero-width characters, tags) or characters that draw nothing (fillers,
+/// the blank braille pattern, variation selectors), whitespace collapsed, cut at
 /// [`DRAWN_NAME_CHARS`] with an ellipsis. When nothing is left, the last part of the plugin's
 /// `id` (`local/showcase` → `showcase`). The page draws it as text, never as markup.
 pub fn drawn_name(name: Option<&str>, id: &str) -> String {
     let kept: String = name
         .unwrap_or_default()
         .chars()
-        .filter(|&c| !c.is_control() && !is_format(c))
+        .filter(|&c| !c.is_control() && !is_format(c) && !is_blank(c))
         .collect();
     let collapsed = kept.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.is_empty() {
@@ -26,6 +27,25 @@ pub fn drawn_name(name: Option<&str>, id: &str) -> String {
     }
     let cut: String = collapsed.chars().take(DRAWN_NAME_CHARS - 1).collect();
     format!("{}…", cut.trim_end())
+}
+
+/// Characters outside Cf that draw nothing, so that a name of them would draw blank instead of
+/// the host's placeholder (HS-02): the Hangul fillers, the blank braille pattern, the combining
+/// grapheme joiner, Khmer's inherent vowels, and the variation selectors.
+fn is_blank(c: char) -> bool {
+    matches!(
+        c,
+        '\u{034F}'
+            | '\u{115F}'..='\u{1160}'
+            | '\u{17B4}'..='\u{17B5}'
+            | '\u{180B}'..='\u{180D}'
+            | '\u{180F}'
+            | '\u{2800}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FFA0}'
+            | '\u{E0100}'..='\u{E01EF}'
+    )
 }
 
 /// Unicode's format characters (general category Cf), as of Unicode 16.
