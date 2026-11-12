@@ -131,27 +131,36 @@ fn refused(error: String) -> String {
 }
 
 /// The confinement that binds the threads started afterwards (research R13): Landlock on Linux.
+#[cfg(target_os = "linux")]
 fn confine_before_threads() -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    return super::confine_linux::before_threads().map_err(refused);
-    #[cfg(not(target_os = "linux"))]
+    super::confine_linux::before_threads().map_err(refused)
+}
+
+/// Elsewhere, everything is confined after the threads exist, or before the process starts.
+#[cfg(not(target_os = "linux"))]
+fn confine_before_threads() -> Result<(), String> {
     Ok(())
 }
 
-/// The confinement of every thread, before the process reads anything from the parent: seccomp
-/// on Linux, the sandbox and the memory watchdog on macOS. On Windows the parent created it
-/// already confined, in an AppContainer.
+/// The confinement of every thread, before the process reads anything from the parent: on Linux,
+/// the seccomp filters.
+#[cfg(target_os = "linux")]
 fn confine_after_threads() -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    return super::confine_linux::after_threads().map_err(refused);
-    #[cfg(target_os = "macos")]
-    {
-        let memory = std::env::var(super::MEMORY_VARIABLE)
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok());
-        return super::confine_macos::confine(memory).map_err(refused);
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    super::confine_linux::after_threads().map_err(refused)
+}
+
+/// On macOS: the memory watchdog, then the sandbox.
+#[cfg(target_os = "macos")]
+fn confine_after_threads() -> Result<(), String> {
+    let memory = std::env::var(super::MEMORY_VARIABLE)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok());
+    super::confine_macos::confine(memory).map_err(refused)
+}
+
+/// On Windows the parent created the process already confined, in an AppContainer.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn confine_after_threads() -> Result<(), String> {
     Ok(())
 }
 
