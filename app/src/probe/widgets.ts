@@ -274,12 +274,18 @@ export const containmentCases: Case[] = [
     // any frame
     id: "frame-header-hittable",
     async run(context): Promise<Verdict> {
-      const { frame, header } = await frameWhere(context, (name) => name === "ui-overflow");
+      const { frame, section, header } = await frameWhere(context, (name) => name === "ui-overflow");
       const box = boxOf(header);
       const inset = 3;
+      // The frame's top corners are rounded and clip: a point 3 px from the corner lies outside the
+      // curve, where nothing of the frame is (WebView2 hit-tests the curve; WebKitGTK does not)
+      const radius = (corner: string) => parseFloat(corner) || 0;
+      const style = getComputedStyle(section);
+      const left = Math.max(inset, radius(style.borderTopLeftRadius));
+      const right = Math.max(inset, radius(style.borderTopRightRadius));
       const points: [number, number][] = [
-        [box.left + inset, box.top + inset],
-        [box.right - inset, box.top + inset],
+        [box.left + left, box.top + inset],
+        [box.right - right, box.top + inset],
         [box.left + inset, box.bottom - inset],
         [box.right - inset, box.bottom - inset],
         [(box.left + box.right) / 2, (box.top + box.bottom) / 2],
