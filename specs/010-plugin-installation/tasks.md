@@ -432,19 +432,19 @@ before any build of the app or the tests.
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T047 Update `docs/threat-model.md` (research R12, FR-027): rows `:113`, `:152`, `:153`,
+- [X] T047 Update `docs/threat-model.md` (research R12, FR-027): rows `:113`, `:152`, `:153`,
   `:155`, `:157`, `:158`, `:175` cite their tests; B6 (`:90`) and the diagram line (`:51`) state
   what this feature provides and what waits for Phase 6; new residual rows (a name trusted at first
   installation; an author account taken over shipping an update that asks for nothing new; no
   revocation yet; the compile child's output trusted as code; the host's requests to GitHub); the
   open questions at `:192-194` and `:205-213` closed. `pnpm --filter ./design check` passes.
-- [ ] T048 [P] Write `docs/decisions/0003-compile-installed-plugins-out-of-process.md` (research R1:
+- [X] T048 [P] Write `docs/decisions/0003-compile-installed-plugins-out-of-process.md` (research R1:
   compile out of process and confined now; running out of process in the next feature, before the
   alpha, with the reason) and add the dated note to `docs/decisions/0001-plugin-process-isolation.md`.
-- [ ] T049 [P] Write `docs/authors/guides/publishing.md` from `contracts/release.md`; update
+- [X] T049 [P] Write `docs/authors/guides/publishing.md` from `contracts/release.md`; update
   `docs/authors/reference/manifest.md`'s `id` row (now checked against the repository) and the
   limits reference; the docs reference test passes.
-- [ ] T050 [P] Update `CONTRIBUTING.md`: the security core list as constitution v2.7.0 and this
+- [X] T050 [P] Update `CONTRIBUTING.md`: the security core list as constitution v2.7.0 and this
   feature's files; a short section on installation (the compile child, the fixtures, the probe
   release source, the confinement test on each system).
 - [ ] T051 Run every local check under the memory cap: `cargo xtask plugins`, clippy on the

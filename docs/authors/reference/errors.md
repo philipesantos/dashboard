@@ -283,7 +283,8 @@ it. In development, register an app with the service and give its client id with
 
 ## Installation
 
-The app installs a widget from the latest release of its author's repository. These errors refuse an installation or an update, and
+The app installs a widget from the latest release of its author's repository
+([publishing](../guides/publishing.md)). These errors refuse an installation or an update, and
 nothing of it is kept.
 
 <!-- ref: error identity-mismatch -->

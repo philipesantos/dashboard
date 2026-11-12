@@ -30,7 +30,7 @@ Unknown fields are refused, so a misspelt one never passes silently: the error i
 | --- | --- | --- | --- |
 | `$schema` | Any text up to 2048 characters | No | Ignored; it is for editors <!-- ref: manifest $schema --> |
 | `manifest_version` | `1` | Yes | The format's version <!-- ref: manifest manifest_version --> |
-| `id` | `local/<name>` for a widget from no repository, or `github.com/<owner>/<repo>`; lowercase, at most 160 characters. A repository id is accepted, but nothing checks yet that the package came from that repository: installing from repositories (Phase 3) will | Yes | An approval is for this id from this package's file: another file with the same id has none <!-- ref: manifest id --> |
+| `id` | `local/<name>` for a widget from no repository, or `github.com/<owner>/<repo>`; lowercase, at most 160 characters. The app installs a widget only when its id is the repository its release was downloaded from ([publishing](../guides/publishing.md)) | Yes | An approval is for this id from where the package came: in the app, the repository's permanent identifier; in the CLI, this package's file. Another place with the same id has none <!-- ref: manifest id --> |
 | `version` | A Semantic Versioning 2.0.0 version, such as `0.1.0` | Yes | Shown; a later version that asks for more needs a new approval <!-- ref: manifest version --> |
 | `author` | 1 to 100 characters, no control characters | Yes | Shown to the person, escaped <!-- ref: manifest author --> |
 | `login_providers` | `["github"]` or `[]` | No | Obsolete since contract 1.3.0: accepted, ignored, grants nothing. Accounts come from the connectors a widget declares <!-- ref: manifest login_providers --> |

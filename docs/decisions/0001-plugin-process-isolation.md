@@ -1,6 +1,8 @@
 # 0001. Plugins run in the host process during Phase 1
 
-- **Status**: Accepted. The maintainer confirmed it on 2026-10-22 (SC-006).
+- **Status**: Accepted. The maintainer confirmed it on 2026-10-22 (SC-006). Superseded for
+  plugins installed from a repository by [0003](0003-compile-installed-plugins-out-of-process.md)
+  (2026-11-12).
 - **Date**: 2026-10-22
 - **Feature**: [001, plugin runtime](../../specs/001-plugin-runtime/spec.md) (FR-016)
 
@@ -70,6 +72,12 @@ During Phase 1, plugins run in the host process. No separate process is built ye
   connector or storage (the app refuses one that does), and compiles in 22 to 68 ms. The
   trigger above still stands: the review happens with the installation item, before the app
   loads a plugin it did not build.
+
+- **2026-11-12, feature 010** ([plugin installation](../../specs/010-plugin-installation/research.md),
+  R1): the trigger above was reached. The review is [decision 0003](0003-compile-installed-plugins-out-of-process.md):
+  installed packages are compiled in a confined process under limits, and run in the app until
+  the next feature moves plugin execution out of its process. For plugins installed from a
+  repository, 0003 supersedes this decision.
 
 ## Options considered
 
