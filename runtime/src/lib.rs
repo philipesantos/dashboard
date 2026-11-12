@@ -65,7 +65,7 @@ pub use limits::Limits;
 pub use network::test_signin::follow as follow_test_sign_in;
 #[cfg(feature = "test-network")]
 pub use network::{Route, TestNetwork};
-pub use permissions::{Contract, ContractVersion};
+pub use permissions::{Contract, ContractVersion, PermissionKind};
 pub use storage::StorageCounts;
 pub use text::{escape, quote_entry};
 #[cfg(feature = "test-network")]

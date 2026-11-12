@@ -55,7 +55,7 @@ before any build of the app or the tests.
   `runtime::engine_config(&Limits) -> wasmtime::Config` in `runtime/src/lib.rs` (today
   `lib.rs:606-665`), used by `Runtime::start`; no behaviour change. `cargo test -p runtime --test it`
   passes.
-- [ ] T003 [P] Replace the permission string registry in `runtime/src/permissions.rs:132-166` by an
+- [X] T003 [P] Replace the permission string registry in `runtime/src/permissions.rs:132-166` by an
   enum (`Permission::Log`, `Permission::Storage`) with the same names, `v0`, `v1` and `since`;
   parsing, errors and the CLI's output unchanged. `cargo test -p runtime --test it` passes.
 - [ ] T004 [P] Add the runtime error kinds of data-model.md to the `error_kinds!` macro in

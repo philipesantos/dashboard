@@ -129,9 +129,76 @@ fn split(name: &str) -> Option<(&str, semver::Version)> {
     Some((base, semver::Version::parse(version).ok()?))
 }
 
-/// A permission the host knows.
-#[derive(Debug, PartialEq, Eq)]
+/// Declares [`PermissionKind`], every permission this host knows, and its `ALL` list from one
+/// list of variants, so a permission cannot be added to one and missed by the other.
+macro_rules! permission_kinds {
+    ($($(#[$doc:meta])* $variant:ident => $name:literal,)*) => {
+        /// A permission the host knows, by the name the manifest gives it. Each connector is a
+        /// permission too, but it is declared under `connectors` in the manifest and carried by
+        /// the one `connectors` interface (research R12), so it is not one of these.
+        ///
+        /// Everything the host says or does about a permission matches on this enum, so a new
+        /// permission does not compile until each place handles it: its interfaces here, its
+        /// sentence in the installation dialog (`specs/010-plugin-installation/research.md`, R6).
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum PermissionKind {
+            $($(#[$doc])* $variant,)*
+        }
+
+        impl PermissionKind {
+            /// Every permission the host knows.
+            pub const ALL: &'static [PermissionKind] = &[$(PermissionKind::$variant,)*];
+
+            /// The manifest's name for it.
+            pub const fn name(self) -> &'static str {
+                match self {
+                    $(PermissionKind::$variant => $name,)*
+                }
+            }
+        }
+    };
+}
+
+permission_kinds! {
+    /// Messages to the host's log.
+    Log => "log",
+    /// The plugin's own store, with its quota on the same manifest entry
+    /// (specs/004-plugin-storage/research.md, R2, R9).
+    Storage => "storage",
+}
+
+impl PermissionKind {
+    /// The permission named `name`, if the host knows it.
+    pub fn from_name(name: &str) -> Option<PermissionKind> {
+        PermissionKind::ALL.iter().copied().find(|kind| kind.name() == name)
+    }
+
+    /// Its interfaces in each contract.
+    pub(crate) const fn permission(self) -> Permission {
+        match self {
+            PermissionKind::Log => Permission {
+                kind: self,
+                name: self.name(),
+                v0: Some("dashboard:widget/log@0.1.0"),
+                v1: "dashboard:widget/log",
+                since: semver::Version::new(1, 0, 0),
+            },
+            PermissionKind::Storage => Permission {
+                kind: self,
+                name: self.name(),
+                v0: None,
+                v1: "dashboard:widget/storage",
+                since: semver::Version::new(1, 2, 0),
+            },
+        }
+    }
+}
+
+/// A permission the host knows, with the interfaces that carry it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Permission {
+    #[allow(dead_code, reason = "read by the installation dialog's model")]
+    pub(crate) kind: PermissionKind,
     /// The manifest's name for it.
     pub(crate) name: &'static str,
     /// The interface that carries it in contract v0, if v0 has it.
@@ -144,26 +211,6 @@ pub(crate) struct Permission {
 
 /// The start of every interface name of the plugin contract, whatever its version.
 const CONTRACT_PREFIX: &str = "dashboard:widget/";
-
-/// Every permission this host knows by name. Each connector is a permission too, but it is
-/// declared under `connectors` in the manifest and carried by the one `connectors` interface
-/// (research R12), so it has no row here.
-const REGISTRY: &[Permission] = &[
-    Permission {
-        name: "log",
-        v0: Some("dashboard:widget/log@0.1.0"),
-        v1: "dashboard:widget/log",
-        since: semver::Version::new(1, 0, 0),
-    },
-    // The plugin's own store, with its quota on the same manifest entry
-    // (specs/004-plugin-storage/research.md, R2, R9)
-    Permission {
-        name: "storage",
-        v0: None,
-        v1: "dashboard:widget/storage",
-        since: semver::Version::new(1, 2, 0),
-    },
-];
 
 /// The names a component imports and exports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -594,7 +641,9 @@ pub(crate) fn decide(
             continue;
         }
         let permission = by_import(contract, import);
-        let request = permission.and_then(|permission| manifest.permission(permission.name));
+        let request = permission
+            .as_ref()
+            .and_then(|permission| manifest.permission(permission.name));
         match (permission, request) {
             (Some(permission), Some(_)) if entry.is_granted(permission.name) => {
                 plan.real.push(permission.name);
@@ -615,14 +664,15 @@ pub(crate) fn decide(
 }
 
 /// The permission named `name`, if the host knows it.
-pub(crate) fn by_name(name: &str) -> Option<&'static Permission> {
-    REGISTRY.iter().find(|permission| permission.name == name)
+pub(crate) fn by_name(name: &str) -> Option<Permission> {
+    PermissionKind::from_name(name).map(PermissionKind::permission)
 }
 
 /// The permission whose interface in `contract` is `import`: in v0 matched exactly; in v1 by
 /// name, at a version that has it. Step 5 already checked the version is one the host runs.
-pub(crate) fn by_import(contract: Contract, import: &str) -> Option<&'static Permission> {
-    REGISTRY.iter().find(|permission| match contract {
+pub(crate) fn by_import(contract: Contract, import: &str) -> Option<Permission> {
+    let mut known = PermissionKind::ALL.iter().map(|kind| kind.permission());
+    known.find(|permission| match contract {
         Contract::V0 => permission.v0 == Some(import),
         Contract::V1 => split(import).is_some_and(|(base, version)| {
             base == permission.v1
