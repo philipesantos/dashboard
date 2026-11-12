@@ -83,7 +83,9 @@ function Part({ component }: { component: Component }) {
     case "button":
       return <ActionButton label={component.label} action={component.action} variant={component.variant} />;
     case "form":
-      return <Form form={component} />;
+      // A form of another shape at the same place starts empty, keeping nothing typed for the
+      // one before
+      return <Form key={formKey(component)} form={component} />;
     case "stack":
       return (
         <div className="flex flex-wrap items-start gap-2">
@@ -97,6 +99,11 @@ function Part({ component }: { component: Component }) {
     default:
       return <Placeholder />;
   }
+}
+
+/** What tells one form from another: its action and each field's id and kind. */
+function formKey(form: Extract<Component, { type: "form" }>): string {
+  return JSON.stringify([form.submit.action, form.fields.map((field) => [field.id, field.kind])]);
 }
 
 /** A component this host does not draw: the host's placeholder, which names nothing of it. */

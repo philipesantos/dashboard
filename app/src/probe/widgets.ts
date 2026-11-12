@@ -557,4 +557,45 @@ export const controlCases: Case[] = [
         : { held: false, detail: [...new Set(problems)].join("; ") };
     },
   },
+  {
+    // FR-014: a form that takes the place of another starts empty, and sends only its own
+    // fields; nothing typed in the old one reaches the new one's action. Runs last of the
+    // widget cases: it leaves ui-strings with its other form
+    id: "form-reshaped",
+    async run(context): Promise<Verdict> {
+      const { body } = await frameWhere(context, (name) => name === "ui-strings");
+      const old = body.querySelector("form");
+      const [title, amount] = old ? [...old.querySelectorAll<HTMLInputElement>('input[type="text"]')] : [];
+      if (!old || !title || !amount) return { held: false, detail: "ui-strings drew no form with two entries" };
+      type(title, "reshape");
+      type(amount, "7");
+      await context.wait(POLL_MS);
+      old.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+
+      const until = async (test: () => boolean) => {
+        for (let waited = 0; waited <= DRAW_MS; waited += POLL_MS) {
+          if (test()) return true;
+          await context.wait(POLL_MS);
+        }
+        return false;
+      };
+      if (!(await until(() => body.textContent?.includes("Outro número") ?? false))) {
+        return { held: false, detail: "the form did not change shape" };
+      }
+      const form = body.querySelector("form");
+      const entries = form ? [...form.querySelectorAll<HTMLInputElement>("input")] : [];
+      const kept = entries.filter((input) => input.type === "text" && input.value !== "").map((input) => input.value);
+      if (kept.length > 0) return { held: false, detail: `the new form shows ${JSON.stringify(kept)}` };
+      if (entries.some((input) => input.checked)) return { held: false, detail: "the new form's checkbox is checked" };
+
+      form?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+      const received = () => [...body.querySelectorAll("p")].map((p) => p.textContent ?? "").find((text) => text.startsWith("recebido: ") && text !== "recebido: nada");
+      if (!(await until(() => received() !== undefined))) {
+        return { held: false, detail: "the new form's submit ran no action" };
+      }
+      return received() === "recebido: flag,other"
+        ? { held: true, detail: "the new form started empty and sent only flag and other" }
+        : { held: false, detail: `the new form sent ${received()}` };
+    },
+  },
 ];

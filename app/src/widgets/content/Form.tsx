@@ -31,13 +31,17 @@ export function Form({ form }: FormProps) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    // Only this form's fields, each with its value or its empty one
+    const sent = Object.fromEntries(
+      form.fields.map((field) => [field.id, values[field.id] ?? (field.kind === "checkbox" ? "false" : "")]),
+    );
     const wrong = new Set(
       form.fields
-        .filter((field) => field.kind === "number" && values[field.id] !== "" && !NUMBER.test(values[field.id].trim()))
+        .filter((field) => field.kind === "number" && sent[field.id] !== "" && !NUMBER.test(sent[field.id].trim()))
         .map((field) => field.id),
     );
     setInvalid(wrong);
-    if (wrong.size === 0) act(form.submit.action, values, control);
+    if (wrong.size === 0) act(form.submit.action, sent, control);
   };
 
   const working = running === control;

@@ -4,12 +4,16 @@
 //! the most options a field may have; a form with a number field the probe fills wrongly; the
 //! three status tones. Every string must appear as literal text, isolated, and nothing it names
 //! may exist, load or open.
+//!
+//! Its form also changes shape when its text field is sent as `reshape`: then a form of other
+//! fields takes its place, and the next send reports the names of the values it received, so the
+//! probe sees that nothing typed in the old form reaches the new one (`form-reshaped`).
 
 wit_bindgen::generate!({ path: "../../../wit/history/1.4.0", world: "interactive-widget" });
 
 use exports::dashboard::widget::actor::Guest as Actor;
 use exports::dashboard::widget::renderer::Guest as Renderer;
-use serde_json::json;
+use serde_json::{Value, json};
 
 /// What a page that treated content as markup or a link would act on. `__probeInjected` is the
 /// flag the probe looks for.
@@ -34,7 +38,9 @@ const SENTINEL: &str = "SENTINELA";
 struct UiStrings;
 
 impl Renderer for UiStrings {
-    fn render(_config: String) -> Result<String, String> {
+    fn render(config: String) -> Result<String, String> {
+        let document: Value = serde_json::from_str(&config).unwrap_or(Value::Null);
+        let data = &document["data"];
         let texts: Vec<_> = HOSTILE
             .iter()
             .zip(
@@ -57,6 +63,30 @@ impl Renderer for UiStrings {
                 json!({ "type": "button", "label": label, "action": "send", "variant": variant })
             })
             .collect();
+        let form = if data["reshaped"] == true {
+            json!({ "type": "form",
+              "fields": [
+                { "id": "other", "label": "Outro número", "kind": "number" },
+                { "id": "flag", "label": "Marcar", "kind": "checkbox" },
+              ],
+              "submit": { "label": "Enviar o outro", "action": "send" } })
+        } else {
+            json!({ "type": "form",
+              "fields": [
+                { "id": "title", "label": HOSTILE[0], "kind": "text" },
+                { "id": "amount", "label": HOSTILE[3], "kind": "number" },
+                { "id": "done", "label": HOSTILE[2], "kind": "checkbox" },
+                { "id": "where", "label": HOSTILE[5], "kind": "select", "options": options },
+              ],
+              "submit": { "label": HOSTILE[1], "action": "send" } })
+        };
+        let received = match data["keys"].as_array() {
+            Some(keys) => {
+                let names: Vec<&str> = keys.iter().filter_map(Value::as_str).collect();
+                json!({ "type": "text", "text": format!("recebido: {}", names.join(",")) })
+            }
+            None => json!({ "type": "text", "text": "recebido: nada" }),
+        };
         Ok(json!({ "format": 1, "body": [
             { "type": "text", "text": "Tudo certo", "tone": "ok" },
             { "type": "text", "text": "Atenção", "tone": "warning" },
@@ -67,22 +97,29 @@ impl Renderer for UiStrings {
             { "type": "chart", "kind": "line", "labels": &HOSTILE[..4],
               "series": [{ "name": HOSTILE[1], "values": [1, 2, 3, 4] }] },
             { "type": "stack", "children": buttons },
-            { "type": "form",
-              "fields": [
-                { "id": "title", "label": HOSTILE[0], "kind": "text" },
-                { "id": "amount", "label": HOSTILE[3], "kind": "number" },
-                { "id": "done", "label": HOSTILE[2], "kind": "checkbox" },
-                { "id": "where", "label": HOSTILE[5], "kind": "select", "options": options },
-              ],
-              "submit": { "label": HOSTILE[1], "action": "send" } },
+            form,
+            received,
         ]})
         .to_string())
     }
 }
 
 impl Actor for UiStrings {
-    fn act(_action: String, _input: String) -> Result<String, String> {
-        Ok("{}".to_owned())
+    fn act(_action: String, input: String) -> Result<String, String> {
+        let input: Value = serde_json::from_str(&input).map_err(|error| error.to_string())?;
+        let values = input["values"].as_object();
+        let data = if values.and_then(|values| values.get("title")) == Some(&json!("reshape")) {
+            json!({ "reshaped": true })
+        } else if input["data"]["reshaped"] == true {
+            let mut keys: Vec<&String> = values
+                .map(|values| values.keys().collect())
+                .unwrap_or_default();
+            keys.sort();
+            json!({ "reshaped": true, "keys": keys })
+        } else {
+            json!({})
+        };
+        Ok(data.to_string())
     }
 }
 

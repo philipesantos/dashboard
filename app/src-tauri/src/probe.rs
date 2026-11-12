@@ -69,6 +69,7 @@ const PAGE_CASES: &[&str] = &[
     "foreign-actions-refused",
     "form-no-credentials",
     "status-icons",
+    "form-reshaped",
     // The window (FR-009 to FR-011)
     "context-menu",
     "navigate-location",
