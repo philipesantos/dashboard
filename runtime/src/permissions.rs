@@ -426,6 +426,19 @@ pub(crate) fn check_component(
         }
     }
 
+    // Actions arrived with 1.4.0: an `actor` export in a plugin built for an earlier minor is not
+    // one the contract defines, so it gets no actions (contracts/actions.md)
+    if interfaces.actor().is_some() && !contract.has_actions() {
+        return Err(RuntimeError::with_names(
+            ErrorKind::ContractTooOld,
+            manifest.actions().to_vec(),
+            Some(&format!(
+                "the actor export needs contract {ACTIONS_SINCE} or later, and this plugin is built for {}",
+                contract.version
+            )),
+        ));
+    }
+
     // Actions and the `actor` export go together (feature 009, research R8): the host runs only
     // the actions the manifest names, so an `actor` with none could never run, and actions
     // without `actor` have nothing to run

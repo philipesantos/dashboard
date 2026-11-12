@@ -257,6 +257,28 @@ fn a_component_built_for_a_newer_minor_is_a_contract_mismatch_naming_both_versio
     );
 }
 
+/// Feature 009: actions arrived with 1.4.0. A plugin whose every name says 1.3.0 but that also
+/// exports an `actor` gets no actions: it is refused, not given an `act` the contract never had.
+#[test]
+fn a_1_3_0_component_exporting_an_actor_is_contract_too_old() {
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&manifest("local/old-actor", "0.1.0", &[])).unwrap();
+    manifest["actions"] = serde_json::json!([{ "name": "save" }]);
+    let package = component_with(
+        &[
+            "dashboard:widget/renderer@1.3.0",
+            "dashboard:widget/actor@1.3.0",
+        ],
+        &manifest.to_string(),
+    );
+    let (kind, detail) = load_error(&runtime(), &package);
+    assert_eq!(kind, ErrorKind::ContractTooOld, "{detail}");
+    assert!(
+        detail.contains("1.4.0") && detail.contains("1.3.0"),
+        "{detail}"
+    );
+}
+
 #[test]
 fn a_1_0_0_component_that_declares_a_connector_is_contract_too_old() {
     let package = component_with(
