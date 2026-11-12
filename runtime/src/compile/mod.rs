@@ -11,6 +11,8 @@
 //! form would not load, so it is refused at once, never retried.
 
 mod child;
+#[cfg(target_os = "linux")]
+mod confine_linux;
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{Read, Write};
@@ -30,6 +32,27 @@ use crate::{ErrorKind, Limits, RuntimeError, engine_config, text};
 /// The only argument that starts the compile process.
 pub const COMPILE_ARGUMENT: &str = "--compile-package";
 
+/// The runtime's tests only: after this argument, the child tries to escape its confinement
+/// (`compile-confined`, task T037).
+#[cfg(feature = "test-network")]
+pub const TRY_ESCAPE: &str = "--try-escape";
+
+/// Whether this process was started as the compile process: its only argument is
+/// [`COMPILE_ARGUMENT`] (and, in the runtime's tests, [`TRY_ESCAPE`] after it). The app and the
+/// CLI check it before anything else starts.
+pub fn is_compile_invocation() -> bool {
+    let mut args = std::env::args_os().skip(1);
+    if args.next().is_none_or(|arg| arg != COMPILE_ARGUMENT) {
+        return false;
+    }
+    match args.next() {
+        None => true,
+        #[cfg(feature = "test-network")]
+        Some(arg) if arg == TRY_ESCAPE => args.next().is_none(),
+        Some(_) => false,
+    }
+}
+
 /// The child refused the package; the reason is on its error stream.
 const EXIT_REFUSED: u8 = 2;
 
@@ -42,6 +65,10 @@ const POLL: Duration = Duration::from_millis(10);
 pub struct CompileLimits {
     /// The parent kills the child after this long.
     pub wall_time: Duration,
+    /// The CPU time of all its threads together: `RLIMIT_CPU` on Unix, whole seconds.
+    pub cpu_time: Duration,
+    /// Its memory: `RLIMIT_DATA` on Linux, which counts what an allocator takes from the system.
+    pub memory_bytes: u64,
     /// The rayon threads Cranelift may use: half the cores, at least one.
     pub threads: usize,
     /// The parent stops reading, and kills the child, past this many bytes of compiled form.
@@ -55,6 +82,8 @@ impl Default for CompileLimits {
         let cores = thread::available_parallelism().map_or(2, |cores| cores.get());
         CompileLimits {
             wall_time: Duration::from_secs(20),
+            cpu_time: Duration::from_secs(60),
+            memory_bytes: 1536 * 1024 * 1024,
             threads: (cores / 2).max(1),
             max_compiled_bytes: 64 * 1024 * 1024,
             max_stderr_bytes: 64 * 1024,
@@ -69,6 +98,9 @@ pub struct Compiler {
     limits: CompileLimits,
     /// The fingerprint the child's engine must have: this process's own.
     expected: u64,
+    /// The runtime's tests only: the child tries to escape once confined.
+    #[cfg(feature = "test-network")]
+    try_escape: bool,
 }
 
 impl Compiler {
@@ -95,6 +127,8 @@ impl Compiler {
             executable: executable.into(),
             limits,
             expected: own_fingerprint(),
+            #[cfg(feature = "test-network")]
+            try_escape: false,
         }
     }
 
@@ -102,6 +136,14 @@ impl Compiler {
     #[doc(hidden)]
     pub fn with_expected_fingerprint(mut self, fingerprint: u64) -> Compiler {
         self.expected = fingerprint;
+        self
+    }
+
+    /// The runtime's tests only: the child tries to open a file and a socket once confined.
+    #[cfg(feature = "test-network")]
+    #[doc(hidden)]
+    pub fn trying_to_escape(mut self) -> Compiler {
+        self.try_escape = true;
         self
     }
 
@@ -142,8 +184,12 @@ impl Compiler {
 
     fn spawn(&self) -> Result<Child, RuntimeError> {
         let mut command = Command::new(&self.executable);
+        command.arg(COMPILE_ARGUMENT);
+        #[cfg(feature = "test-network")]
+        if self.try_escape {
+            command.arg(TRY_ESCAPE);
+        }
         command
-            .arg(COMPILE_ARGUMENT)
             .env_clear()
             .env("RAYON_NUM_THREADS", self.limits.threads.to_string())
             .stdin(Stdio::piped())
@@ -156,12 +202,53 @@ impl Compiler {
                 command.env(kept, value);
             }
         }
+        #[cfg(unix)]
+        self.limit_before_exec(&mut command);
         command.spawn().map_err(|error| {
             RuntimeError::new(
                 ErrorKind::CompileFailed,
                 format!("the compile process could not start: {error}"),
             )
         })
+    }
+
+    /// The limits a Unix child gets before it runs anything: its CPU time, its memory (Linux),
+    /// a below-normal priority, and, on Linux, death when its parent dies.
+    #[cfg(unix)]
+    fn limit_before_exec(&self, command: &mut Command) {
+        use std::os::unix::process::CommandExt;
+        let cpu = self.limits.cpu_time.as_secs().max(1) as libc::rlim_t;
+        let memory = self.limits.memory_bytes as libc::rlim_t;
+        // SAFETY: the closure runs between fork and exec, and calls only async-signal-safe
+        // functions with constant or copied arguments
+        unsafe {
+            command.pre_exec(move || {
+                let soft_then_kill = libc::rlimit {
+                    rlim_cur: cpu,
+                    rlim_max: cpu + 1,
+                };
+                if libc::setrlimit(libc::RLIMIT_CPU, &soft_then_kill) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    let data = libc::rlimit {
+                        rlim_cur: memory,
+                        rlim_max: memory,
+                    };
+                    if libc::setrlimit(libc::RLIMIT_DATA, &data) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                let _ = memory;
+                libc::setpriority(libc::PRIO_PROCESS, 0, 10);
+                Ok(())
+            });
+        }
     }
 
     fn run(
@@ -257,7 +344,26 @@ impl Compiler {
             }
         }
         if !status.success() {
-            let reason = text::untrusted(&String::from_utf8_lossy(&stderr), 1024);
+            let said = String::from_utf8_lossy(&stderr);
+            if self.ran_out_of_time(&status) {
+                return Err(RuntimeError::new(
+                    ErrorKind::CompileTimeLimit,
+                    format!(
+                        "compiling used more than the CPU time limit of {} s",
+                        self.limits.cpu_time.as_secs()
+                    ),
+                ));
+            }
+            if ran_out_of_memory(&said) {
+                return Err(RuntimeError::new(
+                    ErrorKind::CompileMemoryLimit,
+                    format!(
+                        "compiling needed more than the memory limit of {} bytes",
+                        self.limits.memory_bytes
+                    ),
+                ));
+            }
+            let reason = text::untrusted(&said, 1024);
             return Err(failed(if reason.trim().is_empty() {
                 format!("the compile process stopped ({status})")
             } else {
@@ -271,6 +377,32 @@ impl Compiler {
         }
         Ok(output[8..].to_vec())
     }
+}
+
+impl Compiler {
+    /// Whether the child ended on its CPU time limit: `SIGXCPU` on Unix, which the kernel sends
+    /// at the soft limit (`SIGKILL` follows a second later, at the hard one).
+    fn ran_out_of_time(&self, status: &std::process::ExitStatus) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            matches!(status.signal(), Some(libc::SIGXCPU))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = status;
+            false
+        }
+    }
+}
+
+/// Whether the child said an allocation failed, which its memory limit causes: the standard
+/// library's message, or a thread it could not start.
+fn ran_out_of_memory(said: &str) -> bool {
+    said.contains("memory allocation of")
+        || said.contains("Cannot allocate memory")
+        || said.contains("failed to spawn thread")
+        || said.contains("could not allocate")
 }
 
 /// The fingerprint of an engine: what Wasmtime compares before it accepts a compiled form. Two

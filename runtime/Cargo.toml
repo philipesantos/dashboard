@@ -10,6 +10,9 @@ default-run = "runtime"
 autotests = false
 
 [dependencies]
+# The compile process builds the thread pool Cranelift compiles on, with its own size, before it
+# confines itself; already in the lock through Wasmtime's parallel compilation
+rayon = "1"
 # Default location of the development grant record: the system's data directory
 dirs = "7"
 # Plugin versions in manifests follow SemVer 2.0.0
@@ -92,6 +95,11 @@ apple-native-keyring-store = { version = "=1.0.2", features = ["keychain"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus-secret-service-keyring-store = { version = "=1.0.1", features = ["crypto-rust"] }
+# The compile process's confinement (specs/010-plugin-installation/research.md, R13): a seccomp
+# filter that allows only the calls compiling needs, and a Landlock ruleset that grants no file
+# access
+seccompiler = "0.5"
+landlock = "0.4"
 
 # The development CLI. Its code sits behind the `cli` feature, so a host that links the library,
 # such as the app, does not get the development record and paths it uses

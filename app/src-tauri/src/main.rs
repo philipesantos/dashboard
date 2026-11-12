@@ -7,12 +7,7 @@ fn main() -> ExitCode {
     // The compile process, before Tauri or anything else of the app starts: the app compiles
     // every installed package by starting itself with this one argument
     // (specs/010-plugin-installation/research.md, R2)
-    let mut args = std::env::args_os().skip(1);
-    if args
-        .next()
-        .is_some_and(|arg| arg == runtime::compile::COMPILE_ARGUMENT)
-        && args.next().is_none()
-    {
+    if runtime::compile::is_compile_invocation() {
         return runtime::compile::child_main();
     }
     dashboard_lib::run();

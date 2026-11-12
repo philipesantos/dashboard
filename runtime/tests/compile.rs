@@ -156,3 +156,87 @@ fn a_tampered_package_is_package_changed() {
         .expect("refused");
     assert_eq!(error.kind(), ErrorKind::PackageChanged);
 }
+
+// US4: the compile process's limits and confinement (task T037)
+
+fn limited(limits: CompileLimits) -> Compiler {
+    Compiler::with_executable(env!("CARGO_BIN_EXE_runtime"), limits)
+}
+
+/// One thread, so the CPU time is the compile's own and the limits are reached in a known order.
+fn one_thread() -> CompileLimits {
+    CompileLimits {
+        threads: 1,
+        ..CompileLimits::default()
+    }
+}
+
+/// `compile-slow`: the parent's wall-clock kill.
+#[test]
+fn a_compile_past_its_wall_time_is_refused_naming_it() {
+    let error = limited(CompileLimits {
+        wall_time: std::time::Duration::from_millis(200),
+        ..one_thread()
+    })
+    .compile(&fixture("compile-heavy"))
+    .expect_err("refused");
+    assert_eq!(error.kind(), ErrorKind::CompileTimeLimit, "{error}");
+}
+
+/// `compile-cpu`: the system's CPU time limit (`RLIMIT_CPU`; the job's on Windows).
+#[cfg(unix)]
+#[test]
+fn a_compile_past_its_cpu_time_is_refused_naming_it() {
+    let error = limited(CompileLimits {
+        cpu_time: std::time::Duration::from_secs(1),
+        ..one_thread()
+    })
+    .compile(&fixture("compile-heavy"))
+    .expect_err("refused");
+    assert_eq!(error.kind(), ErrorKind::CompileTimeLimit, "{error}");
+    assert!(error.to_string().contains("CPU"), "{error}");
+}
+
+/// `compile-memory`: the system's memory limit (`RLIMIT_DATA` on Linux; the job's on Windows; the
+/// child's own watchdog on macOS).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_compile_past_its_memory_is_refused_naming_it() {
+    let error = limited(CompileLimits {
+        memory_bytes: 96 * 1024 * 1024,
+        ..one_thread()
+    })
+    .compile(&fixture("compile-heavy"))
+    .expect_err("refused");
+    assert_eq!(error.kind(), ErrorKind::CompileMemoryLimit, "{error}");
+}
+
+/// `compile-output`: a compiled form over its cap is not read on.
+#[test]
+fn a_compiled_form_over_its_cap_is_refused() {
+    let error = limited(CompileLimits {
+        max_compiled_bytes: 1024,
+        ..CompileLimits::default()
+    })
+    .compile(&fixture("hello-widget"))
+    .expect_err("refused");
+    assert_eq!(error.kind(), ErrorKind::CompileFailed, "{error}");
+    assert!(
+        error.to_string().contains("larger than the limit"),
+        "{error}"
+    );
+}
+
+/// `compile-confined` (FR-029): once confined, the child can open neither a file nor a socket.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_compile_process_can_open_neither_a_file_nor_a_socket() {
+    let error = compiler()
+        .trying_to_escape()
+        .compile(&fixture("hello-widget"))
+        .expect_err("the escape ends the compile");
+    assert_eq!(error.kind(), ErrorKind::CompileFailed, "{error}");
+    assert!(!error.to_string().contains("escaped"), "{error}");
+    // Confined as it is, a compile still works
+    assert!(compiler().compile(&fixture("hello-widget")).is_ok());
+}

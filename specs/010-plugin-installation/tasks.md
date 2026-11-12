@@ -323,22 +323,35 @@ before any build of the app or the tests.
 
 **Independent Test**: spec US4; quickstart §5.
 
-- [ ] T037 [US4] Extend `runtime/tests/compile.rs` with `compile-slow`, `compile-cpu`,
+- [X] T037 [US4] Extend `runtime/tests/compile.rs` with `compile-slow`, `compile-cpu`,
   `compile-memory` and `compile-output` (the `compile-heavy` fixture against lowered limits, one per
   limit, each refused naming its limit, no child left, the test process's memory unchanged) and
   `compile-confined` (a test-only hook makes the child, after confining itself, try to open a file
   and a socket: both fail and the child exits non-zero), on the three systems.
-- [ ] T038 [US4] Implement the limits and their attribution in `runtime/src/compile/mod.rs`
+- [X] T038 [US4] Implement the limits and their attribution in `runtime/src/compile/mod.rs`
   (research R2, data-model "Compile limits": `wall_time` 20 s, `cpu_time` 60 s, `memory_bytes`
   1.5 GiB, `threads` max(1, cores / 2), `max_compiled_bytes` 64 MiB, `max_stderr_bytes` 64 KiB):
   `RLIMIT_CPU`, `RLIMIT_DATA`, `nice(10)` and `PR_SET_PDEATHSIG(SIGKILL)` in `pre_exec` on Unix; the
   child's allocator wrapper exiting 86; the rayon spawn failure caught and mapped to 86; `SIGXCPU`
   and the wall-clock kill to `compile-time-limit`. No setting changes the limits in a release build.
-- [ ] T039 [P] [US4] Linux confinement in `runtime/src/compile/confine_linux.rs` (research R13):
+
+  Done on 2026-11-12 for Unix; Windows's job object is T041, macOS's watchdog T040. The child
+  builds rayon's pool itself (`rayon`, already in the lock, becomes a direct dependency), sized by
+  `RAYON_NUM_THREADS`, before it confines itself. An allocation that fails is told apart by the
+  child's own error text (the standard library's message, or a thread it could not start), not
+  by an allocator wrapper: a global allocator in the runtime would have been the app's too.
+- [X] T039 [P] [US4] Linux confinement in `runtime/src/compile/confine_linux.rs` (research R13):
   `PR_SET_NO_NEW_PRIVS`, a Landlock ruleset handling every file-system right and granting none when
   supported, a `seccompiler` filter with `SECCOMP_FILTER_FLAG_TSYNC` allowing only the calls R13
   lists. Add `seccompiler` and `landlock` to `runtime/Cargo.toml` for Linux; `cargo deny check` and
   `cargo audit` pass.
+
+  Done on 2026-11-12. Two filters, stacked: the first answers opening a file with `EACCES` (glibc
+  opens a file of its own from a compile thread in some runs, under resource limits, and handles
+  the refusal), the last one kills the process on any call not on the list; installed in that
+  order, since installing a filter takes `prctl` and `seccomp`, which the last one kills. The list
+  was taken with strace on a compile, and found complete by 25 compiles under the limits and five
+  runs of the tests.
 - [ ] T040 [P] [US4] macOS confinement and limits in `runtime/src/compile/confine_macos.rs`:
   `sandbox_init` with `kSBXProfilePureComputation`; the watchdog thread sampling the child's own
   physical footprint every 50 ms and exiting with 86 above `memory_bytes`, and exiting when
