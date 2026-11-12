@@ -394,15 +394,19 @@ build can call it with developer tools off; the first Windows CI run settles it 
 ## R13. Confining the compile process (FR-029)
 
 **Decision**: the child confines itself after building its engine and thread pool (R2 step 3), so
-nothing it does later can open a file, a socket or reach another process:
+nothing it does later can open a file, a socket or reach another process. On Linux, Landlock comes
+before the pool, since it binds only the calling thread and those it starts afterwards, and the
+seccomp filters after, on every thread (the implementation's review, T053):
 
 | System | Mechanism |
 | --- | --- |
-| Linux | `PR_SET_NO_NEW_PRIVS`; a Landlock ruleset that handles every file-system access right and grants none (when the kernel supports it); a seccomp filter, applied to every thread (`SECCOMP_FILTER_FLAG_TSYNC`), that allows only `read` on fd 0, `write` on fds 1 and 2, memory calls (`mmap`, `munmap`, `mprotect`, `madvise`, `mremap`, `brk`), `futex`, thread exit and signals, `sched_yield`, `getrandom`, `clock_gettime`, and `exit_group`, and kills the process on anything else. Crates `seccompiler` (rust-vmm) and `landlock`, under `cargo deny` |
+| Linux | `PR_SET_NO_NEW_PRIVS`; a Landlock ruleset that handles every file-system access right and grants none (when the kernel supports it); a seccomp filter, applied to every thread (`SECCOMP_FILTER_FLAG_TSYNC`), that allows only `read` on fd 0, `write` on fds 1 and 2, memory calls (`mmap`, `munmap`, `mprotect`, `madvise`, `mremap`, `brk`), `futex`, thread exit and signals, `sched_yield`, `getrandom`, `clock_gettime`, and `exit_group`, and kills the process on anything else, stacked on a second filter that answers `open`, `openat` and `openat2` with `EACCES` (glibc opens files of its own, and handles the refusal). Crates `seccompiler` (rust-vmm) and `landlock`, under `cargo deny` |
 | macOS | `sandbox_init` with the system's pure-computation profile (`kSBXProfilePureComputation`): no file, network or Mach services, the keychain's included; the watchdog thread runs inside it |
-| Windows | The child starts in an AppContainer with no capabilities (no network, no user files, no keychain) and in a job object that also forbids child processes and desktop access. The app grants the AppContainer read and execute on its own install directory when it runs from a per-user location. If AppContainer cannot start the binary on a supported Windows version, the fallback is a restricted, low-integrity token, and the residual (reading the user's files) is recorded |
+| Windows | The child starts in an AppContainer with no capabilities (no network, no user files, no keychain) and in a job object that also forbids child processes and desktop access. The app grants the AppContainer read and execute on its executable file alone, not inheritable, when it runs from a per-user location; its folder's other files stay out of reach (T053). If AppContainer cannot start the binary on a supported Windows version, the fallback is a restricted, low-integrity token, and the residual (reading the user's files) is recorded |
 
-The breaking test `compile-confined` (R11) runs on the three systems in CI. The new crates and
+The breaking test `compile-confined` (R11) runs on the three systems in CI: one run per attempt
+(a file from the main thread, a file from a compile thread that existed before confinement, a
+loopback port), each ending as soon as it worked, so no later refusal can hide one. The new crates and
 the per-system code are security core.
 
 **Alternatives considered**: no confinement, limits only: a bug in Cranelift's handling of input
@@ -467,3 +471,21 @@ Security review (S) and fact-check (C); each finding was checked at its source.
 | C14 orphan grants | R5 |
 | C15 the page cannot cancel during fetch or compile | Data model, contract |
 | Citations (`widgets.rs:25-26`, 005 `:651-652`, `lib.rs:899-905`, `libc`) | Corrected |
+
+## The implementation's independent review (T053, 2026-11-12)
+
+A reviewer who had not written the code read the security core of the branch. Each finding was
+checked at its source, fixed with a test that breaks without the fix, and the test was seen to
+break:
+
+| Finding | Fix | Breaking test |
+| --- | --- | --- |
+| An update that is only confirmed judged the warning without the optional connectors it keeps on | The installer passes the kept-on connectors to the model (`ModelInput::kept_on`) | `install::a_confirmed_update_warns_with_the_optionals_it_keeps_on` |
+| The compile process's error stream, which a package can steer, reached the page, and its text decided whether a stop was the memory limit | The page gets the kind and the app's sentence; the detail goes to the app's error stream, escaped. The memory limit is read from how the child ended (its own code 86, or an abort, the only one left once its panic hook exits with 70), never from its words | `compile::tests::only_how_the_child_ended_says_it_ran_out_of_memory`, `install::tests::the_page_gets_the_kind_and_the_apps_sentence_never_the_detail` |
+| Paths of the person's files in error details reached the page | As above: no detail reaches the page | As above |
+| `compile-confined` could pass with the file confinement off: the file opened, then a later call was killed before the test saw it | One run per attempt, each ending as soon as it worked, with the system's own `open` | `compile::the_compile_process_can_open_no_file_and_reach_no_network`, broken by turning off Landlock and the `EACCES` filter |
+| Landlock was applied after the compile threads existed, and binds only the calling thread | Landlock before the pool, seccomp after | The same test's attempt from a compile thread, broken by moving Landlock back |
+| A fresh compiled form is deserialized before the person decides, and the comment on it said otherwise | The comment says what happens; the threat model and decision 0003 record the residual until the next feature | None: a residual |
+| The start-up cleanup of a second instance could take a package written a moment before its record for a crash's leftover | An exclusive `install.lock` held from an installation's first write to its last, and by the cleanup | `install::the_cleanup_waits_for_an_installation_in_progress` |
+| On Windows the AppContainer was granted read and execute on the executable's folder, inherited by everything in it | The executable file alone, not inheritable | CI's Windows run of `compile-confined` (the child must still start) |
+

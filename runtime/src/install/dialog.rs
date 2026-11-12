@@ -128,6 +128,9 @@ pub struct ModelInput<'a> {
     pub optional_on: &'a [String],
     /// The account sources the installed version's store may hold (`Entry::account_sources`).
     pub remembered: &'a [String],
+    /// For an update that is only confirmed: the optional connectors the installed version has
+    /// on, which stay on, so the warning is judged with them (the review of task T053).
+    pub kept_on: &'a [String],
 }
 
 /// The dialog's model of `input`.
@@ -192,9 +195,9 @@ pub fn model(input: &ModelInput<'_>) -> DialogModel {
         .collect();
 
     let granted = |id: &str| {
-        manifest
-            .connector(id)
-            .is_some_and(|request| request.required || on(id))
+        manifest.connector(id).is_some_and(|request| {
+            request.required || on(id) || input.kept_on.iter().any(|kept| kept == id)
+        })
     };
     let warning = judge(package, &granted, input.remembered);
     let digest = package.approval_digest();

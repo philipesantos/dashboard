@@ -463,13 +463,16 @@ before any build of the app or the tests.
   to publish fixtures whose id is `github.com/dashboard-fixtures/...`, which a tester's repository
   cannot be; they now say how to make a copy with one's own id. T051 also found a comment naming
   the engine in `dialogs.ts`, which `webkitgtk_register` refuses.
-- [ ] T053 Review the security core independently: a fresh agent with none of this feature's
+- [X] T053 Review the security core independently: a fresh agent with none of this feature's
   context reads `runtime/src/{install,compile,flows}`, `network/`, `grants.rs`, the app's
   `install.rs`, `widgets.rs`, `main.rs`, commands and `window-surface.toml`, and `app/src/host/`,
   against the spec and contracts, and looks for any way to grant without the dialog, install from
   elsewhere, take over a name, escape the compile child, run a form the host did not produce, or
   rush or imitate the dialog. Check each finding at the source before changing anything; bring real
-  trade-offs to the maintainer.
+  trade-offs to the maintainer. Done: eight findings, all confirmed; seven fixed with a test that
+  breaks without the fix, one (a fresh form deserialized before the decision) recorded as a
+  residual in the threat model and decision 0003 until the next feature (research, "The
+  implementation's independent review"). The Windows grant's change waits for CI with T041.
 - [ ] T054 Only once the maintainer has pushed and opened the pull request, as they ask: follow CI
   on the three systems and record per system the `compile-heavy` time and peak (research R2), the
   largest gap of `window-responsive-while-compiling` (SC-003), the time of `install-on-time`

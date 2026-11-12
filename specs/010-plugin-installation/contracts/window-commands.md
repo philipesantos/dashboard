@@ -22,7 +22,10 @@ window stops it host-side.
 
 `Started`: `{ request, model: DialogModel } | { refused: kind } | { error: { kind, reason } }`.
 Refusals before any request: `bad-address`, `request-pending`, `already-installed`. Errors carry
-the runtime kinds of `data-model.md` and the existing manifest and connector kinds.
+the runtime kinds of `data-model.md` and the existing manifest and connector kinds, and as
+`reason` the app's own sentence for the kind, never the error's detail: that can carry what a
+package made the compiler say, or paths of the person's files, and goes to the app's error stream
+only, escaped.
 
 ## `update_start(handle) -> Started`
 

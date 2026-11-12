@@ -55,6 +55,20 @@ impl Layout {
         self.host.join("packages")
     }
 
+    /// Takes the installations' lock, `install.lock`, exclusive, until the returned file is
+    /// dropped: an installation holds it from its first write to its last, and the start-up
+    /// cleanup while it runs, so a second instance of the app starting mid-installation never
+    /// takes a package written a moment before its record for one left by a crash (the review of
+    /// task T053).
+    pub fn hold(&self) -> Result<fs::File, RuntimeError> {
+        crate::records::lock(&self.host.join("install"), true).map_err(|(path, error)| {
+            RuntimeError::new(
+                ErrorKind::StorageFailed,
+                format!("the lock {} could not be taken: {error}", path.display()),
+            )
+        })
+    }
+
     fn package_dir(&self, package_digest: &str) -> PathBuf {
         self.packages().join(record::directory(package_digest))
     }
@@ -101,6 +115,7 @@ impl Layout {
     /// grant from their repository, and repository grants with no installed entry. When either
     /// record cannot be read, nothing is removed.
     pub fn cleanup(&self) -> Result<Cleanup, RuntimeError> {
+        let _held = self.hold()?;
         let installed_store = self.installed();
         let installed = installed_store.read()?;
         let grants = self.grants();
@@ -156,6 +171,9 @@ pub struct Prepared {
     previous: Option<(Installed, CheckedPackage)>,
     /// The account sources the installed version's store may hold.
     remembered: Vec<String>,
+    /// For an update that is only confirmed: the optional connectors on in the installed
+    /// version's grant, which the confirmation keeps.
+    kept_on: Vec<String>,
 }
 
 impl Prepared {
@@ -327,6 +345,15 @@ impl Installer<'_> {
             }
             (Some(_), _) => DialogKind::Update,
         };
+        let kept_on = match (&kind, &entry) {
+            (DialogKind::UpdateConfirm, Some(entry)) => manifest
+                .connectors()
+                .iter()
+                .filter(|request| !request.required && entry.is_connector_granted(&request.id))
+                .map(|request| request.id.clone())
+                .collect(),
+            _ => Vec::new(),
+        };
         let remembered = entry.map(|entry| entry.account_sources).unwrap_or_default();
         Ok(Prepared {
             kind,
@@ -337,6 +364,7 @@ impl Installer<'_> {
             checked,
             previous,
             remembered,
+            kept_on,
         })
     }
 
@@ -348,6 +376,7 @@ impl Installer<'_> {
             previous: prepared.previous.as_ref().map(|(_, checked)| checked),
             optional_on,
             remembered: &prepared.remembered,
+            kept_on: &prepared.kept_on,
         })
     }
 
@@ -379,6 +408,7 @@ impl Installer<'_> {
                 format!("the package could not be written: {error}"),
             )
         };
+        let _held = self.layout.hold()?;
         let compiled_digest = self
             .layout
             .write(&prepared.package, &prepared.compiled)

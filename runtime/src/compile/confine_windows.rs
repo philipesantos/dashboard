@@ -3,8 +3,8 @@
 //! process in an AppContainer.
 //!
 //! - An AppContainer with no capabilities: no network, none of the user's files, no keychain
-//!   (Credential Manager), no other process. The executable's folder is granted read and execute
-//!   to it, so it can start from a per-user installation.
+//!   (Credential Manager), no other process. The executable file alone is granted read and
+//!   execute to it, so it can start from a per-user installation; nothing else of its folder.
 //! - Only its three pipes are inherited (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`).
 //! - A job object: the memory and CPU time limits, one process, no desktop, clipboard or global
 //!   atoms, and death when the parent's handle closes. The process is created suspended, put in
@@ -12,7 +12,7 @@
 //! - A below-normal priority, and an environment of only what the parent passes.
 //!
 //! Past its CPU time, a job's process ends with `ERROR_NOT_ENOUGH_QUOTA`; past its memory, an
-//! allocation fails and the child says so on its error stream.
+//! allocation fails and the child aborts ([`ABORT_EXIT_CODE`]) or ends with its own code for it.
 //!
 //! Part of the security core (constitution v2.7.0, Principle IX). Checked on Windows by CI only.
 
@@ -36,8 +36,8 @@ use windows_sys::Win32::Security::Isolation::{
     CreateAppContainerProfile, DeriveAppContainerSidFromAppContainerName,
 };
 use windows_sys::Win32::Security::{
-    ACL, DACL_SECURITY_INFORMATION, FreeSid, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES,
-    SECURITY_CAPABILITIES, SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+    ACL, DACL_SECURITY_INFORMATION, FreeSid, NO_INHERITANCE, PSECURITY_DESCRIPTOR, PSID,
+    SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES,
 };
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
@@ -63,6 +63,11 @@ use super::{CompileLimits, Ended, Running};
 
 /// The exit code a job gives a process past its CPU time limit: `ERROR_NOT_ENOUGH_QUOTA`.
 pub(super) const TIME_LIMIT_EXIT_CODE: i32 = 1816;
+
+/// The status a process ends with when it aborts, as the standard library does when an
+/// allocation fails (`__fastfail`, `STATUS_STACK_BUFFER_OVERRUN`): under the job's memory limit,
+/// what an allocation past it leads to.
+pub(super) const ABORT_EXIT_CODE: i32 = 0xC000_0409_u32 as i32;
 
 /// The AppContainer the compile process runs in.
 const CONTAINER: &str = "dev.philsantos.dashboard.compile";
@@ -133,10 +138,12 @@ fn container() -> std::io::Result<ContainerSid> {
     Ok(ContainerSid(sid))
 }
 
-/// Grants the AppContainer read and execute on `folder`, where the executable is. Best effort: a
-/// folder under Program Files is readable by every AppContainer already, and may refuse a change.
-fn grant(folder: &Path, sid: &ContainerSid) {
-    let path = wide(folder.as_os_str());
+/// Grants the AppContainer read and execute on the executable file, and on nothing else: not its
+/// folder, whose other files (a portable installation's data among them) stay out of its reach
+/// (the review of task T053). Best effort: a file under Program Files is readable by every
+/// AppContainer already, and may refuse a change.
+fn grant(executable: &Path, sid: &ContainerSid) {
+    let path = wide(executable.as_os_str());
     let mut dacl: *mut ACL = null_mut();
     let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
     // SAFETY: a nul-terminated path; the descriptor the system returns is freed with LocalFree
@@ -158,7 +165,7 @@ fn grant(folder: &Path, sid: &ContainerSid) {
     let access = EXPLICIT_ACCESS_W {
         grfAccessPermissions: GENERIC_READ | GENERIC_EXECUTE,
         grfAccessMode: GRANT_ACCESS,
-        grfInheritance: SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+        grfInheritance: NO_INHERITANCE,
         Trustee: TRUSTEE_W {
             pMultipleTrustee: null_mut(),
             MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
@@ -419,9 +426,7 @@ pub(super) fn spawn(
     limits: &CompileLimits,
 ) -> std::io::Result<Box<dyn Running>> {
     let sid = container()?;
-    if let Some(folder) = executable.parent() {
-        grant(folder, &sid);
-    }
+    grant(executable, &sid);
     let (child_in, parent_in) = pipe(true)?;
     let (child_out, parent_out) = pipe(false)?;
     let (child_err, parent_err) = pipe(false)?;

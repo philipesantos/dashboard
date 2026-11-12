@@ -37,8 +37,8 @@ use crate::{ErrorKind, Limits, RuntimeError, engine_config, text};
 /// The only argument that starts the compile process.
 pub const COMPILE_ARGUMENT: &str = "--compile-package";
 
-/// The runtime's tests only: after this argument, `--try-escape=<port>`, the child tries to escape
-/// its confinement (`compile-confined`, task T037).
+/// The runtime's tests only: after this argument, `--try-escape=<attempt>`, the child tries to
+/// escape its confinement one way (`compile-confined`, task T037; `child.rs`, `try_escape`).
 #[cfg(feature = "test-network")]
 pub const TRY_ESCAPE: &str = "--try-escape=";
 
@@ -60,6 +60,15 @@ pub fn is_compile_invocation() -> bool {
 
 /// The child refused the package; the reason is on its error stream.
 const EXIT_REFUSED: u8 = 2;
+
+/// The child ran out of memory and said so itself: an allocation the system refused, a thread it
+/// could not start, or, on macOS, its watchdog (research R2). Never chosen from what the package
+/// made the compiler say.
+const EXIT_MEMORY: u8 = 86;
+
+/// The child panicked: its hook ends it with this code rather than an abort, so that an abort
+/// means only an allocation that failed.
+const EXIT_PANICKED: u8 = 70;
 
 /// The variable that carries the memory limit to the child, which enforces it itself on macOS,
 /// where the system does not (research R2).
@@ -180,9 +189,9 @@ pub struct Compiler {
     limits: CompileLimits,
     /// The fingerprint the child's engine must have: this process's own.
     expected: u64,
-    /// The runtime's tests only: the loopback port the child tries to reach once confined.
+    /// The runtime's tests only: the way the child tries to escape once confined.
     #[cfg(feature = "test-network")]
-    try_escape: Option<u16>,
+    try_escape: Option<String>,
 }
 
 impl Compiler {
@@ -221,12 +230,12 @@ impl Compiler {
         self
     }
 
-    /// The runtime's tests only: the child tries to open a file of the user's and to reach
-    /// `port` on loopback once confined.
+    /// The runtime's tests only: once confined, the child tries `attempt`: `file`,
+    /// `file-on-a-compile-thread` or `net:<port>`.
     #[cfg(feature = "test-network")]
     #[doc(hidden)]
-    pub fn trying_to_escape(mut self, port: u16) -> Compiler {
-        self.try_escape = Some(port);
+    pub fn trying_to_escape(mut self, attempt: &str) -> Compiler {
+        self.try_escape = Some(attempt.to_owned());
         self
     }
 
@@ -275,8 +284,8 @@ impl Compiler {
         #[allow(unused_mut, reason = "the tests' build adds one")]
         let mut arguments = vec![COMPILE_ARGUMENT.to_owned()];
         #[cfg(feature = "test-network")]
-        if let Some(port) = self.try_escape {
-            arguments.push(format!("{TRY_ESCAPE}{port}"));
+        if let Some(attempt) = &self.try_escape {
+            arguments.push(format!("{TRY_ESCAPE}{attempt}"));
         }
         arguments
     }
@@ -469,7 +478,7 @@ impl Compiler {
                     ),
                 ));
             }
-            if ran_out_of_memory(&said) {
+            if ran_out_of_memory(&status) {
                 return Err(RuntimeError::new(
                     ErrorKind::CompileMemoryLimit,
                     format!(
@@ -509,13 +518,21 @@ fn ran_out_of_time(ended: &Ended) -> bool {
     }
 }
 
-/// Whether the child said an allocation failed, which its memory limit causes: the standard
-/// library's message, or a thread it could not start.
-fn ran_out_of_memory(said: &str) -> bool {
-    said.contains("memory allocation of")
-        || said.contains("Cannot allocate memory")
-        || said.contains("failed to spawn thread")
-        || said.contains("could not allocate")
+/// Whether the child ended on its memory limit, from how it ended, never from what it wrote: the
+/// exit code it chooses itself when an allocation or a thread is refused ([`EXIT_MEMORY`]), or
+/// the abort the standard library ends a process with when an allocation fails, which is the
+/// only abort left once the child's panic hook exits with [`EXIT_PANICKED`]: `SIGABRT` on Unix,
+/// the fast-fail status on Windows.
+fn ran_out_of_memory(ended: &Ended) -> bool {
+    if ended.code == Some(i32::from(EXIT_MEMORY)) {
+        return true;
+    }
+    #[cfg(unix)]
+    return ended.signal == Some(libc::SIGABRT);
+    #[cfg(windows)]
+    return ended.code == Some(confine_windows::ABORT_EXIT_CODE);
+    #[cfg(not(any(unix, windows)))]
+    false
 }
 
 /// The fingerprint of an engine: what Wasmtime compares before it accepts a compiled form. Two
@@ -531,4 +548,45 @@ fn own_fingerprint() -> u64 {
     Engine::new(&engine_config())
         .map(|engine| fingerprint(&engine))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn exited(code: i32) -> Ended {
+        Ended {
+            success: false,
+            code: Some(code),
+            signal: None,
+            shown: String::new(),
+        }
+    }
+
+    /// Research R2, the review of task T053: whatever a package makes the compiler write, a
+    /// refusal ([`EXIT_REFUSED`]) or a panic ([`EXIT_PANICKED`]) is never read as the memory
+    /// limit; only the child's own code for it, or an abort, is.
+    #[test]
+    fn only_how_the_child_ended_says_it_ran_out_of_memory() {
+        assert!(!ran_out_of_memory(&exited(i32::from(EXIT_REFUSED))));
+        assert!(!ran_out_of_memory(&exited(i32::from(EXIT_PANICKED))));
+        assert!(ran_out_of_memory(&exited(i32::from(EXIT_MEMORY))));
+        #[cfg(unix)]
+        {
+            let aborted = Ended {
+                success: false,
+                code: None,
+                signal: Some(libc::SIGABRT),
+                shown: String::new(),
+            };
+            assert!(ran_out_of_memory(&aborted));
+            let killed = Ended {
+                signal: Some(libc::SIGKILL),
+                ..aborted
+            };
+            assert!(!ran_out_of_memory(&killed));
+        }
+        #[cfg(windows)]
+        assert!(ran_out_of_memory(&exited(confine_windows::ABORT_EXIT_CODE)));
+    }
 }

@@ -9,11 +9,12 @@ use std::sync::Arc;
 use runtime::compile::{CompileLimits, Compiler};
 use runtime::install::dialog::DialogKind;
 use runtime::install::{Installer, Layout};
-use runtime::{ErrorKind, Limits, Runtime, RuntimeOptions, package};
+use runtime::{ErrorKind, Limits, Runtime, RuntimeOptions, TestNetwork, package};
 use serde_json::json;
 use tempfile::TempDir;
 
 use crate::common::releases::MemorySource;
+use crate::common::servers::TestPki;
 use crate::common::{fixture, repack};
 
 /// A runtime, a compile process, a release source and the app's host directory.
@@ -27,10 +28,29 @@ struct App {
 
 impl App {
     fn new() -> App {
+        App::with_catalog(Vec::new())
+    }
+
+    /// An app whose catalog also has `catalog`'s connectors.
+    fn with_catalog(catalog: Vec<String>) -> App {
         let dir = TempDir::new().expect("a temporary directory");
         let host = dir.path().join("host");
-        let runtime = Runtime::new(Limits::default(), RuntimeOptions::new(&host))
-            .expect("the runtime starts");
+        let options = RuntimeOptions::new(&host);
+        let runtime = if catalog.is_empty() {
+            Runtime::new(Limits::default(), options)
+        } else {
+            Runtime::with_test_network(
+                Limits::default(),
+                options,
+                TestNetwork {
+                    routes: Vec::new(),
+                    public_for_tests: Vec::new(),
+                    root: TestPki::new().root(),
+                    catalog,
+                },
+            )
+        }
+        .expect("the runtime starts");
         App {
             runtime,
             compiler: Compiler::with_executable(
@@ -267,6 +287,36 @@ fn an_approval_of_something_else_than_what_was_shown_writes_nothing() {
     app.assert_nothing_kept();
 }
 
+/// The review of task T053: the start-up cleanup of a second instance waits for an installation
+/// that holds the lock, rather than taking the package it has just written, before its record,
+/// for one a crash left behind.
+#[test]
+fn the_cleanup_waits_for_an_installation_in_progress() {
+    let app = App::new();
+    let held = app.layout.hold().expect("the lock");
+    // What an installation has written before its record: its package
+    app.layout
+        .write(&fixture("install-basic"), b"compiled")
+        .expect("written");
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let cleaned = app.layout.cleanup().expect("clean");
+            let _ = done.send(cleaned);
+        });
+        assert!(
+            finished
+                .recv_timeout(std::time::Duration::from_millis(300))
+                .is_err(),
+            "the cleanup ran while the installation held the lock"
+        );
+        drop(held);
+        finished
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the cleanup runs once the lock is released");
+    });
+}
+
 /// `crash-mid-install`: a kill after each write of research R5 leaves nothing usable once the
 /// next start has cleaned up.
 #[test]
@@ -394,14 +444,19 @@ fn a_changed_compiled_form_is_compiled_again_and_a_changed_package_refused() {
 
 // US3: updates (tasks T033, T034)
 
-/// `install-basic`'s manifest at `version`, packed with its component.
-fn basic_at(version: &str) -> Vec<u8> {
+/// The install fixture `name`'s manifest at `version`, packed with its `component`.
+fn fixture_at(name: &str, component: &str, version: &str) -> Vec<u8> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../plugins/fixtures/install/install-basic.json");
+        .join(format!("../plugins/fixtures/install/{name}.json"));
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(path).expect("the manifest")).expect("JSON");
     manifest["version"] = json!(version);
-    repack(&fixture("action-steps"), &manifest.to_string())
+    repack(&fixture(component), &manifest.to_string())
+}
+
+/// `install-basic`'s manifest at `version`, packed with its component.
+fn basic_at(version: &str) -> Vec<u8> {
+    fixture_at("install-basic", "action-steps", version)
 }
 
 const BASIC: &str = "github.com/dashboard-fixtures/install-basic";
@@ -500,6 +555,58 @@ fn an_update_that_asks_for_nothing_new_is_confirmed_and_keeps_the_optionals() {
     let entry = grants.entry(checked.manifest().id()).unwrap().unwrap();
     assert!(entry.is_connector_granted("catalog/github"));
     assert_eq!(entry.approved_version, "0.1.1");
+}
+
+/// `catalog/account-echo`: a catalog connector whose credential is for `https://echo.test`.
+fn account_echo() -> String {
+    json!({
+        "connector_version": 1, "id": "catalog/account-echo", "version": "1.0.0",
+        "author": "Tests", "description": "A test service read as an account",
+        "reserves": ["echo.test"], "destinations": { "api": "https://echo.test" },
+        "credential": { "kind": "key", "required": true, "destinations": ["api"],
+                        "header": "Authorization", "scheme": "Bearer" },
+        "operations": { "look": { "kind": "read", "method": "GET", "destination": "api",
+            "path": "/look", "parameters": {}, "response": { "format": "json", "headers": [] } } }
+    })
+    .to_string()
+}
+
+/// `dangerous-combination` on an update that is only confirmed (the review of task T053): the
+/// optional connector the person had on stays on, so the confirmation warns as the installation
+/// did, and approving it takes the choice with that warning.
+#[test]
+fn a_confirmed_update_warns_with_the_optionals_it_keeps_on() {
+    const ACCOUNT: &str = "github.com/dashboard-fixtures/install-account";
+    const ACCOUNT_NAME: &str = "dashboard-fixtures/install-account";
+    let app = App::with_catalog(vec![account_echo()]);
+    app.source
+        .publish(9, ACCOUNT_NAME, "v0.1.0", fixture("install-account"));
+    let installer = app.installer();
+    let repository = Installer::parse_address(ACCOUNT).expect("a repository address");
+    let prepared = installer.prepare_install(&repository).expect("checked");
+    let on = ["catalog/github".to_owned()];
+    let shown = installer.model(&prepared, &on);
+    assert_eq!(shown.warning.len(), 1, "the installation warns");
+    let installed = installer
+        .commit(&prepared, &shown.choice, &on)
+        .expect("installed");
+
+    app.source.publish(
+        9,
+        ACCOUNT_NAME,
+        "v0.1.1",
+        fixture_at("install-account", "account-probe", "0.1.1"),
+    );
+    let prepared = installer
+        .prepare_update(ACCOUNT, &installed)
+        .expect("checked")
+        .expect("a newer release");
+    assert_eq!(prepared.kind, DialogKind::UpdateConfirm);
+    let confirm = installer.model(&prepared, &[]);
+    assert_eq!(confirm.warning, shown.warning, "the confirmation warns too");
+    installer
+        .commit(&prepared, &confirm.choice, &[])
+        .expect("confirmed");
 }
 
 #[test]

@@ -18,8 +18,8 @@ use std::time::Duration;
 /// `SANDBOX_NAMED`: the profile is one of the system's, by name.
 const SANDBOX_NAMED: u64 = 0x0001;
 
-/// The exit code the watchdog ends the process with: the parent reads its message.
-const MEMORY_EXIT: c_int = 86;
+/// The exit code the watchdog ends the process with, which the parent reads as the memory limit.
+const MEMORY_EXIT: c_int = super::EXIT_MEMORY as c_int;
 
 unsafe extern "C" {
     fn sandbox_init(profile: *const c_char, flags: u64, errorbuf: *mut *mut c_char) -> c_int;

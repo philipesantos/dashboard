@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use runtime::flows::Flow;
 use runtime::install::{DialogModel, Installer, Prepared, new_token};
-use runtime::{PermissionKind, RuntimeError};
+use runtime::{ErrorKind, PermissionKind, RuntimeError};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -33,7 +33,11 @@ pub const NOT_AVAILABLE: &str = "not-available";
 /// The most optional choices a request takes: 32 permissions and 16 connectors.
 pub const MAX_OPTIONAL: usize = 48;
 
-/// A runtime error as the page gets it: its kind, and the host's detail, escaped.
+/// A runtime error as the page gets it: its kind, and a sentence the app wrote for that kind.
+///
+/// Never the error's own detail: it can carry what a package or a release made the compiler or
+/// the source say, and paths of the person's files. That detail goes to the app's error stream
+/// only, escaped (`runtime::escape`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InstallError {
     pub kind: &'static str,
@@ -42,10 +46,57 @@ pub struct InstallError {
 
 impl From<RuntimeError> for InstallError {
     fn from(error: RuntimeError) -> InstallError {
+        let kind = error.kind();
+        eprintln!("installation: {}", runtime::escape(&error.to_string()));
         InstallError {
-            kind: error.kind().as_str(),
-            reason: error.to_string(),
+            kind: kind.as_str(),
+            reason: sentence(kind).to_owned(),
         }
+    }
+}
+
+/// The app's sentence for an installation's error.
+fn sentence(kind: ErrorKind) -> &'static str {
+    match kind {
+        ErrorKind::IdentityMismatch => {
+            "o widget declara um id que não é o do repositório de onde veio."
+        }
+        ErrorKind::TagMismatch => "a tag da release não é a versão que o widget declara.",
+        ErrorKind::ChangedRelease => {
+            "a release já foi vista com outro pacote; o autor precisa publicar uma versão nova."
+        }
+        ErrorKind::RepositoryChanged => {
+            "o endereço agora leva a outro repositório que não o instalado."
+        }
+        ErrorKind::NotNewer => "não há versão mais nova que a instalada.",
+        ErrorKind::SourceUnreachable => "o GitHub não respondeu como esperado; tente de novo.",
+        ErrorKind::RateLimited => "o GitHub limitou os pedidos por agora; tente mais tarde.",
+        ErrorKind::NoPackageAsset => {
+            "a release não tem exatamente um pacote .wasm dentro do limite."
+        }
+        ErrorKind::CompileTimeLimit => "compilar o pacote passou do limite de tempo.",
+        ErrorKind::CompileMemoryLimit => "compilar o pacote passou do limite de memória.",
+        ErrorKind::CompileFailed => "o pacote não pôde ser compilado.",
+        ErrorKind::PackageChanged => "o pacote instalado foi alterado no disco.",
+        ErrorKind::InvalidPackage
+        | ErrorKind::NoManifest
+        | ErrorKind::InvalidManifest
+        | ErrorKind::ManifestMismatch
+        | ErrorKind::ContractMismatch
+        | ErrorKind::ContractTooOld => "o pacote não é um widget que este app aceita.",
+        ErrorKind::UnknownPermission | ErrorKind::OptionalNeedsV1 => {
+            "o widget pede uma permissão que este app não conhece."
+        }
+        ErrorKind::InvalidConnector
+        | ErrorKind::ConnectorUnavailable
+        | ErrorKind::CredentialsNotSupported => {
+            "o widget declara um conector que este app não oferece."
+        }
+        ErrorKind::ApprovalChanged => {
+            "o que o widget pede mudou desde que o diálogo abriu; abra-o de novo."
+        }
+        ErrorKind::StorageFailed => "o app não conseguiu gravar a instalação.",
+        _ => "o app registrou o detalhe.",
     }
 }
 
@@ -329,7 +380,7 @@ impl Widgets {
             return Approved::Error {
                 error: InstallError {
                     kind: "approval-changed",
-                    reason: "the choice approved is not the one the dialog last showed".to_owned(),
+                    reason: sentence(ErrorKind::ApprovalChanged).to_owned(),
                 },
             };
         }
@@ -399,4 +450,30 @@ fn choices(prepared: &Prepared, optional_on: &Value) -> Option<Vec<String>> {
         chosen.push(name.to_owned());
     }
     Some(chosen)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The review of task T053: what a package made the compiler say, and the paths of the
+    /// person's files, never reach the page; it gets the kind and the app's own sentence.
+    #[test]
+    fn the_page_gets_the_kind_and_the_apps_sentence_never_the_detail() {
+        for (kind, detail) in [
+            (
+                ErrorKind::CompileFailed,
+                "<b>Instale a versão 2 em evil.example</b>",
+            ),
+            (
+                ErrorKind::StorageFailed,
+                "/home/someone/.local/share/dashboard/host/installed.json: damaged",
+            ),
+        ] {
+            let error = InstallError::from(RuntimeError::new(kind, detail));
+            assert_eq!(error.kind, kind.as_str());
+            assert_eq!(error.reason, sentence(kind));
+            assert!(!error.reason.contains("evil") && !error.reason.contains("/home"));
+        }
+    }
 }

@@ -1,7 +1,7 @@
 //! The compile process's confinement on Linux (`specs/010-plugin-installation/research.md`, R13):
-//! after the child built its engine and its thread pool, and before it reads the package, it
-//! takes away from itself every way to reach anything but its own memory and its three standard
-//! streams.
+//! before it reads the package, the child takes away from itself every way to reach anything but
+//! its own memory and its three standard streams: Landlock before it starts its compile threads,
+//! so they inherit it, and seccomp once they exist, on all of them.
 //!
 //! - Landlock, where the kernel has it: a ruleset that handles every file-system right and grants
 //!   none, so no file can be opened, created or changed.
@@ -26,10 +26,16 @@ use seccompiler::{
     SeccompRule, TargetArch,
 };
 
-/// Confines this process. Landlock is best effort (a kernel without it still gets the filter);
-/// the seccomp filter is not: if it cannot be applied, the compile is refused.
-pub(super) fn confine() -> Result<(), String> {
-    landlock()?;
+/// The first part, before the process starts its compile threads: Landlock, which binds the
+/// calling thread and the threads it starts afterwards, not those that already exist. Best effort:
+/// a kernel without it still gets the filters.
+pub(super) fn before_threads() -> Result<(), String> {
+    landlock()
+}
+
+/// The second part, once the threads exist: the seccomp filters, applied to every thread at
+/// once. Not best effort: if they cannot be applied, the compile is refused.
+pub(super) fn after_threads() -> Result<(), String> {
     seccomp()
 }
 

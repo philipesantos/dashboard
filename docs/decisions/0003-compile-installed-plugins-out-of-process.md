@@ -55,7 +55,10 @@ Two risks stand apart:
 - **Accepted**: the compiler's output is still trusted as code, as it was when the app compiled in
   its own process. A bug in Cranelift that miscompiles a package into something that escapes is not
   stopped by the confinement, which protects the user's data from the compile process, not the app
-  from the code it produces.
+  from the code it produces. The app also deserializes a fresh form before the person decides, to
+  read the package's imports for the dialog; a form crafted by a compile process a package took
+  over could corrupt the app's memory as it loads, before any approval. The next feature moves
+  loading out of the app's process with running.
 - Every install costs one more process start, a few milliseconds beside the compile itself.
 
 ## Revisit when

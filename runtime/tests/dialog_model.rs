@@ -53,6 +53,7 @@ fn install(package: &CheckedPackage, optional_on: &[String]) -> runtime::install
         previous: None,
         optional_on,
         remembered: &[],
+        kept_on: &[],
     })
 }
 
@@ -206,6 +207,7 @@ fn an_update_marks_what_changed_and_lists_everything() {
         previous: Some(&before),
         optional_on: &[],
         remembered: &[],
+        kept_on: &[],
     });
     assert_eq!(shown.kind, DialogKind::Update);
     assert_eq!(shown.asking.installed_version.as_deref(), Some("0.1.0"));

@@ -983,8 +983,9 @@ impl Runtime {
         }
     }
 
-    /// [`inspect`](Self::inspect), with the component taken from `compiled`, a form the compile
-    /// process made and whose digest the caller checked, instead of compiled here.
+    /// [`inspect`](Self::inspect), with the component taken from `compiled`, a form this app's
+    /// compile process made (just now, or as recorded, its digest checked), instead of compiled
+    /// here.
     fn inspect_with(
         &self,
         bytes: &[u8],
@@ -1017,11 +1018,16 @@ impl Runtime {
             None => Component::from_binary(&self.engine, bytes).map_err(|error| {
                 RuntimeError::new(ErrorKind::InvalidPackage, format!("{error:#}"))
             })?,
-            // SAFETY: `deserialize` runs the machine code it is given. Only `load_compiled`
-            // passes a form here, after checking that its bytes are the ones whose digest the
-            // host recorded when its own compile process made them
-            // (specs/010-plugin-installation/research.md, R3); Wasmtime still refuses a form
-            // built by another engine version or configuration.
+            // SAFETY: `deserialize` trusts the form it is given: one Wasmtime did not make could
+            // corrupt this process as it loads, and its code runs when the plugin is called. Two
+            // callers pass one, both a form this app's own compile process made
+            // (specs/010-plugin-installation/research.md, R3): `check_compiled`, with the bytes
+            // the installer has just read from that process, before the person decides (nothing
+            // of the plugin runs before the approval); and `load_compiled`, after checking that
+            // the bytes on disk are the ones whose digest was recorded at installation. Wasmtime
+            // still refuses a form built by another engine version or configuration. What a
+            // compile process taken over by a package could write is the threat model's
+            // residual for "The compile process's output, trusted as code" (decision 0003).
             Some(compiled) => {
                 unsafe { Component::deserialize(&self.engine, compiled) }.map_err(|error| {
                     RuntimeError::new(

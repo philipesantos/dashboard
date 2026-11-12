@@ -225,9 +225,10 @@ fn a_compiled_form_over_its_cap_is_refused() {
     );
 }
 
-/// `compile-confined` (FR-029): once confined, the child can neither open a file of the user's
-/// nor reach a port on loopback, on each system (seccomp and Landlock; the macOS sandbox; an
-/// AppContainer).
+/// `compile-confined` (FR-029): once confined, the child can open no file of the user's, from its
+/// main thread or from a compile thread that existed before, and reach no port on loopback, on
+/// each system (Landlock and seccomp; the macOS sandbox; an AppContainer). Each attempt is a run of
+/// its own, which ends as soon as it worked, so no later refusal can hide it.
 #[test]
 #[allow(
     clippy::disallowed_types,
@@ -237,11 +238,25 @@ fn a_compiled_form_over_its_cap_is_refused() {
 fn the_compile_process_can_open_no_file_and_reach_no_network() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
     let port = listener.local_addr().expect("its address").port();
-    let error = compiler()
-        .trying_to_escape(port)
-        .compile(&fixture("hello-widget"))
-        .expect_err("the escape ends the compile");
-    assert!(!error.to_string().contains("escaped"), "{error}");
+    for attempt in [
+        "file".to_owned(),
+        "file-on-a-compile-thread".to_owned(),
+        format!("net:{port}"),
+    ] {
+        let outcome = compiler()
+            .trying_to_escape(&attempt)
+            .compile(&fixture("hello-widget"));
+        if let Err(error) = &outcome {
+            assert!(!error.to_string().contains("escaped"), "{attempt}: {error}");
+        }
+        // Confined, the attempt fails and the compile goes on, or ends with the process
+        assert!(
+            outcome
+                .as_ref()
+                .map_or(true, |compiled| !compiled.is_empty()),
+            "{attempt}"
+        );
+    }
     // Confined as it is, a compile still works
     assert!(compiler().compile(&fixture("hello-widget")).is_ok());
 }
