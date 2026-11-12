@@ -45,7 +45,7 @@ before any build of the app or the tests.
 
 **Purpose**: everything later tasks build on, with no change in behaviour.
 
-- [ ] T001 [P] Change criterion HS-02 in `docs/design/host-surfaces.md` first, as feature 007's rule
+- [X] T001 [P] Change criterion HS-02 in `docs/design/host-surfaces.md` first, as feature 007's rule
   allows (research R14): the header of every installed widget shows its repository owner
   (`github.com/<owner>`) after the name, drawn by the host as escaped text in the frame header's
   host-only roles; bundled widgets show none; the id beside a shared name stays. Its check names

@@ -54,20 +54,25 @@ like a header with another plugin's name; the frame's header is unchanged, still
 the manifest's name, and its actions are the host's.
 Feature: Moldura do host em cada widget com nome e ícone do plugin
 
-### HS-02 The plugin's name and icon come from its manifest, escaped and bounded
+### HS-02 The plugin's name, icon and source come from the host, escaped and bounded
 
 The header shows the name and icon from the plugin's manifest, never from widget content. The
 name is drawn as escaped text, with control and bidirectional override characters removed and a
 length limit, and a host-drawn placeholder stands in when it is empty. The icon is a PNG the host
-decodes, drawn as pixels in a fixed box, never as markup.
+decodes, drawn as pixels in a fixed box, never as markup. For a widget installed from a
+repository, the header also shows the repository's owner (`github.com/<owner>`) after the name,
+from the host's own installation record, drawn as escaped text in the frame header's roles; a
+widget built into the app shows none. A name that only looks like another's is told apart by its
+owner.
 
 Check: test: names holding markup, bidirectional overrides, the longest name the manifest
 accepts, and only characters the frame removes; each is drawn as text, stripped, cut at the limit,
 or replaced by the placeholder. A name with control characters or over the manifest's limit is
 refused when the plugin loads. An SVG icon, or any image that is not a PNG within the manifest's
 bounds, is refused when the plugin loads, and the frame draws the host's monogram; nothing of it
-runs or is fetched.
-Feature: Moldura do host em cada widget com nome e ícone do plugin
+runs or is fetched. The probe case `frame-owner-shown`: an installed widget's header shows its
+owner after the name, and the bundled showcase's shows none.
+Feature: Moldura do host em cada widget com nome e ícone do plugin; the owner, Instalação de plugin a partir do repositório do autor
 
 ### HS-03 Widget content is clipped to the frame's body
 
