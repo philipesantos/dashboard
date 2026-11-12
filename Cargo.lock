@@ -5893,6 +5893,7 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "wasm-encoder 0.262.0",
+ "wat",
  "wit-component 0.262.0",
 ]
 

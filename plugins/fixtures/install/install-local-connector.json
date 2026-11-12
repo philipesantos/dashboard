@@ -1,0 +1,11 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "github.com/dashboard-fixtures/install-local-connector",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "permissions": [{ "name": "log", "required": true }],
+  "connectors": [
+    { "id": "local/a-connector", "major": 1, "operations": ["look"], "required": false }
+  ]
+}

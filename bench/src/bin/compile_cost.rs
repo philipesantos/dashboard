@@ -10,7 +10,6 @@
 //! `contract-mismatch`, after the compilation this measures. The package carries a manifest
 //! and is approved, so nothing before the compile refuses it.
 
-use std::fmt::Write;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -24,45 +23,9 @@ const ORIGIN: &str = "compile-cost";
 
 const MIB: usize = 1024 * 1024;
 
-/// About 10 bytes of code: `local.get a`, `local.get b`, `i32.add`, `local.set c`, with local
-/// indices below 16,384.
-fn add_op(wat: &mut String, i: usize, locals: usize) {
-    let (a, b, c) = ((i * 7 + 1) % locals, (i * 13 + 5) % locals, i % locals);
-    writeln!(wat, "local.get {a} local.get {b} i32.add local.set {c}").unwrap();
-}
-
-fn many(code_bytes: usize) -> String {
-    const OPS: usize = 120;
-    const LOCALS: usize = 16;
-    // Indices below 128 take 1 byte, so each operation here is 7 bytes
-    let functions = code_bytes / (OPS * 7);
-    let mut wat = String::from("(component (core module\n");
-    for _ in 0..functions {
-        wat.push_str("(func (param i32) (result i32)");
-        wat.push_str(&" (local i32)".repeat(LOCALS));
-        wat.push('\n');
-        for i in 0..OPS {
-            add_op(&mut wat, i, LOCALS + 1);
-        }
-        wat.push_str("local.get 0)\n");
-    }
-    wat.push_str("))");
-    wat
-}
-
-fn huge(code_bytes: usize) -> String {
-    const LOCALS: usize = 4_000;
-    // wasmparser refuses function bodies over 7,654,321 bytes
-    let ops = code_bytes.min(7_500_000) / 10;
-    let mut wat = String::from("(component (core module\n(func (param i32) (result i32)");
-    wat.push_str(&" (local i32)".repeat(LOCALS));
-    wat.push('\n');
-    for i in 0..ops {
-        add_op(&mut wat, i, LOCALS + 1);
-    }
-    wat.push_str("local.get 0)))");
-    wat
-}
+// The generator the `compile-heavy` install fixture uses too, so both cost the same
+#[path = "../../../xtask/src/padding.rs"]
+mod padding;
 
 /// Peak memory of this process since [`reset_peak_memory`], where the system reports it.
 fn peak_memory() -> String {
@@ -89,8 +52,8 @@ fn main() {
         .map_or(9.5, |value| value.parse().expect("MiB is a number"));
     let code_bytes = (mib * MIB as f64) as usize;
     let wat = match args.first().map(String::as_str) {
-        Some("many") => many(code_bytes),
-        Some("huge") => huge(code_bytes),
+        Some("many") => format!("(component {})", padding::many(code_bytes)),
+        Some("huge") => format!("(component {})", padding::huge(code_bytes)),
         _ => panic!("usage: compile_cost many|huge [<MiB of code>]"),
     };
     let component = wat::parse_str(&wat).expect("the generated text is valid");

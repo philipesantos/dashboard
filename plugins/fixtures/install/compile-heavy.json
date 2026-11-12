@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "github.com/dashboard-fixtures/compile-heavy",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "name": "Compilação pesada",
+  "permissions": [{ "name": "log", "required": true }]
+}

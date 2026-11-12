@@ -64,13 +64,13 @@ before any build of the app or the tests.
   `compile-time-limit`, `compile-memory-limit`, `compile-failed`, `package-changed`), update the
   count asserted at `error.rs:271`, and add each to `docs/authors/reference/errors.md` with when it
   is answered. The docs reference test passes.
-- [ ] T005 Move the code generator of `bench/src/bin/compile_cost.rs` (`many`, `huge`) into a
+- [X] T005 Move the code generator of `bench/src/bin/compile_cost.rs` (`many`, `huge`) into a
   function `cargo xtask plugins` can call, keep the bench using it, and have `xtask/src/main.rs`
   build `target/plugins/compile-heavy.wasm`: a real widget (manifest id
   `github.com/dashboard-fixtures/compile-heavy`, a `renderer` export returning a one-line text) padded
   with generated functions to just under the 10 MiB package cap (research R11). `cargo xtask plugins`
   builds it; `cargo run -p dashboard-bench --bin compile_cost many` still runs.
-- [ ] T006 [P] Add the install fixtures under `plugins/fixtures/`, each with a `github.com/dashboard-fixtures/<name>`
+- [X] T006 [P] Add the install fixtures under `plugins/fixtures/`, each with a `github.com/dashboard-fixtures/<name>`
   id, built by `cargo xtask plugins`: `install-basic` (`log` required, `storage` with a quota, the
   catalog GitHub connector optional), `install-account` (an account connector with a credential and
   a second catalog destination optional), `install-more` (`install-basic` at a higher version with the
