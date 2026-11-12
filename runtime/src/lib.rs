@@ -69,6 +69,8 @@ pub use network::test_signin::follow as follow_test_sign_in;
 #[cfg(feature = "test-network")]
 pub use network::{Route, TestNetwork};
 pub use permissions::{Contract, ContractVersion, PermissionKind};
+/// The versions in a [`install::Release`] are this crate's.
+pub use semver;
 pub use storage::StorageCounts;
 pub use text::{DRAWN_NAME_CHARS, drawn_name, drawn_text, escape, quote_entry};
 #[cfg(feature = "test-network")]
@@ -441,6 +443,23 @@ impl CheckedPackage {
             &self.connector_states(),
             expected,
         )
+    }
+
+    /// Whether running this package under `entry`, the approval of an earlier version, needs the
+    /// person again: a required permission it lacks, storage beyond the approved quota, or a
+    /// connector that changed as feature 003 defines (`specs/002-plugin-permissions/`, FR-011;
+    /// load step 7). An update that needs none is only confirmed
+    /// (`specs/010-plugin-installation/`, FR-020).
+    pub fn needs_new_approval(&self, entry: &grants::Entry) -> bool {
+        let manifest = &self.manifest;
+        manifest
+            .permissions()
+            .iter()
+            .any(|permission| permission.required && !entry.is_granted(&permission.name))
+            || entry.storage_change(manifest).is_some()
+            || !entry
+                .connector_changes(manifest, &self.connector_states())
+                .is_empty()
     }
 
     /// Approves this package's installation from `origin` in the app's dialog: the required
@@ -947,6 +966,23 @@ impl Runtime {
         self.inspect_with(bytes, None)
     }
 
+    /// [`check`](Self::check) for a package the app did not build, with the component taken from
+    /// `compiled`, the form its own compile process just made of it, so the package is never
+    /// compiled in this process (`specs/010-plugin-installation/research.md`, R1, R3). Only the
+    /// installer calls it, with the bytes the compile process wrote, before it records their
+    /// digest.
+    pub fn check_compiled(
+        &self,
+        package: &[u8],
+        compiled: &[u8],
+    ) -> Result<CheckedPackage, RuntimeError> {
+        let package = self.inspect_with(package, Some(compiled))?;
+        match package.refused_connectors.first() {
+            Some((_, error)) => Err(error.clone()),
+            None => Ok(package),
+        }
+    }
+
     /// [`inspect`](Self::inspect), with the component taken from `compiled`, a form the compile
     /// process made and whose digest the caller checked, instead of compiled here.
     fn inspect_with(
@@ -1200,7 +1236,7 @@ impl Connectors<'_> {
                 ErrorKind::DestinationNotVerified,
                 names(),
                 Some(
-                    "connectors from repositories, whose destinations their owners verify, arrive with installation (Phase 3)",
+                    "connectors from repositories arrive with the verification of their owners' domains, a later item of Phase 3; a widget that declares one, even optional, is not installed",
                 ),
             ));
         };

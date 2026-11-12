@@ -159,7 +159,7 @@ before any build of the app or the tests.
   tests pin, and shares with the model the functions that read an operation (`sends`, `fixed`,
   the URL) and the warning rule; `the_development_tool_shows_the_operations_the_dialog_shows`
   checks that each operation and destination of the model is in the CLI's output.
-- [ ] T019 In `app/src-tauri/src/widgets.rs`: the app's grant record moves to
+- [X] T019 In `app/src-tauri/src/widgets.rs`: the app's grant record moves to
   `<app data dir>/host/grants.json` (`GrantStore::open`); `Widgets.shown` becomes a lock-guarded
   list (`widgets.rs:135-138`); at start, installed widgets load from `installed.json` through
   `load_compiled` with origin `github:<repository_id>`, after the cleanup of research R5, which runs
@@ -168,7 +168,7 @@ before any build of the app or the tests.
   removes package directories no entry names, entries with no grant and `github:` grants with no
   entry; an unreadable record removes nothing. (`crash-mid-install`, which needs the installer's
   write path, is T022–T023.)
-- [ ] T020 Add `app/src-tauri/src/install.rs` with the request state machine of data-model.md and
+- [X] T020 Add `app/src-tauri/src/install.rs` with the request state machine of data-model.md and
   the five commands of `contracts/window-commands.md` (`install_start`, `update_start`,
   `request_judge`, `request_approve`, `request_cancel`), each listed in
   `app/src-tauri/window-surface.toml` with its reason, granted in `capabilities/default.json` and
@@ -197,7 +197,7 @@ before any build of the app or the tests.
 
 **Independent Test**: spec US1; quickstart §3 steps 1 to 4 and §4's address refusals.
 
-- [ ] T022 [US1] Write the installation cases in `runtime/tests/install.rs` (in-memory source):
+- [X] T022 [US1] Write the installation cases in `runtime/tests/install.rs` (in-memory source):
   `identity-mismatch`, `tag-mismatch`, `no-asset`, `two-assets`, `asset-digest-mismatch`,
   `oversized-asset` (declared size, then a body that grows past the cap: refused before compiling),
   `renamed-at-install`, `name-swapped-mid-install`, `repository-connector` and `local-connector`
@@ -205,11 +205,18 @@ before any build of the app or the tests.
   catalog connector major the host does not ship: `connector-unavailable` before any dialog), the
   happy path for `install-basic`, and `crash-mid-install` (a kill after each write step of research
   R5: the next start keeps nothing usable); each refusal keeps nothing.
-- [ ] T023 [US1] Implement the installer in `runtime/src/install/mod.rs`: address → identity →
+- [X] T023 [US1] Implement the installer in `runtime/src/install/mod.rs`: address → identity →
   release → package → `Compiler::compile` → `inspect` with development mode off → `DialogModel`,
   in a temporary directory; on approval the write order of research R5 (package and compiled form
   renamed into `packages/<digest hex>/`, then `GrantStore::install`, then the installed record).
   T022 passes, `crash-mid-install` included.
+
+  Done on 2026-11-12, beside T019 and T020, which need it: `runtime::install::installer`
+  (`Installer`, `Layout`, `Prepared`), with `Runtime::check_compiled` so a package the app did
+  not build is never compiled in its own process. The release is held in memory until the
+  approval, not in a temporary directory: a cancel then has nothing to remove. `no-asset`,
+  `two-assets`, `asset-digest-mismatch`, `renamed-at-install` and the declared-size half of
+  `oversized-asset` are cases of the GitHub source, in `runtime/tests/install_github.rs` (T010).
 - [ ] T024 [US1] Connect `install_start` and `request_approve` in `app/src-tauri/src/install.rs`
   to the installer; the address forms of the contract (`github.com/owner/repo`,
   `https://github.com/owner/repo`, case-insensitive, trailing `/` or `.git`, at most 200

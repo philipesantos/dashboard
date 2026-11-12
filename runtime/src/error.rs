@@ -173,7 +173,10 @@ pub struct RuntimeError {
 const MAX_DETAIL_BYTES: usize = 1024;
 
 impl RuntimeError {
-    pub(crate) fn new(kind: ErrorKind, detail: impl AsRef<str>) -> Self {
+    /// An error of `kind` whose detail is `detail`, escaped and cut. Public so the app's own
+    /// release sources answer as the runtime's do (`specs/010-plugin-installation/research.md`,
+    /// R16).
+    pub fn new(kind: ErrorKind, detail: impl AsRef<str>) -> Self {
         Self {
             kind,
             detail: text::untrusted(detail.as_ref(), MAX_DETAIL_BYTES),

@@ -4,6 +4,7 @@
 
 pub mod dialog;
 pub mod github;
+pub mod installer;
 pub mod record;
 
 use std::time::Duration;
@@ -13,6 +14,7 @@ use crate::{ErrorKind, RuntimeError};
 
 pub use dialog::{DialogKind, DialogModel, ModelInput, model};
 pub use github::{GitHub, Identity, Release, ReleaseSource};
+pub use installer::{Cleanup, Installer, Layout, Prepared};
 pub use record::{Installed, InstalledStore};
 
 /// The limits of fetching a release (`data-model.md`, Release fetch limits).
@@ -77,6 +79,21 @@ impl Repository {
     pub fn plugin_id(&self) -> String {
         format!("github.com/{}/{}", self.owner, self.name)
     }
+}
+
+/// A request token: 16 bytes from the system's random source, as hex. The page gets it with the
+/// dialog's model and sends it back with the person's decision; it names a request the host
+/// opened, nothing more.
+pub fn new_token() -> Result<String, RuntimeError> {
+    use ring::rand::{SecureRandom, SystemRandom};
+    let mut bytes = [0u8; 16];
+    SystemRandom::new().fill(&mut bytes).map_err(|_| {
+        RuntimeError::new(
+            ErrorKind::SourceUnreachable,
+            "the system's random source is unavailable",
+        )
+    })?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn unreachable_source(detail: impl AsRef<str>) -> RuntimeError {

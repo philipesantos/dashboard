@@ -114,6 +114,17 @@ impl Compiler {
     /// [`Runtime::load_compiled`](crate::Runtime::load_compiled) may load, after its digest is
     /// recorded. Every refusal names why; no child is left behind.
     pub fn compile(&self, package: &[u8]) -> Result<Vec<u8>, RuntimeError> {
+        self.compile_until(package, &AtomicBool::new(false))
+    }
+
+    /// As [`compile`](Self::compile), stopped as soon as `cancel` is set: the child is killed
+    /// and waited for, and the compile is `compile-failed`. The app sets it when the window
+    /// closes or the app quits while an installation compiles (FR-023).
+    pub fn compile_until(
+        &self,
+        package: &[u8],
+        cancel: &AtomicBool,
+    ) -> Result<Vec<u8>, RuntimeError> {
         let max = Limits::default().max_package_bytes;
         if package.len() > max {
             return Err(RuntimeError::new(
@@ -122,7 +133,7 @@ impl Compiler {
             ));
         }
         let mut child = self.spawn()?;
-        let outcome = self.run(&mut child, package);
+        let outcome = self.run(&mut child, package, cancel);
         // Whatever happened, the child is gone before this returns
         let _ = child.kill();
         let _ = child.wait();
@@ -153,7 +164,12 @@ impl Compiler {
         })
     }
 
-    fn run(&self, child: &mut Child, package: &[u8]) -> Result<Vec<u8>, RuntimeError> {
+    fn run(
+        &self,
+        child: &mut Child,
+        package: &[u8],
+        cancel: &AtomicBool,
+    ) -> Result<Vec<u8>, RuntimeError> {
         let failed = |reason: String| RuntimeError::new(ErrorKind::CompileFailed, reason);
         let over_output = Arc::new(AtomicBool::new(false));
 
@@ -188,6 +204,11 @@ impl Compiler {
 
         let deadline = Instant::now() + self.limits.wall_time;
         let status = loop {
+            if cancel.load(Ordering::SeqCst) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(failed("the compile was cancelled".to_owned()));
+            }
             if over_output.load(Ordering::SeqCst) {
                 let _ = child.kill();
                 let _ = child.wait();

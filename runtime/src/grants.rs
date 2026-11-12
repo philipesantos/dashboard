@@ -553,6 +553,11 @@ impl GrantStore {
         }
     }
 
+    /// Every approval, by plugin id. Refused as `not-granted` when the record cannot be used.
+    pub fn entries(&self) -> Result<BTreeMap<String, Entry>, RuntimeError> {
+        Ok(self.read()?.plugins)
+    }
+
     /// The plugin's approval, if it has one, whatever its origin. Refused as `not-granted` when
     /// the record cannot be used.
     pub fn entry(&self, id: &PluginId) -> Result<Option<Entry>, RuntimeError> {
