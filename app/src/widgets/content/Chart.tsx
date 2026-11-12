@@ -18,8 +18,9 @@ export function Chart({ chart }: ChartProps) {
   const values = chart.series.flatMap((series) => series.values);
   const low = Math.min(0, ...values);
   const high = Math.max(0, ...values);
-  const span = high - low || 1;
-  const y = (value: number) => PAD + ((high - value) / span) * (HEIGHT - 2 * PAD);
+  // In halves, so that values near the largest number a double holds never overflow to Infinity
+  const span = high / 2 - low / 2 || 1;
+  const y = (value: number) => PAD + ((high / 2 - value / 2) / span) * (HEIGHT - 2 * PAD);
   const count = Math.max(chart.labels.length, 1);
   const step = (WIDTH - 2 * PAD) / count;
   return (
