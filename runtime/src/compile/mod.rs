@@ -291,7 +291,10 @@ impl Compiler {
     }
 
     /// The child's whole environment: its thread count and memory limit, and what a process
-    /// needs to start (Windows's SystemRoot; an AppImage's LD_LIBRARY_PATH).
+    /// needs to start, copied from this one: an AppImage's `LD_LIBRARY_PATH`; on Windows, the
+    /// system's folders and the profile's, without which `CreateProcessW` refuses to start a
+    /// process in an AppContainer (`ERROR_ENVVAR_NOT_FOUND`), since it points the temporary and
+    /// local data folders at the container's own. Paths only, no setting or secret.
     fn environment(&self) -> Vec<(String, std::ffi::OsString)> {
         let mut environment = vec![
             (
@@ -303,7 +306,22 @@ impl Compiler {
                 self.limits.memory_bytes.to_string().into(),
             ),
         ];
-        for kept in ["SystemRoot", "LD_LIBRARY_PATH"] {
+        #[cfg(windows)]
+        const KEPT: &[&str] = &[
+            "SystemRoot",
+            "SystemDrive",
+            "windir",
+            "ComSpec",
+            "PATHEXT",
+            "TEMP",
+            "TMP",
+            "USERPROFILE",
+            "LOCALAPPDATA",
+            "APPDATA",
+        ];
+        #[cfg(not(windows))]
+        const KEPT: &[&str] = &["LD_LIBRARY_PATH"];
+        for kept in KEPT.iter().copied() {
             if let Some(value) = std::env::var_os(kept) {
                 environment.push((kept.to_owned(), value));
             }
