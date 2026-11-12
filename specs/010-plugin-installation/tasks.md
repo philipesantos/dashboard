@@ -182,7 +182,7 @@ before any build of the app or the tests.
   request: approving its token afterwards is `unknown-request`, nothing granted) and
   `quit-mid-compile` (stopping the host while a request compiles kills the child, leaves no process
   and keeps nothing).
-- [ ] T021 Add `app/src/host/api.ts` (the five commands, typed from the contract) and the first
+- [X] T021 Add `app/src/host/api.ts` (the five commands, typed from the contract) and the first
   `HostDialog.tsx` on the Radix dialog, in the host-only `dialog` roles and elevation instead of
   `popover` (fix `app/src/components/ui/dialog.tsx` too), with the safe choice first and focused,
   and Escape taking it. The full form of the criteria is US5.
