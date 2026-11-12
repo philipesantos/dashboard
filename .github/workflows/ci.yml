@@ -82,12 +82,25 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # The shell probe adds a release build of the app (specs/008-tauri-shell/research.md, R11)
+    # The shell probe adds a build of the app in the probe profile
+    # (specs/008-tauri-shell/research.md, R11; Cargo.toml)
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Windows builds into a Dev Drive mounted at target/: ReFS, trusted so that Defender does not
+      # scan every file the compiler writes, which made Windows the slowest system in both the
+      # tests and the probe's build. Dynamic, so it takes only the space the build uses; after
+      # the checkout, which would try to empty a mount inside the workspace
+      - uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+        if: runner.os == 'Windows'
+        with:
+          drive-size: 50GB
+          drive-type: Dynamic
+          mount-path: ${{ github.workspace }}/target
+          trusted-dev-drive: true
 
       # The Ubuntu mirror sometimes stalls a download for good. apt retries slow requests on
       # its own, and the step fails after 5 minutes instead of hanging the job (it takes under
@@ -120,7 +133,11 @@ jobs:
           # Plugins build for WebAssembly; wasip2 only for the hostile fixtures that import WASI
           targets: wasm32-unknown-unknown, wasm32-wasip2
 
+      # Saved only from master, which every pull request reads: saving took up to 5 minutes on
+      # Windows, and a pull request's own cache helps only its next push
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - run: pnpm install --frozen-lockfile
 
@@ -153,31 +170,8 @@ jobs:
       # (specs/009-declarative-widget-ui/research.md, R1)
       - run: cargo xtask plugins --locked
 
-      # The shell probe: the release build plus one page module and two commands. Inside the
-      # real page it tries every forbidden action, and it fails unless each one is refused
-      # (specs/008-tauri-shell/contracts/probe.md). Built as `tauri build` builds, with
-      # tauri/custom-protocol, so the page and its content policy are the release ones.
-      - run: pnpm --filter ./app build --mode probe
-
-      - run: cargo build -p dashboard --release --features shell-probe,tauri/custom-protocol --locked
-
-      - name: Shell probe
-        shell: bash
-        timeout-minutes: 3
-        env:
-          DASHBOARD_PROBE: "1"
-        run: |
-          if [ "$RUNNER_OS" = Linux ]; then
-            # WEBKITGTK-ONLY(ci-dmabuf): WebKitGTK's DMA-BUF renderer fails under xvfb
-            WEBKIT_DISABLE_DMABUF_RENDERER=1 xvfb-run -a ./target/release/dashboard
-          else
-            ./target/release/dashboard
-          fi
-
-      - run: cargo clippy -p dashboard --features shell-probe --all-targets --locked -- -D warnings
-
       # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time.
-      # It also puts back the normal dist after the probe's.
+      # The probe's page replaces it at the end of the job.
       - run: pnpm --filter ./app build
 
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -210,6 +204,31 @@ jobs:
             echo "the release build failed, but not because of the test seam" >&2
             exit 1
           }
+
+      # The shell probe: the release build plus one page module and two commands. Inside the
+      # real page it tries every forbidden action, and it fails unless each one is refused
+      # (specs/008-tauri-shell/contracts/probe.md). Built as `tauri build` builds, with
+      # tauri/custom-protocol, so the page and its content policy are the release ones; in the
+      # `probe` profile, the release one without LTO (Cargo.toml). Last, so that a broken case
+      # does not hide the tests' results.
+      - run: pnpm --filter ./app build --mode probe
+
+      - run: cargo build -p dashboard --profile probe --features shell-probe,tauri/custom-protocol --locked
+
+      - name: Shell probe
+        shell: bash
+        timeout-minutes: 3
+        env:
+          DASHBOARD_PROBE: "1"
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            # WEBKITGTK-ONLY(ci-dmabuf): WebKitGTK's DMA-BUF renderer fails under xvfb
+            WEBKIT_DISABLE_DMABUF_RENDERER=1 xvfb-run -a ./target/probe/dashboard
+          else
+            ./target/probe/dashboard
+          fi
+
+      - run: cargo clippy -p dashboard --features shell-probe --all-targets --locked -- -D warnings
 
   # The docs for authors, run as written on each system: the walkthrough from a clone of this
   # checkout to a running widget, the guides against the test services, and the reference's
@@ -250,7 +269,11 @@ jobs:
           toolchain: 1.99.1
           targets: wasm32-unknown-unknown, wasm32-wasip2
 
+      # Saved only from master, which every pull request reads: saving took up to 5 minutes on
+      # Windows, and a pull request's own cache helps only its next push
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       # The guides start from the examples
       - run: cargo xtask plugins --locked
