@@ -257,8 +257,8 @@ export const installCases: Case[] = [
     },
   },
   {
-    // HS-17: in forced colors the dialog keeps an edge. WebKit never matches forced-colors on
-    // macOS and Linux, so the stylesheet's rule is read; Windows high contrast is a review step
+    // HS-17: in forced colors the dialog keeps an edge. The engines of macOS and Linux never match
+    // forced-colors, so the stylesheet's rule is read; Windows high contrast is a review step
     id: "dialog-forced-colors",
     async run(): Promise<Verdict> {
       const found = rules().some(

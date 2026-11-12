@@ -447,12 +447,22 @@ before any build of the app or the tests.
 - [X] T050 [P] Update `CONTRIBUTING.md`: the security core list as constitution v2.7.0 and this
   feature's files; a short section on installation (the compile child, the fixtures, the probe
   release source, the confinement test on each system).
-- [ ] T051 Run every local check under the memory cap: `cargo xtask plugins`, clippy on the
+- [X] T051 Run every local check under the memory cap: `cargo xtask plugins`, clippy on the
   workspace and the probe build, `cargo test --workspace`, `cargo deny`, `cargo audit`,
   `pnpm audit`, the design checks and licenses, the docs reference test, and the probe on Linux.
-- [ ] T052 Walk quickstart §1 to §5 on Linux and fix any drift between it and the code. §3 needs a
+- [X] T052 Walk quickstart §1 to §5 on Linux and fix any drift between it and the code. §3 needs a
   public test repository: ask the maintainer to create it, or walk it against the probe source and
   say so.
+
+  Done on 2026-11-12 on Linux, without a public repository: §1 and §2 as T051 and T046 ran them
+  (777 tests, 82 probe cases); §3 against the probe's source and the app's tests; §4's four breaks
+  are tests (`an_address_that_is_not_a_repository_is_refused`,
+  `a_changed_compiled_form_is_compiled_again_and_a_changed_package_refused`,
+  `a_name_taken_by_another_repository_serves_no_update`); §5 by the probe, and the confinement by
+  hand (`Seccomp: 2`, `NoNewPrivs: 1` in the compile process's status). Drift fixed: §3 and §5 asked
+  to publish fixtures whose id is `github.com/dashboard-fixtures/...`, which a tester's repository
+  cannot be; they now say how to make a copy with one's own id. T051 also found a comment naming
+  the engine in `dialogs.ts`, which `webkitgtk_register` refuses.
 - [ ] T053 Review the security core independently: a fresh agent with none of this feature's
   context reads `runtime/src/{install,compile,flows}`, `network/`, `grants.rs`, the app's
   `install.rs`, `widgets.rs`, `main.rs`, commands and `window-surface.toml`, and `app/src/host/`,

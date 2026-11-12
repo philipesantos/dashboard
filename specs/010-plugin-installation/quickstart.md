@@ -26,10 +26,17 @@ features 008 and 009's cases. CI runs this on the three systems.
 
 ## 3. A real installation
 
-Prerequisite: a public test repository whose latest release follows
-[contracts/release.md](contracts/release.md), with one required permission (`log`), a `storage`
-quota, and the catalog GitHub connector as optional, and one release later that makes the
-connector required.
+Without a repository, the probe of §2 walks steps 1 to 3 against its own release source
+(`install-on-time`, `frame-owner-shown`), and the app's tests walk 4 and 5
+(`a_widget_installed_through_the_requests_shows_its_owner_and_loads_again_at_start`,
+`an_update_replaces_the_widget_in_place_once_approved`).
+
+With one: a public test repository whose latest release follows
+[contracts/release.md](contracts/release.md). Its manifest's `id` must be that repository, so the
+fixtures' own (`github.com/dashboard-fixtures/...`) will not do: copy
+`plugins/fixtures/install/install-basic.json` and `install-more.json` with your repository's id,
+add them to `index.json` under new names, run `cargo xtask plugins`, and attach
+`target/plugins/<name>.wasm` to two releases, the second tagged with `install-more`'s version.
 
 1. `pnpm --filter ./app tauri dev`, then in the chrome choose to add a widget and type the
    repository address.
@@ -56,8 +63,9 @@ connector required.
 
 ## 5. A heavy compile
 
-Publish `target/plugins/compile-heavy.wasm` (built by `cargo xtask plugins`, research R11) as the
-release of a test repository whose name matches its manifest id, then install it. While it
+The probe's `window-responsive-while-compiling` does this on every run. By hand, publish
+`compile-heavy` as in §3, with your repository's id in a copy of
+`plugins/fixtures/install/compile-heavy.json`, then install it. While it
 compiles, move and type in the window: it keeps answering (SC-003). With the default limits it
 installs. The refusals at each limit are the automated `compile-*` cases of §1, which lower the
 limits; no setting changes them in the app.
