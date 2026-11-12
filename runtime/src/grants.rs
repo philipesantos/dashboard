@@ -32,16 +32,18 @@ use crate::manifest::{Manifest, PluginId};
 use crate::permissions;
 use crate::records;
 
-/// The record format this host writes. It also reads versions 1 to 3, as version 4 with no
-/// connectors (version 1), no storage quota (versions 1 and 2) and no account (versions 1 to 3),
-/// and writes them back as version 4.
-pub const RECORD_VERSION: u64 = 4;
+/// The record format this host writes. It also reads versions 1 to 4, as version 5 with no
+/// connectors (version 1), no storage quota (versions 1 and 2), no account (versions 1 to 3) and
+/// no remembered account sources (versions 1 to 4), and writes them back as version 5.
+pub const RECORD_VERSION: u64 = 5;
 /// The format of feature 002, still read.
 const RECORD_VERSION_1: u64 = 1;
 /// The format of feature 003, still read.
 const RECORD_VERSION_2: u64 = 2;
 /// The format of feature 004, still read.
 const RECORD_VERSION_3: u64 = 3;
+/// The format of feature 005, still read.
+const RECORD_VERSION_4: u64 = 4;
 
 /// The app's directory inside the system's data directory. Provisional: it moves with the
 /// project's final name, before the first release.
@@ -71,6 +73,13 @@ pub struct Entry {
     /// manifest declared storage (record version 3, `specs/004-plugin-storage/data-model.md`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_quota_bytes: Option<u64>,
+    /// Sorted and unique: every connector the plugin acted as an account through while it also
+    /// held storage, from this origin (record version 5,
+    /// `specs/010-plugin-installation/data-model.md`). Its store may hold what it read, so each
+    /// stays a source of account data for the dangerous combination warning, even once the
+    /// connector is gone, until the store is cleared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub account_sources: Vec<String>,
 }
 
 /// What an approval covers of one connector (`data-model.md`, Grant record, version 2).
@@ -380,7 +389,8 @@ impl GrantRecord {
             .and_then(serde_json::Value::as_u64)
         {
             Some(
-                version @ (RECORD_VERSION_1 | RECORD_VERSION_2 | RECORD_VERSION_3 | RECORD_VERSION),
+                version @ (RECORD_VERSION_1 | RECORD_VERSION_2 | RECORD_VERSION_3
+                | RECORD_VERSION_4 | RECORD_VERSION),
             ) => version,
             Some(version) if version > RECORD_VERSION => {
                 return Err(format!(
@@ -406,6 +416,20 @@ impl GrantRecord {
                     "{id} has connectors in a record of version {RECORD_VERSION_1}, which has none"
                 ));
             }
+            if version < RECORD_VERSION && !entry.account_sources.is_empty() {
+                return Err(format!(
+                    "{id} has account sources in a record of version {version}, which has none"
+                ));
+            }
+            if !entry
+                .account_sources
+                .windows(2)
+                .all(|pair| pair[0] < pair[1])
+            {
+                return Err(format!(
+                    "the account sources of {id} are not sorted and unique"
+                ));
+            }
             if version < RECORD_VERSION_3 && entry.storage_quota_bytes.is_some() {
                 return Err(format!(
                     "{id} has a storage quota in a record of version {version}, which has none"
@@ -417,14 +441,14 @@ impl GrantRecord {
                         "the destinations of {connector} in {id} are not sorted and unique"
                     ));
                 }
-                if version < RECORD_VERSION && grant.account.is_some() {
+                if version < RECORD_VERSION_4 && grant.account.is_some() {
                     return Err(format!(
                         "{connector} in {id} has an account in a record of version {version}, which has none"
                     ));
                 }
             }
         }
-        // Older records are version 4 without what they did not have, written back as 4
+        // Older records are version 5 without what they did not have, written back as 5
         record.record_version = RECORD_VERSION;
         Ok(record)
     }
@@ -627,6 +651,7 @@ impl GrantStore {
                     approved_digest: digest.to_owned(),
                     connectors: BTreeMap::new(),
                     storage_quota_bytes: None,
+                    account_sources: Vec::new(),
                 },
             );
             let approval = Approval {
@@ -724,6 +749,111 @@ impl GrantStore {
                     connectors: grants,
                     // The quota this approval showed, smaller or larger than before
                     storage_quota_bytes: manifest.storage().map(|storage| storage.quota_bytes),
+                    account_sources: Vec::new(),
+                },
+            );
+            let replaced = previous
+                .filter(|entry| entry.origin != origin)
+                .map(|entry| entry.origin);
+            Ok((
+                Approval {
+                    required: required.clone(),
+                    replaced,
+                },
+                true,
+            ))
+        })
+    }
+
+    /// Approves an installation in the app's dialog (`specs/010-plugin-installation/`, FR-013,
+    /// FR-014): as [`approve_connected`](Self::approve_connected), only when `expected` is the
+    /// approval digest of what the dialog showed, but the entry is built fresh: the required
+    /// permissions and connectors, and the optional ones named in `optional_on`, which the
+    /// person turned on in the dialog, and nothing else. An optional left on in an earlier entry,
+    /// such as one an interrupted installation left behind, stays off. Each name in
+    /// `optional_on` must be an optional permission or connector the manifest declares, or it is
+    /// refused as `not-declared`, granting nothing.
+    pub fn install(
+        &self,
+        manifest: &Manifest,
+        origin: &str,
+        digest: &str,
+        connectors: &[ConnectorState],
+        expected: &str,
+        optional_on: &[String],
+    ) -> Result<Approval, RuntimeError> {
+        let current = approval_digest(digest, manifest, connectors);
+        if expected != current {
+            return Err(RuntimeError::new(
+                ErrorKind::ApprovalChanged,
+                format!(
+                    "what would be approved now has the digest {current}, not {expected}: the package, its permissions or a connector changed since it was shown; show it again"
+                ),
+            ));
+        }
+        for name in optional_on {
+            let optional_permission = manifest
+                .permission(name)
+                .is_some_and(|permission| !permission.required);
+            let optional_connector = manifest
+                .connector(name)
+                .is_some_and(|connector| !connector.required);
+            if !optional_permission && !optional_connector {
+                return Err(RuntimeError::with_names(
+                    ErrorKind::NotDeclared,
+                    vec![name.clone()],
+                    Some("the manifest declares no optional permission or connector by this name"),
+                ));
+            }
+        }
+        let on = |name: &str| optional_on.iter().any(|optional| optional == name);
+        let required: Vec<String> = manifest
+            .permissions()
+            .iter()
+            .filter(|permission| permission.required)
+            .map(|permission| permission.name.clone())
+            .collect();
+        let mut granted: Vec<String> = manifest
+            .permissions()
+            .iter()
+            .filter(|permission| permission.required || on(&permission.name))
+            .map(|permission| permission.name.clone())
+            .collect();
+        granted.sort();
+        granted.dedup();
+        let mut grants = BTreeMap::new();
+        for state in connectors {
+            let Some(request) = manifest.connector(&state.id) else {
+                continue;
+            };
+            grants.insert(
+                state.id.clone(),
+                ConnectorGrant {
+                    origin: state.origin.clone(),
+                    version: state.version.clone(),
+                    granted: request.required || on(&state.id),
+                    destinations: state.destinations.clone(),
+                    operations: state.operations.clone(),
+                    account: state.account.as_ref().map(|account| AccountGrant {
+                        uses: account.uses,
+                        credential: account.credential.clone(),
+                        access: account.access.clone(),
+                    }),
+                },
+            );
+        }
+        self.change(|record| {
+            let previous = record.plugins.get(manifest.id().as_str()).cloned();
+            record.plugins.insert(
+                manifest.id().to_string(),
+                Entry {
+                    origin: origin.to_owned(),
+                    granted: granted.clone(),
+                    approved_version: manifest.version().to_owned(),
+                    approved_digest: digest.to_owned(),
+                    connectors: grants.clone(),
+                    storage_quota_bytes: manifest.storage().map(|storage| storage.quota_bytes),
+                    account_sources: Vec::new(),
                 },
             );
             let replaced = previous
@@ -978,6 +1108,7 @@ impl GrantStore {
                 let mut changed_record = record.clone();
                 let (value, changed) = apply(&mut changed_record)?;
                 if changed {
+                    remember_sources(&record, &mut changed_record);
                     *record = changed_record;
                 }
                 (value, changed)
@@ -987,8 +1118,10 @@ impl GrantStore {
                 // process in between is never lost (research R4).
                 let _lock = lock(path, true)?;
                 let mut record = load(path)?;
+                let previous = record.clone();
                 let (value, changed) = apply(&mut record)?;
                 if changed {
+                    remember_sources(&previous, &mut record);
                     write(path, &record)?;
                 }
                 (value, changed)
@@ -998,6 +1131,35 @@ impl GrantStore {
             self.generation.fetch_add(1, Ordering::AcqRel);
         }
         Ok(value)
+    }
+}
+
+/// Keeps every entry's account sources across a change (`Entry::account_sources`): an entry
+/// from the same origin as before keeps the ones it had, whatever the change wrote, and an entry
+/// that holds storage adds each connector it acts as an account through now. An entry from
+/// another origin starts with none: its store is another one.
+fn remember_sources(previous: &GrantRecord, record: &mut GrantRecord) {
+    for (id, entry) in &mut record.plugins {
+        let mut sources = std::mem::take(&mut entry.account_sources);
+        if let Some(before) = previous
+            .plugins
+            .get(id)
+            .filter(|before| before.origin == entry.origin)
+        {
+            sources.extend(before.account_sources.iter().cloned());
+        }
+        if entry.is_granted(STORAGE) {
+            sources.extend(
+                entry
+                    .connectors
+                    .keys()
+                    .filter(|connector| entry.uses_account(connector))
+                    .cloned(),
+            );
+        }
+        sources.sort();
+        sources.dedup();
+        entry.account_sources = sources;
     }
 }
 
@@ -1155,7 +1317,7 @@ mod tests {
         assert_eq!(
             record,
             json!({
-                "record_version": 4,
+                "record_version": 5,
                 "plugins": {
                     "local/probe": {
                         "origin": ORIGIN,
@@ -1312,6 +1474,7 @@ mod tests {
                     approved_digest: DIGEST.to_owned(),
                     connectors: BTreeMap::new(),
                     storage_quota_bytes: None,
+                    account_sources: Vec::new(),
                 })
             );
         });
@@ -1705,7 +1868,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_1_record_reads_as_version_4_without_connectors_and_is_written_back_as_4() {
+    fn a_version_1_record_reads_as_version_5_without_connectors_and_is_written_back_as_5() {
         let (_dir, store, path) = store_with_text(&format!(
             r#"{{"record_version":1,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}"}}}}}}"#
         ));
@@ -1717,7 +1880,7 @@ mod tests {
             .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
             .expect("approved");
         let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(record["record_version"], 4);
+        assert_eq!(record["record_version"], 5);
         assert_eq!(record["plugins"]["local/probe"]["granted"], json!(["log"]));
         // A version 1 record never has connectors
         let (_dir, store, _) = store_with_text(&format!(
@@ -2119,7 +2282,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_2_record_reads_as_version_4_and_is_written_back_as_4() {
+    fn a_version_2_record_reads_as_version_5_and_is_written_back_as_5() {
         let (_dir, store, path) = store_with_text(&format!(
             r#"{{"record_version":2,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{}}}}}}}}"#
         ));
@@ -2129,7 +2292,7 @@ mod tests {
             .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
             .expect("approved");
         let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(record["record_version"], 4);
+        assert_eq!(record["record_version"], 5);
         assert!(
             record["plugins"]["local/probe"]
                 .get("storage_quota_bytes")
@@ -2199,7 +2362,7 @@ mod tests {
         );
         let record: Value =
             serde_json::from_slice(&fs::read(store.path().unwrap()).unwrap()).unwrap();
-        assert_eq!(record["record_version"], 4);
+        assert_eq!(record["record_version"], 5);
         assert_eq!(
             record["plugins"]["local/private-notes"]["connectors"]["local/notes"]["account"],
             json!({ "uses": false, "credential": "sha256:4d1a", "access": [{ "name": "notes", "level": "read" }] })
@@ -2212,7 +2375,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_3_record_reads_as_version_4_and_an_older_one_never_holds_an_account() {
+    fn a_version_3_record_reads_as_version_5_and_an_older_one_never_holds_an_account() {
         let (_dir, store, path) = store_with_text(&format!(
             r#"{{"record_version":3,"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":["log"],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{"catalog/github":{{"origin":"catalog","version":"1.0.0","granted":true,"destinations":[],"operations":{{}}}}}}}}}}}}"#
         ));
@@ -2224,7 +2387,7 @@ mod tests {
             .approve(&manifest("local/other", "1.0.0", None), ORIGIN, DIGEST)
             .expect("approved");
         let record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(record["record_version"], 4);
+        assert_eq!(record["record_version"], 5);
         for version in [1, 2, 3] {
             let (_dir, store, _) = store_with_text(&format!(
                 r#"{{"record_version":{version},"plugins":{{"local/probe":{{"origin":"{ORIGIN}","granted":[],"approved_version":"1.0.0","approved_digest":"{DIGEST}","connectors":{{"local/notes":{{"origin":"/n.json","version":"1.0.0","granted":true,"destinations":[],"operations":{{}},"account":{{"uses":true,"credential":"sha256:1","access":[]}}}}}}}}}}}}"#

@@ -15,6 +15,7 @@ mod docs_reference;
 mod docs_walk;
 mod hostile;
 mod install_github;
+mod install_records;
 mod manifest_schema;
 mod network;
 mod permissions;

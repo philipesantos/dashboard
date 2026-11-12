@@ -3,6 +3,7 @@
 //! names.
 
 pub mod github;
+pub mod record;
 
 use std::time::Duration;
 
@@ -10,6 +11,7 @@ use crate::manifest::is_repository_id;
 use crate::{ErrorKind, RuntimeError};
 
 pub use github::{GitHub, Identity, Release, ReleaseSource};
+pub use record::{Installed, InstalledStore};
 
 /// The limits of fetching a release (`data-model.md`, Release fetch limits).
 #[derive(Debug, Clone)]

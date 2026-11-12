@@ -442,6 +442,30 @@ impl CheckedPackage {
         )
     }
 
+    /// Approves this package's installation from `origin` in the app's dialog: the required
+    /// permissions and connectors and the optional ones in `optional_on`, only when `expected` is
+    /// the approval digest of what the dialog showed (`specs/010-plugin-installation/`, FR-013,
+    /// FR-014; [`GrantStore::install`]). A package with a refused connector is refused.
+    pub fn install(
+        &self,
+        grants: &GrantStore,
+        origin: &str,
+        expected: &str,
+        optional_on: &[String],
+    ) -> Result<Approval, RuntimeError> {
+        if let Some((_, error)) = self.refused_connectors.first() {
+            return Err(error.clone());
+        }
+        grants.install(
+            &self.manifest,
+            origin,
+            &self.digest,
+            &self.connector_states(),
+            expected,
+            optional_on,
+        )
+    }
+
     /// Turns one optional connector of this package on or off, for packages from `origin`.
     pub fn set_connector(
         &self,

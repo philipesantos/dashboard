@@ -122,12 +122,12 @@ before any build of the app or the tests.
   download); `tag_name` `v<version>` or `<version>`; exactly one `.wasm` asset (`no-package-asset`
   otherwise), its `size` within the cap, its `digest` checked when present. The in-memory source for
   tests lives behind `#[cfg(test)]` or `test-network` (research R16).
-- [ ] T013 [P] Write `runtime/tests/install_records.rs`: `installed.json` round-trips, refuses
+- [X] T013 [P] Write `runtime/tests/install_records.rs`: `installed.json` round-trips, refuses
   unknown fields, writes atomically under its lock; the grant record reads versions 1 to 4 with
   `account_sources` empty and writes version 5; `GrantStore::install` builds a fresh entry (required
   items plus the given optionals) and ignores optionals on in an earlier entry of the same origin
   (`stale-optional`).
-- [ ] T014 Implement `runtime/src/install/record.rs` (`installed.json`, data-model.md: "key: a
+- [X] T014 Implement `runtime/src/install/record.rs` (`installed.json`, data-model.md: "key: a
   repository plugin id … never `local/`", `repository_id`, `tag`, `version`, `package_digest`,
   `compiled_digest`, `installed_at`), grant record version 5 with `account_sources` ("Sorted
   connector ids … Never shrinks while the store exists"), and `GrantStore::install` in
