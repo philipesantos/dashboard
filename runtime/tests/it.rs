@@ -13,6 +13,7 @@ mod contract;
 mod contract_v1;
 mod docs_reference;
 mod docs_walk;
+mod flows;
 mod hostile;
 mod install_github;
 mod install_records;

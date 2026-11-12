@@ -22,6 +22,7 @@ pub mod compile;
 pub mod cli;
 pub mod connector;
 mod error;
+pub mod flows;
 pub mod grants;
 mod host;
 pub mod install;

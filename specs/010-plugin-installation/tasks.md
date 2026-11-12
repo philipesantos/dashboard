@@ -132,14 +132,14 @@ before any build of the app or the tests.
   `compiled_digest`, `installed_at`), grant record version 5 with `account_sources` ("Sorted
   connector ids … Never shrinks while the store exists"), and `GrantStore::install` in
   `runtime/src/grants.rs`. T013 passes.
-- [ ] T015 [P] Write `runtime/tests/flows.rs`: `ask-little-then-more` (every subset of
+- [X] T015 [P] Write `runtime/tests/flows.rs`: `ask-little-then-more` (every subset of
   `install-account`'s optionals: a flow exactly when an account source and another destination are
   both held), `no-false-warning`, `account-then-elsewhere` (v1 account plus storage, v2 drops the
   account and adds a destination: still a flow, through `account_sources`), and `flow-not-hidden`
   (FR-018: a manifest that names the other destination under another case or with a trailing dot,
   or declares the account connector required beside an optional destination, still gives the
   flow).
-- [ ] T016 Implement `runtime/src/flows.rs` (`judge(entry_after, remembered) -> Vec<Flow>`,
+- [X] T016 Implement `runtime/src/flows.rs` (`judge(entry_after, remembered) -> Vec<Flow>`,
   research R7) and keep `account_sources` up to date wherever a grant is written in
   `runtime/src/grants.rs`. Replace the CLI's `data flow:` lines (`cli/mod.rs:1214-1248`,
   `:1329-1352`) with `judge`. T015 passes; the CLI's existing output tests are updated where the

@@ -1129,10 +1129,44 @@ fn describe_connectors(
             }
         }
     }
-    if let Some(flow) = data_flow(checked) {
-        text.push_str(&flow);
+    // What approving could let through: every declared connector on, and the account sources
+    // the store of this origin may still hold (specs/010-plugin-installation/research.md, R7)
+    let remembered = entry
+        .map(|entry| entry.account_sources.clone())
+        .unwrap_or_default();
+    text.push_str(&flow_lines(&runtime::flows::judge(
+        checked,
+        &|_| true,
+        &remembered,
+    )));
+    text
+}
+
+/// A `data flow:` line per flow (Principle III).
+fn flow_lines(flows: &[runtime::flows::Flow]) -> String {
+    let mut text = String::new();
+    for flow in flows {
+        let reach: Vec<String> = flow
+            .destinations
+            .iter()
+            .map(|origin| escape(origin))
+            .collect();
+        match &flow.source {
+            runtime::flows::Source::ThisMachine { origins } => {
+                let here: Vec<String> = origins.iter().map(|origin| escape(origin)).collect();
+                text.push_str(&format!(
+                    "data flow: data read from this machine ({}) can reach {}\n",
+                    here.join(", "),
+                    reach.join(", ")
+                ));
+            }
+            runtime::flows::Source::Account { connector } => text.push_str(&format!(
+                "data flow: data read as the account of {} can reach {}\n",
+                escape(connector),
+                reach.join(", ")
+            )),
+        }
     }
-    text.push_str(&account_data_flow(checked));
     text
 }
 
@@ -1222,44 +1256,6 @@ fn account_label(account: &Account) -> String {
     }
 }
 
-/// For each connector the widget uses with an account, a line naming every origin of its other
-/// destinations that data read as the account can reach (research R14, Principle III).
-fn account_data_flow(checked: &CheckedPackage) -> String {
-    let mut text = String::new();
-    for request in checked.manifest().connectors() {
-        let Some(credential) = request
-            .account
-            .then(|| {
-                checked
-                    .connectors()
-                    .iter()
-                    .find(|loaded| loaded.id() == request.id)
-                    .and_then(|loaded| loaded.connector().credential())
-            })
-            .flatten()
-        else {
-            continue;
-        };
-        let mut elsewhere: Vec<String> = Vec::new();
-        for loaded in checked.connectors() {
-            for origin in loaded.connector().destinations() {
-                let serialized = escape(&origin.serialization());
-                if !credential.origins().contains(origin) && !elsewhere.contains(&serialized) {
-                    elsewhere.push(serialized);
-                }
-            }
-        }
-        if !elsewhere.is_empty() {
-            text.push_str(&format!(
-                "data flow: data read as the account of {} can reach {}\n",
-                escape(&request.id),
-                elsewhere.join(", ")
-            ));
-        }
-    }
-    text
-}
-
 /// The parameters an operation sends: those in its path first, in order, then the rest by name.
 fn sends(operation: &runtime::connector::Operation) -> String {
     let parameters = operation.parameters();
@@ -1335,33 +1331,6 @@ fn fixed_body(value: &serde_json::Value, path: &str, fixed: &mut Vec<String>) {
         serde_json::Value::String(text) if runtime::connector::is_placeholder(text) => {}
         other => fixed.push(format!("{}: {}", escape(path), escape(&other.to_string()))),
     }
-}
-
-/// When a local connector reaches this machine and the widget can also reach another
-/// destination, a line says so (Principle III).
-fn data_flow(checked: &CheckedPackage) -> Option<String> {
-    let mut here = Vec::new();
-    let mut elsewhere = Vec::new();
-    for loaded in checked.connectors() {
-        for origin in loaded.connector().destinations() {
-            let serialized = escape(&origin.serialization());
-            let list = if origin.is_https() {
-                &mut elsewhere
-            } else {
-                &mut here
-            };
-            if !list.contains(&serialized) {
-                list.push(serialized);
-            }
-        }
-    }
-    (!here.is_empty() && !elsewhere.is_empty()).then(|| {
-        format!(
-            "data flow: data read from this machine ({}) can reach {}\n",
-            here.join(", "),
-            elsewhere.join(", ")
-        )
-    })
 }
 
 /// Grants every required permission the manifest declares, all at once (FR-018), after the
