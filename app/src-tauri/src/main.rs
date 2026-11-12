@@ -1,6 +1,20 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-fn main() {
-    dashboard_lib::run()
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    // The compile process, before Tauri or anything else of the app starts: the app compiles
+    // every installed package by starting itself with this one argument
+    // (specs/010-plugin-installation/research.md, R2)
+    let mut args = std::env::args_os().skip(1);
+    if args
+        .next()
+        .is_some_and(|arg| arg == runtime::compile::COMPILE_ARGUMENT)
+        && args.next().is_none()
+    {
+        return runtime::compile::child_main();
+    }
+    dashboard_lib::run();
+    ExitCode::SUCCESS
 }

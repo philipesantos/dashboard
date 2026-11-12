@@ -13,6 +13,7 @@ compile_error!(
 
 pub mod accounts;
 mod calls;
+pub mod compile;
 mod catalog;
 // The development CLI, a module so a test-only binary can run the same code
 // (specs/006-contract-v1-docs/research.md, R9)
@@ -87,7 +88,7 @@ pub(crate) mod v1 {
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
 /// component version and layer.
-const COMPONENT_PREAMBLE: [u8; 8] = [0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
+pub(crate) const COMPONENT_PREAMBLE: [u8; 8] = [0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
 
 /// Severity of a plugin log message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -917,6 +918,16 @@ impl Runtime {
     /// the package instead of refusing it, so `permissions` can show each refusal in its place.
     /// A package with such a connector can neither be approved nor loaded.
     pub fn inspect(&self, bytes: &[u8]) -> Result<CheckedPackage, RuntimeError> {
+        self.inspect_with(bytes, None)
+    }
+
+    /// [`inspect`](Self::inspect), with the component taken from `compiled`, a form the compile
+    /// process made and whose digest the caller checked, instead of compiled here.
+    fn inspect_with(
+        &self,
+        bytes: &[u8],
+        compiled: Option<&[u8]>,
+    ) -> Result<CheckedPackage, RuntimeError> {
         // Step 1: size and preamble
         if bytes.len() > self.limits.max_package_bytes {
             return Err(RuntimeError::new(
@@ -939,9 +950,25 @@ impl Runtime {
         // Step 3a: a storage quota within this host's cap, which may be lower than the schema's
         self.check_quota(&manifest)?;
         // Step 4: from_binary never accepts the text format, whatever Wasmtime features are
-        // enabled.
-        let component = Component::from_binary(&self.engine, bytes)
-            .map_err(|error| RuntimeError::new(ErrorKind::InvalidPackage, format!("{error:#}")))?;
+        // enabled. A form from the compile process is deserialized instead.
+        let component = match compiled {
+            None => Component::from_binary(&self.engine, bytes).map_err(|error| {
+                RuntimeError::new(ErrorKind::InvalidPackage, format!("{error:#}"))
+            })?,
+            // SAFETY: `deserialize` runs the machine code it is given. Only `load_compiled`
+            // passes a form here, after checking that its bytes are the ones whose digest the
+            // host recorded when its own compile process made them
+            // (specs/010-plugin-installation/research.md, R3); Wasmtime still refuses a form
+            // built by another engine version or configuration.
+            Some(compiled) => unsafe { Component::deserialize(&self.engine, compiled) }.map_err(
+                |error| {
+                    RuntimeError::new(
+                        ErrorKind::CompileFailed,
+                        format!("the compiled form cannot be used: {error:#}"),
+                    )
+                },
+            )?,
+        };
         // Steps 5 and 6: on names, before linking, so every refused import is named
         let interfaces = Interfaces::of(&self.engine, &component);
         let contract = permissions::check_component(&interfaces, &manifest)?;
@@ -1022,6 +1049,16 @@ impl Runtime {
         grants: Arc<GrantStore>,
     ) -> Result<Plugin, RuntimeError> {
         let package = self.check(bytes)?;
+        self.link(package, origin, grants)
+    }
+
+    /// Load steps 7–9 for a checked package.
+    fn link(
+        &self,
+        package: CheckedPackage,
+        origin: &str,
+        grants: Arc<GrantStore>,
+    ) -> Result<Plugin, RuntimeError> {
         // Read before the grants, so a change made while linking is seen on the next call
         let generation = grants.generation();
         let accounts_at_load = accounts_at_load(&package, self.options.data_dir());
@@ -1055,6 +1092,41 @@ impl Runtime {
         // Step 7a: kept data that no longer matches the package or its approval goes now
         plugin.kept_data();
         Ok(plugin)
+    }
+
+    /// [`load`](Self::load) for an installed package, from the form the compile process made of
+    /// it (`specs/010-plugin-installation/research.md`, R3). Nothing is read from disk here: the
+    /// caller passes the bytes and the digests it recorded when it installed them, and each is
+    /// checked on these very bytes before anything of them runs. A package that changed is
+    /// `package-changed`, and is never compiled again; a compiled form that changed, or that
+    /// Wasmtime refuses as made by another engine, is `compile-failed`, and the caller compiles
+    /// the package again, once.
+    pub fn load_compiled(
+        &self,
+        package: &[u8],
+        package_digest: &str,
+        compiled: &[u8],
+        compiled_digest: &str,
+        origin: &str,
+        grants: Arc<GrantStore>,
+    ) -> Result<Plugin, RuntimeError> {
+        if package::digest(package) != package_digest {
+            return Err(RuntimeError::new(
+                ErrorKind::PackageChanged,
+                "the installed package no longer matches the digest recorded when it was installed",
+            ));
+        }
+        if package::digest(compiled) != compiled_digest {
+            return Err(RuntimeError::new(
+                ErrorKind::CompileFailed,
+                "the compiled form no longer matches the digest recorded when it was made",
+            ));
+        }
+        let package = self.inspect_with(package, Some(compiled))?;
+        if let Some((_, error)) = package.refused_connectors.first() {
+            return Err(error.clone());
+        }
+        self.link(package, origin, grants)
     }
 }
 

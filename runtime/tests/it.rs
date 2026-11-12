@@ -8,6 +8,7 @@ mod common;
 mod accounts;
 mod actions;
 mod cli;
+mod compile;
 mod contract;
 mod contract_v1;
 mod docs_reference;

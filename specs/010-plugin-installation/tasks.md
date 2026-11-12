@@ -83,13 +83,13 @@ before any build of the app or the tests.
 
 **Purpose**: the pieces every story uses. Tests first, each failing until its code lands.
 
-- [ ] T007 Write `runtime/tests/compile.rs` (listed in `runtime/tests/it.rs`): the child spawned
+- [X] T007 Write `runtime/tests/compile.rs` (listed in `runtime/tests/it.rs`): the child spawned
   through the runtime's CLI binary with `--compile-package` returns a form that
   `Runtime::load_compiled` loads and renders for the `install-basic` fixture; it refuses WAT text
   even with the `wat` feature on; a fingerprint mismatch (a test hook) is `compile-failed`, never
   retried; `compiled-tampered` (one flipped byte: recompiled once, never deserialized) and
   `package-tampered` (`package-changed`).
-- [ ] T008 Implement `runtime/src/compile/mod.rs` and `compile/child.rs` without limits or
+- [X] T008 Implement `runtime/src/compile/mod.rs` and `compile/child.rs` without limits or
   confinement yet (research R2 steps 1, 2, 4, 5): `child_main()` prints the fingerprint
   (`Engine::precompile_compatibility_hash`), builds the engine from `engine_config()` and rayon's
   pool, reads at most `max_package_bytes` from standard input, checks the component preamble as
@@ -100,7 +100,7 @@ before any build of the app or the tests.
   log, caps the output at 64 MiB, and always waits for the child. Wire `--compile-package` before
   anything else in `runtime/src/bin/` (the CLI) and in `app/src-tauri/src/main.rs` before Tauri
   starts.
-- [ ] T009 Add `Runtime::load_compiled(package, compiled, origin, grants)` in `runtime/src/lib.rs`
+- [X] T009 Add `Runtime::load_compiled(package, compiled, origin, grants)` in `runtime/src/lib.rs`
   (research R3): reads nothing from disk; checks both digests against the caller's record on the
   bytes it was given; `unsafe { Component::deserialize(&compiled) }` (never `deserialize_file`); then
   the same `inspect` steps as `load` (`lib.rs:910-958`) with that component. T007's load cases pass.
