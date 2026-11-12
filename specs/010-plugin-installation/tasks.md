@@ -477,9 +477,10 @@ before any build of the app or the tests.
   on the three systems and record per system the `compile-heavy` time and peak (research R2), the
   largest gap of `window-responsive-while-compiling` (SC-003), the time of `install-on-time`
   (SC-001, without the network) and the probe's time.
-- [ ] T055 The maintainer's part, before the merge: the line-by-line review of the security core
+- [X] T055 The maintainer's part, before the merge: the line-by-line review of the security core
   (Principle IX); quickstart §6 (keyboard, screen reader, high contrast, reduced motion) and §5's
-  confinement check on Windows, macOS and Linux.
+  confinement check on Windows, macOS and Linux. Done: the maintainer reported the review done on
+  2026-11-12.
 - [ ] T056 Before the merge, and only when the maintainer asks, update the development guide: tick
   the Phase 3 items "Diálogo de instalação com permissões em linguagem clara" and "Instalação de
   plugin a partir do repositório do autor", noting constitution v2.7.0 and decision 0003.
