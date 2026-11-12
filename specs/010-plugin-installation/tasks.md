@@ -397,14 +397,14 @@ before any build of the app or the tests.
 
 **Independent Test**: spec US5; the probe; quickstart §6.
 
-- [ ] T043 [US5] Write the probe cases of research R11's table in `app/src/probe/dialogs.ts`, run
+- [X] T043 [US5] Write the probe cases of research R11's table in `app/src/probe/dialogs.ts`, run
   with the showcase and a hostile widget on screen and a dialog opened from the probe release
   source; add the five commands to `foreign-actions-refused` in `app/src/probe/widgets.ts`; list the
   new case ids in `PAGE_CASES` (`app/src-tauri/src/probe.rs`). Each fails until T044. Also
   `window-responsive-while-compiling` (SC-003): the page starts installing `compile-heavy` from the
   probe source and records the gaps between `requestAnimationFrame` callbacks and between 10 ms
   timers until the dialog opens; the case fails if any gap exceeds 100 ms, and reports the largest.
-- [ ] T044 [US5] Complete `app/src/host/HostDialog.tsx` (research R8): `inert` on `#root` while open,
+- [X] T044 [US5] Complete `app/src/host/HostDialog.tsx` (research R8): `inert` on `#root` while open,
   removed in the step that closes; outside pointer events prevented; its own `keydown` handler for
   Enter and Escape, not filtering on `isTrusted`; the 1000 ms input delay restarted on window
   `focus` and on input during it, the approve button disabled meanwhile; `onCloseAutoFocus` to the
@@ -416,7 +416,15 @@ before any build of the app or the tests.
   when it answers, assert in the HS-11 and HS-22 cases that the tree outside the dialog is empty.
   Done either way after one attempt on the Windows CI runner: if the call fails or needs developer
   tools on, record that in research R11 and leave the check to quickstart §6.
-- [ ] T046 [US5] Run the probe locally on Linux: every case of features 008, 009 and this one holds.
+- [X] T046 [US5] Run the probe locally on Linux: every case of features 008, 009 and this one holds.
+
+  Done on 2026-11-12: 82 cases held in three runs. `window-responsive-while-compiling` counts the
+  gaps until the dialog appears, not the interval in which the page draws it (119 ms with it,
+  34 to 40 ms without); `compile-heavy` takes 0.6 s from the add button to the dialog here. With
+  the dialog's inertness removed and its delay at zero, eight cases broke, among them
+  `dialog-makes-window-inert`, `dialog-input-delay` and `dialog-hides-the-rest`. T045 is open: it
+  is one attempt on the Windows CI runner, and the review step of quickstart §6 covers it until
+  then.
 
 **Checkpoint**: the dialog's form holds in the page; the review covers what untrusted events cannot.
 

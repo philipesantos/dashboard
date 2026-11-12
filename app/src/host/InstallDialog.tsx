@@ -61,7 +61,6 @@ export function InstallDialog({
   const [choice, setChoice] = useState(model.choice);
   const [working, setWorking] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  void opener;
 
   const toggle = (name: string, on: boolean) => {
     const next = on ? [...optionalOn, name] : optionalOn.filter((each) => each !== name);
@@ -113,6 +112,7 @@ export function InstallDialog({
       safeLabel="Cancelar"
       approveLabel={model.kind === "install" ? "Instalar" : "Atualizar"}
       approveDisabled={working}
+      opener={opener}
       onSafe={cancel}
       onApprove={approve}
       description={
@@ -128,7 +128,7 @@ export function InstallDialog({
         </p>
       }
     >
-      <div data-dialog-body className="max-h-[50vh] space-y-4 overflow-y-auto text-sm">
+      <div data-dialog-body className="space-y-4 text-sm">
         {warning.length > 0 && (
           <div role="alert" data-warning className="flex gap-2 rounded-md border border-destructive p-3 text-destructive">
             <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />

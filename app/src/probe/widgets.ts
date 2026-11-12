@@ -488,6 +488,12 @@ export const controlCases: Case[] = [
         "DISMISS",
         "dismiss ",
         "",
+        // The installation's commands (feature 010): widget content cannot reach them
+        "install_start",
+        "update_start",
+        "request_judge",
+        "request_approve",
+        "request_cancel",
       ];
       const problems: string[] = [];
       const before = (await context.counters()).actions;
