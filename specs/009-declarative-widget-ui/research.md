@@ -49,6 +49,17 @@ at the same time, and calls to different widgets can.
   failure, fixed in 97dcf89: the repository's manifest test refused `ui-badmanifest`, invalid on
   purpose. With the fix that test passes, and so do the test binaries the failure had stopped
   before (`widget-content`, `xtask`, the doc tests): 341 runtime tests pass, 4 ignored.
+  **On CI** (T035, pull request #21, first run, 2026-11-12):
+
+  | System | Probe release build | Probe run | Showcase drawn (from navigation start) | Build job |
+  | --- | --- | --- | --- | --- |
+  | Linux (ubuntu-24.04) | 7 min 3 s | 54 s | 661 ms (DOM ready 354 ms, load 578 ms) | 28 min 51 s |
+  | macOS (macos-latest) | 9 min 30 s | 25 s | 1,551 ms (DOM ready 369 ms, load 563 ms) | 23 min 44 s |
+  | Windows (windows-latest) | 11 min 54 s | 24 s | 906 ms (DOM ready 112 ms, load 112 ms) | 15 min 9 s, stopped at the probe |
+
+  Windows broke `frame-header-hittable`: WebView2 hit-tests the frame's rounded corners, so the
+  case's points 3 px from the top corners fell outside the curve, where nothing of the frame is.
+  The case now insets them by the corner's radius. The 40-minute limit holds on every system.
 - **macOS signing, later**: Cranelift writes executable memory, so a signed, hardened macOS build
   will need the `com.apple.security.cs.allow-jit` entitlement; the surface test reads
   entitlements, and must allow that one when the updater feature signs builds (Phase 6).

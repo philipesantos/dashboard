@@ -381,16 +381,28 @@ widgets through three reviewed commands; nothing is drawn yet.
   draw the same name each show their plugin's id; a chart's scale no longer overflows near the
   largest double. Not done: `login_providers` in a bundled package, obsolete and granting
   nothing.
-- [ ] T035 Only once the maintainer has pushed and opened the pull request, as they ask: follow
+- [X] T035 Only once the maintainer has pushed and opened the pull request, as they ask: follow
   CI on the three systems and record, per system, the probe's time and the showcase's
   first-render time from `showcase-on-time` (SC-001) in research R1.
-- [ ] T036 The maintainer's part, before the merge: the line-by-line review of the security core
+
+  Done on 2026-11-12, pull request #21: the times are in research R1; the showcase drew in
+  661 ms on Linux, 906 ms on Windows and 1,551 ms on macOS, from navigation start on a CI
+  runner. Windows broke `frame-header-hittable` on the frame's rounded corners, a fault of the
+  case, fixed.
+- [X] T036 The maintainer's part, before the merge: the line-by-line review of the security core
   (Principle IX); quickstart §7 (keyboard, screen reader, narrow frames, forced colors and
   reduced motion) on Windows, macOS and Linux.
-- [ ] T037 Before the merge, and only when the maintainer asks, update the development guide:
+
+  The maintainer reviewed the pull request line by line on 2026-11-11. Quickstart §7 was not
+  walked before the merge, by the maintainer's decision: it stays open for a later walk on the
+  three systems, as feature 008's Windows and macOS walks did.
+- [X] T037 Before the merge, and only when the maintainer asks, update the development guide:
   tick the Phase 3 items "Biblioteca de UI declarativa" and "Moldura do host em cada widget",
   noting contract 1.4.0 and constitution v2.6.2 and v2.6.3.
-- [ ] T038 Merge:
+
+  Done on 2026-11-12 at the maintainer's request: both items ticked, each with its note (guide
+  rev 151).
+- [X] T038 Merge:
   - The maintainer reviewed the pull request line by line.
   - CI is green on the three systems.
   - `grep -n '^- \[ \]' specs/009-declarative-widget-ui/tasks.md` shows only this task.
