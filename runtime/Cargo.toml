@@ -89,6 +89,17 @@ wasmtime = { version = "50", default-features = false, features = [
 # synchronous; never the `vendored` feature, whose libdbus C sources are AFL-2.1 or GPL-2.0
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = { version = "=1.1.0", default-features = false }
+# The compile process (specs/010-plugin-installation/research.md, R13): an AppContainer, its own
+# job object with the limits, and its pipes; already in the lock through Wasmtime
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Isolation",
+    "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "=1.0.2", features = ["keychain"] }

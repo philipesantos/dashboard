@@ -3467,6 +3467,7 @@ dependencies = [
  "wat",
  "widget-content",
  "windows-native-keyring-store",
+ "windows-sys 0.61.2",
  "wit-component 0.262.0",
  "wit-parser 0.261.0",
  "zeroize",

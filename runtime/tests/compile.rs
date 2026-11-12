@@ -184,7 +184,6 @@ fn a_compile_past_its_wall_time_is_refused_naming_it() {
 }
 
 /// `compile-cpu`: the system's CPU time limit (`RLIMIT_CPU`; the job's on Windows).
-#[cfg(unix)]
 #[test]
 fn a_compile_past_its_cpu_time_is_refused_naming_it() {
     let error = limited(CompileLimits {
@@ -199,7 +198,6 @@ fn a_compile_past_its_cpu_time_is_refused_naming_it() {
 
 /// `compile-memory`: the system's memory limit (`RLIMIT_DATA` on Linux; the job's on Windows; the
 /// child's own watchdog on macOS).
-#[cfg(target_os = "linux")]
 #[test]
 fn a_compile_past_its_memory_is_refused_naming_it() {
     let error = limited(CompileLimits {
@@ -227,16 +225,70 @@ fn a_compiled_form_over_its_cap_is_refused() {
     );
 }
 
-/// `compile-confined` (FR-029): once confined, the child can open neither a file nor a socket.
-#[cfg(target_os = "linux")]
+/// `compile-confined` (FR-029): once confined, the child can neither open a file of the user's
+/// nor reach a port on loopback, on each system (seccomp and Landlock; the macOS sandbox; an
+/// AppContainer).
 #[test]
-fn the_compile_process_can_open_neither_a_file_nor_a_socket() {
+#[allow(
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    reason = "the port the confined child must not reach"
+)]
+fn the_compile_process_can_open_no_file_and_reach_no_network() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("its address").port();
     let error = compiler()
-        .trying_to_escape()
+        .trying_to_escape(port)
         .compile(&fixture("hello-widget"))
         .expect_err("the escape ends the compile");
-    assert_eq!(error.kind(), ErrorKind::CompileFailed, "{error}");
     assert!(!error.to_string().contains("escaped"), "{error}");
     // Confined as it is, a compile still works
     assert!(compiler().compile(&fixture("hello-widget")).is_ok());
+}
+
+/// T042: `compile-heavy`, a package just under the cap, through the real compile process under
+/// the default limits. CI runs it in a step of its own, after the tests, and prints its time and
+/// the peak memory of this process's children (the compile process alone there), so research R2
+/// can record them per system and a limit can be moved before a legitimate package nears it.
+#[test]
+#[ignore = "a measurement CI runs on its own: cargo test ... -- --ignored compile::measure_"]
+fn measure_compile_heavy_under_the_default_limits() {
+    let limits = CompileLimits::default();
+    let started = std::time::Instant::now();
+    let compiled = limited(limits.clone())
+        .compile(&fixture("compile-heavy"))
+        .expect("a legitimate package compiles under the default limits");
+    let elapsed = started.elapsed();
+    #[cfg(unix)]
+    let peak = {
+        // SAFETY: getrusage fills the zeroed struct it is given
+        let usage = unsafe {
+            let mut usage: libc::rusage = std::mem::zeroed();
+            libc::getrusage(libc::RUSAGE_CHILDREN, &mut usage);
+            usage
+        };
+        // Kilobytes on Linux, bytes on macOS
+        let bytes = if cfg!(target_os = "macos") {
+            usage.ru_maxrss as u64
+        } else {
+            usage.ru_maxrss as u64 * 1024
+        };
+        format!("{} MiB resident at most", bytes / (1024 * 1024))
+    };
+    #[cfg(not(unix))]
+    let peak = "not measured here (the job's accounting is not read)".to_owned();
+    println!(
+        "compile-heavy: {} ms with {} threads, {peak}; the form is {} MiB (limits: {} s wall, {} s CPU, {} MiB)",
+        elapsed.as_millis(),
+        limits.threads,
+        compiled.len() / (1024 * 1024),
+        limits.wall_time.as_secs(),
+        limits.cpu_time.as_secs(),
+        limits.memory_bytes / (1024 * 1024)
+    );
+    // Half of a limit is the line the research sets for moving it
+    assert!(
+        elapsed < limits.wall_time / 2,
+        "{elapsed:?} is past half the wall-clock limit"
+    );
 }

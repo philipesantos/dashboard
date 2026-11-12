@@ -41,11 +41,11 @@ fn run() -> Result<(), String> {
         .map_err(|error| format!("the compile threads: {error}"))?;
     confine()?;
     #[cfg(feature = "test-network")]
-    if std::env::args_os()
+    if let Some(port) = std::env::args()
         .nth(2)
-        .is_some_and(|arg| arg == super::TRY_ESCAPE)
+        .and_then(|arg| arg.strip_prefix(super::TRY_ESCAPE)?.parse::<u16>().ok())
     {
-        try_escape();
+        try_escape(port);
     }
 
     let max = Limits::default().max_package_bytes;
@@ -73,35 +73,43 @@ fn run() -> Result<(), String> {
     out.flush().map_err(|error| error.to_string())
 }
 
-/// Confines this process before it reads anything from the parent (research R13).
+/// Confines this process before it reads anything from the parent (research R13): itself on
+/// Linux and macOS; on Windows the parent created it already confined, in an AppContainer.
 fn confine() -> Result<(), String> {
+    let refused = |error: String| format!("the compile process could not confine itself: {error}");
     #[cfg(target_os = "linux")]
-    return super::confine_linux::confine()
-        .map_err(|error| format!("the compile process could not confine itself: {error}"));
-    #[cfg(not(target_os = "linux"))]
-    Ok(())
+    return super::confine_linux::confine().map_err(refused);
+    #[cfg(target_os = "macos")]
+    {
+        let memory = std::env::var(super::MEMORY_VARIABLE)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok());
+        return super::confine_macos::confine(memory).map_err(refused);
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = refused;
+        Ok(())
+    }
 }
 
-/// The runtime's tests only (`compile-confined`): once confined, tries to open a file and a
-/// socket, and says so on its error stream and exits 3 if either worked. Confined, the first try
-/// ends the process.
+/// The runtime's tests only (`compile-confined`): once confined, tries to open a file of the
+/// user's (`Cargo.toml` in the current folder, the runtime's own) and to reach `port` on
+/// loopback, where the test listens; says so on its error stream and exits 3 if either worked.
+/// Confined, the file is refused and the connection either refused or the end of the process.
 #[cfg(feature = "test-network")]
-fn try_escape() {
-    let file = std::fs::File::open("/etc/hostname").is_ok()
-        || std::fs::File::open("C:\\Windows\\win.ini").is_ok();
-    #[cfg(unix)]
-    // SAFETY: socket(2) with constant arguments; the descriptor is closed if it was made
-    let socket = unsafe {
-        let fd = libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0);
-        if fd >= 0 {
-            libc::close(fd);
-        }
-        fd >= 0
-    };
-    #[cfg(not(unix))]
-    let socket = false;
-    if file || socket {
-        let _ = writeln!(std::io::stderr(), "escaped: file {file}, socket {socket}");
+#[allow(
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    reason = "a test of the confinement, not a request: it must fail"
+)]
+fn try_escape(port: u16) {
+    let file = std::fs::File::open("Cargo.toml").is_ok();
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let network =
+        std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(2)).is_ok();
+    if file || network {
+        let _ = writeln!(std::io::stderr(), "escaped: file {file}, network {network}");
         std::process::exit(3);
     }
 }

@@ -13,10 +13,15 @@
 mod child;
 #[cfg(target_os = "linux")]
 mod confine_linux;
+#[cfg(target_os = "macos")]
+mod confine_macos;
+#[cfg(windows)]
+mod confine_windows;
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,10 +37,10 @@ use crate::{ErrorKind, Limits, RuntimeError, engine_config, text};
 /// The only argument that starts the compile process.
 pub const COMPILE_ARGUMENT: &str = "--compile-package";
 
-/// The runtime's tests only: after this argument, the child tries to escape its confinement
-/// (`compile-confined`, task T037).
+/// The runtime's tests only: after this argument, `--try-escape=<port>`, the child tries to escape
+/// its confinement (`compile-confined`, task T037).
 #[cfg(feature = "test-network")]
-pub const TRY_ESCAPE: &str = "--try-escape";
+pub const TRY_ESCAPE: &str = "--try-escape=";
 
 /// Whether this process was started as the compile process: its only argument is
 /// [`COMPILE_ARGUMENT`] (and, in the runtime's tests, [`TRY_ESCAPE`] after it). The app and the
@@ -48,13 +53,90 @@ pub fn is_compile_invocation() -> bool {
     match args.next() {
         None => true,
         #[cfg(feature = "test-network")]
-        Some(arg) if arg == TRY_ESCAPE => args.next().is_none(),
+        Some(arg) if arg.to_string_lossy().starts_with(TRY_ESCAPE) => args.next().is_none(),
         Some(_) => false,
     }
 }
 
 /// The child refused the package; the reason is on its error stream.
 const EXIT_REFUSED: u8 = 2;
+
+/// The variable that carries the memory limit to the child, which enforces it itself on macOS,
+/// where the system does not (research R2).
+const MEMORY_VARIABLE: &str = "DASHBOARD_COMPILE_MEMORY_BYTES";
+
+/// A compile process the parent drives: its three pipes, and how it ends. A
+/// `std::process::Child` on Unix; on Windows, a process the parent created itself, in an
+/// AppContainer and a job object (`confine_windows.rs`).
+trait Running {
+    fn stdin(&mut self) -> Option<Box<dyn Write + Send>>;
+    fn stdout(&mut self) -> Option<Box<dyn Read + Send>>;
+    fn stderr(&mut self) -> Option<Box<dyn Read + Send>>;
+    fn try_wait(&mut self) -> std::io::Result<Option<Ended>>;
+    fn kill(&mut self);
+    fn wait(&mut self);
+}
+
+/// How a compile process ended.
+#[derive(Debug, Clone)]
+struct Ended {
+    success: bool,
+    /// The exit code, when it exited.
+    #[cfg_attr(not(windows), allow(dead_code, reason = "read on Windows"))]
+    code: Option<i32>,
+    /// The signal that ended it, on Unix.
+    #[cfg_attr(windows, allow(dead_code, reason = "read on Unix"))]
+    signal: Option<i32>,
+    /// As the system says it, for a refusal's detail.
+    shown: String,
+}
+
+#[cfg(not(windows))]
+impl Running for Child {
+    fn stdin(&mut self) -> Option<Box<dyn Write + Send>> {
+        self.stdin
+            .take()
+            .map(|pipe| Box::new(pipe) as Box<dyn Write + Send>)
+    }
+
+    fn stdout(&mut self) -> Option<Box<dyn Read + Send>> {
+        self.stdout
+            .take()
+            .map(|pipe| Box::new(pipe) as Box<dyn Read + Send>)
+    }
+
+    fn stderr(&mut self) -> Option<Box<dyn Read + Send>> {
+        self.stderr
+            .take()
+            .map(|pipe| Box::new(pipe) as Box<dyn Read + Send>)
+    }
+
+    fn try_wait(&mut self) -> std::io::Result<Option<Ended>> {
+        Ok(Child::try_wait(self)?.map(|status| {
+            #[cfg(unix)]
+            let signal = {
+                use std::os::unix::process::ExitStatusExt;
+                status.signal()
+            };
+            #[cfg(not(unix))]
+            let signal = None;
+            Ended {
+                success: status.success(),
+                code: status.code(),
+                signal,
+                shown: status.to_string(),
+            }
+        }))
+    }
+
+    fn kill(&mut self) {
+        let _ = Child::kill(self);
+    }
+
+    fn wait(&mut self) {
+        let _ = Child::wait(self);
+    }
+}
 
 /// How often the parent looks at the child while it runs.
 const POLL: Duration = Duration::from_millis(10);
@@ -98,9 +180,9 @@ pub struct Compiler {
     limits: CompileLimits,
     /// The fingerprint the child's engine must have: this process's own.
     expected: u64,
-    /// The runtime's tests only: the child tries to escape once confined.
+    /// The runtime's tests only: the loopback port the child tries to reach once confined.
     #[cfg(feature = "test-network")]
-    try_escape: bool,
+    try_escape: Option<u16>,
 }
 
 impl Compiler {
@@ -128,7 +210,7 @@ impl Compiler {
             limits,
             expected: own_fingerprint(),
             #[cfg(feature = "test-network")]
-            try_escape: false,
+            try_escape: None,
         }
     }
 
@@ -139,11 +221,12 @@ impl Compiler {
         self
     }
 
-    /// The runtime's tests only: the child tries to open a file and a socket once confined.
+    /// The runtime's tests only: the child tries to open a file of the user's and to reach
+    /// `port` on loopback once confined.
     #[cfg(feature = "test-network")]
     #[doc(hidden)]
-    pub fn trying_to_escape(mut self) -> Compiler {
-        self.try_escape = true;
+    pub fn trying_to_escape(mut self, port: u16) -> Compiler {
+        self.try_escape = Some(port);
         self
     }
 
@@ -174,47 +257,78 @@ impl Compiler {
                 format!("the package is larger than the limit of {max} bytes"),
             ));
         }
-        let mut child = self.spawn()?;
-        let outcome = self.run(&mut child, package, cancel);
-        // Whatever happened, the child is gone before this returns
-        let _ = child.kill();
-        let _ = child.wait();
-        outcome
-    }
-
-    fn spawn(&self) -> Result<Child, RuntimeError> {
-        let mut command = Command::new(&self.executable);
-        command.arg(COMPILE_ARGUMENT);
-        #[cfg(feature = "test-network")]
-        if self.try_escape {
-            command.arg(TRY_ESCAPE);
-        }
-        command
-            .env_clear()
-            .env("RAYON_NUM_THREADS", self.limits.threads.to_string())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        // Windows needs SystemRoot to start a process at all; an AppImage finds its libraries
-        // through LD_LIBRARY_PATH
-        for kept in ["SystemRoot", "LD_LIBRARY_PATH"] {
-            if let Some(value) = std::env::var_os(kept) {
-                command.env(kept, value);
-            }
-        }
-        #[cfg(unix)]
-        self.limit_before_exec(&mut command);
-        command.spawn().map_err(|error| {
+        let mut child = self.spawn().map_err(|error| {
             RuntimeError::new(
                 ErrorKind::CompileFailed,
                 format!("the compile process could not start: {error}"),
             )
-        })
+        })?;
+        let outcome = self.run(child.as_mut(), package, cancel);
+        // Whatever happened, the child is gone before this returns
+        child.kill();
+        child.wait();
+        outcome
+    }
+
+    /// The arguments the child gets after the executable.
+    fn arguments(&self) -> Vec<String> {
+        #[allow(unused_mut, reason = "the tests' build adds one")]
+        let mut arguments = vec![COMPILE_ARGUMENT.to_owned()];
+        #[cfg(feature = "test-network")]
+        if let Some(port) = self.try_escape {
+            arguments.push(format!("{TRY_ESCAPE}{port}"));
+        }
+        arguments
+    }
+
+    /// The child's whole environment: its thread count and memory limit, and what a process
+    /// needs to start (Windows's SystemRoot; an AppImage's LD_LIBRARY_PATH).
+    fn environment(&self) -> Vec<(String, std::ffi::OsString)> {
+        let mut environment = vec![
+            (
+                "RAYON_NUM_THREADS".to_owned(),
+                self.limits.threads.to_string().into(),
+            ),
+            (
+                MEMORY_VARIABLE.to_owned(),
+                self.limits.memory_bytes.to_string().into(),
+            ),
+        ];
+        for kept in ["SystemRoot", "LD_LIBRARY_PATH"] {
+            if let Some(value) = std::env::var_os(kept) {
+                environment.push((kept.to_owned(), value));
+            }
+        }
+        environment
+    }
+
+    #[cfg(not(windows))]
+    fn spawn(&self) -> std::io::Result<Box<dyn Running>> {
+        let mut command = Command::new(&self.executable);
+        command
+            .args(self.arguments())
+            .env_clear()
+            .envs(self.environment())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        self.limit_before_exec(&mut command);
+        Ok(Box::new(command.spawn()?))
+    }
+
+    #[cfg(windows)]
+    fn spawn(&self) -> std::io::Result<Box<dyn Running>> {
+        confine_windows::spawn(
+            &self.executable,
+            &self.arguments(),
+            &self.environment(),
+            &self.limits,
+        )
     }
 
     /// The limits a Unix child gets before it runs anything: its CPU time, its memory (Linux),
     /// a below-normal priority, and, on Linux, death when its parent dies.
-    #[cfg(unix)]
+    #[cfg(not(windows))]
     fn limit_before_exec(&self, command: &mut Command) {
         use std::os::unix::process::CommandExt;
         let cpu = self.limits.cpu_time.as_secs().max(1) as libc::rlim_t;
@@ -253,21 +367,22 @@ impl Compiler {
 
     fn run(
         &self,
-        child: &mut Child,
+        child: &mut dyn Running,
         package: &[u8],
         cancel: &AtomicBool,
     ) -> Result<Vec<u8>, RuntimeError> {
         let failed = |reason: String| RuntimeError::new(ErrorKind::CompileFailed, reason);
         let over_output = Arc::new(AtomicBool::new(false));
+        let piped = || failed("the compile process has no pipes".to_owned());
 
-        let mut stdin = child.stdin.take().expect("stdin is piped");
+        let mut stdin = child.stdin().ok_or_else(piped)?;
         let input = package.to_vec();
         let writer = thread::spawn(move || {
             // A child that stops reading closes the pipe; what it says is in its exit
             let _ = stdin.write_all(&input);
         });
 
-        let mut stdout = child.stdout.take().expect("stdout is piped");
+        let mut stdout = child.stdout().ok_or_else(piped)?;
         let max_output = self.limits.max_compiled_bytes as u64 + 8;
         let over = Arc::clone(&over_output);
         let reader = thread::spawn(move || {
@@ -279,7 +394,7 @@ impl Compiler {
             read.map(|_| output)
         });
 
-        let mut stderr = child.stderr.take().expect("stderr is piped");
+        let mut stderr = child.stderr().ok_or_else(piped)?;
         let max_stderr = self.limits.max_stderr_bytes as u64;
         let errors = thread::spawn(move || {
             let mut text = Vec::new();
@@ -292,13 +407,13 @@ impl Compiler {
         let deadline = Instant::now() + self.limits.wall_time;
         let status = loop {
             if cancel.load(Ordering::SeqCst) {
-                let _ = child.kill();
-                let _ = child.wait();
+                child.kill();
+                child.wait();
                 return Err(failed("the compile was cancelled".to_owned()));
             }
             if over_output.load(Ordering::SeqCst) {
-                let _ = child.kill();
-                let _ = child.wait();
+                child.kill();
+                child.wait();
                 return Err(failed(format!(
                     "the compiled form is larger than the limit of {} bytes",
                     self.limits.max_compiled_bytes
@@ -307,8 +422,8 @@ impl Compiler {
             match child.try_wait() {
                 Ok(Some(status)) => break status,
                 Ok(None) if Instant::now() >= deadline => {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    child.kill();
+                    child.wait();
                     return Err(RuntimeError::new(
                         ErrorKind::CompileTimeLimit,
                         format!(
@@ -343,9 +458,9 @@ impl Compiler {
                 ));
             }
         }
-        if !status.success() {
+        if !status.success {
             let said = String::from_utf8_lossy(&stderr);
-            if self.ran_out_of_time(&status) {
+            if ran_out_of_time(&status) {
                 return Err(RuntimeError::new(
                     ErrorKind::CompileTimeLimit,
                     format!(
@@ -365,7 +480,7 @@ impl Compiler {
             }
             let reason = text::untrusted(&said, 1024);
             return Err(failed(if reason.trim().is_empty() {
-                format!("the compile process stopped ({status})")
+                format!("the compile process stopped ({})", status.shown)
             } else {
                 reason.trim().to_owned()
             }));
@@ -379,20 +494,18 @@ impl Compiler {
     }
 }
 
-impl Compiler {
-    /// Whether the child ended on its CPU time limit: `SIGXCPU` on Unix, which the kernel sends
-    /// at the soft limit (`SIGKILL` follows a second later, at the hard one).
-    fn ran_out_of_time(&self, status: &std::process::ExitStatus) -> bool {
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::ExitStatusExt;
-            matches!(status.signal(), Some(libc::SIGXCPU))
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = status;
-            false
-        }
+/// Whether the child ended on its CPU time limit: `SIGXCPU` on Unix, which the kernel sends at
+/// the soft limit (`SIGKILL` follows a second later, at the hard one); on Windows, the exit code
+/// a job gives a process past its time limit, `ERROR_NOT_ENOUGH_QUOTA`.
+fn ran_out_of_time(ended: &Ended) -> bool {
+    #[cfg(unix)]
+    return ended.signal == Some(libc::SIGXCPU);
+    #[cfg(windows)]
+    return ended.code == Some(confine_windows::TIME_LIMIT_EXIT_CODE);
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = ended;
+        false
     }
 }
 

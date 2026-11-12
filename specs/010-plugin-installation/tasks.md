@@ -356,6 +356,11 @@ before any build of the app or the tests.
   `sandbox_init` with `kSBXProfilePureComputation`; the watchdog thread sampling the child's own
   physical footprint every 50 ms and exiting with 86 above `memory_bytes`, and exiting when
   `getppid()` changes.
+
+  Written on 2026-11-12 (`runtime/src/compile/confine_macos.rs`), not compiled or run yet: this
+  session had no macOS. The watchdog reads the peak resident memory with `getrusage`, which the
+  sandbox allows, rather than `proc_pid_rusage`; the profile is passed by name. Open until CI on
+  macOS runs `compile-memory` and `compile-confined` green (T054).
 - [ ] T041 [P] [US4] Windows confinement and limits in `runtime/src/compile/confine_windows.rs`
   (`windows-sys` as a direct Windows dependency): an AppContainer with no capabilities, read and
   execute granted on the app's install directory when it is per-user; a job object with the memory
@@ -363,10 +368,24 @@ before any build of the app or the tests.
   assigned before the first byte is written; `BELOW_NORMAL_PRIORITY_CLASS`; attribution from the
   job's accounting. If AppContainer cannot start the binary, the restricted low-integrity fallback,
   and the residual recorded in research R13.
-- [ ] T042 [US4] CI in `.github/workflows/ci.yml`: a step on the three systems compiles
+
+  Written on 2026-11-12 (`runtime/src/compile/confine_windows.rs`): the process created by hand,
+  since `CommandExt::raw_attribute` is still unstable in Rust 1.100; it is checked with clippy for
+  `x86_64-pc-windows-gnu` here, not run. The parent drives either kind of child through one
+  `Running` trait. No fallback to a restricted token is written: if CI shows the AppContainer
+  cannot start the binary, the fallback comes then. Open until CI on Windows runs `compile-cpu`,
+  `compile-memory` and `compile-confined` green (T054).
+- [X] T042 [US4] CI in `.github/workflows/ci.yml`: a step on the three systems compiles
   `compile-heavy` through the real child under the default limits and prints its wall time and peak
   memory as each system counts it; `compile-confined` runs in the test step. Record the numbers in
   research R2 and adjust a limit if a legitimate package comes within half of it.
+
+  Done on 2026-11-12: the step runs `compile::measure_compile_heavy_under_the_default_limits`, an
+  ignored test, alone. Here (Linux, 12 threads, 6 for the compile): 1.1 s and 106 MiB resident at
+  most, against 20 s and 1.5 GiB. `compile-confined` is now the same test on the three systems: a
+  file of the user's and a port on loopback, which every system's confinement refuses; turned off
+  on Linux, the test breaks ("escaped: file true, network true"), which it did not before the CLI
+  recognised the hook (the CLI's own check of the invocation had not been replaced in T008).
 
 **Checkpoint**: a hostile package is refused by limit, and the compiler cannot reach the user's data.
 

@@ -154,18 +154,10 @@ fn host() -> &'static Host {
 pub fn main() -> ExitCode {
     // The compile process, before anything else of the CLI (specs/010-plugin-installation/
     // research.md, R2): the tests start this binary as the app starts its own
-    if is_compile_process() {
+    if crate::compile::is_compile_invocation() {
         return crate::compile::child_main();
     }
     main_with(Host::system())
-}
-
-/// True when the only argument is `--compile-package`.
-fn is_compile_process() -> bool {
-    let mut args = std::env::args_os().skip(1);
-    args.next()
-        .is_some_and(|arg| arg == crate::compile::COMPILE_ARGUMENT)
-        && args.next().is_none()
 }
 
 /// As [`main`], on `host`.
