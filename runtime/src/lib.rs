@@ -1469,11 +1469,21 @@ impl Plugin {
     /// the two went (feature 009, research R7).
     fn newest_data(&self) -> Option<kept::Kept> {
         let from_update = self.kept_data();
-        let from_action = self
-            .action_data
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
+        let from_action = {
+            let mut action = self
+                .action_data
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            // Dropped, as an update's would be, once what it ran under changed
+            let current = match (action.as_ref(), self.data_key()) {
+                (Some(kept), Some(key)) => kept::stale(kept, &key).is_none(),
+                _ => false,
+            };
+            if !current {
+                *action = None;
+            }
+            action.clone()
+        };
         kept::newest(from_update, from_action)
     }
 
@@ -1546,13 +1556,10 @@ impl Plugin {
                 .action_data
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            *kept = Some(kept::in_memory(
-                kept.take(),
-                self.manifest().id().as_str(),
-                &self.origin,
-                &result,
-                now,
-            ));
+            // Without an approval any more, nothing is kept
+            *kept = self
+                .data_key()
+                .map(|key| kept::in_memory(kept.take(), &key, &result, now));
         }
         UpdateReport {
             result,
@@ -1768,6 +1775,12 @@ impl Plugin {
     /// its package, its approval digest and the connectors that are on.
     fn kept_key(&self) -> Option<kept::Key> {
         self.package.interfaces.updater()?;
+        self.data_key()
+    }
+
+    /// What data kept for this plugin, by an update or an action, was read under: the package,
+    /// the approval, the connectors on and the accounts it acts as; `None` without an approval.
+    fn data_key(&self) -> Option<kept::Key> {
         let entry = self.grants.entry(self.manifest().id()).ok().flatten()?;
         let mut connectors_on: Vec<String> = entry
             .connectors

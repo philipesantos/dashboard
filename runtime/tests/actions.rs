@@ -389,6 +389,68 @@ fn an_action_reaches_no_further_than_its_grants() {
 }
 
 #[test]
+fn an_action_s_data_goes_when_what_it_ran_under_changes() {
+    let pki = TestPki::new();
+    let server = Server::https(&pki.leaf(&["api.echo.test"]));
+    server.route("/look", Reply::json(r#"{"ok":true}"#));
+    let world = echo_world(&pki, &server);
+    let text = manifest(
+        "local/action-steps",
+        &["save"],
+        json!({
+            "permissions": [{ "name": "storage", "required": true, "quota_bytes": 65536 }],
+            "connectors": [{ "id": "catalog/echo", "major": 1,
+                              "operations": ["look"], "required": false }]
+        }),
+    );
+    let package = repack(&fixture("action-steps"), &text);
+    let parsed = runtime::manifest::Manifest::parse(text.as_bytes()).unwrap();
+    let plugin = world.approve_and_load(&package);
+    let set_echo = |on: bool| {
+        world
+            .grants
+            .set_connector(&parsed, common::TEST_ORIGIN, "catalog/echo", on)
+            .unwrap();
+    };
+    let look = json!([{ "op": "call", "connector": "catalog/echo", "operation": "look" }]);
+    let data =
+        |plugin: &runtime::Plugin| plugin.render("{}").result.unwrap()["document"]["data"].clone();
+
+    // Read with the connector on: kept for the next render
+    set_echo(true);
+    let answered = plugin
+        .act("save", &steps(look.clone(), "ok"), &none())
+        .result
+        .unwrap();
+    assert_eq!(answers(&answered)[0], json!({ "ok": 200 }));
+    assert_eq!(data(&plugin)["from"], "action");
+
+    // The connector turned off: what it read goes, as an update's data would
+    set_echo(false);
+    assert_eq!(
+        data(&plugin),
+        Value::Null,
+        "the action's data outlived its connector"
+    );
+
+    // On again and read again, then the approval removed: it goes too
+    set_echo(true);
+    plugin
+        .act("save", &steps(look, "ok"), &none())
+        .result
+        .unwrap();
+    assert_eq!(data(&plugin)["from"], "action");
+    world.grants.remove(parsed.id()).unwrap();
+    assert!(
+        plugin
+            .render("{}")
+            .result
+            .map_or(true, |document| document["document"]["data"].is_null()),
+        "the action's data outlived its approval"
+    );
+}
+
+#[test]
 fn an_action_runs_under_the_limits_of_an_update() {
     let world = World::production_with(
         Limits {
