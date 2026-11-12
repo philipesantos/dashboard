@@ -474,7 +474,15 @@ pub(super) fn spawn(
         )
     };
     if created == 0 {
-        return Err(last_error("CreateProcessW in the AppContainer"));
+        // Read before anything else can change the thread's last error
+        let error = std::io::Error::last_os_error();
+        return Err(std::io::Error::new(
+            error.kind(),
+            format!(
+                "CreateProcessW in the AppContainer, for {}: {error}",
+                executable.display()
+            ),
+        ));
     }
     let handle = Owned(process.hProcess);
     let thread = Owned(process.hThread);

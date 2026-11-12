@@ -197,11 +197,13 @@ fn a_compile_past_its_cpu_time_is_refused_naming_it() {
 }
 
 /// `compile-memory`: the system's memory limit (`RLIMIT_DATA` on Linux; the job's on Windows; the
-/// child's own watchdog on macOS).
+/// child's own watchdog on macOS). The watchdog reads the peak every 50 ms, so on macOS the limit
+/// is one `compile-heavy` passes mid-compile, not near its end (its peak is about 104 MiB).
 #[test]
 fn a_compile_past_its_memory_is_refused_naming_it() {
+    let mebibytes = if cfg!(target_os = "macos") { 48 } else { 96 };
     let error = limited(CompileLimits {
-        memory_bytes: 96 * 1024 * 1024,
+        memory_bytes: mebibytes * 1024 * 1024,
         ..one_thread()
     })
     .compile(&fixture("compile-heavy"))
