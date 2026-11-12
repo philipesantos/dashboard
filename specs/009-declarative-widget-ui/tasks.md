@@ -360,12 +360,24 @@ widgets through three reviewed commands; nothing is drawn yet.
   removed too, breaking `nothing-outside-frame` as well; §5 in T028; §6's ten action tests pass,
   with the new grants case listed. The plan and research R13 named a `hostile/action-escape`
   fixture that T009 replaced with `fixtures/action-steps`.
-- [ ] T034 Review the security core independently: a fresh agent with none of this feature's
+- [X] T034 Review the security core independently: a fresh agent with none of this feature's
   context reads `wit/`, the runtime's changes, `app/src-tauri/src/widgets.rs`, `name.rs`,
   `commands.rs`, `window-surface.toml` and `app/src/widgets/` against the spec and contracts, and
   looks for any way widget content or an action could leave its frame, reach the host, act for
   another widget, outlive its permission, or see a secret. Check each finding at the source
   before changing anything; bring real trade-offs to the maintainer.
+
+  Done on 2026-11-11: no way out of the frame, to the host or to another widget. Fixed, each
+  with a test that fails without the fix: an action's data in memory outlived a connector
+  turned off or an approval removed (c9f2cd6); a form replaced by another kept and sent the old
+  one's values, and a new number field threw on submit (0b10d87, probe case `form-reshaped`); an
+  `actor` export in a 1.3.0 plugin was bound (b30b7b4); `runtime act` passed a value holding a
+  kept key to the plugin (5aaeaae); a name of blank characters outside Cf drew blank (1d2d83d).
+  The maintainer accepted, as a threat-model residual, form text in the request log (ff76b1b).
+  Left as suggestions: checking the concatenation of a form's values for a split secret,
+  telling the person when a submission is refused, the spinner cleared by a refused second
+  press, names shared by two plugins (for installation), and a chart of values near the float
+  limit drawing nothing.
 - [ ] T035 Only once the maintainer has pushed and opened the pull request, as they ask: follow
   CI on the three systems and record, per system, the probe's time and the showcase's
   first-render time from `showcase-on-time` (SC-001) in research R1.
