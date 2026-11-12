@@ -216,6 +216,43 @@ impl RuntimeOptions {
     }
 }
 
+/// The Wasmtime configuration every engine of the host uses: the app's, the CLI's, and the compile
+/// process's (`specs/010-plugin-installation/research.md`, R2). One function, so a compiled form
+/// made by the compile process always matches the engine that loads it: Wasmtime refuses one whose
+/// features or tunables differ.
+pub fn engine_config() -> Config {
+    let mut config = Config::new();
+    // Turned off explicitly, so a Wasmtime upgrade that changes a default does not widen
+    // what plugins can use. Function references, exceptions, threads and component-model
+    // async cannot be turned on at all: their Wasmtime features are not compiled in
+    // (runtime/Cargo.toml).
+    config
+        .wasm_gc(false)
+        .wasm_stack_switching(false)
+        .wasm_shared_everything_threads(false)
+        .wasm_tail_call(false)
+        .wasm_memory64(false)
+        .wasm_multi_memory(false)
+        .wasm_relaxed_simd(false)
+        .wasm_wide_arithmetic(false)
+        .wasm_extended_const(false)
+        .wasm_custom_page_sizes(false)
+        .wasm_compact_imports(false)
+        .wasm_branch_hinting(false)
+        .wasm_component_model_gc(false)
+        .wasm_component_model_memory64(false)
+        .wasm_component_model_error_context(false)
+        .wasm_component_model_map(false)
+        .wasm_component_model_fixed_length_lists(false)
+        .wasm_component_model_implements(false)
+        .wasm_component_model_canonical_names(false)
+        .wasm_component_model_accessors(false);
+    // The CPU budget, deterministic on every system, and the wall-clock time limit
+    // (specs/001-plugin-runtime/research.md, R2)
+    config.consume_fuel(true).epoch_interruption(true);
+    config
+}
+
 /// Loads plugins and runs them under the host's limits.
 pub struct Runtime {
     engine: Engine,
@@ -615,35 +652,7 @@ impl Runtime {
         if let Ok(absolute) = std::path::absolute(&options.data_dir) {
             options.data_dir = absolute;
         }
-        let mut config = Config::new();
-        // Turned off explicitly, so a Wasmtime upgrade that changes a default does not widen
-        // what plugins can use. Function references, exceptions, threads and component-model
-        // async cannot be turned on at all: their Wasmtime features are not compiled in
-        // (runtime/Cargo.toml).
-        config
-            .wasm_gc(false)
-            .wasm_stack_switching(false)
-            .wasm_shared_everything_threads(false)
-            .wasm_tail_call(false)
-            .wasm_memory64(false)
-            .wasm_multi_memory(false)
-            .wasm_relaxed_simd(false)
-            .wasm_wide_arithmetic(false)
-            .wasm_extended_const(false)
-            .wasm_custom_page_sizes(false)
-            .wasm_compact_imports(false)
-            .wasm_branch_hinting(false)
-            .wasm_component_model_gc(false)
-            .wasm_component_model_memory64(false)
-            .wasm_component_model_error_context(false)
-            .wasm_component_model_map(false)
-            .wasm_component_model_fixed_length_lists(false)
-            .wasm_component_model_implements(false)
-            .wasm_component_model_canonical_names(false)
-            .wasm_component_model_accessors(false);
-        // The CPU budget, deterministic on every system, and the wall-clock time limit (R2)
-        config.consume_fuel(true).epoch_interruption(true);
-        let engine = Engine::new(&config)?;
+        let engine = Engine::new(&engine_config())?;
         let clock = Arc::new(EpochClock::new());
         start_epoch_ticker(&engine, Arc::clone(&clock))?;
 

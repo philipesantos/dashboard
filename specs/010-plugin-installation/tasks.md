@@ -51,7 +51,7 @@ before any build of the app or the tests.
   host-only roles; bundled widgets show none; the id beside a shared name stays. Its check names
   the probe case `frame-owner-shown` and the feature "Instalação de plugin a partir do repositório
   do autor". Run `pnpm --filter ./design check`.
-- [ ] T002 [P] Factor the engine's configuration out of `Runtime::start` into one public
+- [X] T002 [P] Factor the engine's configuration out of `Runtime::start` into one public
   `runtime::engine_config(&Limits) -> wasmtime::Config` in `runtime/src/lib.rs` (today
   `lib.rs:606-665`), used by `Runtime::start`; no behaviour change. `cargo test -p runtime --test it`
   passes.
