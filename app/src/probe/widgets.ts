@@ -598,4 +598,56 @@ export const controlCases: Case[] = [
         : { held: false, detail: `the new form sent ${received()}` };
     },
   },
+  {
+    // FR-014, FR-025: the host tells the person when it refuses a control's action, in its own
+    // words; and a second press while an action runs is not sent, the first still counting
+    id: "refusals-shown",
+    async run(context): Promise<Verdict> {
+      const problems: string[] = [];
+      const until = async (test: () => boolean) => {
+        for (let waited = 0; waited <= DRAW_MS; waited += POLL_MS) {
+          if (test()) return true;
+          await context.wait(POLL_MS);
+        }
+        return false;
+      };
+
+      // ui-dialog's buttons name actions it never declared: the frame says nothing was sent
+      const dialog = await frameWhere(context, (name) => name === "ui-dialog");
+      const foreign = [...dialog.body.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent !== "Fechar",
+      );
+      foreign?.click();
+      const refusal = () => dialog.body.querySelector<HTMLElement>('[data-notice="error"]');
+      if (!(await until(() => refusal() !== null))) problems.push("no notice after a refused action");
+      else if (!refusal()?.textContent?.includes("Nada foi enviado")) {
+        problems.push(`the notice says ${JSON.stringify(refusal()?.textContent)}`);
+      } else if (!refusal()?.querySelector("svg")) problems.push("the notice has no icon");
+
+      // The showcase's counter pressed twice at once: one action runs, the other is not sent
+      const showcase = await frameWhere(context, (name) => name === "Vitrine");
+      const count = () =>
+        [...showcase.body.querySelectorAll("p")]
+          .map((p) => p.textContent ?? "")
+          .find((text) => text.startsWith("Contagem: "));
+      const before = count();
+      const press = [...showcase.body.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Contar",
+      );
+      if (!press || before === undefined) {
+        problems.push("the showcase has no counter");
+      } else {
+        press.click();
+        press.click();
+        if (!(await until(() => count() !== before))) problems.push("the counter never moved");
+        await context.wait(300);
+        const expected = `Contagem: ${Number(before.slice("Contagem: ".length)) + 1}`;
+        if (count() !== expected) problems.push(`${before} became ${count()}, not ${expected}`);
+        if (!showcase.body.querySelector('[data-notice="info"]')) problems.push("the second press said nothing");
+      }
+      return problems.length === 0
+        ? { held: true, detail: "a refused action and a press while one runs each shown in the host's words; one count" }
+        : { held: false, detail: problems.join("; ") };
+    },
+  },
 ];

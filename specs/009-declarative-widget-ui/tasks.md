@@ -374,10 +374,13 @@ widgets through three reviewed commands; nothing is drawn yet.
   `actor` export in a 1.3.0 plugin was bound (b30b7b4); `runtime act` passed a value holding a
   kept key to the plugin (5aaeaae); a name of blank characters outside Cf drew blank (1d2d83d).
   The maintainer accepted, as a threat-model residual, form text in the request log (ff76b1b).
-  Left as suggestions: checking the concatenation of a form's values for a split secret,
-  telling the person when a submission is refused, the spinner cleared by a refused second
-  press, names shared by two plugins (for installation), and a chart of values near the float
-  limit drawing nothing.
+  The maintainer then asked for the suggestions too: a form's values are also checked read
+  together in the order the form draws them, for a secret typed in pieces; the frame tells the
+  person, in the host's words, when an action is refused, and a press while an action runs is
+  not sent, the spinner staying with the first (probe case `refusals-shown`); two frames that
+  draw the same name each show their plugin's id; a chart's scale no longer overflows near the
+  largest double. Not done: `login_providers` in a bundled package, obsolete and granting
+  nothing.
 - [ ] T035 Only once the maintainer has pushed and opened the pull request, as they ask: follow
   CI on the three systems and record, per system, the probe's time and the showcase's
   first-render time from `showcase-on-time` (SC-001) in research R1.

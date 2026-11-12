@@ -70,6 +70,7 @@ const PAGE_CASES: &[&str] = &[
     "form-no-credentials",
     "status-icons",
     "form-reshaped",
+    "refusals-shown",
     // The window (FR-009 to FR-011)
     "context-menu",
     "navigate-location",

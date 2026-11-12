@@ -50,7 +50,7 @@ Run the probe of feature 008 (`specs/008-tauri-shell/contracts/probe.md`).
 
 **Expected**: every case holds, including the widget cases of research R14: `frame-header-kept`,
 `frame-clips`, `frame-header-hittable`, `content-is-text`, `strings-isolated`, `dialog-shaped-widget`,
-`nothing-outside-frame`, `status-icons`, `form-no-credentials`, `foreign-actions-refused`, `form-reshaped`,
+`nothing-outside-frame`, `status-icons`, `form-no-credentials`, `foreign-actions-refused`, `form-reshaped`, `refusals-shown`,
 `content-error-shown`, `window-responsive`, `showcase-on-time`.
 
 Then, in `app/src/widgets/Frame.tsx`, remove `contain-layout contain-paint` and `overflow-auto`
