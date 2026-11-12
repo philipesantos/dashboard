@@ -481,9 +481,10 @@ before any build of the app or the tests.
   (Principle IX); quickstart §6 (keyboard, screen reader, high contrast, reduced motion) and §5's
   confinement check on Windows, macOS and Linux. Done: the maintainer reported the review done on
   2026-11-12.
-- [ ] T056 Before the merge, and only when the maintainer asks, update the development guide: tick
+- [X] T056 Before the merge, and only when the maintainer asks, update the development guide: tick
   the Phase 3 items "Diálogo de instalação com permissões em linguagem clara" and "Instalação de
-  plugin a partir do repositório do autor", noting constitution v2.7.0 and decision 0003.
+  plugin a partir do repositório do autor", noting constitution v2.7.0 and decision 0003. Done at
+  the maintainer's request on 2026-11-12 (guide rev 153), each item with what PR #23 did.
 - [ ] T057 Merge:
   - The maintainer reviewed the pull request line by line.
   - CI is green on the three systems.
