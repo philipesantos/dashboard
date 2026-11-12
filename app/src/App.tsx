@@ -64,6 +64,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AddWidget } from "@/host/AddWidget";
 import { Widgets } from "@/widgets/Widgets";
 
 const stats = [
@@ -90,6 +91,7 @@ const statusVariant: Record<
 };
 
 function App() {
+  const [widgetsVersion, setWidgetsVersion] = useState(0);
   const [dark, setDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -107,6 +109,7 @@ function App() {
             <h1 className="font-heading text-lg font-semibold">Dashboard</h1>
             <p className="text-sm text-muted-foreground">Demo do shadcn/ui + Tauri</p>
           </div>
+          <AddWidget onInstalled={() => setWidgetsVersion((version) => version + 1)} />
           <div className="flex items-center gap-2 text-muted-foreground">
             <Sun className="size-4" />
             <Switch checked={dark} onCheckedChange={setDark} aria-label="Modo escuro" />
@@ -137,7 +140,7 @@ function App() {
           ))}
         </section>
 
-        <Widgets />
+        <Widgets version={widgetsVersion} />
 
         <Tabs defaultValue="components">
           <TabsList>

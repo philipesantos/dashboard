@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { listWidgets, type FrameInfo } from "./api";
 import { Frame } from "./Frame";
 
-export function Widgets() {
+/** `version` changes when the host's list did, as after an installation: the list is read again. */
+export function Widgets({ version = 0 }: { version?: number }) {
   const [frames, setFrames] = useState<FrameInfo[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -13,7 +14,7 @@ export function Widgets() {
     listWidgets()
       .then(setFrames)
       .catch(() => setFailed(true));
-  }, []);
+  }, [version]);
 
   if (failed) {
     return <p className="text-sm text-destructive">Os widgets não puderam ser carregados.</p>;

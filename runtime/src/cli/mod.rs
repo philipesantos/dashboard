@@ -1142,6 +1142,23 @@ fn describe_connectors(
     text
 }
 
+/// The `data flow:` lines of the grants the plugin holds now, from its origin's approval, with
+/// the account sources its store may still hold; empty when the record cannot be read.
+fn flows_held(target: &Target, checked: &CheckedPackage) -> String {
+    let Ok(Some(entry)) = target.grants.entry(checked.manifest().id()) else {
+        return String::new();
+    };
+    if entry.origin != target.origin {
+        return String::new();
+    }
+    let granted = |id: &str| entry.is_connector_granted(id);
+    flow_lines(&runtime::flows::judge(
+        checked,
+        &granted,
+        &entry.account_sources,
+    ))
+}
+
 /// A `data flow:` line per flow (Principle III).
 fn flow_lines(flows: &[runtime::flows::Flow]) -> String {
     let mut text = String::new();
@@ -1453,6 +1470,9 @@ fn optional(options: &Options) -> ExitCode {
         }
         if *on {
             println!("{} on", escape(permission));
+            // The warning on the grants it holds now, as the app's dialog judges every grant
+            // change (specs/010-plugin-installation/, FR-016)
+            print!("{}", flows_held(&target, &checked));
         } else {
             // Data fetched with the connector on goes with it (FR-010)
             if let Err(error) = target.runtime.discard_kept_data(checked.manifest().id()) {
@@ -1465,6 +1485,10 @@ fn optional(options: &Options) -> ExitCode {
     }
     if let Err(error) = checked.set_optional(&target.grants, &target.origin, permission, *on) {
         return refused(&error);
+    }
+    if *on {
+        // Storage on can make an account read before a source the store remembers
+        print!("{}", flows_held(&target, &checked));
     }
     match (permission.as_str(), on) {
         // Turning storage off deletes nothing (specs/004-plugin-storage/spec.md, FR-011)

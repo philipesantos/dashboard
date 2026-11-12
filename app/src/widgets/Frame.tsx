@@ -1,6 +1,7 @@
-// A widget's frame (specs/009-declarative-widget-ui/research.md, R10; criteria HS-03, HS-04,
-// HS-16). The header is the host's: the plugin's name and icon, drawn from the manifest, and the
-// host's reload button. The body holds the content and contains it: it paints nothing outside
+// A widget's frame (specs/009-declarative-widget-ui/research.md, R10; criteria HS-02, HS-03,
+// HS-04, HS-16). The header is the host's: the plugin's name and icon, drawn from the manifest,
+// the repository's owner of an installed widget (feature 010, FR-030), and the host's reload
+// button. The body holds the content and contains it: it paints nothing outside
 // itself, scrolls past a fixed height, and starts its own stacking context, so nothing of the
 // content reaches the header or the rest of the window.
 //
@@ -119,10 +120,16 @@ export function Frame({ frame }: { frame: FrameInfo }) {
         <Icon frame={frame} />
         <h2 id={`${frame.handle}-name`} className="min-w-0 flex-1 truncate text-sm font-medium">
           <bdi>{frame.name}</bdi>
-          {frame.id && (
+          {frame.id ? (
             <span className="ms-2 font-normal text-muted-foreground">
               <bdi>{frame.id}</bdi>
             </span>
+          ) : (
+            frame.source && (
+              <span data-frame-source className="ms-2 font-normal text-muted-foreground">
+                <bdi>{frame.source}</bdi>
+              </span>
+            )
           )}
         </h2>
         {running !== null && <LoaderCircle aria-hidden className="size-4 animate-spin text-muted-foreground" />}

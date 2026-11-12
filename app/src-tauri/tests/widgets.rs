@@ -218,6 +218,16 @@ fn a_build_embeds_exactly_its_packages() {
             bundled.file
         );
     }
+    // The releases the probe's source serves: none outside the probe build, whose only release
+    // source is then GitHub's (feature 010, research R16)
+    let releases: Vec<&str> = widgets::PROBE_RELEASES
+        .iter()
+        .map(|(name, _)| *name)
+        .collect();
+    #[cfg(not(feature = "shell-probe"))]
+    assert!(releases.is_empty(), "{releases:?}");
+    #[cfg(feature = "shell-probe")]
+    assert_eq!(releases, vec!["install-basic", "compile-heavy"]);
 }
 
 // R2: the bundled approval, only for packages that declare nothing

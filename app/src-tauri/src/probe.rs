@@ -71,6 +71,9 @@ const PAGE_CASES: &[&str] = &[
     "status-icons",
     "form-reshaped",
     "refusals-shown",
+    // Installation (feature 010, research R11)
+    "install-on-time",
+    "frame-owner-shown",
     // The window (FR-009 to FR-011)
     "context-menu",
     "navigate-location",
@@ -183,6 +186,14 @@ pub fn gate() {
         eprintln!("probe: this is a shell-probe build, which runs only with DASHBOARD_PROBE=1");
         std::process::exit(3);
     }
+}
+
+/// The probe's data directory, `<temp>/dashboard-probe-data`, emptied at every start
+/// (specs/010-plugin-installation/research.md, R16).
+pub fn data_dir() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join("dashboard-probe-data");
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
 }
 
 /// Grants the report command to the window at run time and starts waiting for the report.

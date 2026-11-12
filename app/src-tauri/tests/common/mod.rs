@@ -60,7 +60,7 @@ fn identity(full_name: &str, id: u64) -> Identity {
 }
 
 /// The source as the host holds it, shared with the test.
-pub struct Shared(Arc<Source>);
+pub struct Shared(pub Arc<Source>);
 
 impl ReleaseSource for Shared {
     fn identity(&self, repository: &Repository) -> Result<Identity, RuntimeError> {
@@ -107,6 +107,8 @@ impl ReleaseSource for Shared {
 pub struct App {
     pub dir: tempfile::TempDir,
     pub source: Arc<Source>,
+    /// Catalog connectors added through the runtime's test seam, such as one with a credential.
+    pub catalog: Vec<String>,
 }
 
 impl App {
@@ -114,6 +116,7 @@ impl App {
         let app = App {
             dir: tempfile::tempdir().unwrap(),
             source: Arc::new(Source::default()),
+            catalog: Vec::new(),
         };
         app.source.publish(
             "dashboard-fixtures/install-basic",
@@ -132,17 +135,37 @@ impl App {
         Layout::new(self.host())
     }
 
+    /// The app's runtime: the built-in catalog, plus `catalog` through the test seam.
+    pub fn runtime(&self) -> Runtime {
+        if self.catalog.is_empty() {
+            return Runtime::new(Limits::default(), widgets::app_options(self.dir.path()))
+                .expect("the runtime starts");
+        }
+        Runtime::with_test_network(
+            Limits::default(),
+            widgets::app_options(self.dir.path()),
+            runtime::TestNetwork {
+                routes: Vec::new(),
+                public_for_tests: Vec::new(),
+                root: Vec::new(),
+                catalog: self.catalog.clone(),
+            },
+        )
+        .expect("the runtime starts")
+    }
+
+    /// The compile process: this crate's own binary, as in the app.
+    pub fn compiler(&self) -> Compiler {
+        Compiler::with_executable(env!("CARGO_BIN_EXE_dashboard"), CompileLimits::default())
+    }
+
     pub fn start(&self) -> Widgets {
-        let runtime = Runtime::new(Limits::default(), widgets::app_options(self.dir.path()))
-            .expect("the runtime starts");
+        let runtime = self.runtime();
         let layout = self.layout();
         let installs = Installs {
             grants: Arc::new(layout.grants()),
             layout,
-            compiler: Compiler::with_executable(
-                env!("CARGO_BIN_EXE_dashboard"),
-                CompileLimits::default(),
-            ),
+            compiler: self.compiler(),
             source: Box::new(Shared(Arc::clone(&self.source))),
         };
         Widgets::start_with(runtime, &[], Some(installs))
@@ -180,4 +203,34 @@ pub fn approved_handle(approved: &Approved) -> String {
         Approved::Approved { approved } => approved.handle.clone(),
         other => panic!("expected an approval, got {other:?}"),
     }
+}
+
+/// `catalog/account-echo`: a catalog connector whose credential is for `https://echo.test`, which
+/// only the tests' catalog holds.
+pub fn account_echo() -> String {
+    serde_json::json!({
+        "connector_version": 1, "id": "catalog/account-echo", "version": "1.0.0",
+        "author": "Tests", "description": "A test service read as an account",
+        "reserves": ["echo.test"], "destinations": { "api": "https://echo.test" },
+        "credential": { "kind": "key", "required": true, "destinations": ["api"],
+                        "header": "Authorization", "scheme": "Bearer" },
+        "operations": { "look": { "kind": "read", "method": "GET", "destination": "api",
+            "path": "/look", "parameters": {}, "response": { "format": "json", "headers": [] } } }
+    })
+    .to_string()
+}
+
+pub const ACCOUNT: &str = "github.com/dashboard-fixtures/install-account";
+
+/// An app whose catalog holds `catalog/account-echo`, with `install-account` published.
+pub fn with_account() -> App {
+    let mut app = App::new();
+    app.catalog.push(account_echo());
+    app.source.publish(
+        "dashboard-fixtures/install-account",
+        11,
+        "v0.1.0",
+        package_named("install-account"),
+    );
+    app
 }

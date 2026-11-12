@@ -41,6 +41,9 @@ export type FrameInfo = {
   icon: { size: number; rgba: number[] } | null;
   /** The plugin's id, only when another frame draws the same name. */
   id?: string;
+  /** For a widget installed from a repository, its owner (`github.com/<owner>`), from the host's
+   * installation record (criterion HS-02); absent for a bundled widget. */
+  source?: string;
 };
 
 export function listWidgets(): Promise<FrameInfo[]> {

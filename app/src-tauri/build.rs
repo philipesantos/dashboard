@@ -35,6 +35,37 @@ const PROBE_BUNDLED: &[&str] = &[
     "ui-dialog",
 ];
 
+/// The releases the probe's release source serves, as `github.com/dashboard-fixtures/<name>`:
+/// only in the probe build (specs/010-plugin-installation/research.md, R16).
+const PROBE_RELEASES: &[&str] = &["install-basic", "compile-heavy"];
+
+/// Writes `$OUT_DIR/releases.rs`: the `PROBE_RELEASES` list of `src/widgets.rs`, empty unless this
+/// is the probe build.
+fn embed_releases(probe: bool) {
+    let root = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..");
+    let plugins = root.join("target").join("plugins");
+    let mut out = String::from(
+        "/// The releases the probe's source serves: none outside the probe build.\npub const PROBE_RELEASES: &[(&str, &[u8])] = &[\n",
+    );
+    for name in if probe { PROBE_RELEASES } else { &[] } {
+        let path = plugins.join(format!("{name}.wasm"));
+        let path = path.canonicalize().unwrap_or_else(|_| {
+            panic!(
+                "{} is missing: run `cargo xtask plugins` first",
+                path.display()
+            )
+        });
+        println!("cargo:rerun-if-changed={}", path.display());
+        out.push_str(&format!(
+            "    ({name:?}, include_bytes!({:?})),\n",
+            path.display().to_string()
+        ));
+    }
+    out.push_str("];\n");
+    let target = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("releases.rs");
+    std::fs::write(&target, out).unwrap_or_else(|error| panic!("{}: {error}", target.display()));
+}
+
 /// Writes `$OUT_DIR/bundled.rs`: the `BUNDLED` list of `src/widgets.rs`, each package included
 /// from the file `cargo xtask plugins` built (research R1).
 fn embed(probe: bool) {
@@ -95,6 +126,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SHELL_PROBE");
     println!("cargo:rerun-if-changed=build.rs");
     embed(std::env::var_os("CARGO_FEATURE_SHELL_PROBE").is_some());
+    embed_releases(std::env::var_os("CARGO_FEATURE_SHELL_PROBE").is_some());
     println!("cargo:rerun-if-changed=src/commands.rs");
     let commands: &'static [&'static str] =
         if std::env::var_os("CARGO_FEATURE_SHELL_PROBE").is_some() {

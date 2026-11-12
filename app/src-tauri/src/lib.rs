@@ -2,6 +2,8 @@ pub mod install;
 pub mod name;
 #[cfg(feature = "shell-probe")]
 mod probe;
+#[cfg(feature = "shell-probe")]
+mod probe_source;
 pub mod widgets;
 mod window;
 
@@ -136,7 +138,13 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            let host = Arc::new(Host::new(app.path().app_data_dir()?));
+            // The probe installs widgets: it runs on a data directory of its own, emptied first,
+            // so a run never finds the last one's
+            #[cfg(feature = "shell-probe")]
+            let data_dir = probe::data_dir();
+            #[cfg(not(feature = "shell-probe"))]
+            let data_dir = app.path().app_data_dir()?;
+            let host = Arc::new(Host::new(data_dir));
             app.manage(Arc::clone(&host));
             window::build(app)?;
             // Compiles the bundled packages while the window loads

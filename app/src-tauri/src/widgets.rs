@@ -19,7 +19,9 @@ use std::sync::{
 
 use runtime::compile::{CompileLimits, Compiler};
 use runtime::grants::GrantStore;
-use runtime::install::{FetchLimits, Installer, Layout, ReleaseSource, Repository};
+#[cfg(not(feature = "shell-probe"))]
+use runtime::install::FetchLimits;
+use runtime::install::{Installer, Layout, ReleaseSource, Repository};
 use runtime::{Limits, LogMessage, Plugin, Runtime, RuntimeError, RuntimeOptions};
 use serde::Serialize;
 use serde_json::Value;
@@ -61,6 +63,9 @@ pub struct Bundled<'a> {
 
 // The packages this build embeds: `BUNDLED`, written by build.rs
 include!(concat!(env!("OUT_DIR"), "/bundled.rs"));
+
+// The releases the probe's source serves: `PROBE_RELEASES`, empty outside the probe build
+include!(concat!(env!("OUT_DIR"), "/releases.rs"));
 
 /// The app's runtime options: its data under `<app data dir>/host`, its own keychain service,
 /// development mode off (research R3).
@@ -813,7 +818,14 @@ impl Host {
     }
 }
 
-/// Where releases come from: GitHub, the only source a release build has (research R16).
+/// Where releases come from: GitHub, the only source a release build has; the probe build serves
+/// its embedded releases instead, and runs only with `DASHBOARD_PROBE=1` (research R16).
 fn release_source(runtime: &Runtime) -> Box<dyn ReleaseSource> {
+    #[cfg(feature = "shell-probe")]
+    {
+        let _ = runtime;
+        Box::new(crate::probe_source::ProbeSource::new(PROBE_RELEASES))
+    }
+    #[cfg(not(feature = "shell-probe"))]
     Box::new(runtime.github(FetchLimits::default()))
 }

@@ -12,8 +12,7 @@ use std::time::{Duration, Instant};
 use common::{App, BASIC, package_named};
 use dashboard_lib::install::Started;
 
-/// The children of this process still running with `--compile-package`.
-#[cfg(target_os = "linux")]
+/// The children of this process still running with `--compile-package`, read from `/proc`.
 fn compile_children() -> Vec<u32> {
     let me = std::process::id();
     let mut found = Vec::new();
@@ -38,10 +37,14 @@ fn compile_children() -> Vec<u32> {
 }
 
 /// `quit-mid-compile`: stopping the host while a request compiles kills the child and keeps
-/// nothing.
-#[cfg(target_os = "linux")]
+/// nothing. It looks for the child in `/proc`; where there is none, it says so and checks nothing
+/// (the per-system process checks come with the compile limits, task T037).
 #[test]
 fn quitting_while_a_package_compiles_kills_the_compile_process() {
+    if !Path::new("/proc/self/stat").exists() {
+        eprintln!("no /proc on this system: the compile process is not looked for");
+        return;
+    }
     let app = App::new();
     app.source.publish(
         "dashboard-fixtures/compile-heavy",

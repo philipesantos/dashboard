@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { Case, Context, Counters, Verdict } from "./case";
 import { commandCases } from "./commands";
+import { installCases } from "./dialogs";
 import { engineCases } from "./engine";
 import { policyCases } from "./policy";
 import { containmentCases, controlCases, widgetCases } from "./widgets";
@@ -23,6 +24,7 @@ const cases: Case[] = [
   ...widgetCases,
   ...containmentCases,
   ...controlCases,
+  ...installCases,
   ...windowCases,
   ...engineCases,
 ].sort(

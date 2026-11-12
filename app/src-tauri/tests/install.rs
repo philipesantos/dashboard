@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::{App, BASIC, approved_handle, package_named, refused, request};
+use common::{ACCOUNT, App, BASIC, approved_handle, package_named, refused, request, with_account};
 use dashboard_lib::install::{Approved, Judged};
 use runtime::install::Installed;
 use runtime::manifest::PluginId;
@@ -271,4 +271,124 @@ fn a_bundled_widget_is_not_an_installed_one() {
     let widgets = app.start();
     assert_eq!(refused(&widgets.update_start("w0")), Some("unknown-widget"));
     let _ = PluginId::parse(BASIC).unwrap();
+}
+
+/// `install-from-file` (FR-001): no window command takes a path, and every argument is a string
+/// or a JSON value the host checks; installing goes through an address only.
+#[test]
+fn no_window_command_takes_a_path() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+    )
+    .unwrap();
+    let mut commands = 0;
+    for chunk in source.split("#[tauri::command]").skip(1) {
+        let signature = &chunk[..chunk.find('{').expect("a body")];
+        commands += 1;
+        for forbidden in ["Path", "File", "Vec<u8>", "OsStr"] {
+            assert!(!signature.contains(forbidden), "{signature}");
+        }
+    }
+    assert_eq!(commands, dashboard_lib::COMMANDS.len());
+}
+
+// US2: what the dialog decides (task T029)
+
+fn judged(judged: &Judged) -> (usize, String) {
+    match judged {
+        Judged::Judged { warning, choice } => (warning.len(), choice.clone()),
+        Judged::Refused { refused } => panic!("refused: {refused}"),
+    }
+}
+
+/// The host judges every set of optionals the dialog shows: the warning and the choice digest
+/// follow the set.
+#[test]
+fn the_warning_and_the_choice_follow_the_optionals_turned_on() {
+    let app = with_account();
+    let widgets = app.start();
+    let started = widgets.install_start(ACCOUNT);
+    let (token, first) = request(&started);
+    match &started {
+        dashboard_lib::install::Started::Request { model, .. } => assert!(model.warning.is_empty()),
+        _ => unreachable!(),
+    }
+    let (flows, with_github) = judged(&widgets.request_judge(&token, &json!(["catalog/github"])));
+    assert_eq!(flows, 1);
+    assert_ne!(with_github, first);
+    let (flows, again) = judged(&widgets.request_judge(&token, &json!([])));
+    assert_eq!(flows, 0);
+    assert_eq!(again, first);
+}
+
+/// `choice-changed`: an approval of the choice shown for another set is refused.
+#[test]
+fn an_approval_of_the_choice_of_another_set_is_refused() {
+    let app = with_account();
+    let widgets = app.start();
+    let (token, without) = request(&widgets.install_start(ACCOUNT));
+    judged(&widgets.request_judge(&token, &json!(["catalog/github"])));
+    // The dialog last showed the set with GitHub on: approving the earlier choice is refused
+    match widgets.request_approve(&token, &without, &json!([])) {
+        Approved::Error { error } => assert_eq!(error.kind, "approval-changed"),
+        other => panic!("expected approval-changed, got {other:?}"),
+    }
+    app.assert_nothing_kept();
+}
+
+/// The grant written holds the required items and the optionals approved, nothing else.
+#[test]
+fn the_grant_holds_what_was_approved() {
+    let app = with_account();
+    let widgets = app.start();
+    let (token, _) = request(&widgets.install_start(ACCOUNT));
+    let (_, choice) = judged(&widgets.request_judge(&token, &json!(["catalog/github"])));
+    approved_handle(&widgets.request_approve(&token, &choice, &json!(["catalog/github"])));
+    let entry = app
+        .layout()
+        .grants()
+        .entry(&PluginId::parse(ACCOUNT).unwrap())
+        .unwrap()
+        .expect("granted");
+    assert_eq!(entry.origin, "github:11");
+    assert_eq!(entry.granted, vec!["log".to_owned()]);
+    assert!(entry.is_connector_granted("catalog/account-echo"));
+    assert!(entry.is_connector_granted("catalog/github"));
+    assert!(entry.uses_account("catalog/account-echo"));
+}
+
+/// `account-not-connected-in-app` (FR-024): a widget with an account connector installs, and its
+/// call as the account answers that none is connected: the app has no account to give it.
+#[test]
+fn an_account_connector_installs_and_answers_account_not_connected() {
+    let app = with_account();
+    let widgets = app.start();
+    let (token, choice) = request(&widgets.install_start(ACCOUNT));
+    approved_handle(&widgets.request_approve(&token, &choice, &json!([])));
+    drop(widgets);
+
+    let runtime = app.runtime();
+    let compiler = app.compiler();
+    let layout = app.layout();
+    let source = common::Shared(std::sync::Arc::clone(&app.source));
+    let installer = runtime::install::Installer {
+        runtime: &runtime,
+        source: &source,
+        compiler: &compiler,
+        layout: &layout,
+        cancel: None,
+    };
+    let installed = layout.installed().get(ACCOUNT).unwrap().expect("installed");
+    let plugin = installer
+        .load(ACCOUNT, &installed, std::sync::Arc::new(layout.grants()))
+        .expect("it loads");
+    let config = json!({ "calls": [
+        { "via": "accounts", "connector": "catalog/account-echo", "operation": "look" }
+    ] });
+    let report = plugin.update(&config.to_string());
+    let answers = report.result.expect("the update ran");
+    assert_eq!(
+        answers["answers"][0]["error"], "account-not-connected",
+        "{answers}"
+    );
 }

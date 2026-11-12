@@ -217,18 +217,18 @@ before any build of the app or the tests.
   approval, not in a temporary directory: a cancel then has nothing to remove. `no-asset`,
   `two-assets`, `asset-digest-mismatch`, `renamed-at-install` and the declared-size half of
   `oversized-asset` are cases of the GitHub source, in `runtime/tests/install_github.rs` (T010).
-- [ ] T024 [US1] Connect `install_start` and `request_approve` in `app/src-tauri/src/install.rs`
+- [X] T024 [US1] Connect `install_start` and `request_approve` in `app/src-tauri/src/install.rs`
   to the installer; the address forms of the contract (`github.com/owner/repo`,
   `https://github.com/owner/repo`, case-insensitive, trailing `/` or `.git`, at most 200
   characters). Test `install-from-file`: no command takes a path, and `file:`, URLs and other hosts
   are `bad-address`.
-- [ ] T025 [P] [US1] The page: `app/src/host/AddWidget.tsx` in the chrome (an address field and a
+- [X] T025 [P] [US1] The page: `app/src/host/AddWidget.tsx` in the chrome (an address field and a
   button, progress shown in the chrome while the host fetches and compiles), the opener recorded
   for focus return, `InstallDialog.tsx` drawing who is asking and the permission list on
   `HostDialog`, and `app/src/widgets/Widgets.tsx` refreshing the list after an approval.
-- [ ] T026 [P] [US1] `app/src/widgets/Frame.tsx` draws `source` after the name for installed
+- [X] T026 [P] [US1] `app/src/widgets/Frame.tsx` draws `source` after the name for installed
   widgets (FR-030, HS-02 as changed in T001).
-- [ ] T027 [US1] The probe's release source in `app/src-tauri/src/probe.rs` or a module beside it,
+- [X] T027 [US1] The probe's release source in `app/src-tauri/src/probe.rs` or a module beside it,
   only under the `shell-probe` feature and answering only with `DASHBOARD_PROBE=1`, serving the
   install fixtures, `compile-heavy` and the hostile releases; extend the build test that lists embedded packages
   (feature 009, research R1) to check that a build without `shell-probe` has GitHub's source alone
@@ -236,8 +236,18 @@ before any build of the app or the tests.
   `install-on-time` (SC-001): from `install_start` for `install-basic` on the probe source to its
   first rendered content, after an approval sent as soon as the input delay allows; it fails above
   10 s and reports the time.
-- [ ] T028 [US1] Run quickstart §3 steps 1 to 4 against the probe source on Linux (a real
+- [X] T028 [US1] Run quickstart §3 steps 1 to 4 against the probe source on Linux (a real
   repository waits for T052) and §4's address refusals; fix any drift.
+
+  Done on 2026-11-12 on Linux: the probe installs `install-basic` through the chrome and the
+  dialog and draws it in about 300 ms (three runs, 69 cases held each); a restart loads it again
+  from its compiled form (`a_widget_installed_through_the_requests_shows_its_owner_and_loads_again_at_start`);
+  the address refusals are `an_address_that_is_not_a_repository_is_refused`. `install-basic`'s
+  component is a test fixture whose render is not widget content, so `install-on-time` measures to
+  the frame's first drawn state and names it. The first probe run after the build broke two
+  cases of feature 009 (`window-responsive`, `frame-header-hittable`); with `master`'s page and
+  in four later runs of this one they held, so it reads as the first run's cold start; T054
+  watches them on CI.
 
 **Checkpoint**: a widget installs from a repository and shows its owner.
 
@@ -249,23 +259,28 @@ before any build of the app or the tests.
 
 **Independent Test**: spec US2.
 
-- [ ] T029 [US2] Write `app/src-tauri/tests/install.rs` cases: `request_judge` returns the warning
+- [X] T029 [US2] Write `app/src-tauri/tests/install.rs` cases: `request_judge` returns the warning
   and choice digest for each optional set of `install-account`; `request_approve` with a choice
   digest from another set is `choice-changed` (`approval-changed`); the grant written holds exactly
   the required items and the optionals approved; `account-not-connected-in-app` (FR-024):
   `install-account` installs, and its call through the account connector answers
   `account-not-connected`, and the app reads no development record or vault (the test points the
   development paths at a record granting that connector and checks nothing of it is used).
-- [ ] T030 [US2] Implement `request_judge` and the choice check in `request_approve`
+- [X] T030 [US2] Implement `request_judge` and the choice check in `request_approve`
   (`app/src-tauri/src/install.rs`, research R7). T029 passes.
-- [ ] T031 [P] [US2] `app/src/host/InstallDialog.tsx`: each permission's sentence; each connector
+- [X] T031 [P] [US2] `app/src/host/InstallDialog.tsx`: each permission's sentence; each connector
   with destinations, operations (kind, "revisado" or "declarado", method, URL, sends, fixed), the
   account line saying no account is connected in the app; optionals as switches that call
   `request_judge` on every change and redraw the warning; the warning naming the source and every
   destination; approve sends the last choice digest.
-- [ ] T032 [P] [US2] The development tool: `runtime optional <connector> on` runs `judge` and prints
+- [X] T032 [P] [US2] The development tool: `runtime optional <connector> on` runs `judge` and prints
   the flows it completes (`runtime/src/cli/mod.rs:1525-1550`); test `cli-optional-flow` in
   `runtime/tests/`.
+
+  Done on 2026-11-12. T030's code came with T020; T031's page with T025 (`InstallDialog.tsx`
+  draws connectors, the account line, the optionals' switches and the warning). The tool's
+  existing case `optional_turns_a_connector_on_and_off_and_off_discards_the_kept_data` now expects
+  the flow its local connector completes beside GitHub.
 
 **Checkpoint**: the dialog says what is decided, and the approval covers exactly that.
 
