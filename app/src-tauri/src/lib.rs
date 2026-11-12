@@ -1,3 +1,4 @@
+pub mod install;
 pub mod name;
 #[cfg(feature = "shell-probe")]
 mod probe;
@@ -8,6 +9,7 @@ use std::sync::Arc;
 
 use tauri::{Manager, State};
 
+use install::{Approved, Judged, Started};
 use widgets::{FrameInfo, Host, Rendered};
 
 /// Expands the shared command list into `COMMANDS` and the invoke handler that registers them,
@@ -68,6 +70,53 @@ async fn widget_act(
     on_host(&host, move |widgets| widgets.act(&handle, &action, &values)).await
 }
 
+/// Starts installing the widget of the repository the person typed in the chrome: fetches,
+/// compiles and checks its latest release, and answers the installation dialog's model.
+#[tauri::command]
+async fn install_start(host: State<'_, Arc<Host>>, address: String) -> Result<Started, String> {
+    on_host(&host, move |widgets| widgets.install_start(&address)).await
+}
+
+/// Asks whether the installed widget `handle` has a newer release, and answers the dialog's model
+/// of it, or none.
+#[tauri::command]
+async fn update_start(host: State<'_, Arc<Host>>, handle: String) -> Result<Started, String> {
+    on_host(&host, move |widgets| widgets.update_start(&handle)).await
+}
+
+/// The warning and the choice digest for the optionals the person turned on in the dialog.
+#[tauri::command]
+async fn request_judge(
+    host: State<'_, Arc<Host>>,
+    request: String,
+    optional_on: serde_json::Value,
+) -> Result<Judged, String> {
+    on_host(&host, move |widgets| {
+        widgets.request_judge(&request, &optional_on)
+    })
+    .await
+}
+
+/// The person approved, in the host dialog, what it showed.
+#[tauri::command]
+async fn request_approve(
+    host: State<'_, Arc<Host>>,
+    request: String,
+    choice: String,
+    optional_on: serde_json::Value,
+) -> Result<Approved, String> {
+    on_host(&host, move |widgets| {
+        widgets.request_approve(&request, &choice, &optional_on)
+    })
+    .await
+}
+
+/// The person cancelled the host dialog, or the window closed with it open.
+#[tauri::command]
+async fn request_cancel(host: State<'_, Arc<Host>>, request: String) -> Result<(), String> {
+    on_host(&host, move |widgets| widgets.request_cancel(&request)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(feature = "shell-probe")]
@@ -75,6 +124,17 @@ pub fn run() {
 
     tauri::Builder::default()
         .invoke_handler(invoke_handler())
+        // The window closing, as when the app quits, takes the safe choice of a dialog that is
+        // open and stops an installation that compiles (feature 010, FR-023)
+        .on_window_event(|window, event| {
+            if matches!(
+                event,
+                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+            ) && let Some(host) = window.try_state::<Arc<Host>>()
+            {
+                host.stop_requests();
+            }
+        })
         .setup(|app| {
             let host = Arc::new(Host::new(app.path().app_data_dir()?));
             app.manage(Arc::clone(&host));

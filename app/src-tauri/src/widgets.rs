@@ -12,9 +12,14 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, TryLockError};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    Arc, Mutex, MutexGuard, OnceLock, PoisonError, RwLock, RwLockReadGuard, TryLockError,
+};
 
+use runtime::compile::{CompileLimits, Compiler};
 use runtime::grants::GrantStore;
+use runtime::install::{FetchLimits, Installer, Layout, ReleaseSource, Repository};
 use runtime::{Limits, LogMessage, Plugin, Runtime, RuntimeError, RuntimeOptions};
 use serde::Serialize;
 use serde_json::Value;
@@ -75,6 +80,11 @@ pub struct FrameInfo {
     /// the plugin does not choose freely.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// For a widget installed from a repository, its owner, `github.com/<owner>`, from the host's
+    /// installation record, never from the plugin (criterion HS-02, feature 010 FR-030); none for
+    /// a bundled widget.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// An icon, decoded by the runtime from the manifest's PNG.
@@ -119,8 +129,12 @@ pub struct LogEntry {
 }
 
 /// One widget the host shows.
-struct Shown {
+pub(crate) struct Shown {
     handle: String,
+    /// The plugin id of a widget installed from a repository; `None` for a bundled one.
+    installed: Option<String>,
+    /// A bundled widget's file, which names it when it was refused before its manifest was read.
+    file: Option<String>,
     frame: FrameInfo,
     /// The loaded plugin, or the runtime's error kind when it was refused at load.
     plugin: Result<Plugin, String>,
@@ -131,10 +145,22 @@ struct Shown {
     forms: Mutex<Vec<Vec<String>>>,
 }
 
+/// What installing needs: where the app keeps what it installed, its grant record on disk, the
+/// compile process and where releases come from (feature 010, research R5).
+pub struct Installs {
+    pub layout: Layout,
+    pub grants: Arc<GrantStore>,
+    pub compiler: Compiler,
+    pub source: Box<dyn ReleaseSource>,
+}
+
 /// The widgets the app shows, and the runtime they run in.
 pub struct Widgets {
-    runtime: Runtime,
-    shown: Vec<Shown>,
+    pub(crate) runtime: Runtime,
+    shown: RwLock<Vec<Arc<Shown>>>,
+    next_handle: AtomicUsize,
+    pub(crate) installs: Option<Installs>,
+    pub(crate) requests: crate::install::Requests,
 }
 
 impl Widgets {
@@ -142,6 +168,18 @@ impl Widgets {
     /// package that is refused keeps its frame, in the not-loaded state, with the reason in its
     /// log.
     pub fn start(runtime: Runtime, bundled: &[Bundled<'_>]) -> Widgets {
+        Widgets::start_with(runtime, bundled, None)
+    }
+
+    /// As [`start`](Self::start), with what installing needs: after the bundled widgets, each
+    /// widget the app installed loads from its compiled form, once the start-up cleanup has
+    /// removed what an interrupted installation left (feature 010, research R5).
+    pub fn start_with(
+        runtime: Runtime,
+        bundled: &[Bundled<'_>],
+        installs: Option<Installs>,
+    ) -> Widgets {
+        // A bundled widget's approval lives in memory and grants nothing (Principle VII, v2.6.3)
         let grants = Arc::new(GrantStore::in_memory());
         let mut shown: Vec<Shown> = bundled
             .iter()
@@ -150,20 +188,73 @@ impl Widgets {
                 let handle = format!("w{index}");
                 let mut log = VecDeque::new();
                 let (frame, plugin) = load(&runtime, &grants, package, &handle, &mut log);
-                Shown {
-                    handle,
-                    frame,
-                    plugin,
-                    busy: Mutex::new(()),
-                    log: Mutex::new(log),
-                    forms: Mutex::new(Vec::new()),
-                }
+                let mut shown = Shown::new(handle, None, frame, plugin, log);
+                shown.file = Some(package.file.to_owned());
+                shown
             })
             .collect();
-        same_names(&mut shown, bundled);
-        let widgets = Widgets { runtime, shown };
+        let mut next = shown.len();
+        if let Some(installs) = &installs {
+            let installer = Installer {
+                runtime: &runtime,
+                source: installs.source.as_ref(),
+                compiler: &installs.compiler,
+                layout: &installs.layout,
+                cancel: None,
+            };
+            let mut log = VecDeque::new();
+            let installed = match installs.layout.cleanup() {
+                Ok(_) => installs.layout.installed().read(),
+                Err(error) => {
+                    // Nothing was removed; the widgets still load, each checked on its digests
+                    push_host(
+                        &mut log,
+                        format!("the start-up cleanup did not run: {error}"),
+                    );
+                    installs.layout.installed().read()
+                }
+            };
+            match installed {
+                Ok(installed) => {
+                    for (id, record) in installed {
+                        let handle = format!("w{next}");
+                        next += 1;
+                        let mut log = VecDeque::new();
+                        let frame = installed_frame(&handle, &id, None);
+                        let plugin = installer
+                            .load(&id, &record, Arc::clone(&installs.grants))
+                            .map_err(|error| {
+                                push_host(&mut log, format!("refused at load: {error}"));
+                                error.kind().as_str().to_owned()
+                            });
+                        let frame = match &plugin {
+                            Ok(plugin) => installed_frame(&handle, &id, Some(plugin)),
+                            Err(_) => frame,
+                        };
+                        shown.push(Shown::new(handle, Some(id), frame, plugin, log));
+                    }
+                }
+                Err(error) => {
+                    push_host(
+                        &mut log,
+                        format!("the installed record cannot be read: {error}"),
+                    );
+                }
+            }
+            #[cfg(debug_assertions)]
+            for entry in &log {
+                print_entry("host", entry);
+            }
+        }
+        let widgets = Widgets {
+            runtime,
+            shown: RwLock::new(shown.into_iter().map(Arc::new).collect()),
+            next_handle: AtomicUsize::new(next),
+            installs,
+            requests: crate::install::Requests::default(),
+        };
         #[cfg(debug_assertions)]
-        for shown in &widgets.shown {
+        for shown in widgets.shown().iter() {
             for entry in lock(&shown.log).iter() {
                 print_entry(&shown.handle, entry);
             }
@@ -173,7 +264,47 @@ impl Widgets {
 
     /// Every widget's frame, in order.
     pub fn list(&self) -> Vec<FrameInfo> {
-        self.shown.iter().map(|shown| shown.frame.clone()).collect()
+        frames(&self.shown())
+    }
+
+    fn shown(&self) -> RwLockReadGuard<'_, Vec<Arc<Shown>>> {
+        self.shown.read().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The plugin id of the installed widget `handle`; `None` for a bundled widget or a handle
+    /// the host is not showing.
+    pub(crate) fn installed_id(&self, handle: &str) -> Option<String> {
+        self.find(handle).and_then(|shown| shown.installed.clone())
+    }
+
+    /// Shows the plugin `id` just installed, or replaces the widget that showed its earlier
+    /// version, keeping its handle. Returns the handle.
+    pub(crate) fn show_installed(&self, id: &str, plugin: Result<Plugin, String>) -> String {
+        let mut shown = self.shown.write().unwrap_or_else(PoisonError::into_inner);
+        let position = shown
+            .iter()
+            .position(|each| each.installed.as_deref() == Some(id));
+        let handle = match position {
+            Some(index) => shown[index].handle.clone(),
+            None => format!("w{}", self.next_handle.fetch_add(1, Ordering::SeqCst)),
+        };
+        let frame = installed_frame(&handle, id, plugin.as_ref().ok());
+        let mut log = VecDeque::new();
+        if let Err(kind) = &plugin {
+            push_host(&mut log, format!("refused at load: {kind}"));
+        }
+        let each = Arc::new(Shown::new(
+            handle.clone(),
+            Some(id.to_owned()),
+            frame,
+            plugin,
+            log,
+        ));
+        match position {
+            Some(index) => shown[index] = each,
+            None => shown.push(each),
+        }
+        handle
     }
 
     /// Renders the widget `handle`, and checks its content.
@@ -272,12 +403,34 @@ impl Widgets {
     }
 
     /// The widget the page means by `handle`: only a handle the host gave out.
-    fn find(&self, handle: &str) -> Option<&Shown> {
-        self.shown.iter().find(|shown| shown.handle == handle)
+    fn find(&self, handle: &str) -> Option<Arc<Shown>> {
+        self.shown()
+            .iter()
+            .find(|shown| shown.handle == handle)
+            .cloned()
     }
 }
 
 impl Shown {
+    fn new(
+        handle: String,
+        installed: Option<String>,
+        frame: FrameInfo,
+        plugin: Result<Plugin, String>,
+        log: VecDeque<LogEntry>,
+    ) -> Shown {
+        Shown {
+            handle,
+            installed,
+            file: None,
+            frame,
+            plugin,
+            busy: Mutex::new(()),
+            log: Mutex::new(log),
+            forms: Mutex::new(Vec::new()),
+        }
+    }
+
     /// Renders and checks the content. The caller holds `busy`.
     fn draw(&self) -> Rendered {
         let plugin = match &self.plugin {
@@ -340,24 +493,79 @@ impl Shown {
     }
 }
 
-/// Gives each frame that draws the same name as another, ignoring case, its plugin's id.
-fn same_names(shown: &mut [Shown], bundled: &[Bundled<'_>]) {
+/// Every frame, each that draws the same name as another, ignoring case, with its plugin's id,
+/// or what the host knows it by when it was refused before its manifest was read. Worked out
+/// whenever the list is read, so a widget installed later is told apart at once.
+fn frames(shown: &[Arc<Shown>]) -> Vec<FrameInfo> {
     let names: Vec<String> = shown
         .iter()
         .map(|shown| shown.frame.name.to_lowercase())
         .collect();
-    for (index, each) in shown.iter_mut().enumerate() {
-        let shared = names
-            .iter()
-            .enumerate()
-            .any(|(other, name)| other != index && *name == names[index]);
-        if shared {
-            each.frame.id = Some(match &each.plugin {
-                Ok(plugin) => plugin.manifest().id().to_string(),
-                Err(_) => bundled[index].file.to_owned(),
-            });
+    shown
+        .iter()
+        .enumerate()
+        .map(|(index, each)| {
+            let shared = names
+                .iter()
+                .enumerate()
+                .any(|(other, name)| other != index && *name == names[index]);
+            let mut frame = each.frame.clone();
+            frame.id = shared.then(|| each.known_as());
+            frame
+        })
+        .collect()
+}
+
+impl Shown {
+    /// The plugin's id, or the name it was shown by when it was refused before its manifest was
+    /// read.
+    fn known_as(&self) -> String {
+        match (&self.plugin, &self.installed) {
+            (Ok(plugin), _) => plugin.manifest().id().to_string(),
+            (Err(_), Some(id)) => id.clone(),
+            (Err(_), None) => self.file.clone().unwrap_or_else(|| self.frame.name.clone()),
         }
     }
+}
+
+/// The frame of an installed widget: its manifest's name and icon when it loaded, and its
+/// repository's owner from the installation record (criterion HS-02).
+fn installed_frame(handle: &str, id: &str, plugin: Option<&Plugin>) -> FrameInfo {
+    let owner = Repository::from_plugin_id(id)
+        .map(|repository| format!("github.com/{}", repository.owner()));
+    match plugin {
+        Some(plugin) => {
+            let manifest = plugin.manifest();
+            FrameInfo {
+                handle: handle.to_owned(),
+                name: drawn_name(manifest.name(), manifest.id().as_str()),
+                icon: manifest.icon().map(|icon| IconPixels {
+                    size: icon.size(),
+                    rgba: icon.rgba().to_vec(),
+                }),
+                id: None,
+                source: owner,
+            }
+        }
+        None => FrameInfo {
+            handle: handle.to_owned(),
+            name: drawn_name(None, id),
+            icon: None,
+            id: None,
+            source: owner,
+        },
+    }
+}
+
+fn push_host(log: &mut VecDeque<LogEntry>, message: String) {
+    push(
+        log,
+        LogEntry {
+            level: "error",
+            source: "host",
+            message,
+        },
+    );
 }
 
 /// Checks and loads one bundled package: its frame, and the plugin or why it was refused.
@@ -385,6 +593,7 @@ fn load(
         name: drawn_name(None, stem),
         icon: None,
         id: None,
+        source: None,
     };
     let origin = format!("bundled:{}", package.file);
     let checked = match runtime.check(package.bytes) {
@@ -403,6 +612,7 @@ fn load(
             rgba: icon.rgba().to_vec(),
         }),
         id: None,
+        source: None,
     };
     // Principle VII (v2.6.3): only a bundled package that declares nothing is part of the app
     let declared = if manifest.storage().is_some() {
@@ -579,9 +789,31 @@ impl Host {
             .get_or_init(|| {
                 let runtime = Runtime::new(Limits::default(), app_options(&self.data_dir))
                     .map_err(|error| format!("the widget runtime cannot start: {error}"))?;
-                Ok(Widgets::start(runtime, BUNDLED))
+                let layout = Layout::new(self.data_dir.join("host"));
+                let compiler = Compiler::for_this_executable(CompileLimits::default())
+                    .map_err(|error| format!("the compile process cannot start: {error}"))?;
+                let installs = Installs {
+                    grants: Arc::new(layout.grants()),
+                    layout,
+                    compiler,
+                    source: release_source(&runtime),
+                };
+                Ok(Widgets::start_with(runtime, BUNDLED, Some(installs)))
             })
             .as_ref()
             .map_err(Clone::clone)
     }
+
+    /// The window closed or the app quits: stops an installation in progress, without waiting
+    /// for the widgets to start (feature 010, FR-023).
+    pub fn stop_requests(&self) {
+        if let Some(Ok(widgets)) = self.widgets.get() {
+            widgets.stop_requests();
+        }
+    }
+}
+
+/// Where releases come from: GitHub, the only source a release build has (research R16).
+fn release_source(runtime: &Runtime) -> Box<dyn ReleaseSource> {
+    Box::new(runtime.github(FetchLimits::default()))
 }

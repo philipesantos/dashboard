@@ -45,3 +45,47 @@ reason = "A widget's button or form runs one of the actions its manifest declare
 [[command]]
 name = "widget_act"
 reason = "Same as above; the command behind the permission."
+
+# The installation's commands (specs/010-plugin-installation/contracts/window-commands.md). Only
+# the chrome's controls and the host dialog call them; src/install.rs checks what the page sends,
+# reviewed with this file.
+
+[[permission]]
+id = "allow-install-start"
+reason = "The person asks, from the chrome, to install the widget of a repository."
+
+[[command]]
+name = "install_start"
+reason = "Same as above; the command behind the permission."
+
+[[permission]]
+id = "allow-update-start"
+reason = "The person asks whether an installed widget has a newer release."
+
+[[command]]
+name = "update_start"
+reason = "Same as above; the command behind the permission."
+
+[[permission]]
+id = "allow-request-judge"
+reason = "The installation dialog shows the warning for the optional grants the person has turned on."
+
+[[command]]
+name = "request_judge"
+reason = "Same as above; the command behind the permission."
+
+[[permission]]
+id = "allow-request-approve"
+reason = "The person approves, in the host dialog, what it showed."
+
+[[command]]
+name = "request_approve"
+reason = "Same as above; the command behind the permission."
+
+[[permission]]
+id = "allow-request-cancel"
+reason = "The person cancels the host dialog, or the window closes with it open."
+
+[[command]]
+name = "request_cancel"
+reason = "Same as above; the command behind the permission."
