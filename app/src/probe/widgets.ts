@@ -278,7 +278,7 @@ export const containmentCases: Case[] = [
       const box = boxOf(header);
       const inset = 3;
       // The frame's top corners are rounded and clip: a point 3 px from the corner lies outside the
-      // curve, where nothing of the frame is (WebView2 hit-tests the curve; WebKitGTK does not)
+      // curve, where nothing of the frame is (Windows hit-tests the curve; Linux does not)
       const radius = (corner: string) => parseFloat(corner) || 0;
       const style = getComputedStyle(section);
       const left = Math.max(inset, radius(style.borderTopLeftRadius));
