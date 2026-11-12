@@ -310,6 +310,10 @@ probe's `foreign-actions-refused` case gains the five commands: widget content c
 | `no-asset`, `two-assets`, `asset-digest-mismatch` | FR-004, FR-005 | Refused |
 | `oversized-asset` | FR-005 | Declared size, or a body that grows past the cap: refused before compiling |
 | `crash-mid-install` | FR-006 | Kill after each write step: the next start keeps nothing usable; an unreadable record removes nothing |
+| `cancel-keeps-nothing` | FR-006 | After `request_cancel`: no package, compiled form, grant or entry; the temporary directory gone |
+| `window-closed-mid-dialog`, `quit-mid-compile` | FR-023 | The window's close drops the request (its token then `unknown-request`, nothing granted); stopping the host mid-compile kills the child and keeps nothing |
+| `connector-major-unavailable` | spec edge case | A catalog major the host does not ship: `connector-unavailable` before any dialog |
+| `account-not-connected-in-app` | FR-024 | An account connector installs; its call answers `account-not-connected`; nothing of the development record or vault is used |
 | `compile-slow`, `compile-cpu`, `compile-memory`, `compile-output` | FR-007 | The `compile-heavy` fixture against lowered limits, one per limit: refused naming that limit; the test process's own memory unchanged; no child left |
 | `compile-confined` | FR-029 | A child built with a test hook that, after confining itself, tries to open a file and a socket: both fail, on the three systems |
 | `compiled-tampered`, `package-tampered` | FR-008 | Recompiled once; refused as `package-changed` |
@@ -320,6 +324,7 @@ probe's `foreign-actions-refused` case gains the five commands: widget content c
 | `account-then-elsewhere` | FR-016 | v1 account + storage, v2 drops the account and adds a destination: warning |
 | `cli-optional-flow` | FR-016 | The development tool's `optional on` prints the flow it completes |
 | `no-false-warning` | FR-018 | No flow, no warning |
+| `flow-not-hidden` | FR-018 | Another case or a trailing dot on the other destination, or the account connector required beside an optional destination: the flow is still found |
 | `downgrade` | FR-019 | Equal or lower version: refused |
 | `update-lists-everything` | FR-020 | The update model holds every destination, with change marks |
 | `one-request`, `token-replayed`, `optional-bounds` | contract | A second start is `request-pending`; an approved token is `unknown-request`; out-of-bound choices refused |
@@ -352,7 +357,12 @@ needs more:
 | HS-22 | Everything outside the portal is `aria-hidden` or `inert` | The screen reader's lists (§6) |
 | HS-23 | Every animation rule on the dialog is inside `prefers-reduced-motion: no-preference` (CSSOM) | Reduced motion on (§6) |
 
-Plus `frame-owner-shown` (FR-030, HS-02 as changed) and the extended `foreign-actions-refused`.
+Plus `frame-owner-shown` (FR-030, HS-02 as changed), the extended `foreign-actions-refused`,
+`install-on-time` (SC-001 without the network: under 10 s from `install_start` to first render on
+the probe source) and `window-responsive-while-compiling` (SC-003: no gap above 100 ms between
+animation frames or 10 ms timers while `compile-heavy` compiles). On Windows, the HS-11 and HS-22
+cases also read `Accessibility.getFullAXTree` through `CallDevToolsProtocolMethod` if the probe
+build can call it with developer tools off; the first Windows CI run settles it (tasks T045).
 
 ## R12. The threat model, decision records and author docs (FR-027, FR-028)
 

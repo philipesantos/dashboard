@@ -276,8 +276,8 @@ a hostile widget on the dashboard while the dialog is open.
 - A widget declares a catalog connector major the host does not ship: refused before the dialog,
   naming the connector and major.
 - The window closes, or the app quits, while the dialog is open: the safe choice is taken.
-- Two installations at once: one dialog at a time; the second waits or is refused, never shown
-  beneath the first.
+- Two installations at once: one request at a time; the second is refused, naming that one is
+  already in progress, and never shown beneath the first.
 - The person's grant record from the development tool exists: the app never reads it, and a
   plugin installed in the app gets nothing the development tool granted (feature 009, FR-024).
 - A widget that is installed and also bundled with the app under the same id cannot exist: a
@@ -375,7 +375,7 @@ a hostile widget on the dashboard while the dialog is open.
   with the check its criterion names, and the threat-model rows that cite them MUST point to
   those checks.
 - **FR-022**: The input delay of HS-12 MUST be long enough that a click or key press aimed at what
-  was under the pointer or caret cannot answer the dialog, and is set and measured in the plan. It
+  was under the pointer or caret cannot answer the dialog, and is set in the plan. It
   MUST start again when the window regains focus, and while input aimed at the dialog keeps
   arriving during it.
 - **FR-023**: Closing the window or quitting the app with a dialog open MUST take the safe choice.

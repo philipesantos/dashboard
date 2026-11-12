@@ -51,9 +51,11 @@ constitution's fallback).
 
 **Project Type**: desktop app with a Rust host library and a Wasm plugin contract.
 
-**Performance Goals**: a typical widget (under 1 MiB) from address to first render in under
-10 s on a normal connection; the window answers input within 100 ms while the `compile-heavy`
-fixture compiles (SC-003).
+**Performance Goals**: SC-001's ceiling is 1 minute from address to first render; the expected
+time for a widget under 1 MiB on a normal connection is under 10 s, and the probe's
+`install-on-time` holds the network-free part under 10 s. The window answers input within 100 ms
+while the `compile-heavy` fixture compiles (SC-003, probe case
+`window-responsive-while-compiling`).
 
 **Constraints**:
 - Compile limits: 20 s wall, 60 s CPU, 1.5 GiB memory as each system counts it, half the cores,
@@ -67,7 +69,7 @@ fixture compiles (SC-003).
 - Test release sources never build into a release app (research R16).
 
 **Scale/Scope**: 5 window commands; 12 runtime error kinds and 5 app refusals; 1 decision record;
-1 constitution amendment; about 40 cases below the page and 15 probe cases; 1 new author guide.
+1 constitution amendment; about 45 cases below the page and 17 probe cases; 1 new author guide.
 
 ## Constitution Check
 
@@ -125,6 +127,7 @@ runtime/
 ├── src/grants.rs               # record v5 (account_sources), GrantStore::install
 ├── src/lib.rs                  # engine_config(), load_compiled
 ├── src/permissions.rs          # permission enum in place of the string registry
+├── src/text.rs                 # the name sanitiser, moved from the app, also used for the author
 ├── src/error.rs                # new kinds
 ├── src/cli/                    # describe prints DialogModel; optional runs judge; --compile-package
 └── tests/                      # install.rs, compile.rs, flows.rs, dialog_model.rs (listed in it.rs)
@@ -140,6 +143,7 @@ app/
     ├── src/main.rs             # --compile-package before Tauri
     ├── src/install.rs          # requests and the five commands' bodies
     ├── src/widgets.rs          # installed widgets, lock-guarded list, records on disk, owner
+    ├── src/name.rs             # calls the runtime's sanitiser
     ├── src/commands.rs, capabilities/default.json, window-surface.toml
     └── tests/                  # install.rs (records, crash steps, refusals, embedded sources)
 .github/workflows/ci.yml        # compile-heavy measured under default limits; confinement test on three systems
