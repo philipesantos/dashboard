@@ -244,7 +244,9 @@ impl Compiler {
             }));
         }
         if output.len() <= 8 {
-            return Err(failed("the compile process wrote no compiled form".to_owned()));
+            return Err(failed(
+                "the compile process wrote no compiled form".to_owned(),
+            ));
         }
         Ok(output[8..].to_vec())
     }

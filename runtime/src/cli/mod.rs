@@ -163,7 +163,9 @@ pub fn main() -> ExitCode {
 /// True when the only argument is `--compile-package`.
 fn is_compile_process() -> bool {
     let mut args = std::env::args_os().skip(1);
-    args.next().is_some_and(|arg| arg == crate::compile::COMPILE_ARGUMENT) && args.next().is_none()
+    args.next()
+        .is_some_and(|arg| arg == crate::compile::COMPILE_ARGUMENT)
+        && args.next().is_none()
 }
 
 /// As [`main`], on `host`.

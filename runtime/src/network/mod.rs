@@ -1002,6 +1002,162 @@ impl Session {
     }
 }
 
+/// The answer to one of the host's own `GET` requests (`specs/010-plugin-installation/
+/// research.md`, R4): its status, every header by its lowercase name, and the body.
+#[derive(Debug, Clone)]
+pub(crate) struct HostGet {
+    pub(crate) status: u16,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) body: Vec<u8>,
+}
+
+impl HostGet {
+    /// The value of the header `name` (lowercase).
+    pub(crate) fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(header, _)| header == name)
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+impl Session {
+    /// One of the host's own `GET` requests, for the installer: to `url` with `headers`, over the
+    /// HTTPS agent with every rule of a connector's requests (public addresses, Mozilla's roots,
+    /// no proxy, no cookie, no compression), within `timeout` for every hop together, reading at
+    /// most `max_bytes` of the last answer's body.
+    ///
+    /// A redirect is followed only to a host of `redirect_hosts`, over HTTPS, at most
+    /// `max_redirects` times; a redirect anywhere else is refused. With no `redirect_hosts`, a
+    /// redirect is the answer, so the caller sees it (a renamed repository's `301`).
+    pub(crate) fn host_get(
+        &self,
+        url: &url::Url,
+        headers: &[(&str, &str)],
+        redirect_hosts: &[&str],
+        max_redirects: usize,
+        timeout: Duration,
+        max_bytes: usize,
+    ) -> Result<HostGet, Failure> {
+        let deadline = Instant::now() + timeout;
+        let mut url = url.clone();
+        let mut redirects = 0;
+        loop {
+            if url.scheme() != "https" {
+                return Err(Failure::new(
+                    FailureRule::Unavailable,
+                    format!("{} is not HTTPS", url.origin().ascii_serialization()),
+                ));
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            let out_of_time = || {
+                Failure::new(
+                    FailureRule::OverLimit,
+                    format!("longer than the time limit of {timeout:?}"),
+                )
+            };
+            if left.is_zero() {
+                return Err(out_of_time());
+            }
+            let mut builder = http::Request::builder().method("GET").uri(url.as_str());
+            for (name, value) in headers {
+                builder = builder.header(*name, *value);
+            }
+            let http_request = builder
+                .body(Vec::new())
+                .map_err(|error| Failure::new(FailureRule::Unavailable, format!("{error}")))?;
+            let http_request = self
+                .https
+                .configure_request(http_request)
+                .timeout_global(Some(left))
+                .build();
+            let as_request = Request {
+                method: Method::Get,
+                url: url.clone(),
+                headers: Vec::new(),
+                body: None,
+                credential: None,
+            };
+            *self.refused.lock().unwrap_or_else(PoisonError::into_inner) = None;
+            let mut response = self.https.run(http_request).map_err(|error| match error {
+                ureq::Error::Timeout(_) => out_of_time(),
+                other => self.failure(other, &as_request, deadline),
+            })?;
+            let status = response.status().as_u16();
+            let answer_headers: Vec<(String, String)> = response
+                .headers()
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str().to_ascii_lowercase(),
+                        String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                    )
+                })
+                .collect();
+            if is_redirect(status) && !redirect_hosts.is_empty() {
+                let location = answer_headers
+                    .iter()
+                    .find(|(name, _)| name == "location")
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or_default();
+                let refuse = |why: String| Failure::new(FailureRule::RedirectNotAllowed, why);
+                let mut target = url.join(&location).map_err(|error| {
+                    refuse(format!(
+                        "to `{location}`, which is not a valid address: {error}"
+                    ))
+                })?;
+                target.set_fragment(None);
+                let allowed = target.scheme() == "https"
+                    && target.username().is_empty()
+                    && target.password().is_none()
+                    && target.port_or_known_default() == Some(443)
+                    && target
+                        .host_str()
+                        .is_some_and(|host| redirect_hosts.contains(&host));
+                if !allowed {
+                    let mut shown = target.clone();
+                    shown.set_query(None);
+                    return Err(refuse(format!(
+                        "to {shown}, which is not a host the installer accepts"
+                    )));
+                }
+                redirects += 1;
+                if redirects > max_redirects {
+                    return Err(refuse(format!(
+                        "more than {max_redirects} redirects; the installer follows no more"
+                    )));
+                }
+                url = target;
+                continue;
+            }
+            let body = response
+                .body_mut()
+                .with_config()
+                .limit(max_bytes as u64 + 1)
+                .read_to_vec()
+                .map_err(|error| match error {
+                    ureq::Error::Timeout(_) => out_of_time(),
+                    ureq::Error::BodyExceedsLimit(_) => Failure::new(
+                        FailureRule::OverLimit,
+                        format!("the answer is over the limit of {max_bytes} bytes"),
+                    ),
+                    other => self.failure(other, &as_request, deadline),
+                })?;
+            if body.len() > max_bytes {
+                return Err(Failure::new(
+                    FailureRule::OverLimit,
+                    format!("the answer is over the limit of {max_bytes} bytes"),
+                ));
+            }
+            return Ok(HostGet {
+                status,
+                headers: answer_headers,
+                body,
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

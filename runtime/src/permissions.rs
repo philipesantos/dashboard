@@ -170,7 +170,10 @@ permission_kinds! {
 impl PermissionKind {
     /// The permission named `name`, if the host knows it.
     pub fn from_name(name: &str) -> Option<PermissionKind> {
-        PermissionKind::ALL.iter().copied().find(|kind| kind.name() == name)
+        PermissionKind::ALL
+            .iter()
+            .copied()
+            .find(|kind| kind.name() == name)
     }
 
     /// Its interfaces in each contract.

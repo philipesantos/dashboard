@@ -39,7 +39,10 @@ pub fn many(code_bytes: usize) -> String {
 
 /// One function, as large as validation allows, with thousands of locals in use at once, which
 /// strains register allocation.
-#[allow(dead_code, reason = "used by the compile_cost measurement, not by the fixture")]
+#[allow(
+    dead_code,
+    reason = "used by the compile_cost measurement, not by the fixture"
+)]
 pub fn huge(code_bytes: usize) -> String {
     const LOCALS: usize = 4_000;
     // wasmparser refuses function bodies over 7,654,321 bytes

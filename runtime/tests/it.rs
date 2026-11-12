@@ -14,6 +14,7 @@ mod contract_v1;
 mod docs_reference;
 mod docs_walk;
 mod hostile;
+mod install_github;
 mod manifest_schema;
 mod network;
 mod permissions;

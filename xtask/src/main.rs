@@ -177,7 +177,8 @@ fn install_fixtures(root: &Path, bare: &BTreeMap<String, Vec<u8>>, out_dir: &Pat
                 .as_str()
                 .ok_or_else(|| format!("an install fixture has no \"{key}\""))
         };
-        let (name, crate_name, manifest) = (field("name")?, field("component")?, field("manifest")?);
+        let (name, crate_name, manifest) =
+            (field("name")?, field("component")?, field("manifest")?);
         let component = bare
             .get(crate_name)
             .ok_or_else(|| format!("{name}: no crate named {crate_name} was built"))?;

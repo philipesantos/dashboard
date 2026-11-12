@@ -21,8 +21,8 @@ fn compiler() -> Compiler {
 
 fn runtime() -> (TempDir, Runtime) {
     let data = TempDir::new().expect("a temporary directory");
-    let runtime =
-        Runtime::new(Limits::default(), RuntimeOptions::new(data.path())).expect("the runtime starts");
+    let runtime = Runtime::new(Limits::default(), RuntimeOptions::new(data.path()))
+        .expect("the runtime starts");
     (data, runtime)
 }
 

@@ -104,18 +104,18 @@ before any build of the app or the tests.
   (research R3): reads nothing from disk; checks both digests against the caller's record on the
   bytes it was given; `unsafe { Component::deserialize(&compiled) }` (never `deserialize_file`); then
   the same `inspect` steps as `load` (`lib.rs:910-958`) with that component. T007's load cases pass.
-- [ ] T010 [P] Write `runtime/tests/install_github.rs` against a local HTTPS test server under the
+- [X] T010 [P] Write `runtime/tests/install_github.rs` against a local HTTPS test server under the
   existing `test-network` feature: the host GET follows at most 3 redirects, only to
   `release-assets.githubusercontent.com` and `objects.githubusercontent.com` over HTTPS
   (`redirect-elsewhere` refused); API answers capped at 256 KiB and 10 s, the package at the package
   cap and 60 s; `403` or `429` with `x-ratelimit-remaining: 0` or `retry-after` is `rate-limited`;
   the request headers are `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
   and the `dashboard/<version>` user agent, with no credential.
-- [ ] T011 Implement the host GET in `runtime/src/network/mod.rs` (public to the crate's `install`
+- [X] T011 Implement the host GET in `runtime/src/network/mod.rs` (public to the crate's `install`
   module only; `ureq` stays inside `network/`, `clippy.toml:16-60`) with the existing TLS setup and
   public-only resolver, and the installer's redirect rule; `runtime::install::FetchLimits` with the
   data-model's defaults. T010 passes.
-- [ ] T012 Implement `runtime/src/install/github.rs`: the `ReleaseSource` trait and the GitHub
+- [X] T012 Implement `runtime/src/install/github.rs`: the `ReleaseSource` trait and the GitHub
   source (research R4): identity by `GET /repos/{owner}/{repo}` (a `301` refused naming the move;
   `full_name` lowercased must equal the id), release and asset by `/repositories/{id}/…`, with the
   documented fallback (`/repos/{owner}/{repo}/…` then `/repositories/{id}` checked again after the

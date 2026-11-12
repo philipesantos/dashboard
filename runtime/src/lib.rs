@@ -13,8 +13,8 @@ compile_error!(
 
 pub mod accounts;
 mod calls;
-pub mod compile;
 mod catalog;
+pub mod compile;
 // The development CLI, a module so a test-only binary can run the same code
 // (specs/006-contract-v1-docs/research.md, R9)
 #[cfg(feature = "cli")]
@@ -24,6 +24,7 @@ pub mod connector;
 mod error;
 pub mod grants;
 mod host;
+pub mod install;
 mod kept;
 mod limits;
 pub mod manifest;
@@ -960,14 +961,14 @@ impl Runtime {
             // host recorded when its own compile process made them
             // (specs/010-plugin-installation/research.md, R3); Wasmtime still refuses a form
             // built by another engine version or configuration.
-            Some(compiled) => unsafe { Component::deserialize(&self.engine, compiled) }.map_err(
-                |error| {
+            Some(compiled) => {
+                unsafe { Component::deserialize(&self.engine, compiled) }.map_err(|error| {
                     RuntimeError::new(
                         ErrorKind::CompileFailed,
                         format!("the compiled form cannot be used: {error:#}"),
                     )
-                },
-            )?,
+                })?
+            }
         };
         // Steps 5 and 6: on names, before linking, so every refused import is named
         let interfaces = Interfaces::of(&self.engine, &component);
@@ -1092,6 +1093,13 @@ impl Runtime {
         // Step 7a: kept data that no longer matches the package or its approval goes now
         plugin.kept_data();
         Ok(plugin)
+    }
+
+    /// The GitHub release source, on this runtime's network: production DNS and Mozilla's roots,
+    /// or, in the runtime's own tests, the test seam (`specs/010-plugin-installation/research.md`,
+    /// R4).
+    pub fn github(&self, fetch: install::FetchLimits) -> install::GitHub {
+        install::GitHub::new(self.network.clone(), self.limits.clone(), fetch)
     }
 
     /// [`load`](Self::load) for an installed package, from the form the compile process made of

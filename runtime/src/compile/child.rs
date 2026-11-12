@@ -41,7 +41,9 @@ fn run() -> Result<(), String> {
         .read_to_end(&mut package)
         .map_err(|error| error.to_string())?;
     if package.len() > max {
-        return Err(format!("the package is larger than the limit of {max} bytes"));
+        return Err(format!(
+            "the package is larger than the limit of {max} bytes"
+        ));
     }
     // A binary component only: precompile_component would also take the text format in a
     // build with Wasmtime's `wat` feature, as the runtime's tests are
@@ -51,6 +53,7 @@ fn run() -> Result<(), String> {
     let compiled = engine
         .precompile_component(&package)
         .map_err(|error| format!("{error:#}"))?;
-    out.write_all(&compiled).map_err(|error| error.to_string())?;
+    out.write_all(&compiled)
+        .map_err(|error| error.to_string())?;
     out.flush().map_err(|error| error.to_string())
 }
