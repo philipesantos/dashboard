@@ -52,7 +52,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use runtime::accounts::{Account, AccountKind, Connected, Reason};
-use runtime::connector::{Access, Credential, CredentialKind, Kind, ParameterType, Template};
+use runtime::connector::{Access, Credential, CredentialKind, Kind, Template};
 use runtime::grants::{GrantStore, Status};
 use runtime::manifest::MAX_MANIFEST_BYTES;
 use runtime::manifest::PluginId;
@@ -1256,81 +1256,19 @@ fn account_label(account: &Account) -> String {
     }
 }
 
-/// The parameters an operation sends: those in its path first, in order, then the rest by name.
+/// The parameters an operation sends, as the installation dialog lists them.
 fn sends(operation: &runtime::connector::Operation) -> String {
-    let parameters = operation.parameters();
-    if parameters.is_empty() {
-        return "nothing".to_owned();
+    let sends = runtime::install::dialog::sends(operation);
+    if sends.is_empty() {
+        "nothing".to_owned()
+    } else {
+        sends.join(", ")
     }
-    let mut names: Vec<&String> = operation
-        .path()
-        .iter()
-        .filter_map(|segment| match segment {
-            Template::Parameter(name) => parameters.get_key_value(name).map(|(name, _)| name),
-            Template::Literal(_) => None,
-        })
-        .collect();
-    for name in parameters.keys() {
-        if !names.contains(&name) {
-            names.push(name);
-        }
-    }
-    let described: Vec<String> = names
-        .into_iter()
-        .map(|name| {
-            let parameter = &parameters[name];
-            let kind = match parameter.kind {
-                ParameterType::Text { .. } => "text",
-                ParameterType::Integer { .. } => "integer",
-                ParameterType::Flag => "flag",
-            };
-            if parameter.required {
-                format!("{} ({kind})", escape(name))
-            } else {
-                format!("{} ({kind}, optional)", escape(name))
-            }
-        })
-        .collect();
-    described.join(", ")
 }
 
-/// Every value the connector writes into the request itself: they are public.
+/// The fixed query values, headers and body fields, as the installation dialog lists them.
 fn fixed(operation: &runtime::connector::Operation) -> Vec<String> {
-    let mut fixed: Vec<String> = operation
-        .query()
-        .iter()
-        .filter_map(|(name, value)| match value {
-            Template::Literal(value) => Some(format!("{}={}", escape(name), escape(value))),
-            Template::Parameter(_) => None,
-        })
-        .collect();
-    fixed.extend(
-        operation
-            .headers()
-            .iter()
-            .map(|(name, value)| format!("{}: {}", escape(name), escape(value))),
-    );
-    if let Some(body) = operation.body() {
-        fixed_body(body, "body", &mut fixed);
-    }
-    fixed
-}
-
-fn fixed_body(value: &serde_json::Value, path: &str, fixed: &mut Vec<String>) {
-    match value {
-        serde_json::Value::Object(fields) => {
-            for (name, item) in fields {
-                fixed_body(item, &format!("{path}.{name}"), fixed);
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                fixed_body(item, &format!("{path}[{index}]"), fixed);
-            }
-        }
-        serde_json::Value::String(text) if runtime::connector::is_placeholder(text) => {}
-        other => fixed.push(format!("{}: {}", escape(path), escape(&other.to_string()))),
-    }
+    runtime::install::dialog::fixed(operation)
 }
 
 /// Grants every required permission the manifest declares, all at once (FR-018), after the

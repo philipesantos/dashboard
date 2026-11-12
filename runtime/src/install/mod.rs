@@ -2,6 +2,7 @@
 //! releases come from ([`github`]), the limits of fetching them, and the repository a plugin id
 //! names.
 
+pub mod dialog;
 pub mod github;
 pub mod record;
 
@@ -10,6 +11,7 @@ use std::time::Duration;
 use crate::manifest::is_repository_id;
 use crate::{ErrorKind, RuntimeError};
 
+pub use dialog::{DialogKind, DialogModel, ModelInput, model};
 pub use github::{GitHub, Identity, Release, ReleaseSource};
 pub use record::{Installed, InstalledStore};
 

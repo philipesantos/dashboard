@@ -144,16 +144,21 @@ before any build of the app or the tests.
   `runtime/src/grants.rs`. Replace the CLI's `data flow:` lines (`cli/mod.rs:1214-1248`,
   `:1329-1352`) with `judge`. T015 passes; the CLI's existing output tests are updated where the
   wording changes.
-- [ ] T017 [P] Write `runtime/tests/dialog_model.rs`: for every fixture, the model holds every
+- [X] T017 [P] Write `runtime/tests/dialog_model.rs`: for every fixture, the model holds every
   permission and connector property the manifest declares (`plain-language`); names and authors
   with markup, bidirectional controls and 500 characters come out sanitised and bounded, the author
   labelled as declared by the plugin, the id in full; the choice digest changes with `optional_on`
   and with the warning; the CLI's `describe` prints the same model.
-- [ ] T018 Implement `runtime/src/install/dialog.rs`: `DialogModel` (data-model.md), the Portuguese
+- [X] T018 Implement `runtime/src/install/dialog.rs`: `DialogModel` (data-model.md), the Portuguese
   sentences of research R6 in one exhaustive `match` on the permission enum, the author through the
   same sanitising as the name (moved from `app/src-tauri/src/name.rs` into `runtime/src/text.rs`
   so both use it; `name.rs` calls it), the approval and choice digests; make `runtime/src/cli/`
   `describe` print it. T017 passes.
+
+  Done on 2026-11-12, with one change: the CLI's `describe` keeps its own text, which many CLI
+  tests pin, and shares with the model the functions that read an operation (`sends`, `fixed`,
+  the URL) and the warning rule; `the_development_tool_shows_the_operations_the_dialog_shows`
+  checks that each operation and destination of the model is in the CLI's output.
 - [ ] T019 In `app/src-tauri/src/widgets.rs`: the app's grant record moves to
   `<app data dir>/host/grants.json` (`GrantStore::open`); `Widgets.shown` becomes a lock-guarded
   list (`widgets.rs:135-138`); at start, installed widgets load from `installed.json` through

@@ -70,7 +70,7 @@ pub use network::test_signin::follow as follow_test_sign_in;
 pub use network::{Route, TestNetwork};
 pub use permissions::{Contract, ContractVersion, PermissionKind};
 pub use storage::StorageCounts;
-pub use text::{escape, quote_entry};
+pub use text::{DRAWN_NAME_CHARS, drawn_name, drawn_text, escape, quote_entry};
 #[cfg(feature = "test-network")]
 pub use vault::{Failure as VaultFailure, TestEntry, TestKeychain};
 

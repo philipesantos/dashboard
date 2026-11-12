@@ -11,6 +11,7 @@ mod cli;
 mod compile;
 mod contract;
 mod contract_v1;
+mod dialog_model;
 mod docs_reference;
 mod docs_walk;
 mod flows;
