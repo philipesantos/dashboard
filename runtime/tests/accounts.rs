@@ -61,17 +61,9 @@ impl Setup {
     }
 }
 
-/// The titles of the notes `content` shows.
+/// The titles of the notes `content` shows, checked as the app draws it.
 fn titles(content: &Value) -> Vec<String> {
-    content["items"]
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item["title"].as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
+    common::list_items(common::drawn(content))
 }
 
 /// `private_notes`: the example end to end (User Story 1, quickstart step 3).
@@ -134,10 +126,7 @@ fn private_notes() {
     // Loaded again, the optional credential is not sent and only the public notes come
     let plugin = setup.world.load(&package);
     let render = plugin.render("{}");
-    assert_eq!(
-        render.result.as_ref().unwrap()["text"],
-        json!("No notes yet")
-    );
+    assert!(common::texts(render.result.as_ref().unwrap()).contains(&"No notes yet".to_owned()));
     let update = plugin.update("{}");
     assert_eq!(
         update.result.as_ref().unwrap()["notes"]
@@ -995,4 +984,110 @@ fn the_sign_in_page_over_http_connects_an_account() {
     assert!(matches!(connected, Connected::New(_)), "{connected:?}");
     assert_eq!(service.requests_to("/oauth/authorize").len(), 1);
     Setup { service, world }.scan(&[("the sign-in", format!("{connected:?}"))]);
+}
+
+// Feature 009: the app's vault and the form check (research R3, R11)
+
+/// A connector `local/keyed` that takes a typed key, and `key` connected to it.
+fn keyed(setup: &Setup, key: &str) {
+    let mut keyed: Value = serde_json::from_str(NOTES).unwrap();
+    keyed["id"] = json!("local/keyed");
+    keyed["credential"] = json!({
+        "kind": "key", "required": true, "destinations": ["api"],
+        "header": "Authorization", "scheme": "Bearer"
+    });
+    setup.world.write_connector("keyed", &keyed);
+    setup.world.runtime.connect_key("local/keyed", key).unwrap();
+}
+
+/// FR-025: a form value holding a secret the host holds is found, in every encoding the network
+/// layer withholds a credential in; a value without one is not.
+#[test]
+fn a_held_secret_is_found_in_a_form_value_in_each_encoding() {
+    let setup = setup();
+    let key = "k3y+12/3_abc=";
+    keyed(&setup, key);
+    let runtime = &setup.world.runtime;
+    for form in [
+        key.to_owned(),
+        format!("paste: {key} please"),
+        key.replace('/', "\\/"),
+        key.replace('+', "%2B")
+            .replace('/', "%2F")
+            .replace('=', "%3D"),
+        key.replace('+', "%2b")
+            .replace('/', "%2f")
+            .replace('=', "%3d"),
+        key.replace('+', "\\u002b")
+            .replace('/', "\\u002f")
+            .replace('=', "\\u003d"),
+    ] {
+        assert_eq!(runtime.holds_secret_in(&form), Ok(true), "{form}");
+    }
+    for innocent in ["", "k3y", "a shopping list", "k3y+12/3_ab"] {
+        assert_eq!(runtime.holds_secret_in(innocent), Ok(false), "{innocent}");
+    }
+}
+
+/// An access token and its refresh token are both secrets the host holds.
+#[test]
+fn an_account_s_access_and_refresh_tokens_are_both_found() {
+    let setup = setup();
+    setup.connect();
+    let tokens: Vec<String> = setup
+        .service
+        .secrets()
+        .into_iter()
+        .filter(|secret| secret.starts_with("at") || secret.starts_with("rt"))
+        .collect();
+    assert_eq!(tokens.len(), 2, "an access and a refresh token were issued");
+    for token in tokens {
+        assert_eq!(
+            setup.world.runtime.holds_secret_in(&token),
+            Ok(true),
+            "{token}"
+        );
+    }
+}
+
+/// With no account connected, the check finds nothing and never reaches the keychain: a failure
+/// set up for the next keychain operation is still pending afterwards.
+#[test]
+fn with_no_account_the_check_touches_no_keychain() {
+    let world = World::seam(runtime::TestNetwork::default(), false);
+    world.runtime.test_vault_fail_next(
+        "local/keyed",
+        "anywhere",
+        runtime::VaultFailure::NoStorageAccess,
+    );
+    assert_eq!(world.runtime.holds_secret_in("anything"), Ok(false));
+}
+
+/// A keychain that cannot be read makes the check an error, so the form is refused: it fails
+/// closed.
+#[test]
+fn an_unreadable_keychain_fails_the_check_closed() {
+    let setup = setup();
+    keyed(&setup, "k3y-unreadable");
+    let origin = setup.world.runtime.list_accounts().unwrap()[0]
+        .origin
+        .clone();
+    setup.world.runtime.test_vault_fail_next(
+        "local/keyed",
+        &origin,
+        runtime::VaultFailure::NoStorageAccess,
+    );
+    assert!(setup.world.runtime.holds_secret_in("hello").is_err());
+}
+
+/// The app's vault is its own keychain service; the development tool keeps its own.
+#[test]
+fn the_vault_service_is_an_option_of_the_runtime() {
+    let options = runtime::RuntimeOptions::new("/data");
+    assert_eq!(
+        options.vault_service(),
+        "dev.philsantos.dashboard.development"
+    );
+    let app = options.with_vault_service("dev.philsantos.dashboard.app");
+    assert_eq!(app.vault_service(), "dev.philsantos.dashboard.app");
 }

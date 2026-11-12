@@ -5,9 +5,23 @@
 use crate::common;
 
 use common::servers::{Reply, Server, TestPki};
-use common::{World, answers, calls, connected_manifest, fixture, probe};
+use common::{World, answers, calls, connected_manifest, drawn, fixture, probe, rows, texts};
 use runtime::{ErrorKind, Route, TestNetwork};
 use serde_json::{Value, json};
+
+/// The example's text when the last update failed.
+fn failure(content: &Value) -> Option<String> {
+    texts(content)
+        .into_iter()
+        .find(|text| text.starts_with("The last update failed: "))
+}
+
+/// The example's text saying when its data was fetched.
+fn fetched(content: &Value) -> Option<String> {
+    texts(content)
+        .into_iter()
+        .find(|text| text.starts_with("Fetched "))
+}
 
 const RELEASES: &str = r#"[
     {"name": "Rust 1.97.0", "tag_name": "1.97.0", "published_at": "2026-10-01T00:00:00Z",
@@ -50,7 +64,7 @@ fn the_example_updates_through_catalog_github_and_renders_the_releases() {
 
     // Before any update, render says there is no data yet
     let content = plugin.render(CONFIG).result.expect("renders");
-    assert_eq!(content["text"], "No data yet");
+    assert!(texts(drawn(&content)).contains(&"No data yet".to_owned()));
     assert!(server.received().is_empty(), "render made a request");
 
     let report = plugin.update(CONFIG);
@@ -80,10 +94,17 @@ fn the_example_updates_through_catalog_github_and_renders_the_releases() {
     );
 
     let content = plugin.render(CONFIG).result.expect("renders");
-    assert_eq!(content["title"], "rust-lang/rust releases");
-    assert_eq!(content["items"][1]["name"], "Rust 1.96.0");
-    assert!(content["fetched_at_ms"].as_u64().is_some());
-    assert_eq!(content["last_update"]["outcome"], "ok");
+    assert_eq!(texts(drawn(&content))[0], "rust-lang/rust releases");
+    assert_eq!(
+        rows(&content),
+        [
+            ["Rust 1.97.0", "1.97.0", "2026-10-01"],
+            ["Rust 1.96.0", "1.96.0", "2026-08-20"]
+        ]
+    );
+    let when = fetched(&content).expect("when the data was fetched");
+    assert!(when.ends_with(" UTC"), "{when}");
+    assert_eq!(failure(&content), None);
     assert_eq!(server.received().len(), 1, "render made a request");
 
     let log = world.runtime.read_requests(50, None).unwrap();
@@ -244,8 +265,8 @@ fn render_gets_the_kept_data_its_time_and_the_last_outcome_without_any_request()
     let start = Instant::now();
     for _ in 0..5 {
         let content = plugin.render(CONFIG).result.unwrap();
-        assert_eq!(content["items"][0]["tag"], "1.97.0");
-        assert_eq!(content["last_update"]["outcome"], "ok");
+        assert_eq!(rows(&content)[0][1], "1.97.0");
+        assert_eq!(failure(&content), None);
     }
     assert!(start.elapsed() < Duration::from_secs(5));
     assert_eq!(server.received().len(), requests, "render made a request");
@@ -257,7 +278,8 @@ fn a_failed_update_keeps_the_previous_data_and_render_shows_the_failure() {
     let (server, world) = github(&pki);
     let plugin = world.approve_and_load(&fixture("github-releases"));
     plugin.update(CONFIG).result.unwrap();
-    let fetched = plugin.render(CONFIG).result.unwrap()["fetched_at_ms"].clone();
+    let when = fetched(&plugin.render(CONFIG).result.unwrap());
+    assert!(when.is_some());
 
     // An error status, which the example turns into an error
     server.route(
@@ -270,26 +292,21 @@ fn a_failed_update_keeps_the_previous_data_and_render_shows_the_failure() {
     assert_eq!(error.kind(), ErrorKind::PluginError);
     let content = plugin.render(CONFIG).result.unwrap();
     assert_eq!(
-        content["items"][0]["tag"], "1.97.0",
+        rows(drawn(&content))[0][1],
+        "1.97.0",
         "the previous data stays"
     );
-    assert_eq!(content["fetched_at_ms"], fetched);
-    assert_eq!(content["last_update"]["outcome"], "failed");
-    assert!(
-        content["last_update"]["error"]
-            .as_str()
-            .unwrap()
-            .contains("500"),
-        "{content}"
-    );
+    assert_eq!(fetched(&content), when);
+    let failed = failure(&content).expect("the failure is shown");
+    assert!(failed.contains("500"), "{content}");
 
     // The service down
     server.stop();
     let error = plugin.update(CONFIG).result.unwrap_err();
     assert!(error.detail().contains("failed"), "{error}");
     let content = plugin.render(CONFIG).result.unwrap();
-    assert_eq!(content["items"][0]["tag"], "1.97.0");
-    assert_eq!(content["last_update"]["outcome"], "failed");
+    assert_eq!(rows(&content)[0][1], "1.97.0");
+    assert!(failure(&content).is_some(), "{content}");
 }
 
 #[test]
@@ -372,7 +389,7 @@ fn an_update_past_its_time_limit_is_stopped_and_its_calls_abandoned() {
         ),
         "{error}"
     );
-    assert_eq!(plugin.render(CONFIG).result.unwrap()["text"], "No data yet");
+    assert!(texts(&plugin.render(CONFIG).result.unwrap()).contains(&"No data yet".to_owned()));
 }
 
 #[test]
@@ -435,7 +452,7 @@ fn kept_data_outlives_the_runtime_and_a_new_version_starts_without_it() {
         )
         .unwrap();
     let content = plugin.render(CONFIG).result.unwrap();
-    assert_eq!(content["items"][0]["tag"], "1.97.0");
+    assert_eq!(rows(&content)[0][1], "1.97.0");
 
     // A new version of the widget: no data from the old one
     let manifest = String::from_utf8(
@@ -457,7 +474,7 @@ fn kept_data_outlives_the_runtime_and_a_new_version_starts_without_it() {
     let plugin = runtime
         .load(&newer, common::TEST_ORIGIN, std::sync::Arc::clone(&grants))
         .unwrap();
-    assert_eq!(plugin.render(CONFIG).result.unwrap()["text"], "No data yet");
+    assert!(texts(&plugin.render(CONFIG).result.unwrap()).contains(&"No data yet".to_owned()));
 }
 
 /// SC-004: a service that takes 5 s to answer does not slow a render from kept data.
@@ -475,6 +492,6 @@ fn a_slow_service_never_slows_a_render() {
         let start = Instant::now();
         let report = plugin.render(CONFIG);
         assert!(start.elapsed() < Duration::from_secs(1), "render waited");
-        assert_eq!(report.result.unwrap()["items"][0]["tag"], "1.97.0");
+        assert_eq!(rows(&report.result.unwrap())[0][1], "1.97.0");
     }
 }

@@ -88,7 +88,7 @@ the storage quota, and the approval digest that `approve --expect` needs.
 $ runtime permissions my-widget.wasm
 plugin: local/my-widget 0.1.0
 author: Your name
-contract: v1 (1.3.0)
+contract: v1 (1.4.0)
 approved: no
 permissions:
   log  required  not granted
@@ -145,7 +145,7 @@ error: required-together: log (it is required: required permissions are approved
 ## `run`
 
 ```text
-runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+runtime run <plugin> [--check-content] [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
 ```
 
 Loads the package, calls `render` once, and prints the widget's log messages, then its content as
@@ -154,6 +154,7 @@ never reaches the network.
 
 | Option | Meaning |
 | --- | --- |
+| `--check-content` | Then reads the content as the app does ([widget content](content.md)) and prints the outcome: `content: drawn`; or each entry the content adds to the widget's log, as `[content] <entry>`, then `content: drawn, <n> log entries`; or `content: not drawn: <kind> at <place>: <reason>`, and exits with 1 <!-- ref: cli run --check-content --> |
 | `--config <json>` | The widget's configuration; `{}` when neither is given <!-- ref: cli run --config --> |
 | `--config-file <path>` | The configuration, read from a file <!-- ref: cli run --config-file --> |
 | `--grants <path>` | As above <!-- ref: cli run --grants --> |
@@ -165,12 +166,23 @@ never reaches the network.
 ```
 
 ```console check
-$ runtime run my-widget.wasm --config-file config.json
+$ runtime run my-widget.wasm --config-file config.json --check-content
 [plugin] info: rendering my-widget
 {
-  "text": "Hello, Grace!",
-  "title": "Hello"
+  "body": [
+    {
+      "text": "Hello",
+      "type": "text",
+      "variant": "heading"
+    },
+    {
+      "text": "Hello, Grace!",
+      "type": "text"
+    }
+  ],
+  "format": 1
 }
+content: drawn
 ```
 
 <!-- ref: cli update -->
@@ -196,6 +208,33 @@ to update:
 ```console check exit=1
 $ runtime update my-widget.wasm
 error: missing-updater: local/my-widget exports no updater, so it has nothing to update (previous data kept)
+```
+
+<!-- ref: cli act -->
+## `act`
+
+```text
+runtime act <plugin> <action> [--value <id>=<text>]... [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+```
+
+Runs one of the widget's actions, as a button or a form would
+([widget content](content.md#actions)), and prints the data it returned, as indented JSON. Then it renders the widget with that data and
+prints the content and its outcome, as `run --check-content` does. An action's data lasts as long
+as the command: each `act` starts from the data the last `update` kept, as the app does after a
+restart. An action the manifest does not declare is refused before the widget runs:
+
+| Option | Meaning |
+| --- | --- |
+| `--value <id>=<text>` | A form field's value, by the field's id; once per field. Without any, the action gets no values, as from a button. A value that holds a key or token the development vault keeps is refused before the widget runs, as the app refuses it in a form <!-- ref: cli act --value --> |
+| `--config <json>` | As for `run` <!-- ref: cli act --config --> |
+| `--config-file <path>` | As for `run` <!-- ref: cli act --config-file --> |
+| `--grants <path>` | As above <!-- ref: cli act --grants --> |
+| `--data <dir>` | As above <!-- ref: cli act --data --> |
+| `--connectors <dir>` | As above <!-- ref: cli act --connectors --> |
+
+```console check exit=1
+$ runtime act my-widget.wasm greet
+error: undeclared-action: `greet` is not an action local/my-widget declares
 ```
 
 <!-- ref: cli requests -->

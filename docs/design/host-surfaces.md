@@ -58,13 +58,15 @@ Feature: Moldura do host em cada widget com nome e ícone do plugin
 
 The header shows the name and icon from the plugin's manifest, never from widget content. The
 name is drawn as escaped text, with control and bidirectional override characters removed and a
-length limit, and a host-drawn placeholder stands in when it is empty. The icon is drawn as an
-image in a fixed box, never as markup.
+length limit, and a host-drawn placeholder stands in when it is empty. The icon is a PNG the host
+decodes, drawn as pixels in a fixed box, never as markup.
 
-Check: test: names holding markup, control characters, bidirectional overrides, 500 characters
-and nothing; each is drawn escaped, stripped, cut at the limit, or replaced by the placeholder.
-An SVG icon holding a script and an external reference is drawn as an image, running nothing and
-fetching nothing.
+Check: test: names holding markup, bidirectional overrides, the longest name the manifest
+accepts, and only characters the frame removes; each is drawn as text, stripped, cut at the limit,
+or replaced by the placeholder. A name with control characters or over the manifest's limit is
+refused when the plugin loads. An SVG icon, or any image that is not a PNG within the manifest's
+bounds, is refused when the plugin loads, and the frame draws the host's monogram; nothing of it
+runs or is fetched.
 Feature: Moldura do host em cada widget com nome e ícone do plugin
 
 ### HS-03 Widget content is clipped to the frame's body

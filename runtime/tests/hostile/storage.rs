@@ -161,7 +161,9 @@ impl Vault {
             .result
             .unwrap_or_else(|error| panic!("update-counter renders: {error}"));
         assert!(
-            content["text"].as_str().unwrap().starts_with("Updated "),
+            crate::common::texts(crate::common::drawn(&content))
+                .iter()
+                .any(|text| text.starts_with("Updated ")),
             "{content}"
         );
     }

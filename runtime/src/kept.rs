@@ -121,28 +121,7 @@ impl KeptStore {
             Ok(Some(kept)) => kept,
             Err(reason) => return Found::Damaged(reason),
         };
-        let why = if kept.id != key.id || kept.origin != key.origin {
-            Some("it belongs to another package")
-        } else if kept.digest != key.digest {
-            Some("the package changed")
-        } else if kept.approval.digest != key.approval {
-            Some("the approval changed")
-        } else if kept
-            .approval
-            .connectors_on
-            .iter()
-            .any(|id| !key.connectors_on.contains(id))
-        {
-            Some("a connector it used is off")
-        } else if kept.accounts.iter().any(|(connector, fetched_with)| {
-            fetched_with.is_some() && key.accounts.get(connector) != Some(fetched_with)
-        }) {
-            // Data read as an account never outlives it: another account, or none (FR-013)
-            Some("the account it was fetched with is not connected")
-        } else {
-            None
-        };
-        match why {
+        match stale(&kept, key) {
             None => Found::Current(Some(Box::new(kept))),
             Some(why) => {
                 let _ = fs::remove_file(&path);
@@ -290,6 +269,106 @@ impl KeptStore {
         temporary.as_file().sync_all()?;
         temporary.persist(&path).map_err(|error| error.error)?;
         Ok(())
+    }
+}
+
+/// Why kept data no longer belongs to `key`, or `None` when it does: data read under one
+/// package, approval, set of connectors or account never outlives it. The same rules for the
+/// data an update keeps on disk and the data an action keeps in memory.
+pub(crate) fn stale(kept: &Kept, key: &Key) -> Option<&'static str> {
+    if kept.id != key.id || kept.origin != key.origin {
+        Some("it belongs to another package")
+    } else if kept.digest != key.digest {
+        Some("the package changed")
+    } else if kept.approval.digest != key.approval {
+        Some("the approval changed")
+    } else if kept
+        .approval
+        .connectors_on
+        .iter()
+        .any(|id| !key.connectors_on.contains(id))
+    {
+        Some("a connector it used is off")
+    } else if kept.accounts.iter().any(|(connector, fetched_with)| {
+        fetched_with.is_some() && key.accounts.get(connector) != Some(fetched_with)
+    }) {
+        // Data read as an account never outlives it: another account, or none (FR-013)
+        Some("the account it was fetched with is not connected")
+    } else {
+        None
+    }
+}
+
+/// What an action leaves in memory (feature 009): the data of its last success, when that was,
+/// and how the last action went. Never written to disk. A success records `key`, what it ran
+/// under, so that [`stale`] drops the data once the package, approval, connectors or accounts
+/// change, as it drops an update's.
+pub(crate) fn in_memory(
+    previous: Option<Kept>,
+    key: &Key,
+    result: &Result<Value, crate::RuntimeError>,
+    at_ms: u64,
+) -> Kept {
+    let mut kept = previous.unwrap_or_else(|| Kept {
+        id: key.id.clone(),
+        origin: key.origin.clone(),
+        digest: key.digest.clone(),
+        approval: KeptApproval {
+            digest: key.approval.clone(),
+            connectors_on: key.connectors_on.clone(),
+        },
+        fetched_at_ms: None,
+        data: None,
+        last_update: None,
+        accounts: key.accounts.clone(),
+    });
+    match result {
+        Ok(data) => {
+            kept.digest = key.digest.clone();
+            kept.approval = KeptApproval {
+                digest: key.approval.clone(),
+                connectors_on: key.connectors_on.clone(),
+            };
+            kept.accounts = key.accounts.clone();
+            kept.data = Some(data.clone());
+            kept.fetched_at_ms = Some(at_ms);
+            kept.last_update = Some(LastUpdate {
+                at_ms,
+                outcome: Outcome::Ok,
+                error: None,
+            });
+        }
+        Err(error) => {
+            kept.last_update = Some(LastUpdate {
+                at_ms,
+                outcome: Outcome::Failed,
+                error: Some(error.to_string()),
+            });
+        }
+    }
+    kept
+}
+
+/// The newer of the update's data, from disk, and the action's, from memory: the data of the
+/// later success, and the outcome of the later run, whichever produced each (research R7).
+pub(crate) fn newest(from_update: Option<Kept>, from_action: Option<Kept>) -> Option<Kept> {
+    match (from_update, from_action) {
+        (None, other) | (other, None) => other,
+        (Some(update), Some(action)) => {
+            let fetched = |kept: &Kept| kept.fetched_at_ms.unwrap_or(0);
+            let ran = |kept: &Kept| kept.last_update.as_ref().map_or(0, |last| last.at_ms);
+            let mut newest = if fetched(&action) >= fetched(&update) {
+                action.clone()
+            } else {
+                update.clone()
+            };
+            newest.last_update = if ran(&action) >= ran(&update) {
+                action.last_update
+            } else {
+                update.last_update
+            };
+            Some(newest)
+        }
     }
 }
 

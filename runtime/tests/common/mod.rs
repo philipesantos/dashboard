@@ -350,3 +350,93 @@ pub fn calls(calls: &[(&str, &str, serde_json::Value)]) -> String {
         .collect();
     serde_json::json!({ "calls": calls }).to_string()
 }
+
+/// What `hello-widget` renders for `name`.
+pub fn hello(name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "format": 1,
+        "body": [
+            { "type": "text", "text": "Hello", "variant": "heading" },
+            { "type": "text", "text": format!("Hello, {name}!") }
+        ]
+    })
+}
+
+/// Content an example renders (format 1 of feature 009), checked as the app checks it: drawn,
+/// with no entry for the plugin's log. Returns it, to read with [`texts`], [`rows`] and
+/// [`list_items`].
+pub fn drawn(content: &serde_json::Value) -> &serde_json::Value {
+    match widget_content::parse(content) {
+        Ok((_, log)) => assert!(log.is_empty(), "{log:?} for {content}"),
+        Err(error) => panic!("{error} for {content}"),
+    }
+    content
+}
+
+/// Every text a content document shows, components' in order: texts, list items, table cells,
+/// chart labels and series names, and controls' labels; never a type, tone, variant, kind,
+/// action or field id.
+pub fn texts(content: &serde_json::Value) -> Vec<String> {
+    fn walk(node: &serde_json::Value, found: &mut Vec<String>) {
+        match node {
+            serde_json::Value::String(text) => found.push(text.clone()),
+            serde_json::Value::Array(items) => items.iter().for_each(|item| walk(item, found)),
+            serde_json::Value::Object(object) => {
+                for (key, value) in object {
+                    if !["type", "tone", "variant", "kind", "action", "id"].contains(&key.as_str())
+                    {
+                        walk(value, found);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    walk(&content["body"], &mut found);
+    found
+}
+
+/// The rows of the first table of a content document, at any depth; none without a table.
+pub fn rows(content: &serde_json::Value) -> Vec<Vec<String>> {
+    first_component(&content["body"], "table")
+        .and_then(|table| table["rows"].as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .map(|row| {
+            row.as_array()
+                .expect("a row is a list")
+                .iter()
+                .map(|cell| cell.as_str().expect("a cell is text").to_owned())
+                .collect()
+        })
+        .collect()
+}
+
+/// The texts of the first list of a content document, at any depth; none without a list.
+pub fn list_items(content: &serde_json::Value) -> Vec<String> {
+    first_component(&content["body"], "list")
+        .and_then(|list| list["items"].as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .or_else(|| item["text"].as_str())
+                .expect("an item is text or has text")
+                .to_owned()
+        })
+        .collect()
+}
+
+fn first_component<'a>(
+    components: &'a serde_json::Value,
+    kind: &str,
+) -> Option<&'a serde_json::Value> {
+    components.as_array()?.iter().find_map(|component| {
+        if component["type"] == kind {
+            Some(component)
+        } else {
+            first_component(&component["children"], kind)
+        }
+    })
+}

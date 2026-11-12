@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/philipesantos/dashboard/wit/content.schema.json",
+  "title": "Widget content",
+  "description": "What a widget's render returns, at most 64 KiB (contract v1). The host draws it with its own components inside the widget's frame (specs/009-declarative-widget-ui/contracts/content-format.md). Rules a schema cannot express, which the host also checks: at most 500 components in all, nested at most 8 deep, every table row as long as its columns, and as many chart values as labels.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "body"],
+  "properties": {
+    "format": {
+      "description": "The version of this format.",
+      "const": 1
+    },
+    "body": {
+      "description": "The widget's components, top to bottom.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "text": {
+      "description": "Any text; drawn as text, never as markup.",
+      "type": "string",
+      "maxLength": 2000
+    },
+    "tone": {
+      "description": "The tone of a text or list item. ok, warning and error always draw their icon.",
+      "enum": ["default", "muted", "accent", "ok", "warning", "error"]
+    },
+    "component": {
+      "oneOf": [
+        { "$ref": "#/$defs/textComponent" },
+        { "$ref": "#/$defs/list" },
+        { "$ref": "#/$defs/table" },
+        { "$ref": "#/$defs/chart" },
+        { "$ref": "#/$defs/button" },
+        { "$ref": "#/$defs/form" },
+        { "$ref": "#/$defs/stack" }
+      ]
+    },
+    "textComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "$ref": "#/$defs/text" },
+        "variant": { "enum": ["default", "muted", "heading"] },
+        "tone": { "$ref": "#/$defs/tone" }
+      }
+    },
+    "list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "items"],
+      "properties": {
+        "type": { "const": "list" },
+        "items": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/text" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["text"],
+                "properties": {
+                  "text": { "$ref": "#/$defs/text" },
+                  "tone": { "$ref": "#/$defs/tone" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "columns", "rows"],
+      "properties": {
+        "type": { "const": "table" },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/text" }
+        },
+        "rows": {
+          "description": "Each row has as many cells as there are columns.",
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": { "$ref": "#/$defs/text" }
+          }
+        }
+      }
+    },
+    "chart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "labels", "series"],
+      "properties": {
+        "type": { "const": "chart" },
+        "kind": { "enum": ["bar", "line"] },
+        "labels": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/text" }
+        },
+        "series": {
+          "description": "Drawn in the chart-1 to chart-5 roles, in order. Each series has as many values as there are labels.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "values"],
+            "properties": {
+              "name": { "$ref": "#/$defs/text" },
+              "values": {
+                "type": "array",
+                "maxItems": 200,
+                "items": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "label", "action"],
+      "properties": {
+        "type": { "const": "button" },
+        "label": { "$ref": "#/$defs/text" },
+        "action": {
+          "description": "An action the manifest declares; the host refuses any other when the button is pressed.",
+          "$ref": "#/$defs/text"
+        },
+        "variant": { "enum": ["primary", "secondary", "outline", "ghost", "destructive"] }
+      }
+    },
+    "form": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "fields", "submit"],
+      "properties": {
+        "type": { "const": "form" },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "kind"],
+            "properties": {
+              "id": {
+                "description": "The key of the field's value in the action's input; unique in the form.",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+              },
+              "label": { "$ref": "#/$defs/text" },
+              "kind": {
+                "description": "No password, masked, date, file or link kind exists.",
+                "enum": ["text", "number", "checkbox", "select"]
+              },
+              "options": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 50,
+                "items": { "$ref": "#/$defs/text" }
+              }
+            },
+            "if": { "properties": { "kind": { "const": "select" } } },
+            "then": { "required": ["options"] },
+            "else": { "not": { "required": ["options"] } }
+          }
+        },
+        "submit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "action"],
+          "properties": {
+            "label": { "$ref": "#/$defs/text" },
+            "action": { "$ref": "#/$defs/text" }
+          }
+        }
+      }
+    },
+    "stack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "children"],
+      "properties": {
+        "type": { "const": "stack" },
+        "children": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/component" }
+        }
+      }
+    }
+  }
+}

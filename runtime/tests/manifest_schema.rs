@@ -369,11 +369,20 @@ fn the_host_also_refuses_what_a_schema_cannot_see() {
     );
 }
 
-/// SC-006, FR-017: every plugin in this repository has a valid manifest with a local id.
+/// The hostile plugins whose manifest is invalid on purpose: each must be refused by both the
+/// schema and the host's parser, and no other manifest may be invalid.
+const INVALID_ON_PURPOSE: &[&str] = &[
+    // A name over 60 characters: the app shows its not-loaded state (feature 009, R14)
+    "hostile/ui-badmanifest",
+];
+
+/// SC-006, FR-017: every plugin in this repository has a valid manifest with a local id, except
+/// the hostile ones invalid on purpose, which both checks refuse.
 #[test]
 fn every_manifest_in_the_repository_is_valid_and_local() {
     let schema = schema();
     let mut found = Vec::new();
+    let mut refused = Vec::new();
     for group in ["examples", "hostile", "fixtures"] {
         let dir = repository().join("plugins").join(group);
         for entry in std::fs::read_dir(&dir).expect("the plugin group exists") {
@@ -383,6 +392,22 @@ fn every_manifest_in_the_repository_is_valid_and_local() {
             }
             let bytes = std::fs::read(&path).expect("readable");
             let manifest: Value = serde_json::from_slice(&bytes).expect("JSON");
+            let plugin = format!("{group}/{}", entry_name(&path));
+            if INVALID_ON_PURPOSE.contains(&plugin.as_str()) {
+                assert!(
+                    !valid_for_schema(&schema, &manifest),
+                    "the schema accepts {plugin}, invalid on purpose"
+                );
+                assert_eq!(
+                    Manifest::parse(&bytes)
+                        .map(drop)
+                        .map_err(|error| error.kind()),
+                    Err(ErrorKind::InvalidManifest),
+                    "the parser's verdict on {plugin}, invalid on purpose"
+                );
+                refused.push(plugin);
+                continue;
+            }
             assert!(
                 valid_for_schema(&schema, &manifest),
                 "{} breaks the schema",
@@ -402,6 +427,20 @@ fn every_manifest_in_the_repository_is_valid_and_local() {
         found.iter().any(|id| id == "local/hello-widget"),
         "the example's manifest was not found: {found:?}"
     );
+    refused.sort_unstable();
+    assert_eq!(
+        refused, INVALID_ON_PURPOSE,
+        "a plugin invalid on purpose was not found"
+    );
+}
+
+/// The plugin directory's name, for a path `<group>/<name>/manifest.json`.
+fn entry_name(manifest: &Path) -> String {
+    manifest
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 // Feature 003: the connector schema, `wit/connector.schema.json`, and the host's connector
@@ -1265,4 +1304,176 @@ fn the_schema_and_the_parser_agree_on_the_storage_quota() {
     assert!(valid_for_schema(&schema, &example));
     assert_eq!(parse(&example), Ok(()));
     assert_eq!(example["permissions"][0]["name"], "storage");
+}
+
+/// A PNG of `width` by `height` pixels in one colour, as base64; `frames` above 1 makes it an
+/// animated PNG.
+fn png_icon(width: u32, height: u32, frames: u32) -> String {
+    use base64::Engine as _;
+
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        if frames > 1 {
+            encoder.set_animated(frames, 0).expect("an animated PNG");
+        }
+        let mut writer = encoder.write_header().expect("a PNG header");
+        let pixels = vec![0x4a; (width * height * 4) as usize];
+        for _ in 0..frames.max(1) {
+            writer.write_image_data(&pixels).expect("PNG pixels");
+        }
+    }
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+fn base64_of(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+/// Feature 009, research R6 and R8: `name`, `icon` and `actions`, optional fields the frame
+/// and the actions read. The schema and the parser agree on the shapes; the parser alone checks
+/// that an icon is a PNG within its bounds, which a schema cannot read inside base64.
+#[test]
+fn the_schema_and_the_parser_agree_on_name_icon_and_actions() {
+    let schema = schema();
+    let sixteen: Vec<Value> = (0..16)
+        .map(|n| json!({ "name": format!("a{n}") }))
+        .collect();
+    let seventeen: Vec<Value> = (0..17)
+        .map(|n| json!({ "name": format!("a{n}") }))
+        .collect();
+    let valid = [
+        ("a name", set("name", json!("Vitrine"))),
+        (
+            "a name of 60 characters",
+            set("name", json!("n".repeat(60))),
+        ),
+        // Markup and bidirectional overrides are text to the parser; the frame draws them as
+        // text and removes the overrides (HS-02)
+        ("a name with markup", set("name", json!("<b>Vitrine</b>"))),
+        (
+            "a name with an override",
+            set("name", json!("Vit\u{202e}rine")),
+        ),
+        ("a 32 by 32 icon", set("icon", json!(png_icon(32, 32, 1)))),
+        ("a 16 by 16 icon", set("icon", json!(png_icon(16, 16, 1)))),
+        ("a 64 by 64 icon", set("icon", json!(png_icon(64, 64, 1)))),
+        (
+            "one action",
+            set("actions", json!([{ "name": "increment" }])),
+        ),
+        ("sixteen actions", set("actions", Value::Array(sixteen))),
+        ("no action", set("actions", json!([]))),
+    ];
+    for (case, manifest) in valid {
+        assert!(
+            valid_for_schema(&schema, &manifest),
+            "the schema refused {case}"
+        );
+        assert_eq!(parse(&manifest), Ok(()), "the parser refused {case}");
+    }
+
+    let invalid = [
+        ("an empty name", set("name", json!(""))),
+        (
+            "a name of 61 characters",
+            set("name", json!("n".repeat(61))),
+        ),
+        (
+            "a name with a control character",
+            set("name", json!("Vit\u{7}rine")),
+        ),
+        ("a name that is not text", set("name", json!(7))),
+        ("an empty icon", set("icon", json!(""))),
+        (
+            "an icon that is not base64",
+            set("icon", json!("not base64!")),
+        ),
+        // Past the longest base64 of 8 KiB; one to two bytes over 8 KiB are as long, and only the
+        // parser refuses them (below)
+        (
+            "an icon well over 8 KiB",
+            set("icon", json!(base64_of(&vec![0u8; 8 * 1024 + 3]))),
+        ),
+        (
+            "an action name in capitals",
+            set("actions", json!([{ "name": "Increment" }])),
+        ),
+        (
+            "an action name of 33 characters",
+            set("actions", json!([{ "name": "a".repeat(33) }])),
+        ),
+        (
+            "the same action twice",
+            set("actions", json!([{ "name": "a" }, { "name": "a" }])),
+        ),
+        ("seventeen actions", set("actions", Value::Array(seventeen))),
+        (
+            "an action with another field",
+            set("actions", json!([{ "name": "a", "label": "A" }])),
+        ),
+        (
+            "actions that are not a list",
+            set("actions", json!("increment")),
+        ),
+    ];
+    for (case, manifest) in invalid {
+        assert!(
+            !valid_for_schema(&schema, &manifest),
+            "the schema accepted {case}"
+        );
+        assert_eq!(
+            parse(&manifest),
+            Err(ErrorKind::InvalidManifest),
+            "the parser's verdict on {case}"
+        );
+    }
+
+    // Host-only: the schema sees base64 text, the parser decodes the image
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><image href="https://probe.invalid/x.png"/></svg>"#;
+    let mut truncated = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD
+            .decode(png_icon(32, 32, 1))
+            .expect("base64")
+    };
+    truncated.truncate(truncated.len() / 2);
+    let host_only = [
+        (
+            "an icon one byte over 8 KiB",
+            base64_of(&vec![0u8; 8 * 1024 + 1]),
+        ),
+        ("an SVG icon", base64_of(svg)),
+        (
+            "a JPEG icon",
+            base64_of(&[0xff, 0xd8, 0xff, 0xe0, 0, 16, b'J', b'F', b'I', b'F', 0]),
+        ),
+        ("an icon that is not square", png_icon(32, 16, 1)),
+        ("an icon under 16 pixels", png_icon(8, 8, 1)),
+        ("an icon over 64 pixels", png_icon(128, 128, 1)),
+        ("an animated icon", png_icon(32, 32, 2)),
+        ("a truncated PNG", base64_of(&truncated)),
+    ];
+    for (case, icon) in host_only {
+        let manifest = set("icon", json!(icon));
+        assert!(
+            valid_for_schema(&schema, &manifest),
+            "the schema refused {case}"
+        );
+        assert_eq!(
+            parse(&manifest),
+            Err(ErrorKind::InvalidManifest),
+            "the parser's verdict on {case}"
+        );
+    }
+
+    // The parser keeps the decoded pixels for the frame: 32 by 32, RGBA
+    let bytes = serde_json::to_vec(&set("icon", json!(png_icon(32, 32, 1)))).expect("JSON");
+    let manifest = Manifest::parse(&bytes).expect("a valid manifest");
+    let icon = manifest.icon().expect("an icon");
+    assert_eq!((icon.size(), icon.rgba().len()), (32, 32 * 32 * 4));
+    assert_eq!(&icon.rgba()[..4], &[0x4a, 0x4a, 0x4a, 0x4a]);
 }

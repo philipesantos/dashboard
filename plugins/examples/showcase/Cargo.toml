@@ -1,0 +1,13 @@
+[package]
+name = "showcase"
+version = "0.1.0"
+description = "The bundled showcase widget: every component of the declarative UI, and two actions that need no permission"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json.workspace = true
+wit-bindgen.workspace = true

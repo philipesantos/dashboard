@@ -55,6 +55,22 @@ const PAGE_CASES: &[&str] = &[
     "command-ungranted",
     "command-opener",
     "command-core",
+    // Widgets (feature 009, research R14)
+    "showcase-on-time",
+    "content-error-shown",
+    "window-responsive",
+    "frame-header-kept",
+    "frame-header-hittable",
+    "frame-clips",
+    "content-is-text",
+    "strings-isolated",
+    "dialog-shaped-widget",
+    "nothing-outside-frame",
+    "foreign-actions-refused",
+    "form-no-credentials",
+    "status-icons",
+    "form-reshaped",
+    "refusals-shown",
     // The window (FR-009 to FR-011)
     "context-menu",
     "navigate-location",
@@ -108,6 +124,14 @@ pub fn refused(refusal: Refusal) {
     counter.fetch_add(1, Ordering::SeqCst);
 }
 
+static ACTIONS: AtomicU32 = AtomicU32::new(0);
+
+/// Counts an action that reached a plugin. `widgets.rs` calls it just before the plugin runs, so
+/// a case can show that a refused action never did (specs/009-declarative-widget-ui, R14).
+pub fn action_ran() {
+    ACTIONS.fetch_add(1, Ordering::SeqCst);
+}
+
 /// The handlers' refusals so far. The page diffs two snapshots around a case.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,6 +140,8 @@ pub struct Counters {
     new_window: u32,
     permission: u32,
     download: u32,
+    /// Actions that reached a plugin.
+    actions: u32,
 }
 
 fn counters() -> Counters {
@@ -124,6 +150,7 @@ fn counters() -> Counters {
         new_window: NEW_WINDOW.load(Ordering::SeqCst),
         permission: PERMISSION.load(Ordering::SeqCst),
         download: DOWNLOAD.load(Ordering::SeqCst),
+        actions: ACTIONS.load(Ordering::SeqCst),
     }
 }
 

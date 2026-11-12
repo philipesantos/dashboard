@@ -22,6 +22,10 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The widget host (specs/009-declarative-widget-ui, research R1): the plugin runtime, without its
+# development command-line tool, and the reader of the widget content format
+runtime = { path = "../../runtime", default-features = false }
+widget-content = { path = "../../widget-content" }
 
 # WebView2 settings that wry does not expose: the probe reads them, and window.rs sets some
 # (specs/008-tauri-shell/research.md, R6 and R7). The versions wry already locks.
@@ -40,6 +44,11 @@ webkit2gtk = { version = "2.0.2", optional = true }
 [dev-dependencies]
 # The surface test reads window-surface.toml and Cargo.toml (specs/008-tauri-shell, T011)
 toml = "1.1.8"
+# The widget host's tests (specs/009-declarative-widget-ui, T015): a fresh data directory each,
+# and the runtime's mock vault, to hold a secret the form check must find. The test seam only
+# compiles in debug builds, and dev-dependencies never reach a build of the app
+tempfile = "3"
+runtime = { path = "../../runtime", default-features = false, features = ["test-network"] }
 
 [features]
 # The shell probe: the release build plus a report command and an ungranted one, for the

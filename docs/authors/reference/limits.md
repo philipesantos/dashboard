@@ -9,20 +9,41 @@ The names of the answers are those of [the contract](contract.md) and of [the er
 | Limit | Default | What it bounds | Past it |
 | --- | --- | --- | --- |
 | `max_package_bytes` | 10 MiB | A package file, and the component `runtime pack` makes from a module | `invalid-package` <!-- ref: limit max_package_bytes --> |
-| `fuel` | 500,000,000 | The CPU budget of one call of `render` or `update`, in Wasmtime fuel units | `cpu-budget-exceeded` <!-- ref: limit fuel --> |
+| `fuel` | 500,000,000 | The CPU budget of one call of `render`, `update` or `act`, in Wasmtime fuel units | `cpu-budget-exceeded` <!-- ref: limit fuel --> |
 | `time_limit` | 1 s | The wall-clock time of one call of `render` | `time-limit-exceeded` <!-- ref: limit time_limit --> |
-| `update_time_limit` | 10 s | The wall-clock time of one call of `update`, which waits on the network; its fuel and memory are render's | `time-limit-exceeded` <!-- ref: limit update_time_limit --> |
+| `update_time_limit` | 10 s | The wall-clock time of one call of `update` or `act`, which may wait on the network; their fuel and memory are render's | `time-limit-exceeded` <!-- ref: limit update_time_limit --> |
 | `max_memory_bytes` | 32 MiB | Every linear memory of one call together | `memory-limit-exceeded` <!-- ref: limit max_memory_bytes --> |
 | `max_output_bytes` | 64 KiB | What `render` returns, checked before it is parsed | `output-too-large` <!-- ref: limit max_output_bytes --> |
-| `max_update_output_bytes` | 256 KiB | The data `update` returns, checked before it is parsed | `output-too-large`; the previous data stays <!-- ref: limit max_update_output_bytes --> |
+| `max_update_output_bytes` | 256 KiB | The data `update` or `act` returns, checked before it is parsed | `output-too-large`; the previous data stays <!-- ref: limit max_update_output_bytes --> |
 | `max_log_messages` | 100 | Log messages kept per call | The rest are dropped and counted; `write` still answers `ok` <!-- ref: limit max_log_messages --> |
 | `max_log_message_bytes` | 1 KiB | One log message | Cut, and marked as cut <!-- ref: limit max_log_message_bytes --> |
+
+## Widget content
+
+The bounds of [the content format](content.md), which the host checks as it reads what `render`
+returns, after `max_output_bytes`. They are the format's own, the same in every host, named as
+in the host's reader (`widget-content/src/lib.rs`); the schema, `wit/content.schema.json`, has
+each of them it can express.
+
+| Limit | Default | What it bounds | Past it |
+| --- | --- | --- | --- |
+| `MAX_DEPTH` | 8 | Nesting: the body is level 1, and each stack's children one level more | `over-bound`: the content is not drawn |
+| `MAX_COMPONENTS` | 500 | Components in all, at every level | `over-bound` |
+| `MAX_STRING_CHARS` | 2,000 | Characters in any text of the content | `over-bound` |
+| `MAX_LIST_ITEMS` | 200 | Items of a list | `over-bound` |
+| `MAX_TABLE_COLUMNS` | 20 | Columns of a table, and cells of a row | `over-bound` |
+| `MAX_TABLE_ROWS` | 200 | Rows of a table | `over-bound` |
+| `MAX_SERIES` | 5 | Series of a chart | `over-bound` |
+| `MAX_POINTS` | 200 | Labels of a chart, and values of each series | `over-bound` |
+| `MAX_FIELDS` | 20 | Fields of a form | `over-bound` |
+| `MAX_OPTIONS` | 50 | Options of a select | `over-bound` |
+| `MAX_FIELD_ID_CHARS` | 32 | Characters of a form field's id | `bad-shape` |
 
 ## Connector calls
 
 | Limit | Default | What it bounds | Past it |
 | --- | --- | --- | --- |
-| `max_calls_per_run` | 20 | Connector calls per run of `update`, refused ones included | `refused(over-limit)`, after `not-granted`, `called-outside-update`, `operation-not-declared`, `change-needs-user-action` and `value-outside-type`; the calls past it are logged as one summary entry <!-- ref: limit max_calls_per_run --> |
+| `max_calls_per_run` | 20 | Connector calls per run of `update` or an action, refused ones included | `refused(over-limit)`, after `not-granted`, `called-outside-update`, `operation-not-declared`, `change-needs-user-action` and `value-outside-type`; the calls past it are logged as one summary entry <!-- ref: limit max_calls_per_run --> |
 | `calls_per_minute_per_widget` | 30 per minute | Calls of one widget, within one running host; each CLI command starts afresh | `refused(over-limit)` <!-- ref: limit calls_per_minute_per_widget --> |
 | `calls_per_minute_per_host` | 60 per minute | Calls to one destination host, every widget together, within one running host; each CLI command starts afresh | `refused(over-limit)` <!-- ref: limit calls_per_minute_per_host --> |
 | `call_time_limit` | 5 s | One call: name resolution, connection, TLS and response, cut to what is left of the update | `failed(over-limit)` <!-- ref: limit call_time_limit --> |
@@ -53,8 +74,8 @@ What `runtime requests` shows. These bound the log, not the calls.
 | `storage_entry_cost_bytes` | 64 bytes | What each entry counts in usage on top of its name and value, the same on every system | Counted against the quota (`over-quota`) <!-- ref: limit storage_entry_cost_bytes --> |
 | `max_storage_name_bytes` | 256 bytes | A name, in bytes of UTF-8, and `list`'s `prefix` and `after` | `refused(invalid-name)` <!-- ref: limit max_storage_name_bytes --> |
 | `max_storage_value_bytes` | 256 KiB | One value | `refused(over-limit)` <!-- ref: limit max_storage_value_bytes --> |
-| `max_storage_calls_per_run` | 1,000 | Storage calls per run of `render` or `update`, refused ones included | `refused(over-limit)` <!-- ref: limit max_storage_calls_per_run --> |
-| `max_storage_written_bytes_per_update` | 1 MiB | Names and values of every `set` of one update together | `refused(over-limit)` <!-- ref: limit max_storage_written_bytes_per_update --> |
+| `max_storage_calls_per_run` | 1,000 | Storage calls per run of `render`, `update` or an action, refused ones included | `refused(over-limit)` <!-- ref: limit max_storage_calls_per_run --> |
+| `max_storage_written_bytes_per_update` | 1 MiB | Names and values of every `set` of one update or action together | `refused(over-limit)` <!-- ref: limit max_storage_written_bytes_per_update --> |
 | `storage_list_page` | 100 | Names in one page of `list` | The rest come in the next page, from `next` <!-- ref: limit storage_list_page --> |
 | `storage_file_cap_factor` | 5 | The store's file may grow to this many times the approved quota, plus the next limit | `failed(over-limit)`; every later storage call of the run answers `run-aborted`, nothing the update wrote is kept, and the update fails, keeping the previous data <!-- ref: limit storage_file_cap_factor --> |
 | `storage_file_cap_extra_bytes` | 64 KiB | Added to the file's cap, for its own pages | `failed(over-limit)`; every later storage call of the run answers `run-aborted`, nothing the update wrote is kept, and the update fails, keeping the previous data <!-- ref: limit storage_file_cap_extra_bytes --> |

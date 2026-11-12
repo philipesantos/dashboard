@@ -7,7 +7,7 @@
 //! "arguments": [[name, value], ...], "repeat": n}], "dump": bool, "fail": bool}`; `render`
 //! returns the document the host gives it, kept data included.
 
-wit_bindgen::generate!({ path: "../../../wit/v1", world: "account-widget" });
+wit_bindgen::generate!({ path: "../../../wit/history/1.3.0", world: "account-widget" });
 
 use dashboard::widget::accounts::{self, AccountCallError};
 use dashboard::widget::connectors::{self, Argument, CallError, Problem, Response, Rule, Value};
@@ -30,7 +30,10 @@ fn make_calls(calls: Option<&Json>) -> Result<(Json, Option<String>), String> {
         .map(Vec::as_slice)
         .unwrap_or_default()
     {
-        let via = entry.get("via").and_then(Json::as_str).unwrap_or("accounts");
+        let via = entry
+            .get("via")
+            .and_then(Json::as_str)
+            .unwrap_or("accounts");
         let connector = text_field(entry, "connector")?;
         let operation = text_field(entry, "operation")?;
         let arguments = arguments(entry.get("arguments"))?;

@@ -11,8 +11,8 @@ connector or a service is escaped: a newline shows as `\n` and a control charact
 no detail can add a line or change the terminal. The CLI exits with 1 when the host refused or
 stopped the widget, and with 2 when the command itself was wrong (a usage error).
 
-These are the host's errors. What a call answers a widget inside `render` or `update`, such as
-`not-granted` from a capability, is in [the contract](contract.md).
+These are the host's errors. What a call answers a widget inside `render`, `update` or an
+action, such as `not-granted` from a capability, is in [the contract](contract.md).
 
 ## The package and its contract
 
@@ -30,7 +30,7 @@ the module cargo writes, as in [the walkthrough](../getting-started.md).
 
 The component implements no contract version the host runs, or imports from another version than
 the one it implements. That includes a newer minor than the host's: the detail names both
-versions. Bind the contract the host runs: the copy of `wit/history/1.3.0` from the clone the CLI
+versions. Bind the contract the host runs: the copy of `wit/history/1.4.0` from the clone the CLI
 was built from.
 
 <!-- ref: error contract-too-old -->
@@ -38,7 +38,7 @@ was built from.
 
 The manifest declares a connector or storage, but the widget is built for a contract older than
 the minor that added it: connectors arrived in 1.1.0, storage in 1.2.0, accounts in 1.3.0. Build
-against 1.3.0.
+against 1.4.0.
 
 <!-- ref: error capability-refused -->
 ### `capability-refused`
@@ -50,9 +50,9 @@ of `wasm32-wasip2` imports. A widget imports only the contract's interfaces. Bui
 <!-- ref: error missing-updater -->
 ### `missing-updater`
 
-The manifest declares a connector or storage, but the component exports no `updater`; or
-`runtime update` was run on a widget without one. Implement `update`, in a world that has it, such
-as `connected-widget`.
+The manifest declares a connector or storage, but the component exports neither `updater` nor
+`actor`, where it would call or write them; or `runtime update` was run on a widget without an
+`updater`. Implement `update`, in a world that has it, such as `connected-widget`.
 
 ## The manifest
 
@@ -73,7 +73,10 @@ turned into, once.
 ### `invalid-manifest`
 
 The manifest is larger than 16 KiB, is not JSON, or breaks [the manifest's schema](manifest.md):
-the detail names the field. A storage quota above the host's cap is refused this way too.
+the detail names the field. A storage quota above the host's cap is refused this way too, and so
+is an icon that is not a PNG within its bounds. When the host loads the widget, also: the
+manifest declares actions and the component exports no `actor`, or it exports `actor` and the
+manifest declares no action ([actions](manifest.md#actions)).
 
 <!-- ref: error unknown-permission -->
 ### `unknown-permission`
@@ -141,7 +144,7 @@ only lay out what `update` fetched.
 <!-- ref: error time-limit-exceeded -->
 ### `time-limit-exceeded`
 
-The call ran past its time limit: 1 s for `render`, 10 s for `update`.
+The call ran past its time limit: 1 s for `render`, 10 s for `update` and an action.
 
 <!-- ref: error memory-limit-exceeded -->
 ### `memory-limit-exceeded`
@@ -152,24 +155,34 @@ The call tried to grow its memory past 32 MiB, all memories together.
 ### `plugin-crashed`
 
 The widget trapped: a panic, an out-of-bounds access, an `unreachable`. In Rust, a panic in
-`render` or `update` ends here; return `Err` instead.
+`render`, `update` or `act` ends here; return `Err` instead.
 
 <!-- ref: error plugin-error -->
 ### `plugin-error`
 
-`render` or `update` returned `Err`; the detail is the widget's message, escaped. For `update`, the
-host keeps the previous data.
+`render`, `update` or `act` returned `Err`; the detail is the widget's message, escaped. For
+`update` and an action, the host keeps the previous data.
 
 <!-- ref: error invalid-output -->
 ### `invalid-output`
 
-What `render` or `update` returned is not valid JSON.
+What `render`, `update` or `act` returned is not valid JSON. Content that is JSON but not in
+[the content format](content.md) is not an error of the call: the app draws the content's error
+in the widget's frame, and `runtime run --check-content` prints it.
 
 <!-- ref: error output-too-large -->
 ### `output-too-large`
 
-What `render` returned is over 64 KiB, or the data `update` returned is over 256 KiB. The host
-checks the size before it parses anything, and keeps the previous data.
+What `render` returned is over 64 KiB, or the data `update` or `act` returned is over 256 KiB.
+The host checks the size before it parses anything, and keeps the previous data.
+
+<!-- ref: error undeclared-action -->
+### `undeclared-action`
+
+A button, a form or `runtime act` asked for an action the manifest does not declare in `actions`,
+or the widget is built for a contract older than 1.4.0, which has no actions. The host refused it
+before the widget ran. Declare the action ([actions](manifest.md#actions)), or fix its name in the
+content.
 
 ## Connectors
 

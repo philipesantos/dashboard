@@ -61,8 +61,9 @@ use runtime::{CheckedPackage, Limits, Plugin, Runtime, RuntimeOptions, escape, p
 
 /// Every command and option, as printed on a usage error; the reference for authors lists each
 /// (tests/docs_reference.rs).
-pub const USAGE: &str = "usage: runtime run <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+pub const USAGE: &str = "usage: runtime run <plugin> [--check-content] [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime update <plugin> [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
+       runtime act <plugin> <action> [--value <id>=<text>]... [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime bench <plugin> [--iterations <n>] [--kept-data <file>] [--config <json> | --config-file <path>] [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime permissions <plugin> [--grants <path>] [--data <dir>] [--connectors <dir>]
        runtime approve <plugin> [--expect <digest>] [--grants <path>] [--data <dir>] [--connectors <dir>]
@@ -96,6 +97,7 @@ const LOGIN_PROVIDERS_OBSOLETE: &str = "(obsolete: accounts come from connectors
 enum Command {
     Run,
     Update,
+    Act,
     Requests,
     CheckConnector,
     Bench,
@@ -160,6 +162,7 @@ pub fn main_with(host: Host) -> ExitCode {
     let command = match args.first().map(String::as_str) {
         Some("run") => Command::Run,
         Some("update") => Command::Update,
+        Some("act") => Command::Act,
         Some("requests") => Command::Requests,
         Some("check-connector") => Command::CheckConnector,
         Some("bench") => Command::Bench,
@@ -206,6 +209,7 @@ pub fn main_with(host: Host) -> ExitCode {
     match command {
         Command::Run => run(&options),
         Command::Update => update(&options),
+        Command::Act => act(&options),
         Command::Requests => requests(&options),
         Command::CheckConnector => check_connector(&options),
         Command::Bench => bench(&options),
@@ -229,6 +233,11 @@ struct Options {
     plugin: String,
     /// Already checked to be valid JSON. Only for `run` and `bench`.
     config: String,
+    /// Only for `run`: whether to check the content against the format (feature 009).
+    check_content: bool,
+    /// Only for `act`: the action, and the form's values given with `--value`.
+    action: String,
+    values: serde_json::Map<String, serde_json::Value>,
     /// Only for `bench`.
     iterations: u32,
     /// The grant record given with `--grants`.
@@ -261,7 +270,12 @@ struct Options {
 }
 
 fn parse(args: &[String], command: Command) -> Result<Options, String> {
-    let renders = matches!(command, Command::Run | Command::Bench | Command::Update);
+    let renders = matches!(
+        command,
+        Command::Run | Command::Bench | Command::Update | Command::Act
+    );
+    let mut check_content = false;
+    let mut values = serde_json::Map::new();
     // Which commands read grants, data and local connectors (contracts/cli.md)
     let reads_files_only = matches!(command, Command::Pack | Command::CheckConnector);
     let uses_grants = !reads_files_only && command != Command::Requests;
@@ -397,6 +411,17 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
                 }
             }
             "--no-browser" if command == Command::AccountsConnect => no_browser = true,
+            "--check-content" if command == Command::Run => check_content = true,
+            "--value" if command == Command::Act => {
+                let value = args.next().ok_or("--value needs <id>=<text>")?;
+                let (id, text) = value.split_once('=').ok_or("--value needs <id>=<text>")?;
+                if values
+                    .insert(id.to_owned(), serde_json::Value::String(text.to_owned()))
+                    .is_some()
+                {
+                    return Err(format!("give --value {id} only once"));
+                }
+            }
             "--iterations" if command == Command::Bench => {
                 iterations = args
                     .next()
@@ -450,6 +475,11 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
     } else {
         None
     };
+    let action = if command == Command::Act {
+        positional.next().ok_or("no action given")?
+    } else {
+        String::new()
+    };
     // Required permissions are approved all together: approve takes no permission
     if let Some(argument) = positional.next() {
         return Err(format!("unexpected argument `{argument}`"));
@@ -460,6 +490,9 @@ fn parse(args: &[String], command: Command) -> Result<Options, String> {
     Ok(Options {
         plugin,
         config,
+        check_content,
+        action,
+        values,
         iterations,
         grants,
         optional,
@@ -491,7 +524,104 @@ fn run(options: &Options) -> ExitCode {
             let pretty =
                 serde_json::to_string_pretty(&content).expect("a JSON value always serializes");
             println!("{pretty}");
+            if options.check_content {
+                return check_content(&content);
+            }
             ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::from(PLUGIN_FAILED)
+        }
+    }
+}
+
+/// Reads `content` as the app does (feature 009, `widget-content`) and says whether it would be
+/// drawn: `content: drawn`, with each entry it adds to the plugin's log, or why it would not.
+fn check_content(content: &serde_json::Value) -> ExitCode {
+    match widget_content::parse(content) {
+        Ok((_, log)) => {
+            for entry in &log {
+                println!("[content] {}", escape(entry));
+            }
+            match log.len() {
+                0 => println!("content: drawn"),
+                n => println!("content: drawn, {n} log entries"),
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            println!("content: not drawn: {}", escape(&error.to_string()));
+            ExitCode::from(PLUGIN_FAILED)
+        }
+    }
+}
+
+/// Runs the action `options.action` with the form's values, prints the data it returned, then
+/// renders and checks the content (feature 009). An action's data is kept in memory only, so it
+/// lasts for this command.
+fn act(options: &Options) -> ExitCode {
+    let Target {
+        bytes,
+        origin,
+        grants,
+        runtime,
+    } = match Target::open(options) {
+        Ok(target) => target,
+        Err(status) => return status,
+    };
+    // A secret the development vault holds never reaches the plugin, as the app refuses it in a
+    // form (Principle IV, FR-025); a keychain that cannot be read refuses the values
+    for (id, value) in &options.values {
+        match runtime.holds_secret_in(value.as_str().unwrap_or_default()) {
+            Ok(false) => {}
+            Ok(true) => {
+                eprintln!(
+                    "error: refused: the value \"{}\" holds a secret the development vault keeps",
+                    escape(id)
+                );
+                return ExitCode::from(PLUGIN_FAILED);
+            }
+            Err(error) => {
+                eprintln!("error: refused: the values could not be checked for secrets: {error}");
+                return ExitCode::from(PLUGIN_FAILED);
+            }
+        }
+    }
+    let plugin = match runtime.load(&bytes, &origin, Arc::new(grants)) {
+        Ok(plugin) => plugin,
+        Err(error) => return refused(&error),
+    };
+    let report = plugin.act(&options.action, &options.config, &options.values);
+    print_logs(&report.logs, report.dropped_logs);
+    match report.result {
+        Ok(data) => {
+            let manifest = plugin.manifest();
+            println!(
+                "acted {} {}: {}",
+                escape(manifest.id().as_str()),
+                escape(manifest.version()),
+                escape(&options.action)
+            );
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).expect("a JSON value always serializes")
+            );
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::from(PLUGIN_FAILED);
+        }
+    }
+    let rendered = plugin.render(&options.config);
+    print_logs(&rendered.logs, rendered.dropped_logs);
+    match rendered.result {
+        Ok(content) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&content).expect("a JSON value always serializes")
+            );
+            check_content(&content)
         }
         Err(error) => {
             eprintln!("error: {error}");

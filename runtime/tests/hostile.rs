@@ -93,7 +93,7 @@ fn assert_host_still_works(runtime: &Runtime) {
         report
             .result
             .expect("hello-widget renders after a hostile case"),
-        json!({"title": "Hello", "text": "Hello, world!"})
+        common::hello("world")
     );
 }
 

@@ -88,6 +88,20 @@ pub(crate) enum Answer {
 pub(crate) enum Phase {
     Render,
     Update,
+    /// An action of the `actor` export (feature 009): run like an update.
+    Action,
+}
+
+impl Phase {
+    /// Whether connectors may be called: in an update or an action, never in render.
+    pub(crate) fn may_call_connectors(self) -> bool {
+        matches!(self, Phase::Update | Phase::Action)
+    }
+
+    /// Whether the store may be written, all or nothing: in an update or an action.
+    pub(crate) fn writes_storage(self) -> bool {
+        matches!(self, Phase::Update | Phase::Action)
+    }
 }
 
 /// One connector a plugin can call: its checked declaration and the operations the manifest
@@ -460,12 +474,14 @@ impl Calls {
         let Some(executor) = self.table.executors.get(connector_id) else {
             return logged(Answer::NotGranted, None);
         };
-        // Step 2: connectors are called only in an update; render reads no grant record
-        if self.phase != Phase::Update {
+        // Step 2: connectors are called only in an update or an action; render reads no grant
+        // record
+        if !self.phase.may_call_connectors() {
             return logged(
                 Answer::Refused(
                     Rule::CalledOutsideUpdate,
-                    "connectors are called only during an update, never in render".to_owned(),
+                    "connectors are called only during an update or an action, never in render"
+                        .to_owned(),
                 ),
                 None,
             );
@@ -1415,7 +1431,8 @@ mod tests {
                 grants: Arc::clone(&self.grants),
                 table,
                 phase,
-                session: (phase == Phase::Update)
+                session: phase
+                    .may_call_connectors()
                     .then(|| Network::with_seam(TestNetwork::default()).session(&limits)),
                 deadline: Instant::now() + limits.update_time_limit,
                 update_bytes_left: Arc::new(Mutex::new(limits.max_update_response_bytes)),
@@ -1764,7 +1781,11 @@ mod tests {
             grants,
             manifest,
             loaded,
-            vault: Arc::new(Vault::new(Backend::mock(), 2560)),
+            vault: Arc::new(Vault::new(
+                Backend::mock(),
+                2560,
+                crate::vault::DEVELOPMENT_SERVICE,
+            )),
         }
     }
 

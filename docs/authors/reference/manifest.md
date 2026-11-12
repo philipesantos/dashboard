@@ -35,6 +35,35 @@ Unknown fields are refused, so a misspelt one never passes silently: the error i
 | `author` | 1 to 100 characters, no control characters | Yes | Shown to the person, escaped <!-- ref: manifest author --> |
 | `login_providers` | `["github"]` or `[]` | No | Obsolete since contract 1.3.0: accepted, ignored, grants nothing. Accounts come from the connectors a widget declares <!-- ref: manifest login_providers --> |
 
+## How the frame shows it
+
+The app draws each widget in a frame: a header with the widget's name and icon, and the content
+`render` returns below it ([widget content](content.md)). The header comes from the manifest
+only, never from content, so a widget cannot change it while it runs.
+
+| Field | Accepts | Required | In the frame |
+| --- | --- | --- | --- |
+| `name` | 1 to 60 characters, no control characters | No | The name in the header, drawn as text: markup shows as typed, bidirectional controls are removed, and a name too long for the header is cut. Without it, the frame shows the last part of the id <!-- ref: manifest name --> |
+| `icon` | Standard base64 of a PNG of at most 8 KiB, square, 16 to 64 pixels on a side, not animated. Anything else, an SVG included, is refused as `invalid-manifest` | No | The host decodes it and draws its pixels in a fixed box beside the name. Without it, the frame draws a monogram <!-- ref: manifest icon --> |
+
+## Actions
+
+`actions` names what the widget's buttons and forms may ask the host to run
+([widget content](content.md#actions)). A widget that declares any exports `actor`, from contract
+1.4.0, in one of the `interactive-` worlds ([the contract](contract.md#actor)); one that exports
+`actor` declares at least one. Either without the other is refused as `invalid-manifest` when
+the host loads it. The host runs only these names, and only from the widget's own controls: any
+other is `undeclared-action`, refused before the widget runs ([errors](errors.md)).
+
+```json
+"actions": [{ "name": "increment" }, { "name": "add" }]
+```
+
+| Field | Accepts | Required | At approval |
+| --- | --- | --- | --- |
+| `actions` | Up to 16 entries, each name once; absent means none | With `actor` | Not shown and not approved: an action runs under the permissions and connectors the widget was approved for, like `update`. A new version may add actions without a new approval <!-- ref: manifest actions --> |
+| `actions[]/name` | A lowercase letter, then up to 31 lowercase letters, digits or hyphens | Yes | The name `act` gets <!-- ref: manifest actions[]/name --> |
+
 ## Permissions
 
 `permissions` lists every capability interface the widget imports, by name: `log` and `storage`.

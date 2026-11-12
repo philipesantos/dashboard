@@ -72,8 +72,12 @@ judges with every destination in view.
 
 ### IV. Plugins Never See Secrets
 
-Plugins MUST NOT receive passwords, OAuth tokens or AI provider keys. Authentication and
-secrets MUST stay in the host and the OS keychain. A connector declares the credential its
+Plugins MUST NOT receive passwords, OAuth tokens or AI provider keys. This covers every secret
+the host holds, in the OS keychain through its vault, and every secret that passes through its
+credential flows: the sign-in, connected accounts and the credentials it adds to connector
+requests. Text a person types or pastes into a widget's form is not a secret the host holds, and
+in general cannot be recognised as one; the threat model records that residual. Authentication
+and secrets MUST stay in the host and the OS keychain. A connector declares the credential its
 operations need, and the host MUST inject it only into that connector's requests to its own
 destination, and only over HTTPS with a certificate that is valid for that destination or that
 the user accepted for it.
@@ -104,7 +108,10 @@ tool MAY grant permissions to local packages, recording them only in a developme
 record that installed plugins never use, and MAY connect accounts for the connectors of local
 packages, keeping their credentials only in a development vault, in the OS keychain, that
 installed plugins never use. Neither AI output nor a plugin MAY perform, trigger or
-pre-approve these actions.
+pre-approve these actions. A plugin built into the app and declaring no permission is part of the
+app, not an installed plugin: the host MAY approve it at start-up, and the approval grants it
+nothing. A built-in plugin that declares any permission gets it only in a host dialog, as an
+installed one does.
 
 Rationale: these decisions expand what code can do, so they stay out of reach of the
 parties the threat model distrusts: plugin authors, external content and manipulated AI.
@@ -197,4 +204,4 @@ This constitution supersedes every other practice or guideline in this project.
   A conflict is resolved by changing the plan or by amending this constitution first, never
   by a case-by-case exception.
 
-**Version**: 2.6.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-10
+**Version**: 2.6.3 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-11

@@ -4,22 +4,25 @@ The contracts between the host and plugins: WIT packages, one directory per vers
 manifest schema. Everything here is security core (constitution, Principle IX).
 
 - [`v1/widget.wit`](v1/widget.wit): plugin contract v1 at its newest minor,
-  `dashboard:widget@1.3.0`, from [feature 002](../specs/002-plugin-permissions/spec.md),
+  `dashboard:widget@1.4.0`, from [feature 002](../specs/002-plugin-permissions/spec.md),
   [feature 003](../specs/003-plugin-connectors/spec.md),
-  [feature 004](../specs/004-plugin-storage/spec.md) and
-  [feature 005](../specs/005-plugin-credentials/spec.md), with six worlds: `widget`, which only
-  renders; `connected-widget`, which also fetches data through connectors in `update`;
+  [feature 004](../specs/004-plugin-storage/spec.md),
+  [feature 005](../specs/005-plugin-credentials/spec.md) and
+  [feature 009](../specs/009-declarative-widget-ui/spec.md), with twelve worlds: `widget`, which
+  only renders; `connected-widget`, which also fetches data through connectors in `update`;
   `stored-widget`, which writes its own store in `update` and reads it in `render`;
   `connected-stored-widget`, which does both; `account-widget`, which also calls connectors as
-  the user's account; and `account-stored-widget`, which does all of it, the world the host
-  binds. It is 1.3.0 as frozen under `history/1.3.0`, byte for byte, and
-  `runtime/tests/contract_v1.rs` fails the build when they differ. New plugins bind their own
-  copy of `history/1.3.0` ([the walkthrough](../docs/authors/getting-started.md)).
+  the user's account; `account-stored-widget`, which does all of it; and, from 1.4.0, an
+  `interactive-` world for each of these six that also exports `actor`, the actions its buttons
+  and forms run. The host binds `interactive-account-stored-widget`. It is 1.4.0 as frozen under
+  `history/1.4.0`, byte for byte, and `runtime/tests/contract_v1.rs` fails the build when they
+  differ. New plugins bind their own copy of `history/1.4.0`
+  ([the walkthrough](../docs/authors/getting-started.md)).
 - [`v0/widget.wit`](v0/widget.wit): plugin contract v0 (`dashboard:widget@0.1.0`), from
   [feature 001](../specs/001-plugin-runtime/spec.md). The host keeps running v0 plugins, with
   `log` required.
 - [`history/`](history): published versions, one directory each (`1.0.0`, `1.1.0`, `1.2.0`,
-  `1.3.0`), frozen and never edited; `runtime/tests/contract_v1.rs` pins each by its SHA-256. Plugins that build
+  `1.3.0`, `1.4.0`), frozen and never edited; `runtime/tests/contract_v1.rs` pins each by its SHA-256. Plugins that build
   against an older minor version, and the test that a new minor version only adds, read them
   from here.
 - [`manifest.schema.json`](manifest.schema.json): the JSON Schema (draft 2020-12) of the plugin
@@ -61,8 +64,8 @@ of an optional permission the user has not turned on. `runtime/tests/contract_v1
 build if a function breaks this rule.
 
 A minor version only adds: 1.1.0 holds every interface, function and type of 1.0.0 unchanged,
-1.2.0 every one of 1.1.0, and 1.3.0 every one of 1.2.0, which `runtime/tests/contract_v1.rs`
-checks against `history/`.
+1.2.0 every one of 1.1.0, 1.3.0 every one of 1.2.0, and 1.4.0 every one of 1.3.0, worlds
+included, which `runtime/tests/contract_v1.rs` checks against `history/`.
 The host runs plugins built for any v1 minor up to its own and refuses newer ones, naming both
 versions. Feature 003 added `connectors`, which carries every connector a manifest declares,
 each a permission of its own, and the `updater` export. Feature 004 added `storage`, carried by
@@ -70,7 +73,13 @@ the `storage` permission with its quota: the plugin's own store of named values,
 can point at another plugin's, read in `render` and written only in `update`, all or nothing.
 Feature 005 added `accounts`: calls to the connectors a manifest declares with `"account": true`,
 as the account connected to each, with the credential added by the host and never seen by the
-plugin.
+plugin. Feature 009 added the `actor` export: the actions a widget's buttons and forms run, each
+named in the manifest, run like `update` (its store written all or nothing, its connectors'
+read operations only), returning data the host keeps in memory while the app runs.
+
+`actor` arrives in six new worlds rather than in the existing ones: a world is compared item by
+item, so a 1.3.0 world that gained an export would no longer be the world plugins built for
+1.3.0 bind.
 
 `accounts` is a new interface rather than new cases of `connectors`' `call-error`: a
 component's import types must match the host's definitions exactly, so a `call-error` with more

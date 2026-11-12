@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Plugin runtime: embeds Wasmtime and loads plugin components"
 edition = "2024"
 publish = false
+# `cargo run -p runtime` runs the development CLI, not its twin on the test seam
+default-run = "runtime"
 # The integration tests build as one executable, tests/it.rs, instead of one per file
 autotests = false
 
@@ -15,6 +17,12 @@ semver = "1"
 # Typed manifest and grant record
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The CLI checks content as the app does (feature 009); only with the `cli` feature
+widget-content = { path = "../widget-content", optional = true }
+# The manifest's icon (feature 009, research R6): standard base64 of a PNG, decoded by the host so
+# the frame draws pixels. Both already in the lock, through Tauri and others.
+base64 = "0.22.1"
+png = "0.18.1"
 # Names the field path of every manifest error, such as permissions[0].name
 serde_path_to_error = "0.1"
 # The package digest: SHA-256 of the whole file
@@ -85,12 +93,19 @@ apple-native-keyring-store = { version = "=1.0.2", features = ["keychain"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus-secret-service-keyring-store = { version = "=1.0.1", features = ["crypto-rust"] }
 
+# The development CLI. Its code sits behind the `cli` feature, so a host that links the library,
+# such as the app, does not get the development record and paths it uses
+# (specs/009-declarative-widget-ui/research.md, R3)
+[[bin]]
+name = "runtime"
+required-features = ["cli"]
+
 # The development CLI on the test seam, for the docs runner (specs/006-contract-v1-docs/research.md,
 # R9): it builds only with test-network, which refuses release builds, so `cargo install` never
 # installs it
 [[bin]]
 name = "runtime-test-network"
-required-features = ["test-network"]
+required-features = ["test-network", "cli"]
 
 # Every file in tests/ is a module of this one executable: each executable links the whole runtime
 # (about 100 MB in debug), so one per file filled the disk. tests/it.rs fails when a file there
@@ -100,6 +115,10 @@ name = "it"
 path = "tests/it.rs"
 
 [features]
+default = ["cli"]
+# The development command-line tool (`runtime::cli`), on by default for the `runtime` binary and
+# the tests; the app turns default features off
+cli = ["dep:widget-content"]
 # The test seam of research R15: test routes and roots instead of DNS and Mozilla's roots.
 # Only the runtime's own tests turn it on, through the dev-dependency below, and the library
 # refuses to compile with it outside debug builds.
@@ -110,12 +129,13 @@ test-network = []
 # use ring, as rustls does here
 rcgen = "0.14"
 # The runtime's tests reach the test seam (R15); release builds never do
-runtime = { path = ".", features = ["test-network"] }
+runtime = { path = ".", features = ["test-network", "cli"] }
 # Validates manifests against wit/manifest.schema.json, to prove the schema and the parser
 # agree (tests/manifest_schema.rs)
 boon = "0.6"
 # Turns WebAssembly text into the binary packages that tests pass to Runtime::load
 wat = "1"
+
 # Reads wit/v1 to check that every capability can answer not-granted (tests/contract_v1.rs).
 # Pinned to the version Wasmtime 50 uses.
 wit-parser = "=0.261.0"

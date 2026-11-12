@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "local/ui-strings",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "permissions": [],
+  "actions": [
+    {
+      "name": "send"
+    }
+  ]
+}

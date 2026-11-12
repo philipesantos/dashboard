@@ -18,3 +18,30 @@
 #
 # A Tauri plugin is listed as [[plugin]] with its crate name and reason, and each permission it
 # needs as a [[permission]].
+
+# The widget host's commands (specs/009-declarative-widget-ui/contracts/window-commands.md).
+# Each checks what the page sends before a plugin runs; src/widgets.rs, reviewed with this file.
+
+[[permission]]
+id = "allow-widgets-list"
+reason = "The dashboard lists the widgets it shows, with each one's drawn name and icon."
+
+[[command]]
+name = "widgets_list"
+reason = "Same as above; the command behind the permission."
+
+[[permission]]
+id = "allow-widget-render"
+reason = "The dashboard draws a widget's content inside its frame."
+
+[[command]]
+name = "widget_render"
+reason = "Same as above; the command behind the permission."
+
+[[permission]]
+id = "allow-widget-act"
+reason = "A widget's button or form runs one of the actions its manifest declares."
+
+[[command]]
+name = "widget_act"
+reason = "Same as above; the command behind the permission."

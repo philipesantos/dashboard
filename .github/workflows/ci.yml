@@ -24,7 +24,7 @@ jobs:
   # skip them. The workflow still runs, because a skipped job counts as passing for the
   # required "CI result" check, while a workflow that never starts leaves it pending forever.
   # New advisories do not need a change here; audit.yml checks for them every week.
-  # The constitution (v2.6.1, Development Workflow) allows this skip; keep the documentation
+  # The constitution (v2.6.3, Development Workflow) allows this skip; keep the documentation
   # paths below in sync with the ones it lists. Markdown the build uses as code is not
   # documentation for that rule: the docs checks read docs/authors/ and wit/, so a change there
   # runs everything (specs/006-contract-v1-docs/research.md, R11). The design checks read
@@ -148,6 +148,11 @@ jobs:
           path: design/preview/
           if-no-files-found: error
 
+      # Builds every plugin into target/plugins/: the fixtures the runtime tests load, and the
+      # bundled widgets the app embeds, so it runs before any build of the app
+      # (specs/009-declarative-widget-ui/research.md, R1)
+      - run: cargo xtask plugins --locked
+
       # The shell probe: the release build plus one page module and two commands. Inside the
       # real page it tries every forbidden action, and it fails unless each one is refused
       # (specs/008-tauri-shell/contracts/probe.md). Built as `tauri build` builds, with
@@ -174,9 +179,6 @@ jobs:
       # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time.
       # It also puts back the normal dist after the probe's.
       - run: pnpm --filter ./app build
-
-      # Builds every plugin into target/plugins/, the fixtures the runtime tests load
-      - run: cargo xtask plugins --locked
 
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 

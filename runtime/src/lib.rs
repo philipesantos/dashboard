@@ -16,6 +16,7 @@ mod calls;
 mod catalog;
 // The development CLI, a module so a test-only binary can run the same code
 // (specs/006-contract-v1-docs/research.md, R9)
+#[cfg(feature = "cli")]
 #[doc(hidden)]
 pub mod cli;
 pub mod connector;
@@ -75,13 +76,13 @@ pub(crate) mod v0 {
     wasmtime::component::bindgen!({ path: "../wit/v0", world: "widget" });
 }
 
-/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.3.0`), from its widest world,
-/// `account-stored-widget`, for the host side of every interface. Wasmtime matches the imports
+/// Bindings for plugin contract v1 (`wit/v1`, `dashboard:widget@1.4.0`), from its widest world,
+/// `interactive-account-stored-widget`, for the host side of every interface. Wasmtime matches the imports
 /// of plugins built for an older minor against them by compatible version. Exports are looked up
 /// one by one, by the exact names each plugin has, since a render-only widget has no `updater`
 /// (`specs/003-plugin-connectors/research.md`, R11; `specs/004-plugin-storage/research.md`, R13).
 pub(crate) mod v1 {
-    wasmtime::component::bindgen!({ path: "../wit/v1", world: "account-stored-widget" });
+    wasmtime::component::bindgen!({ path: "../wit/v1", world: "interactive-account-stored-widget" });
 }
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
@@ -152,6 +153,7 @@ pub struct RuntimeOptions {
     development: bool,
     connectors_dir: Option<PathBuf>,
     data_dir: PathBuf,
+    vault_service: &'static str,
 }
 
 impl RuntimeOptions {
@@ -162,7 +164,21 @@ impl RuntimeOptions {
             development: false,
             connectors_dir: None,
             data_dir: data_dir.into(),
+            vault_service: vault::DEVELOPMENT_SERVICE,
         }
+    }
+
+    /// Keeps the vault's secrets under the keychain service `service`. The development tool
+    /// keeps the development one; the app passes its own, so it never reads the development
+    /// vault (`specs/009-declarative-widget-ui/research.md`, R3).
+    pub fn with_vault_service(mut self, service: &'static str) -> RuntimeOptions {
+        self.vault_service = service;
+        self
+    }
+
+    /// The keychain service the vault keeps its secrets under.
+    pub fn vault_service(&self) -> &'static str {
+        self.vault_service
     }
 
     /// Turns development mode on or off. Only the development command-line tool turns it on;
@@ -434,6 +450,9 @@ pub struct Plugin {
     rates: Arc<Rates>,
     vault: Arc<vault::Vault>,
     kept: KeptStore,
+    /// What the last action returned, kept in memory for as long as the plugin stays loaded and
+    /// never written to disk (feature 009, maintainer's decision of 2026-11-11).
+    action_data: Mutex<Option<kept::Kept>>,
     log: RequestLog,
     /// Where declared connectors are found, for [`Plugin::recheck`].
     catalog: catalog::Catalog,
@@ -479,6 +498,8 @@ struct V1Pre {
     render: ComponentExportIndex,
     /// The `update` function, for a plugin that exports `updater`.
     update: Option<ComponentExportIndex>,
+    /// The `act` function, for a plugin that exports `actor` (feature 009).
+    act: Option<ComponentExportIndex>,
     /// The connectors granted when it was linked, for a plugin that imports `connectors`;
     /// `None` when it was linked to the stand-in, or imports nothing of them.
     table: Option<Arc<ConnectorTable>>,
@@ -626,7 +647,11 @@ impl Runtime {
         let clock = Arc::new(EpochClock::new());
         start_epoch_ticker(&engine, Arc::clone(&clock))?;
 
-        let vault = Arc::new(vault::Vault::new(backend, limits.max_secret_bytes));
+        let vault = Arc::new(vault::Vault::new(
+            backend,
+            limits.max_secret_bytes,
+            options.vault_service(),
+        ));
         Ok(Runtime {
             engine,
             limits,
@@ -681,6 +706,42 @@ impl Runtime {
     ) -> Result<accounts::Connected, RuntimeError> {
         let (connector, origin) = self.connectors().find(connector_id)?;
         signin::connect_key(&self.signin_context(), &connector, &origin, key)
+    }
+
+    /// Whether `text` holds a secret this runtime's vault keeps, in any encoding the network
+    /// module withholds an echoed credential in: every connected account's access and refresh
+    /// token, or its key (`specs/009-declarative-widget-ui/`, FR-025, research R11). The host
+    /// checks a form's values with it before they reach a plugin. With no account connected it
+    /// never touches the keychain; a keychain that cannot be read is an error, so the caller
+    /// refuses the form rather than pass the value on.
+    pub fn holds_secret_in(&self, text: &str) -> Result<bool, RuntimeError> {
+        let store = accounts::AccountStore::open(self.options.data_dir());
+        let Some(vault_id) = store.existing_vault_id()? else {
+            return Ok(false);
+        };
+        for account in store.list()? {
+            let user = vault::entry_user(&vault_id, &account.connector, &account.origin);
+            let stored = match self.vault.read(&user).within(self.limits.call_time_limit) {
+                Ok(stored) => stored,
+                // An account whose credential is gone holds nothing to find
+                Err(vault::VaultError::NoEntry) => continue,
+                Err(error) => {
+                    return Err(RuntimeError::new(
+                        ErrorKind::KeychainUnavailable,
+                        format!("the form's values cannot be checked: {error}"),
+                    ));
+                }
+            };
+            for secret in stored.secrets() {
+                if network::echo_forms(secret.expose())
+                    .iter()
+                    .any(|form| text.contains(form.expose()))
+                {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Every connected account, with whether its connector's file still exists (FR-014).
@@ -977,6 +1038,7 @@ impl Runtime {
             rates: Arc::clone(&self.rates),
             vault: Arc::clone(&self.vault),
             kept: KeptStore::new(self.options.data_dir(), self.limits.max_update_output_bytes),
+            action_data: Mutex::new(None),
             log: RequestLog::new(self.options.data_dir(), &self.limits),
             catalog: self.catalog.clone(),
             options: self.options.clone(),
@@ -1338,10 +1400,14 @@ fn prepare(
             let update = interfaces
                 .updater()
                 .and_then(|updater| export_function(&package.component, updater, "update"));
+            let act = interfaces
+                .actor()
+                .and_then(|actor| export_function(&package.component, actor, "act"));
             Prepared::V1(V1Pre {
                 pre,
                 render,
                 update,
+                act,
                 table,
                 account_table,
                 vault_id,
@@ -1389,13 +1455,119 @@ impl Plugin {
                 };
             }
         };
-        if self.package.interfaces.updater().is_some() {
+        if self.package.interfaces.keeps_data() {
             let config: serde_json::Value = serde_json::from_str(config)
                 .unwrap_or_else(|_| serde_json::Value::String(config.to_owned()));
-            let document = kept::render_document(config, self.kept_data().as_ref()).to_string();
+            let document = kept::render_document(config, self.newest_data().as_ref()).to_string();
             return self.render_prepared(&prepared, &document);
         }
         self.render_prepared(&prepared, config)
+    }
+
+    /// The data `render` and the next action get: the newer of what the last update returned,
+    /// kept on disk, and what the last action returned, kept in memory; with how the latest of
+    /// the two went (feature 009, research R7).
+    fn newest_data(&self) -> Option<kept::Kept> {
+        let from_update = self.kept_data();
+        let from_action = {
+            let mut action = self
+                .action_data
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            // Dropped, as an update's would be, once what it ran under changed
+            let current = match (action.as_ref(), self.data_key()) {
+                (Some(kept), Some(key)) => kept::stale(kept, &key).is_none(),
+                _ => false,
+            };
+            if !current {
+                *action = None;
+            }
+            action.clone()
+        };
+        kept::newest(from_update, from_action)
+    }
+
+    /// Runs the action `action` the manifest declares, with the widget's configuration and the
+    /// form's `values`, in a fresh instance, as an update runs: the update's time limit, render's
+    /// CPU and memory caps, the store written all or nothing, connectors' read operations only
+    /// (feature 009, research R7). A name the manifest does not declare is refused before
+    /// anything is instantiated. The data it returns is kept in memory only, and given to the
+    /// next render and action; on failure the previous data stays and the failure is recorded.
+    pub fn act(
+        &self,
+        action: &str,
+        config: &str,
+        values: &serde_json::Map<String, serde_json::Value>,
+    ) -> UpdateReport {
+        let failed = |error: RuntimeError| UpdateReport {
+            result: Err(error),
+            logs: Vec::new(),
+            dropped_logs: 0,
+            calls: CallCounts::default(),
+            storage: None,
+        };
+        if self.package.interfaces.actor().is_none() || !self.manifest().declares_action(action) {
+            return failed(RuntimeError::new(
+                ErrorKind::UndeclaredAction,
+                format!(
+                    "`{}` is not an action {} declares",
+                    text::escape(action),
+                    self.manifest().id()
+                ),
+            ));
+        }
+        let prepared = match self.current() {
+            Ok(prepared) => prepared,
+            Err(error) => return failed(error),
+        };
+        let Prepared::V1(V1Pre { act: Some(act), .. }) = &*prepared else {
+            return failed(RuntimeError::new(
+                ErrorKind::UndeclaredAction,
+                format!("{} exports no actor", self.manifest().id()),
+            ));
+        };
+        let act = *act;
+        let config: serde_json::Value = serde_json::from_str(config)
+            .unwrap_or_else(|_| serde_json::Value::String(config.to_owned()));
+        let input = serde_json::json!({
+            "config": config,
+            "data": self.newest_data().and_then(|kept| kept.data),
+            "values": values,
+        })
+        .to_string();
+        let mut store = self.store(&prepared, Phase::Action);
+        let result = self
+            .start_limits(&mut store, self.limits.update_time_limit)
+            .and_then(|()| self.call_act(&prepared, &mut store, act, action, &input));
+        let mut state = store.into_data();
+        state.run.finish();
+        // The store first, as for an update: its writes are committed only when the action
+        // succeeded, and a commit that fails fails the action
+        let (result, storage) = match state.storage.take() {
+            None => (result, None),
+            Some(run) => match run.finish(result.is_ok()) {
+                Ok(counts) => (result, Some(counts)),
+                Err(error) => (Err(error), None),
+            },
+        };
+        let now = calls::now_ms();
+        {
+            let mut kept = self
+                .action_data
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            // Without an approval any more, nothing is kept
+            *kept = self
+                .data_key()
+                .map(|key| kept::in_memory(kept.take(), &key, &result, now));
+        }
+        UpdateReport {
+            result,
+            logs: state.logs,
+            dropped_logs: state.dropped_logs,
+            calls: state.run.counts,
+            storage,
+        }
     }
 
     /// Renders `document` as it is, for [`render_with_kept`](Self::render_with_kept).
@@ -1546,7 +1718,9 @@ impl Plugin {
             grants: Arc::clone(&self.grants),
             table,
             phase,
-            session: (phase == Phase::Update).then(|| self.network.session(&self.limits)),
+            session: phase
+                .may_call_connectors()
+                .then(|| self.network.session(&self.limits)),
             deadline: Instant::now() + self.limits.update_time_limit,
             update_bytes_left: Arc::clone(&update_bytes_left),
             limits: self.limits.clone(),
@@ -1559,7 +1733,9 @@ impl Plugin {
             grants: Arc::clone(&self.grants),
             table,
             phase,
-            session: (phase == Phase::Update).then(|| self.network.session(&self.limits)),
+            session: phase
+                .may_call_connectors()
+                .then(|| self.network.session(&self.limits)),
             deadline: Instant::now() + self.limits.update_time_limit,
             update_bytes_left: Arc::clone(&update_bytes_left),
             limits: self.limits.clone(),
@@ -1580,7 +1756,7 @@ impl Plugin {
         {
             let time_limit = match phase {
                 Phase::Render => self.limits.time_limit,
-                Phase::Update => self.limits.update_time_limit,
+                Phase::Update | Phase::Action => self.limits.update_time_limit,
             };
             state.storage = Some(StorageRun::new(
                 binding.clone(),
@@ -1599,6 +1775,12 @@ impl Plugin {
     /// its package, its approval digest and the connectors that are on.
     fn kept_key(&self) -> Option<kept::Key> {
         self.package.interfaces.updater()?;
+        self.data_key()
+    }
+
+    /// What data kept for this plugin, by an update or an action, was read under: the package,
+    /// the approval, the connectors on and the accounts it acts as; `None` without an approval.
+    fn data_key(&self) -> Option<kept::Key> {
         let entry = self.grants.entry(self.manifest().id()).ok().flatten()?;
         let mut connectors_on: Vec<String> = entry
             .connectors
@@ -1822,6 +2004,43 @@ impl Plugin {
                 instance
                     .get_typed_func::<(&str,), (Result<String, String>,)>(&mut *store, &update)?
                     .call(&mut *store, (config,))
+                    .map(|(result,)| result)
+            })
+            .map_err(|error| self.call_error(error, self.limits.update_time_limit))?
+            .map_err(|message| RuntimeError::new(ErrorKind::PluginError, message))?;
+        if data.len() > self.limits.max_update_output_bytes {
+            return Err(RuntimeError::new(
+                ErrorKind::OutputTooLarge,
+                format!(
+                    "the data is {} bytes, over the cap of {}",
+                    data.len(),
+                    self.limits.max_update_output_bytes
+                ),
+            ));
+        }
+        serde_json::from_str(&data)
+            .map_err(|error| RuntimeError::new(ErrorKind::InvalidOutput, error.to_string()))
+    }
+
+    /// Calls `act` and checks its output: JSON within the update's output limit.
+    fn call_act(
+        &self,
+        prepared: &Prepared,
+        store: &mut Store<HostState>,
+        act: ComponentExportIndex,
+        action: &str,
+        input: &str,
+    ) -> Result<serde_json::Value, RuntimeError> {
+        let Prepared::V1(v1) = prepared else {
+            unreachable!("only contract v1 has actor")
+        };
+        let data = v1
+            .pre
+            .instantiate(&mut *store)
+            .and_then(|instance| {
+                instance
+                    .get_typed_func::<(&str, &str), (Result<String, String>,)>(&mut *store, &act)?
+                    .call(&mut *store, (action, input))
                     .map(|(result,)| result)
             })
             .map_err(|error| self.call_error(error, self.limits.update_time_limit))?

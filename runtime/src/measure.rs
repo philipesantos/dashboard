@@ -87,7 +87,11 @@ impl KeychainEntry {
     /// Writes a key to a new entry, named after `name` and this process.
     pub fn create(name: &str) -> Result<KeychainEntry, String> {
         let limits = crate::Limits::default();
-        let vault = Vault::new(Backend::System, limits.max_secret_bytes);
+        let vault = Vault::new(
+            Backend::System,
+            limits.max_secret_bytes,
+            crate::vault::DEVELOPMENT_SERVICE,
+        );
         let user = vault::entry_user(
             &format!("bench-{}", std::process::id()),
             "local/bench",
@@ -107,7 +111,11 @@ impl KeychainEntry {
     /// the first read of a new process does.
     pub fn reader(&self) -> KeychainReader {
         KeychainReader {
-            vault: Vault::new(Backend::System, crate::Limits::default().max_secret_bytes),
+            vault: Vault::new(
+                Backend::System,
+                crate::Limits::default().max_secret_bytes,
+                crate::vault::DEVELOPMENT_SERVICE,
+            ),
             user: self.user.clone(),
         }
     }

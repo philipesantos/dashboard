@@ -48,6 +48,18 @@ impl fmt::Debug for Secret {
     }
 }
 
+impl Stored {
+    /// Every secret of the entry: the access and refresh tokens, or the key.
+    pub(crate) fn secrets(&self) -> Vec<&Secret> {
+        match self {
+            Stored::Account { access, refresh } => {
+                std::iter::once(access).chain(refresh.as_ref()).collect()
+            }
+            Stored::Key { key } => vec![key],
+        }
+    }
+}
+
 /// What the vault keeps for one account: the document of `data-model.md` (Vault entry).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Stored {
@@ -202,10 +214,10 @@ impl<T> Pending<T> {
 impl Vault {
     /// The vault over `backend`, with its thread started; the store itself opens on first use,
     /// so a command that never touches the keychain never connects to it.
-    pub(crate) fn new(backend: Backend, max_secret_bytes: usize) -> Vault {
+    pub(crate) fn new(backend: Backend, max_secret_bytes: usize, service: &'static str) -> Vault {
         Vault {
             jobs: spawn(backend),
-            service: DEVELOPMENT_SERVICE,
+            service,
             max_secret_bytes,
         }
     }
@@ -329,7 +341,11 @@ impl TestKeychain {
     /// The system's keychain, with the bound of `limits`.
     pub fn system(limits: &crate::Limits) -> TestKeychain {
         TestKeychain {
-            vault: Vault::new(Backend::System, limits.max_secret_bytes),
+            vault: Vault::new(
+                Backend::System,
+                limits.max_secret_bytes,
+                DEVELOPMENT_SERVICE,
+            ),
         }
     }
 
@@ -385,7 +401,7 @@ mod tests {
     const TOKEN: &str = "gho_7f3a9c1e5b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a";
 
     fn vault() -> Vault {
-        Vault::new(Backend::mock(), 2560)
+        Vault::new(Backend::mock(), 2560, crate::vault::DEVELOPMENT_SERVICE)
     }
 
     fn account(access: &str, refresh: Option<&str>) -> Stored {

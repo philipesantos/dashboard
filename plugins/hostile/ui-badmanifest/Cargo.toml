@@ -1,0 +1,12 @@
+[package]
+name = "ui-badmanifest"
+version = "0.1.0"
+description = "Hostile widget (window probe fixture, never shipped): a manifest name over the 60-character limit, refused at load"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen.workspace = true

@@ -1,0 +1,11 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "local/showcase",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "name": "Vitrine",
+  "icon": "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAZ0lEQVR42mNgwAFsq6L+UxMzEAOobSlJjqGX5VgdQW/LMRwxsh0wUJbDHTGoHfDi4yuq4FEHUMUB+rFuePGoA0YT4agDBjwR4kuUow4YTYRD1wEjo0U02ioeFA4Y8K7ZoOicDlT3HAD6ykDMhChSlgAAAABJRU5ErkJggg==",
+  "permissions": [],
+  "actions": [{ "name": "increment" }, { "name": "add" }]
+}

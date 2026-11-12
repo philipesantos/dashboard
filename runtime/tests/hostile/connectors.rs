@@ -82,7 +82,7 @@ impl Gate {
             .expect("github-releases updates after a hostile case");
         assert_eq!(data["releases"][0]["tag"], "1.97.0");
         let content = plugin.render(GITHUB_CONFIG).result.expect("and renders");
-        assert_eq!(content["items"][0]["name"], "Rust 1.97.0");
+        assert_eq!(crate::common::rows(&content)[0][0], "Rust 1.97.0");
         assert_eq!(self.github.received().len(), before + 1);
     }
 

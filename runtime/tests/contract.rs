@@ -5,7 +5,7 @@ use crate::common;
 
 use std::sync::Arc;
 
-use common::{TEST_ORIGIN, approved, fixture, manifest, repack};
+use common::{TEST_ORIGIN, approved, drawn, fixture, hello, manifest, repack, texts};
 use runtime::grants::GrantStore;
 use runtime::package::pack;
 use runtime::{Contract, ErrorKind, Limits, LogLevel, LogMessage, Plugin, Runtime};
@@ -53,10 +53,7 @@ fn a_contract_1_0_0_plugin_runs_on_the_1_1_0_host() {
     );
     assert_eq!(plugin.contract_version().display(), "v1 (1.0.0)");
     let report = plugin.render(r#"{"name":"Ada"}"#);
-    assert_eq!(
-        report.result.expect("hello-widget renders"),
-        json!({"title": "Hello", "text": "Hello, Ada!"})
-    );
+    assert_eq!(report.result.expect("hello-widget renders"), hello("Ada"));
     assert_eq!(report.logs.len(), 1);
 }
 
@@ -74,7 +71,7 @@ fn contract_1_0_0_and_1_1_0_plugins_run_on_the_1_2_0_host() {
         .render(r#"{"owner":"rust-lang","repo":"rust"}"#)
         .result
         .expect("github-releases renders before its first update");
-    assert_eq!(content["text"], "No data yet");
+    assert!(texts(drawn(&content)).contains(&"No data yet".to_owned()));
 }
 
 #[test]
@@ -85,10 +82,8 @@ fn hello_widget_renders_its_greeting_and_one_log() {
 
     let report = plugin.render("{}");
 
-    assert_eq!(
-        report.result.expect("hello-widget renders"),
-        json!({"title": "Hello", "text": "Hello, world!"})
-    );
+    let content = report.result.expect("hello-widget renders");
+    assert_eq!(*drawn(&content), hello("world"));
     assert_eq!(
         report.logs,
         [LogMessage {
@@ -104,14 +99,16 @@ fn hello_widget_greets_the_configured_name() {
     let runtime = runtime();
     let plugin = load(&runtime, &fixture("hello-widget"));
 
-    for (config, text) in [
-        (r#"{"name":"Ada"}"#, "Hello, Ada!"),
-        (r#"{"name":"Grace"}"#, "Hello, Grace!"),
-        ("{}", "Hello, world!"),
+    for (config, name) in [
+        (r#"{"name":"Ada"}"#, "Ada"),
+        (r#"{"name":"Grace"}"#, "Grace"),
+        ("{}", "world"),
+        // Markup is text, drawn as it is
+        (r#"{"name":"<b>Ada</b>"}"#, "<b>Ada</b>"),
     ] {
         assert_eq!(
             plugin.render(config).result.expect("hello-widget renders"),
-            json!({"title": "Hello", "text": text}),
+            hello(name),
             "config {config}"
         );
     }
@@ -249,11 +246,33 @@ fn component_with(exports: &[&str], manifest: &str) -> Vec<u8> {
 #[test]
 fn a_component_built_for_a_newer_minor_is_a_contract_mismatch_naming_both_versions() {
     let package = component_with(
-        &["dashboard:widget/renderer@1.4.0"],
+        &["dashboard:widget/renderer@1.5.0"],
         &manifest("local/newer", "0.1.0", &[]),
     );
     let (kind, detail) = load_error(&runtime(), &package);
     assert_eq!(kind, ErrorKind::ContractMismatch);
+    assert!(
+        detail.contains("1.5.0") && detail.contains("1.4.0"),
+        "{detail}"
+    );
+}
+
+/// Feature 009: actions arrived with 1.4.0. A plugin whose every name says 1.3.0 but that also
+/// exports an `actor` gets no actions: it is refused, not given an `act` the contract never had.
+#[test]
+fn a_1_3_0_component_exporting_an_actor_is_contract_too_old() {
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&manifest("local/old-actor", "0.1.0", &[])).unwrap();
+    manifest["actions"] = serde_json::json!([{ "name": "save" }]);
+    let package = component_with(
+        &[
+            "dashboard:widget/renderer@1.3.0",
+            "dashboard:widget/actor@1.3.0",
+        ],
+        &manifest.to_string(),
+    );
+    let (kind, detail) = load_error(&runtime(), &package);
+    assert_eq!(kind, ErrorKind::ContractTooOld, "{detail}");
     assert!(
         detail.contains("1.4.0") && detail.contains("1.3.0"),
         "{detail}"

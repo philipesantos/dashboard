@@ -1,7 +1,8 @@
 # Render and update
 
 A widget has two entry points: `render`, which every widget implements, and `update`, which a
-widget implements when it fetches data or writes its store. This guide starts from the example
+widget implements when it fetches data or writes its store. A widget with buttons or forms has a
+third, `act`, [at the end](#actions). This guide starts from the example
 `hello-widget`, which only renders, and says what each call gets, what it may do and what the host
 keeps between calls. It starts in the clone of [the walkthrough](../getting-started.md), with the
 development CLI installed.
@@ -23,12 +24,23 @@ digest: sha256:<digest>
 $ runtime approve hello-widget.wasm
 approved local/hello-widget 0.2.0
 granted: log
-$ runtime run hello-widget.wasm --config '{"name":"Ada"}'
+$ runtime run hello-widget.wasm --config '{"name":"Ada"}' --check-content
 [plugin] info: rendering hello-widget
 {
-  "text": "Hello, Ada!",
-  "title": "Hello"
+  "body": [
+    {
+      "text": "Hello",
+      "type": "text",
+      "variant": "heading"
+    },
+    {
+      "text": "Hello, Ada!",
+      "type": "text"
+    }
+  ],
+  "format": 1
 }
+content: drawn
 ```
 
 What `render` gets and gives:
@@ -37,8 +49,8 @@ What `render` gets and gives:
   given. For a widget with an updater it gets a document of the host's instead, with the data
   the last update kept ([the contract](../reference/contract.md#renderer)).
 - **It returns** its content as a JSON document of at most 64 KiB, or an error message for the
-  maintainer. The shape of the content is the widget's own for now; Phase 3 defines the content
-  the host frame draws, in a later minor of the contract.
+  maintainer. The content is in the host's format, components the app draws in the widget's
+  frame ([widget content](../reference/content.md)); `--check-content` says whether it would.
 - **It reaches nothing.** `render` never waits on the network: a connector call from it answers
   `refused(called-outside-update)`, and a storage write `refused(render-only-reads)`. It may read
   its store.
@@ -79,3 +91,29 @@ What `update` gets and gives:
 In the development CLI, an update runs when you run `runtime update`; the app will update on load
 and on a schedule. `render` never waits for one: it shows what the last update kept, so a widget
 renders even with the network down.
+
+## Actions
+
+A button or a form in a widget's content asks the host to run an action, which the widget's
+`act` carries out. The widget declares each action's name in its manifest and builds an
+`interactive-` world, which exports `actor` too ([the contract](../reference/contract.md#actor)).
+`hello-widget` has none:
+
+```console check exit=1
+$ runtime act hello-widget.wasm greet
+error: undeclared-action: `greet` is not an action local/hello-widget declares
+```
+
+What `act` gets and gives:
+
+- **It gets** the action's name, one the manifest declares, and a document with the widget's
+  configuration, its current data, and the form's values by field id, each a string.
+- **It may call** its connectors' operations that only read, and write its store, all or nothing,
+  as `update` does.
+- **It returns** the widget's new data, which the next `render` gets; the app then draws the new
+  content. The host keeps that data in memory only, while the app runs: what must outlive a
+  restart goes in the store.
+- **It is bounded** like `update`.
+
+[Widget content](../reference/content.md#actions) shows the buttons and forms that run actions,
+and `runtime act` runs one in the development CLI ([the CLI](../reference/cli.md#act)).
