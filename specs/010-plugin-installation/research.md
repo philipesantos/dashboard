@@ -96,6 +96,9 @@ Wasmtime 50.0.1); 1.5 GiB keeps it under half the limit, the plan's own rule. It
 0.22 s with 12 threads and 1.46 s with one; 20 s keeps a wide margin even on two-vCPU runners at
 low priority. A CI test compiles the `compile-heavy` fixture (R11) through the real child under
 the default limits on the three systems and prints its time and peak, which the tasks record.
+On CI (T054, 2026-11-13) it took 0.8 to 2.3 s on the three systems, with one or two threads, and
+peaked at 104 to 105 MiB on Linux and macOS (Windows's job accounting is not read): under a tenth
+of each limit, so none moves.
 
 `libc` is already a direct Unix dependency of the runtime (`runtime/Cargo.toml:156-157`);
 `windows-sys` 0.61, already in the lock through Wasmtime, becomes a direct Windows dependency.
@@ -383,6 +386,7 @@ the probe source) and `window-responsive-while-compiling` (SC-003: no gap above 
 animation frames or 10 ms timers while `compile-heavy` compiles). On Windows, the HS-11 and HS-22
 cases also read `Accessibility.getFullAXTree` through `CallDevToolsProtocolMethod` if the probe
 build can call it with developer tools off; the first Windows CI run settles it (tasks T045).
+Settled on 2026-11-13: it can, and on the Windows runner the tree names nothing outside the dialog.
 
 ## R12. The threat model, decision records and author docs (FR-027, FR-028)
 

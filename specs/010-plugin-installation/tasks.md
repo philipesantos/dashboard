@@ -352,7 +352,7 @@ before any build of the app or the tests.
   order, since installing a filter takes `prctl` and `seccomp`, which the last one kills. The list
   was taken with strace on a compile, and found complete by 25 compiles under the limits and five
   runs of the tests.
-- [ ] T040 [P] [US4] macOS confinement and limits in `runtime/src/compile/confine_macos.rs`:
+- [X] T040 [P] [US4] macOS confinement and limits in `runtime/src/compile/confine_macos.rs`:
   `sandbox_init` with `kSBXProfilePureComputation`; the watchdog thread sampling the child's own
   physical footprint every 50 ms and exiting with 86 above `memory_bytes`, and exiting when
   `getppid()` changes.
@@ -361,7 +361,12 @@ before any build of the app or the tests.
   session had no macOS. The watchdog reads the peak resident memory with `getrusage`, which the
   sandbox allows, rather than `proc_pid_rusage`; the profile is passed by name. Open until CI on
   macOS runs `compile-memory` and `compile-confined` green (T054).
-- [ ] T041 [P] [US4] Windows confinement and limits in `runtime/src/compile/confine_windows.rs`
+
+  Done on 2026-11-13: CI on macOS runs every compile case green. Two fixes on the way: clippy's
+  needless `return` in a branch compiled only there, now one confinement function per system; and
+  `compile-memory`'s limit, 48 MiB on macOS, since the watchdog reads the peak every 50 ms and
+  `compile-heavy`, peaking at 104 MiB, passed 96 MiB only near its end, which one run missed.
+- [X] T041 [P] [US4] Windows confinement and limits in `runtime/src/compile/confine_windows.rs`
   (`windows-sys` as a direct Windows dependency): an AppContainer with no capabilities, read and
   execute granted on the app's install directory when it is per-user; a job object with the memory
   and process-time limits, kill-on-job-close, no child processes and no desktop access, the child
@@ -375,6 +380,16 @@ before any build of the app or the tests.
   `Running` trait. No fallback to a restricted token is written: if CI shows the AppContainer
   cannot start the binary, the fallback comes then. Open until CI on Windows runs `compile-cpu`,
   `compile-memory` and `compile-confined` green (T054).
+
+  Done on 2026-11-13: CI on Windows runs every compile case green, the AppContainer starting the
+  binary with the grant on the executable file alone, so no fallback was needed. What it took
+  (research R2, "What Windows taught on CI"): the system's and the profile's folder variables in
+  the child's environment (`ERROR_ENVVAR_NOT_FOUND` without them); one compile starting at a time,
+  since two raced the AppContainer's profile (`ERROR_FILE_NOT_FOUND`); `STATUS_QUOTA_EXCEEDED` read
+  as the CPU limit; `compile-memory` at 48 MiB, the job counting committed memory; and
+  `compile-cpu` on a child that computes for 30 s once confined (`burn-cpu`), since the job checks
+  its time only now and then. A throwaway branch with a Windows-only workflow found these in
+  minutes, and was deleted.
 - [X] T042 [US4] CI in `.github/workflows/ci.yml`: a step on the three systems compiles
   `compile-heavy` through the real child under the default limits and prints its wall time and peak
   memory as each system counts it; `compile-confined` runs in the test step. Record the numbers in
@@ -411,11 +426,17 @@ before any build of the app or the tests.
   recorded opener or the window; `aria-labelledby` and `aria-describedby`; fixed header and footer
   with a scrolling body; a `forced-colors:` border in `CanvasText`; animation only under
   `motion-safe:`. The window's close event sends `request_cancel`. T043 passes.
-- [ ] T045 [US5] On Windows, call `CallDevToolsProtocolMethod("Accessibility.getFullAXTree")` from
+- [X] T045 [US5] On Windows, call `CallDevToolsProtocolMethod("Accessibility.getFullAXTree")` from
   the probe build with developer tools left off (`probe.rs` already reads WebView2's settings) and,
   when it answers, assert in the HS-11 and HS-22 cases that the tree outside the dialog is empty.
   Done either way after one attempt on the Windows CI runner: if the call fails or needs developer
   tools on, record that in research R11 and leave the check to quickstart §6.
+
+  Done on 2026-11-13: the probe's `shell_probe_tree` answers, on the Windows runner with developer
+  tools off, and `dialog-makes-window-inert` and `dialog-hides-the-rest` report that the engine's
+  accessibility tree names nothing outside the dialog; on Linux and macOS they say it was not read.
+  Not mutation-tested on Windows (one attempt, as planned): the page's own checks of those cases
+  break without the inertness, and quickstart §6 still covers screen readers by hand.
 - [X] T046 [US5] Run the probe locally on Linux: every case of features 008, 009 and this one holds.
 
   Done on 2026-11-12: 82 cases held in three runs. `window-responsive-while-compiling` counts the
@@ -473,10 +494,25 @@ before any build of the app or the tests.
   breaks without the fix, one (a fresh form deserialized before the decision) recorded as a
   residual in the threat model and decision 0003 until the next feature (research, "The
   implementation's independent review"). The Windows grant's change waits for CI with T041.
-- [ ] T054 Only once the maintainer has pushed and opened the pull request, as they ask: follow CI
+- [X] T054 Only once the maintainer has pushed and opened the pull request, as they ask: follow CI
   on the three systems and record per system the `compile-heavy` time and peak (research R2), the
   largest gap of `window-responsive-while-compiling` (SC-003), the time of `install-on-time`
   (SC-001, without the network) and the probe's time.
+
+  Done on 2026-11-13, PR #23 green on the three systems at `e0c8935` (CI run 43424334857):
+
+  | System | `compile-heavy` | Peak | Largest gap (SC-003, limit 100 ms) | `install-on-time` (SC-001) | Probe |
+  | --- | --- | --- | --- | --- | --- |
+  | Linux | 1675 ms, 2 threads | 105 MiB | 16 ms | 1335 ms | 82 held, 28 s |
+  | macOS | 1507 ms, 1 thread | 105 MiB | 19 ms | 1389 ms | 82 held, 30 s |
+  | Windows | 1354 ms, 2 threads | not read | 16 ms | 1344 ms | 86 held, 27 s |
+
+  Over every CI run that reached it, `compile-heavy` took 0.8 to 2.3 s, under a tenth of the 20 s limit, and
+  peaked at 105 MiB, under a tenth of 1.5 GiB: no limit moves. CI changed twice on the way: the
+  compile cost step reuses the workspace tests' build, and the build job has 55 minutes, a slow
+  Windows runner without the cache having passed 40. Two runs failed for causes outside this
+  feature, each passing when run again: a download from crates.io on macOS, and feature 003's
+  `hostile::connectors::log_flood` past its 1 s limit on a slow Windows runner.
 - [X] T055 The maintainer's part, before the merge: the line-by-line review of the security core
   (Principle IX); quickstart §6 (keyboard, screen reader, high contrast, reduced motion) and §5's
   confinement check on Windows, macOS and Linux. Done: the maintainer reported the review done on
