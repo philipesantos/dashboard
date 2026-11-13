@@ -183,20 +183,19 @@ fn a_compile_past_its_wall_time_is_refused_naming_it() {
     assert_eq!(error.kind(), ErrorKind::CompileTimeLimit, "{error}");
 }
 
-/// `compile-cpu`: the system's CPU time limit (`RLIMIT_CPU`, in whole seconds; the job's on
-/// Windows, which counts user time only and where `compile-heavy` takes less than a second of it).
+/// `compile-cpu`: the system's CPU time limit (`RLIMIT_CPU`; the job's on Windows), on a child
+/// that computes past it once confined (`burn-cpu`). A real compile would not do: Windows checks
+/// a job's time only now and then, and `compile-heavy`, at two seconds of it, ended there before
+/// a check as often as not. The wall-clock limit stays the default, 20 s, so only the CPU limit
+/// can stop it first.
 #[test]
 fn a_compile_past_its_cpu_time_is_refused_naming_it() {
-    let cpu_time = if cfg!(windows) {
-        std::time::Duration::from_millis(250)
-    } else {
-        std::time::Duration::from_secs(1)
-    };
     let error = limited(CompileLimits {
-        cpu_time,
+        cpu_time: std::time::Duration::from_secs(1),
         ..one_thread()
     })
-    .compile(&fixture("compile-heavy"))
+    .trying_to_escape("burn-cpu")
+    .compile(&fixture("hello-widget"))
     .expect_err("refused");
     assert_eq!(error.kind(), ErrorKind::CompileTimeLimit, "{error}");
     assert!(error.to_string().contains("CPU"), "{error}");

@@ -171,7 +171,10 @@ fn confine_after_threads() -> Result<(), String> {
 /// - `file`: opens a file of the user's, `Cargo.toml` in the current folder (the runtime's own);
 /// - `file-on-a-compile-thread`: the same, from one of the threads that existed before
 ///   confinement, which Linux's Landlock binds only when it came first;
-/// - `net:<port>`: connects to `port` on loopback, where the test listens.
+/// - `net:<port>`: connects to `port` on loopback, where the test listens;
+/// - `burn-cpu`: not an escape but a package that costs more CPU than any limit: it computes for
+///   30 seconds of wall time, so the CPU limit's test depends neither on how fast a system
+///   compiles nor on when Windows checks a job's time, which it does only now and then.
 #[cfg(feature = "test-network")]
 #[allow(
     clippy::disallowed_types,
@@ -181,6 +184,18 @@ fn confine_after_threads() -> Result<(), String> {
 fn try_escape(attempt: &str) {
     let worked = match attempt {
         "file" => open_users_file(),
+        "burn-cpu" => {
+            let started = std::time::Instant::now();
+            let mut state = 1u64;
+            while started.elapsed() < std::time::Duration::from_secs(30) {
+                state = std::hint::black_box(
+                    state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1),
+                );
+            }
+            false
+        }
         "file-on-a-compile-thread" => {
             let (send, receive) = std::sync::mpsc::channel();
             rayon::spawn(move || {
