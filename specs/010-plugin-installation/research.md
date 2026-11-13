@@ -72,11 +72,23 @@ by the maintainer.
 | Output | 64 MiB | The parent stops reading and kills the child |
 | Parent gone | — | `PR_SET_PDEATHSIG(SIGKILL)` (Linux); kill-on-job-close (Windows); the macOS watchdog also exits when `getppid()` changes |
 
-**Attribution**: a limit refuses the installation naming it. The child's global allocator wraps
-the system one and `_exit`s with code 86 when an allocation fails; a spawn failure in rayon is
-caught in the child and exits 86 too. The parent maps: wall-clock kill or `SIGXCPU` or the job's
-end-of-time message → `compile-time-limit`; exit 86, the macOS watchdog's exit, or the job's peak
-memory at its limit → `compile-memory-limit`; anything else → `compile-failed`.
+**Attribution**: a limit refuses the installation naming it, read from how the child ended, never
+from what it wrote (the implementation's review, T053). The child exits 86 when the system refuses
+it memory or a thread, as the macOS watchdog does; its panic hook exits 70, so an abort means only
+the standard library's end on a failed allocation. The parent maps: wall-clock kill, `SIGXCPU`,
+or the job's end on its time limit (`STATUS_QUOTA_EXCEEDED` on CI's Windows, or
+`ERROR_NOT_ENOUGH_QUOTA`) → `compile-time-limit`; exit 86, `SIGABRT`, or Windows's fast-fail
+status → `compile-memory-limit`; anything else → `compile-failed`.
+
+**What Windows taught on CI** (T041): `CreateProcessW` refuses to start a process in an
+AppContainer with an environment that lacks the profile's folders (`ERROR_ENVVAR_NOT_FOUND`), so
+the child gets the system's and the profile's folder variables, paths only; two compiles starting
+at once raced the AppContainer's profile, the second not finding its folder yet
+(`ERROR_FILE_NOT_FOUND`), so a lock makes them start one at a time; the job counts committed
+memory, which `compile-heavy` keeps under 96 MiB; and the job checks its CPU time only now and
+then, so a run of 2.2 s of user time against a limit of 250 ms could end before a check. The
+limit holds for anything that runs long enough to matter (60 s); its test runs a child that
+computes for 30 s once confined.
 
 **Numbers**: the legitimate near-cap package peaks at 593 MB resident
 (`specs/001-plugin-runtime/performance.md:48,59`) and 592 MB of `VmData` (the review's repro,

@@ -10,7 +10,11 @@ macro_rules! commands {
 include!("src/commands.rs");
 
 /// The shell probe's two commands, for the `shell-probe` build only.
-const PROBE_COMMANDS: &[&str] = &["shell_probe_report", "shell_probe_ungranted"];
+const PROBE_COMMANDS: &[&str] = &[
+    "shell_probe_report",
+    "shell_probe_ungranted",
+    "shell_probe_tree",
+];
 
 /// Where tauri-build writes one permission file per app command, `<command>.toml`. It never
 /// deletes a file there, and it reads every file in `permissions/`, so a probe build would leave

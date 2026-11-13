@@ -15,9 +15,12 @@ loads `devUrl` and serves no policy. The `probe` profile is the release one with
 optimisation across crates (since feature 009, for CI time): the same code, no debug
 assertions, only slower to run. The probe build is the release build plus:
 - one bundled module, `src/probe/run.ts`;
-- two app commands, compiled in only with the feature:
+- three app commands, compiled in only with the feature:
   - `shell_probe_report`, granted by a run-time capability added through
     `Manager::add_capability`;
+  - `shell_probe_tree` (since feature 010, task T045), granted by the same capability: it reads
+    the engine's accessibility tree while a host dialog is open, on Windows through WebView2's
+    DevTools protocol, and answers that it is not available elsewhere;
   - `shell_probe_ungranted`, which nothing grants.
 
 Its content policy, `capabilities/`, `window-surface.toml`, ACL mode and window settings are the

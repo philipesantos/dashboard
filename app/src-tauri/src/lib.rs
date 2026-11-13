@@ -26,7 +26,8 @@ macro_rules! commands {
             return tauri::generate_handler![
                 $($command,)*
                 probe::shell_probe_report,
-                probe::shell_probe_ungranted
+                probe::shell_probe_ungranted,
+                probe::shell_probe_tree
             ];
             #[cfg(not(feature = "shell-probe"))]
             return tauri::generate_handler![$($command),*];

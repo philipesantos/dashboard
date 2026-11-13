@@ -3,9 +3,26 @@
 // source, which serves the embedded releases as `github.com/dashboard-fixtures/<name>`.
 // Part of the security core (constitution v2.7.0, Principle IX).
 
+import { invoke } from "@tauri-apps/api/core";
+
 import type { Case, Context, Verdict } from "./case";
 
 const POLL_MS = 50;
+
+/** What the engine's accessibility tree names outside the open dialog (task T045): read on Windows
+ * through WebView2's DevTools protocol; elsewhere, or when that fails, not available. */
+type Tree = { available: boolean; outside: string[]; detail: string };
+
+/** Adds the accessibility tree's verdict to a case's problems, and says in the detail whether it
+ * was read. */
+async function treeVerdict(problems: string[]): Promise<string> {
+  const tree = await invoke<Tree>("shell_probe_tree");
+  if (!tree.available) return `; the accessibility tree was not read (${tree.detail})`;
+  if (tree.outside.length > 0) {
+    problems.push(`the accessibility tree names ${tree.outside.length} nodes outside the dialog: ${tree.outside.slice(0, 5).join("; ")}`);
+  }
+  return "; the engine's accessibility tree names nothing outside the dialog";
+}
 /** How long an installation gets, from the add button to the frame's content (SC-001's ceiling is
  * a minute; the probe's budget for the whole run is less, so it waits at most this). */
 const INSTALL_MS = 20000;
@@ -186,8 +203,9 @@ export const installCases: Case[] = [
       });
       if (took.length > 0) problems.push(`${took.length} controls outside took focus`);
       dialog()?.querySelector<HTMLElement>("[data-safe-choice]")?.focus();
+      const tree = await treeVerdict(problems);
       return problems.length === 0
-        ? { held: true, detail: `the root is inert; none of ${outside.length} controls outside took focus` }
+        ? { held: true, detail: `the root is inert; none of ${outside.length} controls outside took focus${tree}` }
         : { held: false, detail: problems.join("; ") };
     },
   },
@@ -326,9 +344,14 @@ export const installCases: Case[] = [
           element.getAttribute("aria-hidden") !== "true" &&
           !element.hasAttribute("inert"),
       );
-      return visible.length === 0
-        ? { held: true, detail: "every part of the page outside the dialog is aria-hidden or inert" }
-        : { held: false, detail: `still exposed: ${visible.map((element) => element.tagName + (element.id ? `#${element.id}` : "")).join(", ")}` };
+      const problems: string[] = [];
+      if (visible.length > 0) {
+        problems.push(`still exposed: ${visible.map((element) => element.tagName + (element.id ? `#${element.id}` : "")).join(", ")}`);
+      }
+      const tree = await treeVerdict(problems);
+      return problems.length === 0
+        ? { held: true, detail: `every part of the page outside the dialog is aria-hidden or inert${tree}` }
+        : { held: false, detail: problems.join("; ") };
     },
   },
   {

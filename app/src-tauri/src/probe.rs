@@ -214,7 +214,8 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     app.add_capability(
         CapabilityBuilder::new("shell-probe")
             .window(MAIN)
-            .permission("allow-shell-probe-report"),
+            .permission("allow-shell-probe-report")
+            .permission("allow-shell-probe-tree"),
     )?;
     let (sender, receiver) = mpsc::channel();
     app.manage(Inbox(Mutex::new(Some(sender))));
@@ -247,6 +248,171 @@ pub fn shell_probe_report(
 #[tauri::command]
 pub fn shell_probe_ungranted() -> &'static str {
     "reached"
+}
+
+/// What the engine's accessibility tree exposes outside the open host dialog (feature 010, task
+/// T045; HS-11 and HS-22): the named nodes that are not ignored and not inside the node of role
+/// `dialog`. Read on Windows only, through WebView2's DevTools protocol with developer tools left
+/// off; elsewhere, and when the call fails, `available` is false and the cases rest on the page's
+/// own checks and on quickstart §6.
+#[derive(Debug, Serialize)]
+pub struct Tree {
+    available: bool,
+    outside: Vec<String>,
+    detail: String,
+}
+
+/// Reads the accessibility tree while the page has a dialog open (`dialogs.ts`).
+#[tauri::command]
+pub async fn shell_probe_tree(app: AppHandle) -> Tree {
+    #[cfg(windows)]
+    return tree::read(&app).await;
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Tree {
+            available: false,
+            outside: Vec::new(),
+            detail: "the accessibility tree is read on Windows only".into(),
+        }
+    }
+}
+
+/// The named nodes outside the dialog in a `Accessibility.getFullAXTree` answer, as `role: name`,
+/// or why none could be found.
+#[cfg_attr(not(windows), allow(dead_code, reason = "read on Windows"))]
+fn outside_the_dialog(answer: &serde_json::Value) -> Result<Vec<String>, String> {
+    use std::collections::{HashMap, HashSet};
+    let nodes = answer
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("the answer has no nodes")?;
+    let text = |node: &serde_json::Value, field: &str| {
+        node.get(field)
+            .and_then(|value| value.get("value"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let id = |node: &serde_json::Value| {
+        node.get("nodeId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let by_id: HashMap<String, &serde_json::Value> =
+        nodes.iter().map(|node| (id(node), node)).collect();
+    let mut inside = HashSet::new();
+    let mut pending: Vec<String> = nodes
+        .iter()
+        .filter(|node| text(node, "role") == "dialog")
+        .map(id)
+        .collect();
+    if pending.is_empty() {
+        return Err("no node of role dialog: is the dialog open?".into());
+    }
+    while let Some(next) = pending.pop() {
+        if !inside.insert(next.clone()) {
+            continue;
+        }
+        if let Some(children) = by_id
+            .get(&next)
+            .and_then(|node| node.get("childIds"))
+            .and_then(serde_json::Value::as_array)
+        {
+            pending.extend(
+                children
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned),
+            );
+        }
+    }
+    Ok(nodes
+        .iter()
+        .filter(|node| !inside.contains(&id(node)))
+        .filter(|node| node.get("ignored").and_then(serde_json::Value::as_bool) != Some(true))
+        .filter(|node| text(node, "role") != "RootWebArea")
+        .filter_map(|node| {
+            let name = text(node, "name");
+            let name: String = name.trim().chars().take(60).collect();
+            (!name.is_empty()).then(|| format!("{}: {name}", text(node, "role")))
+        })
+        .collect())
+}
+
+#[cfg(windows)]
+mod tree {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use tauri::{AppHandle, Manager};
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    use windows_core::w;
+
+    use super::{Tree, outside_the_dialog};
+    use crate::window::MAIN;
+
+    fn unavailable(detail: String) -> Tree {
+        Tree {
+            available: false,
+            outside: Vec::new(),
+            detail,
+        }
+    }
+
+    pub async fn read(app: &AppHandle) -> Tree {
+        let Some(window) = app.get_webview_window(MAIN) else {
+            return unavailable("the main window is gone".into());
+        };
+        let (sender, receiver) = mpsc::channel::<Result<String, String>>();
+        let reached = window.with_webview(move |webview| {
+            let failed = sender.clone();
+            let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
+                move |result, json| {
+                    let _ = sender.send(result.map(|()| json).map_err(|error| error.to_string()));
+                    Ok(())
+                },
+            ));
+            // SAFETY: the controller is Tauri's own, alive on this (main) thread; the handler
+            // is called once, on this thread, with the answer
+            let called = unsafe {
+                webview.controller().CoreWebView2().and_then(|core| {
+                    core.CallDevToolsProtocolMethod(
+                        w!("Accessibility.getFullAXTree"),
+                        w!("{}"),
+                        &handler,
+                    )
+                })
+            };
+            if let Err(error) = called {
+                let _ = failed.send(Err(error.to_string()));
+            }
+        });
+        if let Err(error) = reached {
+            return unavailable(format!("the webview could not be reached: {error}"));
+        }
+        let answer = tauri::async_runtime::spawn_blocking(move || {
+            receiver.recv_timeout(Duration::from_secs(10))
+        })
+        .await;
+        let json = match answer {
+            Ok(Ok(Ok(json))) => json,
+            Ok(Ok(Err(error))) => {
+                return unavailable(format!("Accessibility.getFullAXTree failed: {error}"));
+            }
+            _ => return unavailable("Accessibility.getFullAXTree did not answer in 10 s".into()),
+        };
+        let parsed = serde_json::from_str(&json).map_err(|error| error.to_string());
+        match parsed.and_then(|value| outside_the_dialog(&value)) {
+            Ok(outside) => Tree {
+                available: true,
+                detail: format!("{} named nodes outside the dialog", outside.len()),
+                outside,
+            },
+            Err(error) => unavailable(format!("the tree could not be read: {error}")),
+        }
+    }
 }
 
 /// The engine settings read back on the main thread, one case each (research R6 and R7).
