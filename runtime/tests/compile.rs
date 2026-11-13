@@ -183,11 +183,17 @@ fn a_compile_past_its_wall_time_is_refused_naming_it() {
     assert_eq!(error.kind(), ErrorKind::CompileTimeLimit, "{error}");
 }
 
-/// `compile-cpu`: the system's CPU time limit (`RLIMIT_CPU`; the job's on Windows).
+/// `compile-cpu`: the system's CPU time limit (`RLIMIT_CPU`, in whole seconds; the job's on
+/// Windows, which counts user time only and where `compile-heavy` takes less than a second of it).
 #[test]
 fn a_compile_past_its_cpu_time_is_refused_naming_it() {
+    let cpu_time = if cfg!(windows) {
+        std::time::Duration::from_millis(250)
+    } else {
+        std::time::Duration::from_secs(1)
+    };
     let error = limited(CompileLimits {
-        cpu_time: std::time::Duration::from_secs(1),
+        cpu_time,
         ..one_thread()
     })
     .compile(&fixture("compile-heavy"))
