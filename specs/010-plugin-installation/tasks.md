@@ -521,7 +521,7 @@ before any build of the app or the tests.
   the Phase 3 items "Diálogo de instalação com permissões em linguagem clara" and "Instalação de
   plugin a partir do repositório do autor", noting constitution v2.7.0 and decision 0003. Done at
   the maintainer's request on 2026-11-12 (guide rev 153), each item with what PR #23 did.
-- [ ] T057 Merge:
+- [X] T057 Merge:
   - The maintainer reviewed the pull request line by line.
   - CI is green on the three systems.
   - `grep -n '^- \[ \]' specs/010-plugin-installation/tasks.md` shows only this task.
