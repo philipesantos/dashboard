@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "github.com/dashboard-fixtures/install-basic",
+  "version": "0.2.0",
+  "author": "Dashboard contributors",
+  "name": "Instalação básica",
+  "permissions": [
+    { "name": "log", "required": true },
+    { "name": "storage", "required": true, "quota_bytes": 65536 }
+  ],
+  "connectors": [
+    { "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": true }
+  ],
+  "actions": [{ "name": "save" }]
+}

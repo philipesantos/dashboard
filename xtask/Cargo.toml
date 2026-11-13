@@ -10,3 +10,5 @@ serde_json = "1"
 # Appends each plugin's manifest to its component as a custom section
 wasm-encoder = "0.262"
 wit-component = "0.262"
+# Turns the generated code of the compile-heavy install fixture into a core module
+wat = "1"

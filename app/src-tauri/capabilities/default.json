@@ -3,5 +3,14 @@
   "identifier": "default",
   "description": "The main window's grants. Each one needs an entry in window-surface.toml.",
   "windows": ["main"],
-  "permissions": ["allow-widgets-list", "allow-widget-render", "allow-widget-act"]
+  "permissions": [
+    "allow-widgets-list",
+    "allow-widget-render",
+    "allow-widget-act",
+    "allow-install-start",
+    "allow-update-start",
+    "allow-request-judge",
+    "allow-request-approve",
+    "allow-request-cancel"
+  ]
 }

@@ -19,3 +19,12 @@
     @apply font-sans;
     }
 }
+
+/* A host dialog keeps a visible edge when the system replaces the theme's colors, as Windows high
+   contrast does (criterion HS-17, specs/010-plugin-installation/research.md, R8): nothing of its
+   form depends on color. */
+@media (forced-colors: active) {
+  [data-host-dialog] {
+    border: 1px solid CanvasText;
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "fixtures": [
+    { "name": "install-basic", "component": "action-steps", "manifest": "install-basic.json" },
+    { "name": "install-more", "component": "action-steps", "manifest": "install-more.json" },
+    { "name": "install-account", "component": "account-probe", "manifest": "install-account.json" },
+    { "name": "install-repo-connector", "component": "net-probe", "manifest": "install-repo-connector.json" },
+    { "name": "install-local-connector", "component": "net-probe", "manifest": "install-local-connector.json" },
+    { "name": "compile-heavy", "component": "hello-widget", "manifest": "compile-heavy.json", "padding": "many" }
+  ]
+}

@@ -28,6 +28,7 @@ use wasm_encoder::{ComponentSection, CustomSection};
 use wit_component::ComponentEncoder;
 
 mod clean_space;
+mod padding;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -101,6 +102,8 @@ fn plugins(locked: bool) -> Result<()> {
         by_target.entry(&plugin.target).or_default().push(plugin);
     }
 
+    // Each crate's component before its manifest is appended, for the install fixtures
+    let mut bare: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for (target, plugins) in by_target {
         let names: Vec<&str> = plugins.iter().map(|plugin| plugin.name.as_str()).collect();
         let mut build = cargo();
@@ -141,6 +144,7 @@ fn plugins(locked: bool) -> Result<()> {
                 // wasm32-wasip2 already produces a component.
                 bytes
             };
+            bare.insert(name.clone(), component.clone());
             if plugin.manifest {
                 append_manifest(&mut component, &plugin.dir.join(MANIFEST_FILE))?;
             }
@@ -149,7 +153,69 @@ fn plugins(locked: bool) -> Result<()> {
             println!("{}", path.display());
         }
     }
+    install_fixtures(root, &bare, &out_dir)
+}
+
+/// The largest package the host accepts (`runtime/src/limits.rs`, `max_package_bytes`).
+const PACKAGE_CAP: usize = 10 * 1024 * 1024;
+
+/// Packs the install fixtures listed in `plugins/fixtures/install/index.json`: each one is a
+/// crate's component with that fixture's manifest, written to `target/plugins/<name>.wasm`
+/// (`specs/010-plugin-installation/tasks.md`, T005, T006). With `"padding": "many"`, a core
+/// module of generated code that is never instantiated is added before the manifest, so the
+/// package is just under the package cap and costly to compile, while the widget renders as the
+/// crate does.
+fn install_fixtures(root: &Path, bare: &BTreeMap<String, Vec<u8>>, out_dir: &Path) -> Result<()> {
+    let dir = root.join("plugins").join("fixtures").join("install");
+    let index: Value = serde_json::from_slice(&fs::read(dir.join("index.json"))?)?;
+    let fixtures = index["fixtures"]
+        .as_array()
+        .ok_or("plugins/fixtures/install/index.json has no \"fixtures\" list")?;
+    for fixture in fixtures {
+        let field = |key: &str| {
+            fixture[key]
+                .as_str()
+                .ok_or_else(|| format!("an install fixture has no \"{key}\""))
+        };
+        let (name, crate_name, manifest) =
+            (field("name")?, field("component")?, field("manifest")?);
+        let component = bare
+            .get(crate_name)
+            .ok_or_else(|| format!("{name}: no crate named {crate_name} was built"))?;
+        let mut package = component.clone();
+        if let Some(shape) = fixture.get("padding") {
+            if shape != "many" {
+                return Err(format!("{name}: \"padding\" must be \"many\", found {shape}").into());
+            }
+            package = padded(component, &dir.join(manifest))?;
+        } else {
+            append_manifest(&mut package, &dir.join(manifest))?;
+        }
+        let path = out_dir.join(format!("{name}.wasm"));
+        fs::write(&path, package)?;
+        println!("{}", path.display());
+    }
     Ok(())
+}
+
+/// `component` with a module of generated code and the manifest, as large as fits under the
+/// package cap with 64 KiB to spare.
+fn padded(component: &[u8], manifest: &Path) -> Result<Vec<u8>> {
+    let mut code_bytes = PACKAGE_CAP - component.len() - 512 * 1024;
+    loop {
+        let module = wat::parse_str(padding::many(code_bytes))?;
+        let mut package = component.to_vec();
+        wasm_encoder::RawSection {
+            id: wasm_encoder::ComponentSectionId::CoreModule.into(),
+            data: &module,
+        }
+        .append_to_component(&mut package);
+        append_manifest(&mut package, manifest)?;
+        if package.len() <= PACKAGE_CAP - 64 * 1024 {
+            return Ok(package);
+        }
+        code_bytes -= 256 * 1024;
+    }
 }
 
 /// Appends the manifest file's exact bytes to `component` as its manifest section. The runtime

@@ -1,5 +1,6 @@
 //! Helpers shared by the integration tests.
 
+pub mod releases;
 pub mod servers;
 pub mod signin;
 

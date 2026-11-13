@@ -14,6 +14,7 @@ compile_error!(
 pub mod accounts;
 mod calls;
 mod catalog;
+pub mod compile;
 // The development CLI, a module so a test-only binary can run the same code
 // (specs/006-contract-v1-docs/research.md, R9)
 #[cfg(feature = "cli")]
@@ -21,8 +22,10 @@ mod catalog;
 pub mod cli;
 pub mod connector;
 mod error;
+pub mod flows;
 pub mod grants;
 mod host;
+pub mod install;
 mod kept;
 mod limits;
 pub mod manifest;
@@ -65,9 +68,11 @@ pub use limits::Limits;
 pub use network::test_signin::follow as follow_test_sign_in;
 #[cfg(feature = "test-network")]
 pub use network::{Route, TestNetwork};
-pub use permissions::{Contract, ContractVersion};
+pub use permissions::{Contract, ContractVersion, PermissionKind};
+/// The versions in a [`install::Release`] are this crate's.
+pub use semver;
 pub use storage::StorageCounts;
-pub use text::{escape, quote_entry};
+pub use text::{DRAWN_NAME_CHARS, drawn_name, drawn_text, escape, quote_entry};
 #[cfg(feature = "test-network")]
 pub use vault::{Failure as VaultFailure, TestEntry, TestKeychain};
 
@@ -87,7 +92,7 @@ pub(crate) mod v1 {
 
 /// The first 8 bytes of every binary WebAssembly component: the magic number, then the
 /// component version and layer.
-const COMPONENT_PREAMBLE: [u8; 8] = [0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
+pub(crate) const COMPONENT_PREAMBLE: [u8; 8] = [0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
 
 /// Severity of a plugin log message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,6 +219,43 @@ impl RuntimeOptions {
     pub fn default_development_data_dir() -> Option<PathBuf> {
         dirs::data_dir().map(|dir| dir.join(grants::APP_DIR).join("development"))
     }
+}
+
+/// The Wasmtime configuration every engine of the host uses: the app's, the CLI's, and the compile
+/// process's (`specs/010-plugin-installation/research.md`, R2). One function, so a compiled form
+/// made by the compile process always matches the engine that loads it: Wasmtime refuses one whose
+/// features or tunables differ.
+pub fn engine_config() -> Config {
+    let mut config = Config::new();
+    // Turned off explicitly, so a Wasmtime upgrade that changes a default does not widen
+    // what plugins can use. Function references, exceptions, threads and component-model
+    // async cannot be turned on at all: their Wasmtime features are not compiled in
+    // (runtime/Cargo.toml).
+    config
+        .wasm_gc(false)
+        .wasm_stack_switching(false)
+        .wasm_shared_everything_threads(false)
+        .wasm_tail_call(false)
+        .wasm_memory64(false)
+        .wasm_multi_memory(false)
+        .wasm_relaxed_simd(false)
+        .wasm_wide_arithmetic(false)
+        .wasm_extended_const(false)
+        .wasm_custom_page_sizes(false)
+        .wasm_compact_imports(false)
+        .wasm_branch_hinting(false)
+        .wasm_component_model_gc(false)
+        .wasm_component_model_memory64(false)
+        .wasm_component_model_error_context(false)
+        .wasm_component_model_map(false)
+        .wasm_component_model_fixed_length_lists(false)
+        .wasm_component_model_implements(false)
+        .wasm_component_model_canonical_names(false)
+        .wasm_component_model_accessors(false);
+    // The CPU budget, deterministic on every system, and the wall-clock time limit
+    // (specs/001-plugin-runtime/research.md, R2)
+    config.consume_fuel(true).epoch_interruption(true);
+    config
 }
 
 /// Loads plugins and runs them under the host's limits.
@@ -400,6 +442,47 @@ impl CheckedPackage {
             &self.digest,
             &self.connector_states(),
             expected,
+        )
+    }
+
+    /// Whether running this package under `entry`, the approval of an earlier version, needs the
+    /// person again: a required permission it lacks, storage beyond the approved quota, or a
+    /// connector that changed as feature 003 defines (`specs/002-plugin-permissions/`, FR-011;
+    /// load step 7). An update that needs none is only confirmed
+    /// (`specs/010-plugin-installation/`, FR-020).
+    pub fn needs_new_approval(&self, entry: &grants::Entry) -> bool {
+        let manifest = &self.manifest;
+        manifest
+            .permissions()
+            .iter()
+            .any(|permission| permission.required && !entry.is_granted(&permission.name))
+            || entry.storage_change(manifest).is_some()
+            || !entry
+                .connector_changes(manifest, &self.connector_states())
+                .is_empty()
+    }
+
+    /// Approves this package's installation from `origin` in the app's dialog: the required
+    /// permissions and connectors and the optional ones in `optional_on`, only when `expected` is
+    /// the approval digest of what the dialog showed (`specs/010-plugin-installation/`, FR-013,
+    /// FR-014; [`GrantStore::install`]). A package with a refused connector is refused.
+    pub fn install(
+        &self,
+        grants: &GrantStore,
+        origin: &str,
+        expected: &str,
+        optional_on: &[String],
+    ) -> Result<Approval, RuntimeError> {
+        if let Some((_, error)) = self.refused_connectors.first() {
+            return Err(error.clone());
+        }
+        grants.install(
+            &self.manifest,
+            origin,
+            &self.digest,
+            &self.connector_states(),
+            expected,
+            optional_on,
         )
     }
 
@@ -615,35 +698,7 @@ impl Runtime {
         if let Ok(absolute) = std::path::absolute(&options.data_dir) {
             options.data_dir = absolute;
         }
-        let mut config = Config::new();
-        // Turned off explicitly, so a Wasmtime upgrade that changes a default does not widen
-        // what plugins can use. Function references, exceptions, threads and component-model
-        // async cannot be turned on at all: their Wasmtime features are not compiled in
-        // (runtime/Cargo.toml).
-        config
-            .wasm_gc(false)
-            .wasm_stack_switching(false)
-            .wasm_shared_everything_threads(false)
-            .wasm_tail_call(false)
-            .wasm_memory64(false)
-            .wasm_multi_memory(false)
-            .wasm_relaxed_simd(false)
-            .wasm_wide_arithmetic(false)
-            .wasm_extended_const(false)
-            .wasm_custom_page_sizes(false)
-            .wasm_compact_imports(false)
-            .wasm_branch_hinting(false)
-            .wasm_component_model_gc(false)
-            .wasm_component_model_memory64(false)
-            .wasm_component_model_error_context(false)
-            .wasm_component_model_map(false)
-            .wasm_component_model_fixed_length_lists(false)
-            .wasm_component_model_implements(false)
-            .wasm_component_model_canonical_names(false)
-            .wasm_component_model_accessors(false);
-        // The CPU budget, deterministic on every system, and the wall-clock time limit (R2)
-        config.consume_fuel(true).epoch_interruption(true);
-        let engine = Engine::new(&config)?;
+        let engine = Engine::new(&engine_config())?;
         let clock = Arc::new(EpochClock::new());
         start_epoch_ticker(&engine, Arc::clone(&clock))?;
 
@@ -908,6 +963,34 @@ impl Runtime {
     /// the package instead of refusing it, so `permissions` can show each refusal in its place.
     /// A package with such a connector can neither be approved nor loaded.
     pub fn inspect(&self, bytes: &[u8]) -> Result<CheckedPackage, RuntimeError> {
+        self.inspect_with(bytes, None)
+    }
+
+    /// [`check`](Self::check) for a package the app did not build, with the component taken from
+    /// `compiled`, the form its own compile process just made of it, so the package is never
+    /// compiled in this process (`specs/010-plugin-installation/research.md`, R1, R3). Only the
+    /// installer calls it, with the bytes the compile process wrote, before it records their
+    /// digest.
+    pub fn check_compiled(
+        &self,
+        package: &[u8],
+        compiled: &[u8],
+    ) -> Result<CheckedPackage, RuntimeError> {
+        let package = self.inspect_with(package, Some(compiled))?;
+        match package.refused_connectors.first() {
+            Some((_, error)) => Err(error.clone()),
+            None => Ok(package),
+        }
+    }
+
+    /// [`inspect`](Self::inspect), with the component taken from `compiled`, a form this app's
+    /// compile process made (just now, or as recorded, its digest checked), instead of compiled
+    /// here.
+    fn inspect_with(
+        &self,
+        bytes: &[u8],
+        compiled: Option<&[u8]>,
+    ) -> Result<CheckedPackage, RuntimeError> {
         // Step 1: size and preamble
         if bytes.len() > self.limits.max_package_bytes {
             return Err(RuntimeError::new(
@@ -930,9 +1013,30 @@ impl Runtime {
         // Step 3a: a storage quota within this host's cap, which may be lower than the schema's
         self.check_quota(&manifest)?;
         // Step 4: from_binary never accepts the text format, whatever Wasmtime features are
-        // enabled.
-        let component = Component::from_binary(&self.engine, bytes)
-            .map_err(|error| RuntimeError::new(ErrorKind::InvalidPackage, format!("{error:#}")))?;
+        // enabled. A form from the compile process is deserialized instead.
+        let component = match compiled {
+            None => Component::from_binary(&self.engine, bytes).map_err(|error| {
+                RuntimeError::new(ErrorKind::InvalidPackage, format!("{error:#}"))
+            })?,
+            // SAFETY: `deserialize` trusts the form it is given: one Wasmtime did not make could
+            // corrupt this process as it loads, and its code runs when the plugin is called. Two
+            // callers pass one, both a form this app's own compile process made
+            // (specs/010-plugin-installation/research.md, R3): `check_compiled`, with the bytes
+            // the installer has just read from that process, before the person decides (nothing
+            // of the plugin runs before the approval); and `load_compiled`, after checking that
+            // the bytes on disk are the ones whose digest was recorded at installation. Wasmtime
+            // still refuses a form built by another engine version or configuration. What a
+            // compile process taken over by a package could write is the threat model's
+            // residual for "The compile process's output, trusted as code" (decision 0003).
+            Some(compiled) => {
+                unsafe { Component::deserialize(&self.engine, compiled) }.map_err(|error| {
+                    RuntimeError::new(
+                        ErrorKind::CompileFailed,
+                        format!("the compiled form cannot be used: {error:#}"),
+                    )
+                })?
+            }
+        };
         // Steps 5 and 6: on names, before linking, so every refused import is named
         let interfaces = Interfaces::of(&self.engine, &component);
         let contract = permissions::check_component(&interfaces, &manifest)?;
@@ -1013,6 +1117,16 @@ impl Runtime {
         grants: Arc<GrantStore>,
     ) -> Result<Plugin, RuntimeError> {
         let package = self.check(bytes)?;
+        self.link(package, origin, grants)
+    }
+
+    /// Load steps 7–9 for a checked package.
+    fn link(
+        &self,
+        package: CheckedPackage,
+        origin: &str,
+        grants: Arc<GrantStore>,
+    ) -> Result<Plugin, RuntimeError> {
         // Read before the grants, so a change made while linking is seen on the next call
         let generation = grants.generation();
         let accounts_at_load = accounts_at_load(&package, self.options.data_dir());
@@ -1046,6 +1160,48 @@ impl Runtime {
         // Step 7a: kept data that no longer matches the package or its approval goes now
         plugin.kept_data();
         Ok(plugin)
+    }
+
+    /// The GitHub release source, on this runtime's network: production DNS and Mozilla's roots,
+    /// or, in the runtime's own tests, the test seam (`specs/010-plugin-installation/research.md`,
+    /// R4).
+    pub fn github(&self, fetch: install::FetchLimits) -> install::GitHub {
+        install::GitHub::new(self.network.clone(), self.limits.clone(), fetch)
+    }
+
+    /// [`load`](Self::load) for an installed package, from the form the compile process made of
+    /// it (`specs/010-plugin-installation/research.md`, R3). Nothing is read from disk here: the
+    /// caller passes the bytes and the digests it recorded when it installed them, and each is
+    /// checked on these very bytes before anything of them runs. A package that changed is
+    /// `package-changed`, and is never compiled again; a compiled form that changed, or that
+    /// Wasmtime refuses as made by another engine, is `compile-failed`, and the caller compiles
+    /// the package again, once.
+    pub fn load_compiled(
+        &self,
+        package: &[u8],
+        package_digest: &str,
+        compiled: &[u8],
+        compiled_digest: &str,
+        origin: &str,
+        grants: Arc<GrantStore>,
+    ) -> Result<Plugin, RuntimeError> {
+        if package::digest(package) != package_digest {
+            return Err(RuntimeError::new(
+                ErrorKind::PackageChanged,
+                "the installed package no longer matches the digest recorded when it was installed",
+            ));
+        }
+        if package::digest(compiled) != compiled_digest {
+            return Err(RuntimeError::new(
+                ErrorKind::CompileFailed,
+                "the compiled form no longer matches the digest recorded when it was made",
+            ));
+        }
+        let package = self.inspect_with(package, Some(compiled))?;
+        if let Some((_, error)) = package.refused_connectors.first() {
+            return Err(error.clone());
+        }
+        self.link(package, origin, grants)
     }
 }
 
@@ -1086,7 +1242,7 @@ impl Connectors<'_> {
                 ErrorKind::DestinationNotVerified,
                 names(),
                 Some(
-                    "connectors from repositories, whose destinations their owners verify, arrive with installation (Phase 3)",
+                    "connectors from repositories arrive with the verification of their owners' domains, a later item of Phase 3; a widget that declares one, even optional, is not installed",
                 ),
             ));
         };

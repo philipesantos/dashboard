@@ -97,3 +97,19 @@ These bound what the host does for an account, and what `runtime accounts connec
 | `vault_wait_tool` | 2 min | How long the CLI waits for the keychain, for the person to unlock it | `keychain-unavailable` <!-- ref: limit vault_wait_tool --> |
 | `refresh_margin` | 1 min | A token that expires within this is refreshed before it is sent | The refresh happens first; a call never sends a token about to expire, when the service said when it expires <!-- ref: limit refresh_margin --> |
 | `refreshes_per_call` | 1 | Token refreshes one call may cause | A call that would need a second refresh answers `account-not-connected` <!-- ref: limit refreshes_per_call --> |
+
+## Installing
+
+The app installs a widget from its repository ([publishing](../guides/publishing.md)) and compiles
+its package in a separate process before anything of it runs. These limits are the app's; the CLI
+compiles a local package in its own process, as before.
+
+| Limit | Default | What it bounds | Past it |
+| --- | --- | --- | --- |
+| Compile wall-clock time | 20 s | Compiling one package, from start to end | `compile-time-limit` |
+| Compile CPU time | 60 s | The CPU time of all the compile process's threads | `compile-time-limit` |
+| Compile memory | 1.5 GiB | The compile process's memory | `compile-memory-limit` |
+| Compile threads | Half the cores, at least 1 | The threads Cranelift compiles on | Slower, never refused |
+| Compiled form | 64 MiB | What the compile process writes back | `compile-failed` |
+| GitHub answer | 256 KiB, 10 s | One answer of GitHub's API | `source-unreachable` |
+| Package download | 10 MiB, 60 s | The release's package, redirects included | `no-package-asset` past the size; `source-unreachable` past the time |

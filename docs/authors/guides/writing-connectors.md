@@ -126,4 +126,5 @@ of its service, such as `github.com`; every host under them is the catalog's, so
 can claim it. To propose one, add `connectors/catalog/<name>.json` to the repository with a test
 that it works with an example widget, and say in the pull request why each operation is a read or
 a change. The criteria for entering the catalog arrive in Phase 3, and connectors from
-repositories, whose destinations the service's owner verifies, arrive with installation.
+repositories, whose destinations the service's owner verifies, arrive with a later item of
+Phase 3; until then the app does not install a widget that declares one, even optional.

@@ -16,7 +16,7 @@ at the top, is `credentials-not-supported` ([errors](errors.md)).
 | --- | --- | --- |
 | `$schema` | Any text; the host ignores it | No <!-- ref: connector $schema --> |
 | `connector_version` | `1`, the version of this format | Yes <!-- ref: connector connector_version --> |
-| `id` | `catalog/<name>` in the official catalog, `local/<name>` in development; `<name>` is 1–64 lowercase letters, digits and hyphens, never starting or ending with a hyphen. Repository ids arrive with installation (Phase 3) | Yes <!-- ref: connector id --> |
+| `id` | `catalog/<name>` in the official catalog, `local/<name>` in development; `<name>` is 1–64 lowercase letters, digits and hyphens, never starting or ending with a hyphen. Repository ids arrive with the verification of their owners' domains, a later item of Phase 3; the app does not install a widget that declares one | Yes <!-- ref: connector id --> |
 | `version` | A Semantic Versioning 2.0.0 version. Widgets depend on its major version | Yes <!-- ref: connector version --> |
 | `author` | 1–100 characters, no control characters; the person sees it | Yes <!-- ref: connector author --> |
 | `description` | 1–200 characters, no control characters; the person sees it | Yes <!-- ref: connector description --> |

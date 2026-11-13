@@ -52,7 +52,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use runtime::accounts::{Account, AccountKind, Connected, Reason};
-use runtime::connector::{Access, Credential, CredentialKind, Kind, ParameterType, Template};
+use runtime::connector::{Access, Credential, CredentialKind, Kind, Template};
 use runtime::grants::{GrantStore, Status};
 use runtime::manifest::MAX_MANIFEST_BYTES;
 use runtime::manifest::PluginId;
@@ -152,6 +152,11 @@ fn host() -> &'static Host {
 
 /// The CLI's entry point: reads the arguments and runs the command they name.
 pub fn main() -> ExitCode {
+    // The compile process, before anything else of the CLI (specs/010-plugin-installation/
+    // research.md, R2): the tests start this binary as the app starts its own
+    if crate::compile::is_compile_invocation() {
+        return crate::compile::child_main();
+    }
     main_with(Host::system())
 }
 
@@ -1116,10 +1121,61 @@ fn describe_connectors(
             }
         }
     }
-    if let Some(flow) = data_flow(checked) {
-        text.push_str(&flow);
+    // What approving could let through: every declared connector on, and the account sources
+    // the store of this origin may still hold (specs/010-plugin-installation/research.md, R7)
+    let remembered = entry
+        .map(|entry| entry.account_sources.clone())
+        .unwrap_or_default();
+    text.push_str(&flow_lines(&runtime::flows::judge(
+        checked,
+        &|_| true,
+        &remembered,
+    )));
+    text
+}
+
+/// The `data flow:` lines of the grants the plugin holds now, from its origin's approval, with
+/// the account sources its store may still hold; empty when the record cannot be read.
+fn flows_held(target: &Target, checked: &CheckedPackage) -> String {
+    let Ok(Some(entry)) = target.grants.entry(checked.manifest().id()) else {
+        return String::new();
+    };
+    if entry.origin != target.origin {
+        return String::new();
     }
-    text.push_str(&account_data_flow(checked));
+    let granted = |id: &str| entry.is_connector_granted(id);
+    flow_lines(&runtime::flows::judge(
+        checked,
+        &granted,
+        &entry.account_sources,
+    ))
+}
+
+/// A `data flow:` line per flow (Principle III).
+fn flow_lines(flows: &[runtime::flows::Flow]) -> String {
+    let mut text = String::new();
+    for flow in flows {
+        let reach: Vec<String> = flow
+            .destinations
+            .iter()
+            .map(|origin| escape(origin))
+            .collect();
+        match &flow.source {
+            runtime::flows::Source::ThisMachine { origins } => {
+                let here: Vec<String> = origins.iter().map(|origin| escape(origin)).collect();
+                text.push_str(&format!(
+                    "data flow: data read from this machine ({}) can reach {}\n",
+                    here.join(", "),
+                    reach.join(", ")
+                ));
+            }
+            runtime::flows::Source::Account { connector } => text.push_str(&format!(
+                "data flow: data read as the account of {} can reach {}\n",
+                escape(connector),
+                reach.join(", ")
+            )),
+        }
+    }
     text
 }
 
@@ -1209,146 +1265,19 @@ fn account_label(account: &Account) -> String {
     }
 }
 
-/// For each connector the widget uses with an account, a line naming every origin of its other
-/// destinations that data read as the account can reach (research R14, Principle III).
-fn account_data_flow(checked: &CheckedPackage) -> String {
-    let mut text = String::new();
-    for request in checked.manifest().connectors() {
-        let Some(credential) = request
-            .account
-            .then(|| {
-                checked
-                    .connectors()
-                    .iter()
-                    .find(|loaded| loaded.id() == request.id)
-                    .and_then(|loaded| loaded.connector().credential())
-            })
-            .flatten()
-        else {
-            continue;
-        };
-        let mut elsewhere: Vec<String> = Vec::new();
-        for loaded in checked.connectors() {
-            for origin in loaded.connector().destinations() {
-                let serialized = escape(&origin.serialization());
-                if !credential.origins().contains(origin) && !elsewhere.contains(&serialized) {
-                    elsewhere.push(serialized);
-                }
-            }
-        }
-        if !elsewhere.is_empty() {
-            text.push_str(&format!(
-                "data flow: data read as the account of {} can reach {}\n",
-                escape(&request.id),
-                elsewhere.join(", ")
-            ));
-        }
-    }
-    text
-}
-
-/// The parameters an operation sends: those in its path first, in order, then the rest by name.
+/// The parameters an operation sends, as the installation dialog lists them.
 fn sends(operation: &runtime::connector::Operation) -> String {
-    let parameters = operation.parameters();
-    if parameters.is_empty() {
-        return "nothing".to_owned();
+    let sends = runtime::install::dialog::sends(operation);
+    if sends.is_empty() {
+        "nothing".to_owned()
+    } else {
+        sends.join(", ")
     }
-    let mut names: Vec<&String> = operation
-        .path()
-        .iter()
-        .filter_map(|segment| match segment {
-            Template::Parameter(name) => parameters.get_key_value(name).map(|(name, _)| name),
-            Template::Literal(_) => None,
-        })
-        .collect();
-    for name in parameters.keys() {
-        if !names.contains(&name) {
-            names.push(name);
-        }
-    }
-    let described: Vec<String> = names
-        .into_iter()
-        .map(|name| {
-            let parameter = &parameters[name];
-            let kind = match parameter.kind {
-                ParameterType::Text { .. } => "text",
-                ParameterType::Integer { .. } => "integer",
-                ParameterType::Flag => "flag",
-            };
-            if parameter.required {
-                format!("{} ({kind})", escape(name))
-            } else {
-                format!("{} ({kind}, optional)", escape(name))
-            }
-        })
-        .collect();
-    described.join(", ")
 }
 
-/// Every value the connector writes into the request itself: they are public.
+/// The fixed query values, headers and body fields, as the installation dialog lists them.
 fn fixed(operation: &runtime::connector::Operation) -> Vec<String> {
-    let mut fixed: Vec<String> = operation
-        .query()
-        .iter()
-        .filter_map(|(name, value)| match value {
-            Template::Literal(value) => Some(format!("{}={}", escape(name), escape(value))),
-            Template::Parameter(_) => None,
-        })
-        .collect();
-    fixed.extend(
-        operation
-            .headers()
-            .iter()
-            .map(|(name, value)| format!("{}: {}", escape(name), escape(value))),
-    );
-    if let Some(body) = operation.body() {
-        fixed_body(body, "body", &mut fixed);
-    }
-    fixed
-}
-
-fn fixed_body(value: &serde_json::Value, path: &str, fixed: &mut Vec<String>) {
-    match value {
-        serde_json::Value::Object(fields) => {
-            for (name, item) in fields {
-                fixed_body(item, &format!("{path}.{name}"), fixed);
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                fixed_body(item, &format!("{path}[{index}]"), fixed);
-            }
-        }
-        serde_json::Value::String(text) if runtime::connector::is_placeholder(text) => {}
-        other => fixed.push(format!("{}: {}", escape(path), escape(&other.to_string()))),
-    }
-}
-
-/// When a local connector reaches this machine and the widget can also reach another
-/// destination, a line says so (Principle III).
-fn data_flow(checked: &CheckedPackage) -> Option<String> {
-    let mut here = Vec::new();
-    let mut elsewhere = Vec::new();
-    for loaded in checked.connectors() {
-        for origin in loaded.connector().destinations() {
-            let serialized = escape(&origin.serialization());
-            let list = if origin.is_https() {
-                &mut elsewhere
-            } else {
-                &mut here
-            };
-            if !list.contains(&serialized) {
-                list.push(serialized);
-            }
-        }
-    }
-    (!here.is_empty() && !elsewhere.is_empty()).then(|| {
-        format!(
-            "data flow: data read from this machine ({}) can reach {}\n",
-            here.join(", "),
-            elsewhere.join(", ")
-        )
-    })
+    runtime::install::dialog::fixed(operation)
 }
 
 /// Grants every required permission the manifest declares, all at once (FR-018), after the
@@ -1533,6 +1462,9 @@ fn optional(options: &Options) -> ExitCode {
         }
         if *on {
             println!("{} on", escape(permission));
+            // The warning on the grants it holds now, as the app's dialog judges every grant
+            // change (specs/010-plugin-installation/, FR-016)
+            print!("{}", flows_held(&target, &checked));
         } else {
             // Data fetched with the connector on goes with it (FR-010)
             if let Err(error) = target.runtime.discard_kept_data(checked.manifest().id()) {
@@ -1545,6 +1477,10 @@ fn optional(options: &Options) -> ExitCode {
     }
     if let Err(error) = checked.set_optional(&target.grants, &target.origin, permission, *on) {
         return refused(&error);
+    }
+    if *on {
+        // Storage on can make an account read before a source the store remembers
+        print!("{}", flows_held(&target, &checked));
     }
     match (permission.as_str(), on) {
         // Turning storage off deletes nothing (specs/004-plugin-storage/spec.md, FR-011)

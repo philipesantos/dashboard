@@ -28,6 +28,8 @@ running.
 - [Storage](guides/storage.md): the widget's own store of named values (`update-counter`).
 - [Writing connectors](guides/writing-connectors.md): the format of a connector, for a service no
   catalog connector covers.
+- [Publishing](guides/publishing.md): the repository and release the app installs a widget from,
+  and what people see when they install and update it.
 
 ## Reference
 

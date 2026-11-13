@@ -1237,7 +1237,15 @@ fn optional_turns_a_connector_on_and_off_and_off_discards_the_kept_data() {
 
     let output = connected.run(&["optional", plugin, "local/hello", "on"]);
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
-    assert_eq!(stdout(&output), "local/hello on\n");
+    // Turned on beside GitHub, the local connector completes a flow from this machine, which
+    // the tool names, as the app's dialog warns of it (feature 010, FR-016)
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "local/hello on\ndata flow: data read from this machine ({}) can reach https://api.github.com\n",
+            server.http_origin()
+        )
+    );
     connected.run(&["update", plugin, "--config", &config]);
     let content = run_content(&connected);
     assert_eq!(content["data"]["answers"][0]["status"], 200);
@@ -2329,6 +2337,49 @@ fn data_flow() {
         "{text}"
     );
     assert!(!text.contains("account of local/notes"), "{text}");
+}
+
+/// `cli-optional-flow` (feature 010, FR-016): turning an optional connector on in the
+/// development tool prints the flow the grants it holds afterwards complete, as the app's dialog
+/// warns of it; turning it on when no flow follows prints none.
+#[test]
+fn optional_on_prints_the_flow_it_completes() {
+    let manifest = json!({
+        "manifest_version": 1, "id": "local/flow-probe", "version": "0.1.0", "author": "A",
+        "permissions": [],
+        "connectors": [
+            { "id": "local/notes", "major": 1, "operations": ["list-notes"], "required": true, "account": true },
+            { "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": false }
+        ]
+    });
+    let package = runtime::package::pack(
+        &common::fixture("account-probe"),
+        manifest.to_string().as_bytes(),
+    )
+    .expect("the manifest is valid");
+    let accounts = Accounts::new(&package);
+    let digest = accounts
+        .permissions()
+        .lines()
+        .find_map(|line| line.strip_prefix("approval digest: ").map(str::to_owned))
+        .expect("a digest");
+    let plugin = path_str(&accounts.plugin);
+    let approved = accounts.run(&["approve", plugin, "--expect", &digest]);
+    assert_eq!(
+        approved.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr(&approved)
+    );
+    let on = accounts.run(&["optional", plugin, "catalog/github", "on"]);
+    assert_eq!(on.status.code(), Some(0), "stderr: {}", stderr(&on));
+    assert_eq!(
+        stdout(&on),
+        "catalog/github on\ndata flow: data read as the account of local/notes can reach https://api.github.com\n"
+    );
+    let off = accounts.run(&["optional", plugin, "catalog/github", "off"]);
+    assert_eq!(off.status.code(), Some(0), "stderr: {}", stderr(&off));
+    assert!(!stdout(&off).contains("data flow"), "{}", stdout(&off));
 }
 
 /// `local/keyed`: `local/notes` with a key the maintainer types instead of an account, written

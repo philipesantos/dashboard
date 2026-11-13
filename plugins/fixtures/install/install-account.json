@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../wit/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "github.com/dashboard-fixtures/install-account",
+  "version": "0.1.0",
+  "author": "Dashboard contributors",
+  "name": "Conta e outro destino",
+  "permissions": [{ "name": "log", "required": true }],
+  "connectors": [
+    { "id": "catalog/account-echo", "major": 1, "operations": ["look"], "required": true, "account": true },
+    { "id": "catalog/github", "major": 1, "operations": ["list-releases"], "required": false }
+  ]
+}

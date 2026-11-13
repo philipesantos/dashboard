@@ -2,8 +2,10 @@
 //
 // Bundled only in Vite's `probe` mode, which adds this module to index.html. It runs inside the
 // real page of a release build, tries each forbidden action, and reports to the host through
-// `shell_probe_report`, the only command the probe build grants. The host adds what the page
-// cannot see (window count, engine settings), prints the report and exits.
+// `shell_probe_report`, one of the two commands the probe build grants; the other,
+// `shell_probe_tree`, reads the engine's accessibility tree for the dialog cases (feature 010,
+// T045). The host adds what the page cannot see (window count, engine settings), prints the
+// report and exits.
 //
 // Part of the security core (constitution, Principle IX).
 
@@ -11,6 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { Case, Context, Counters, Verdict } from "./case";
 import { commandCases } from "./commands";
+import { installCases } from "./dialogs";
 import { engineCases } from "./engine";
 import { policyCases } from "./policy";
 import { containmentCases, controlCases, widgetCases } from "./widgets";
@@ -23,6 +26,7 @@ const cases: Case[] = [
   ...widgetCases,
   ...containmentCases,
   ...controlCases,
+  ...installCases,
   ...windowCases,
   ...engineCases,
 ].sort(

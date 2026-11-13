@@ -256,6 +256,38 @@ memory until the app quits.
   responsive under a looping action. A new rule on widget content gets a fixture and a case
   here, listed in `run.ts` and `PAGE_CASES`.
 
+### Installing
+
+The app installs a widget from its author's GitHub repository
+([`docs/authors/guides/publishing.md`](docs/authors/guides/publishing.md),
+`specs/010-plugin-installation/`). `runtime/src/install/` fetches the latest release by the
+repository's permanent identifier, checks the manifest against the repository and the tag, builds
+the installation dialog's model, and writes the package, its compiled form, the grant and the
+installed record only on an approval of exactly what the dialog showed. `runtime/src/compile/`
+compiles every installed package in a child process, the app's own executable started with
+`--compile-package`, confined and under limits; `runtime/src/flows.rs` is the dangerous
+combination rule the dialog and the CLI share. `app/src-tauri/src/install.rs` holds the one
+request there may be, and `app/src/host/` draws the add control, the dialog and its form
+(criteria HS-10 to HS-23).
+
+- **Test sources**: the runtime's tests use an in-memory release source
+  (`runtime/tests/common/releases.rs`) and a local HTTPS server for GitHub's API
+  (`install_github.rs`); the app's tests their own (`app/src-tauri/tests/common/`). The probe build
+  serves the releases `build.rs` embeds (`PROBE_RELEASES`: `install-basic`, `compile-heavy`)
+  through `probe_source.rs`, on a data directory emptied at each start; a build without
+  `shell-probe` embeds none, which `tests/widgets.rs` checks.
+- **Install fixtures** are manifests in `plugins/fixtures/install/`, which `cargo xtask plugins`
+  packs with a crate's component; `compile-heavy` carries a never-instantiated module of generated
+  code just under the package cap.
+- **The compile process's confinement** has a breaking test on each system,
+  `compile::the_compile_process_can_open_no_file_and_reach_no_network`: once confined, the child
+  tries to open a file of the user's and reach a port on loopback, through a hook only the test
+  build has. On Linux the seccomp filter's list of system calls was taken with strace; a call
+  missing from it kills the compile with `SIGSYS`, which the compile tests show.
+- **The installation's probe cases** (`app/src/probe/dialogs.ts`) install through the chrome and
+  the dialog and check each criterion of the dialog's form; they are listed in `run.ts` and
+  `PAGE_CASES`.
+
 ## Security rules for every change
 
 - A change that adds or touches a security rule comes with an automated test that fails when
@@ -263,7 +295,8 @@ memory until the app quits.
 - Changes to the security core (plugin runtime, permission engine, connector engine and
   network proxy, plugin storage in `runtime/src/storage/`, the secrets vault in
   `runtime/src/vault/` with the accounts and the sign-in, the official connector catalog
-  in `connectors/`, the window's protections and the widget host listed below) get
+  in `connectors/`, the window's protections, the widget host, and the installer with its
+  compile process and the host dialogs listed below) get
   line-by-line human review before merge, including code written with AI help.
   They always go through a pull request, even when a maintainer could push to `master`
   directly, and the pull request records who reviewed them.
@@ -286,6 +319,17 @@ memory until the app quits.
   - `app/src/widgets/`, which draws the frame and every component of widget content;
   - `widget-content/`, which checks content and turns it into the tree the page draws, and the
     content schema `wit/content.schema.json`.
+- The installer, its compile process and the host dialogs, in the security core since
+  constitution v2.7.0 (feature 010):
+  - `runtime/src/install/` (the release source, the installer, the installed record, the
+    dialog's model), `runtime/src/compile/` (the child, its limits and its confinement on each
+    system), `runtime/src/flows.rs`, the host GET in `runtime/src/network/`, and in
+    `runtime/src/grants.rs` `GrantStore::install` and the remembered account sources;
+  - `app/src-tauri/src/install.rs`, `main.rs` (the compile invocation), `probe_source.rs`, and the
+    five installation commands in `commands.rs`;
+  - `app/src/host/` and `app/src/components/ui/dialog.tsx`, which draw the host dialogs;
+  - the tests that guard them: `runtime/tests/{compile,install,install_github,install_records,flows,dialog_model}.rs`,
+    `app/src-tauri/tests/{install,install_quit}.rs` and `app/src/probe/dialogs.ts`.
 - New Rust dependencies must come from crates.io and use a license allowed in
   [`deny.toml`](deny.toml); `cargo deny check` enforces both.
 

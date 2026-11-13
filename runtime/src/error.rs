@@ -123,6 +123,32 @@ error_kinds! {
     NoClientConfigured => "no-client-configured",
     /// No account is connected to the connector, or it must be connected again.
     AccountNotConnected => "account-not-connected",
+    /// The package's manifest names another repository than the one it was installed from
+    /// (feature 010).
+    IdentityMismatch => "identity-mismatch",
+    /// A release's tag is not `v<version>` or `<version>` of the manifest's version.
+    TagMismatch => "tag-mismatch",
+    /// A release the host pinned now carries other bytes under the same tag.
+    ChangedRelease => "changed-release",
+    /// The repository an installed plugin came from was deleted or renamed, or its name now
+    /// belongs to another repository; no update is taken from it.
+    RepositoryChanged => "repository-changed",
+    /// An update's version is not greater than the installed one.
+    NotNewer => "not-newer",
+    /// The code host could not be reached, or answered something the host does not accept.
+    SourceUnreachable => "source-unreachable",
+    /// The code host's request limit was reached; the detail says when to try again.
+    RateLimited => "rate-limited",
+    /// A release has no `.wasm` asset, or more than one, or one larger than the package limit.
+    NoPackageAsset => "no-package-asset",
+    /// Compiling the package reached the compile process's time limit.
+    CompileTimeLimit => "compile-time-limit",
+    /// Compiling the package reached the compile process's memory limit.
+    CompileMemoryLimit => "compile-memory-limit",
+    /// The compile process failed otherwise, or the app was updated while it ran.
+    CompileFailed => "compile-failed",
+    /// An installed package's bytes no longer match the digest recorded at installation.
+    PackageChanged => "package-changed",
 }
 
 impl fmt::Display for ErrorKind {
@@ -147,7 +173,10 @@ pub struct RuntimeError {
 const MAX_DETAIL_BYTES: usize = 1024;
 
 impl RuntimeError {
-    pub(crate) fn new(kind: ErrorKind, detail: impl AsRef<str>) -> Self {
+    /// An error of `kind` whose detail is `detail`, escaped and cut. Public so the app's own
+    /// release sources answer as the runtime's do (`specs/010-plugin-installation/research.md`,
+    /// R16).
+    pub fn new(kind: ErrorKind, detail: impl AsRef<str>) -> Self {
         Self {
             kind,
             detail: text::untrusted(detail.as_ref(), MAX_DETAIL_BYTES),
@@ -258,6 +287,18 @@ mod tests {
             (ErrorKind::KeychainUnavailable, "keychain-unavailable"),
             (ErrorKind::NoClientConfigured, "no-client-configured"),
             (ErrorKind::AccountNotConnected, "account-not-connected"),
+            (ErrorKind::IdentityMismatch, "identity-mismatch"),
+            (ErrorKind::TagMismatch, "tag-mismatch"),
+            (ErrorKind::ChangedRelease, "changed-release"),
+            (ErrorKind::RepositoryChanged, "repository-changed"),
+            (ErrorKind::NotNewer, "not-newer"),
+            (ErrorKind::SourceUnreachable, "source-unreachable"),
+            (ErrorKind::RateLimited, "rate-limited"),
+            (ErrorKind::NoPackageAsset, "no-package-asset"),
+            (ErrorKind::CompileTimeLimit, "compile-time-limit"),
+            (ErrorKind::CompileMemoryLimit, "compile-memory-limit"),
+            (ErrorKind::CompileFailed, "compile-failed"),
+            (ErrorKind::PackageChanged, "package-changed"),
         ];
         for (kind, name) in kinds {
             assert_eq!(kind.as_str(), name);
@@ -268,7 +309,7 @@ mod tests {
     fn all_lists_every_kind_once() {
         let names: std::collections::BTreeSet<&str> =
             ErrorKind::ALL.iter().map(|kind| kind.as_str()).collect();
-        assert_eq!(ErrorKind::ALL.len(), 37);
+        assert_eq!(ErrorKind::ALL.len(), 49);
         assert_eq!(names.len(), ErrorKind::ALL.len());
     }
 
