@@ -15,6 +15,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # The Rust the jobs build with, except the docs job, which walks the walkthrough with its own.
+  # Pinned, because the Rust cache's key holds the compiler's version: on `stable`, every Rust
+  # release emptied every cache at once, mid-pull-request. Moving it is a pull request of its own,
+  # whose run on master saves the new caches.
+  RUST_TOOLCHAIN: 1.100.0
 
 # Third-party actions are pinned to a commit SHA; the comment holds the matching tag.
 # Every job has a timeout well above its usual time, so a stalled network call fails the job
@@ -73,35 +78,36 @@ jobs:
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
+  # Three parts on each system, on machines of their own so they run side by side: the checks
+  # (the design system, clippy, the test seam), the tests, and the shell probe. Each builds what
+  # it needs and keeps its own Rust cache, since clippy's, the tests' and the probe's artifacts
+  # are of three different kinds. Together they took 29 to 37 minutes on Windows in one job.
   build:
-    name: Build and test (${{ matrix.os }})
+    name: ${{ matrix.part }} (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-latest, windows-latest]
+        part: [checks, tests, probe]
     runs-on: ${{ matrix.os }}
-    # The shell probe adds a build of the app in the probe profile
-    # (specs/008-tauri-shell/research.md, R11; Cargo.toml). Windows took 29 to 37 minutes with
-    # feature 010, and over 40 on a slow runner without the cache
-    timeout-minutes: 55
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # Windows builds into a Dev Drive mounted at target/: ReFS, trusted so that Defender does not
-      # scan every file the compiler writes, which made Windows the slowest system in both the
-      # tests and the probe's build. Dynamic, so it takes only the space the build uses; after
-      # the checkout, which would try to empty a mount inside the workspace
-      - uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+      # Defender scanned every file the compiler wrote, which made Windows the slowest system.
+      # The runner is a machine of its own for this job, discarded after it. (A Dev Drive mounted
+      # at target/ did the same, but the Rust cache cannot read a volume mounted without a drive
+      # letter, so Windows never restored its cache.)
+      - name: Turn off Defender's real-time scan
         if: runner.os == 'Windows'
-        with:
-          drive-size: 50GB
-          drive-type: Dynamic
-          mount-path: ${{ github.workspace }}/target
-          trusted-dev-drive: true
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled
 
       # The Ubuntu mirror sometimes stalls a download for good. apt retries slow requests on
       # its own, and the step fails after 5 minutes instead of hanging the job (it takes under
@@ -129,16 +135,18 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy
           # Plugins build for WebAssembly; wasip2 only for the hostile fixtures that import WASI
           targets: wasm32-unknown-unknown, wasm32-wasip2
 
-      # Saved only from master, which every pull request reads: saving took up to 5 minutes on
-      # Windows, and a pull request's own cache helps only its next push
+      # Saved only from master, which every pull request reads: a pull request's own cache helps
+      # only its next push. One cache per part (`key`), since the job's id is the same for all
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          key: ${{ matrix.part }}
+          # TEMPORARY, ci-speed only: saved from this pull request too, to measure a warm run
+          save-if: ${{ github.ref == 'refs/heads/master' || github.head_ref == 'ci-speed' }}
 
       - run: pnpm install --frozen-lockfile
 
@@ -146,21 +154,24 @@ jobs:
       # the host-only split, drift of the generated files and criteria coverage
       # (specs/007-host-visual-system/contracts/outputs.md)
       - run: pnpm --filter ./design check
+        if: matrix.part == 'checks'
 
       - run: pnpm --filter ./design test
+        if: matrix.part == 'checks'
 
       # Every installed npm package under an allowed license or a named exception
       # (specs/007-host-visual-system/research.md, R13). `run`, because `pnpm licenses` is a
       # built-in command.
       - run: pnpm --filter ./design run licenses
+        if: matrix.part == 'checks'
 
       # A static page of the visual system, for review without building the app (research R8)
       - name: Design preview
-        if: runner.os == 'Linux'
+        if: matrix.part == 'checks' && runner.os == 'Linux'
         run: pnpm --filter ./design preview
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: runner.os == 'Linux'
+        if: matrix.part == 'checks' && runner.os == 'Linux'
         with:
           name: design-preview
           path: design/preview/
@@ -171,37 +182,28 @@ jobs:
       # (specs/009-declarative-widget-ui/research.md, R1)
       - run: cargo xtask plugins --locked
 
-      # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time.
-      # The probe's page replaces it at the end of the job.
+      # Type-checks the UI and produces app/dist, which the Tauri crate embeds at compile time;
+      # the probe's part builds the probe's page instead
       - run: pnpm --filter ./app build
+        if: matrix.part != 'probe'
+
+      # The checks
 
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        if: matrix.part == 'checks'
 
       # The plugins/ workspace, in the target dir the xtask uses, so the cache covers it
       - run: cargo clippy --manifest-path plugins/Cargo.toml --target wasm32-unknown-unknown --target-dir target/plugins-build --locked -- -D warnings
+        if: matrix.part == 'checks'
 
-      - run: cargo test --workspace --locked
-        if: runner.os != 'Linux'
-
-      # On Linux the vault tests need a session bus with an unlocked Secret Service: a login
-      # keyring created with a throwaway password (the here-string's newline is required)
-      - name: cargo test --workspace --locked (in a session with GNOME Keyring)
-        if: runner.os == 'Linux'
-        run: |
-          dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'ci' && cargo test --workspace --locked"
-
-      # A package just under the cap through the real compile process under the default limits,
-      # on its own so the peak memory printed is the compile process's alone; research R2 records
-      # the numbers per system (specs/010-plugin-installation/tasks.md, T042). Through the whole
-      # workspace, as the tests above, so it reuses their build: `-p runtime` alone resolves other
-      # features and built everything again, five to seven minutes on Windows
-      - name: Compile cost under the default limits
-        run: cargo test --workspace --locked -- --ignored --exact compile::measure_compile_heavy_under_the_default_limits --nocapture
+      - run: cargo clippy -p dashboard --features shell-probe --all-targets --locked -- -D warnings
+        if: matrix.part == 'checks'
 
       # The connectors' test seam replaces DNS and the trusted roots; the runtime refuses to
       # compile with it outside debug builds, so no build anyone runs can include it
       # (specs/003-plugin-connectors/research.md, R15). This fails unless that refusal happens.
       - name: The test seam never builds in release
+        if: matrix.part == 'checks'
         shell: bash
         run: |
           if cargo check -p runtime --release --features test-network --locked 2> seam.txt; then
@@ -214,17 +216,41 @@ jobs:
             exit 1
           }
 
-      # The shell probe: the release build plus one page module and two commands. Inside the
+      # The tests
+
+      - run: cargo test --workspace --locked
+        if: matrix.part == 'tests' && runner.os != 'Linux'
+
+      # On Linux the vault tests need a session bus with an unlocked Secret Service: a login
+      # keyring created with a throwaway password (the here-string's newline is required)
+      - name: cargo test --workspace --locked (in a session with GNOME Keyring)
+        if: matrix.part == 'tests' && runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'ci' && cargo test --workspace --locked"
+
+      # A package just under the cap through the real compile process under the default limits,
+      # on its own so the peak memory printed is the compile process's alone; research R2 records
+      # the numbers per system (specs/010-plugin-installation/tasks.md, T042). Through the whole
+      # workspace, as the tests above, so it reuses their build: `-p runtime` alone resolves other
+      # features and built everything again, five to seven minutes on Windows
+      - name: Compile cost under the default limits
+        if: matrix.part == 'tests'
+        run: cargo test --workspace --locked -- --ignored --exact compile::measure_compile_heavy_under_the_default_limits --nocapture
+
+      # The shell probe: the release build plus one page module and three commands. Inside the
       # real page it tries every forbidden action, and it fails unless each one is refused
       # (specs/008-tauri-shell/contracts/probe.md). Built as `tauri build` builds, with
       # tauri/custom-protocol, so the page and its content policy are the release ones; in the
-      # `probe` profile, the release one without LTO (Cargo.toml). Last, so that a broken case
-      # does not hide the tests' results.
+      # `probe` profile, the release one without LTO (Cargo.toml).
+
       - run: pnpm --filter ./app build --mode probe
+        if: matrix.part == 'probe'
 
       - run: cargo build -p dashboard --profile probe --features shell-probe,tauri/custom-protocol --locked
+        if: matrix.part == 'probe'
 
       - name: Shell probe
+        if: matrix.part == 'probe'
         shell: bash
         timeout-minutes: 3
         env:
@@ -236,8 +262,6 @@ jobs:
           else
             ./target/probe/dashboard
           fi
-
-      - run: cargo clippy -p dashboard --features shell-probe --all-targets --locked -- -D warnings
 
   # The docs for authors, run as written on each system: the walkthrough from a clone of this
   # checkout to a running widget, the guides against the test services, and the reference's
@@ -315,7 +339,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
@@ -364,7 +388,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
