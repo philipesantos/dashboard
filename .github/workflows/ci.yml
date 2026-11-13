@@ -83,8 +83,9 @@ jobs:
         os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     # The shell probe adds a build of the app in the probe profile
-    # (specs/008-tauri-shell/research.md, R11; Cargo.toml)
-    timeout-minutes: 40
+    # (specs/008-tauri-shell/research.md, R11; Cargo.toml). Windows took 29 to 37 minutes with
+    # feature 010, and over 40 on a slow runner without the cache
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -191,9 +192,11 @@ jobs:
 
       # A package just under the cap through the real compile process under the default limits,
       # on its own so the peak memory printed is the compile process's alone; research R2 records
-      # the numbers per system (specs/010-plugin-installation/tasks.md, T042)
+      # the numbers per system (specs/010-plugin-installation/tasks.md, T042). Through the whole
+      # workspace, as the tests above, so it reuses their build: `-p runtime` alone resolves other
+      # features and built everything again, five to seven minutes on Windows
       - name: Compile cost under the default limits
-        run: cargo test -p runtime --test it --locked -- --ignored --exact compile::measure_compile_heavy_under_the_default_limits --nocapture
+        run: cargo test --workspace --locked -- --ignored --exact compile::measure_compile_heavy_under_the_default_limits --nocapture
 
       # The connectors' test seam replaces DNS and the trusted roots; the runtime refuses to
       # compile with it outside debug builds, so no build anyone runs can include it
